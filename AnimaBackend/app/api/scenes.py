@@ -1,7 +1,8 @@
-"""背景插件 + BGM 插件:场景包,以及角色卡绑定哪个场景包。
+"""背景 / BGM / CG 插件:场景包,以及角色卡绑定哪个场景包。
 
-一个场景包 = 一组背景图 + 一组背景音乐,AI 在正文里用标签点名(<bg:食堂>、
-<bgm:日常>),视觉小说界面按名字找到这一行的文件。和立绘的区别是素材不属于
+一个场景包 = 一组背景图 + 一组背景音乐 + 一组 CG,AI 在正文里用标签点名(<bg:食堂>、
+<bgm:日常>、<cg:海边烟花>),视觉小说界面按名字找到这一行的文件。
+CG 下面可以挂差分(parent_id 指向它,名字是立绘的表情名),视觉小说按当前表情换。和立绘的区别是素材不属于
 某张卡:同一个世界观的角色共用一个包,卡只记「我用哪个包」。
 
 文件同样存 BLOB、列表只回元数据、取文件的端点带版本号长缓存。
@@ -35,7 +36,9 @@ PACKS = "/api/scene-packs"
 # multipart 还要占一点,这里留足余量
 MAX_AUDIO_BYTES = 16 * 1024 * 1024
 
-NOUN = {"bg": "场景名", "bgm": "音乐名"}
+NOUN = {"bg": "场景名", "bgm": "音乐名", "cg": "CG 名"}
+# CG 差分的名字是立绘的表情名
+VARIANT_NOUN = "表情名"
 
 
 def _load_pack(pack_id: str, db: Session) -> ScenePack:
@@ -65,10 +68,11 @@ def _clean_pack_name(raw: str, db: Session, exclude_id: str | None = None) -> st
 
 
 def _pack_out(pack: ScenePack, db: Session) -> ScenePackOut:
+    # 差分不算:CG 只数构图
     counts = dict(
         db.execute(
             select(SceneAsset.kind, func.count())
-            .where(SceneAsset.pack_id == pack.id)
+            .where(SceneAsset.pack_id == pack.id, SceneAsset.parent_id.is_(None))
             .group_by(SceneAsset.kind)
         ).all()
     )
@@ -81,6 +85,7 @@ def _pack_out(pack: ScenePack, db: Session) -> ScenePackOut:
         description=pack.description,
         bg_count=counts.get("bg", 0),
         bgm_count=counts.get("bgm", 0),
+        cg_count=counts.get("cg", 0),
         card_count=cards or 0,
         title_bgm_id=pack.title_bgm_id,
     )
@@ -108,26 +113,46 @@ def _asset_out(a: SceneAsset) -> SceneAssetOut:
         bgm_id=a.bgm_id,
         sort=a.sort,
         enabled=a.enabled,
+        parent_id=a.parent_id,
     )
 
 
 def _check_unique(
-    pack_id: str, kind: str, names: list[str], db: Session, exclude_id: str | None = None
+    pack_id: str,
+    kind: str,
+    names: list[str],
+    db: Session,
+    exclude_id: str | None = None,
+    parent_id: str | None = None,
 ):
-    """同一个包里同一类素材的名字 / 别名不能撞。背景和音乐各用各的标签,可以同名。"""
+    """同一个包里同一类素材的名字 / 别名不能撞。背景、音乐、CG 各用各的标签,可以同名。
+    CG 差分只和同一张 CG 的差分比(每张 CG 都可以有一张「开心」)"""
     taken: dict[str, str] = {}
     rows = db.scalars(
-        select(SceneAsset).where(SceneAsset.pack_id == pack_id, SceneAsset.kind == kind)
+        select(SceneAsset).where(
+            SceneAsset.pack_id == pack_id,
+            SceneAsset.kind == kind,
+            SceneAsset.parent_id == parent_id if parent_id else SceneAsset.parent_id.is_(None),
+        )
     )
     for row in rows:
         if row.id == exclude_id:
             continue
         for n in [row.label, *(row.aliases or [])]:
             taken[n.casefold()] = row.label
+    noun = VARIANT_NOUN if parent_id else NOUN[kind]
     for n in names:
         owner = taken.get(n.casefold())
         if owner is not None:
-            raise HTTPException(409, f"{NOUN[kind]}「{n}」已经被「{owner}」占用了")
+            raise HTTPException(409, f"{noun}「{n}」已经被「{owner}」占用了")
+
+
+def _check_parent(pack_id: str, parent_id: str, db: Session) -> SceneAsset:
+    """差分只能挂在同一个包里的一张 CG(构图)下面"""
+    parent = db.get(SceneAsset, parent_id)
+    if parent is None or parent.pack_id != pack_id or parent.kind != "cg" or parent.parent_id:
+        raise HTTPException(400, "差分必须挂在同一个场景包里的一张 CG 下面")
+    return parent
 
 
 def sniff_audio_mime(data: bytes) -> str | None:
@@ -209,13 +234,21 @@ def list_assets(pack_id: str, db: Session = Depends(get_db)):
 @router.post(PACKS + "/{pack_id}/assets", response_model=SceneAssetOut)
 def create_asset(pack_id: str, req: SceneAssetCreate, db: Session = Depends(get_db)):
     _load_pack(pack_id, db)
-    noun = NOUN[req.kind]
+    if req.parent_id is not None:
+        if req.kind != "cg":
+            raise HTTPException(400, "只有 CG 能挂差分")
+        _check_parent(pack_id, req.parent_id, db)
+    noun = VARIANT_NOUN if req.parent_id else NOUN[req.kind]
     label = clean_label(req.label, noun)
     aliases = clean_aliases(req.aliases, label, noun)
-    _check_unique(pack_id, req.kind, [label, *aliases], db)
+    _check_unique(pack_id, req.kind, [label, *aliases], db, parent_id=req.parent_id)
     last = db.scalar(
         select(func.max(SceneAsset.sort)).where(
-            SceneAsset.pack_id == pack_id, SceneAsset.kind == req.kind
+            SceneAsset.pack_id == pack_id,
+            SceneAsset.kind == req.kind,
+            SceneAsset.parent_id == req.parent_id
+            if req.parent_id
+            else SceneAsset.parent_id.is_(None),
         )
     )
     asset = SceneAsset(
@@ -225,6 +258,7 @@ def create_asset(pack_id: str, req: SceneAssetCreate, db: Session = Depends(get_
         aliases=aliases,
         description=req.description.strip(),
         sort=(last + 1) if last is not None else 0,
+        parent_id=req.parent_id,
     )
     db.add(asset)
     db.commit()
@@ -237,7 +271,7 @@ def update_asset(
     pack_id: str, asset_id: str, req: SceneAssetUpdate, db: Session = Depends(get_db)
 ):
     asset = _load_asset(pack_id, asset_id, db)
-    noun = NOUN[asset.kind]
+    noun = VARIANT_NOUN if asset.parent_id else NOUN[asset.kind]
     updates = req.model_dump(exclude_unset=True)
 
     label = clean_label(updates["label"], noun) if updates.get("label") is not None else asset.label
@@ -245,7 +279,9 @@ def update_asset(
     aliases = clean_aliases(
         raw_aliases if raw_aliases is not None else asset.aliases or [], label, noun
     )
-    _check_unique(pack_id, asset.kind, [label, *aliases], db, exclude_id=asset_id)
+    _check_unique(
+        pack_id, asset.kind, [label, *aliases], db, exclude_id=asset_id, parent_id=asset.parent_id
+    )
     asset.label = label
     asset.aliases = aliases
 
@@ -256,6 +292,7 @@ def update_asset(
     if "bgm_id" in updates:
         bgm_id = updates["bgm_id"]
         if bgm_id is not None:
+            # CG 和音乐互不牵连(10-03 用户定),只有背景有默认曲
             if asset.kind != "bg":
                 raise HTTPException(400, "只有背景能设默认音乐")
             _check_own_bgm(pack_id, bgm_id, db, "默认音乐")
@@ -271,8 +308,11 @@ def update_asset(
 @router.delete(PACKS + "/{pack_id}/assets/{asset_id}", status_code=204)
 def delete_asset(pack_id: str, asset_id: str, db: Session = Depends(get_db)):
     asset = _load_asset(pack_id, asset_id, db)
+    if asset.kind == "cg" and asset.parent_id is None:
+        # CG 的差分跟着删
+        db.execute(delete(SceneAsset).where(SceneAsset.parent_id == asset_id))
     if asset.kind == "bgm":
-        # 把这首当默认曲的背景、当封面音乐的包改回默认,不然前端会拿着一个不存在的 id
+        # 把这首当默认曲的背景 / CG、当封面音乐的包改回默认,不然前端会拿着一个不存在的 id
         db.execute(
             update(SceneAsset)
             .where(SceneAsset.pack_id == pack_id, SceneAsset.bgm_id == asset_id)
@@ -293,7 +333,11 @@ def reorder_assets(pack_id: str, req: SceneAssetReorder, db: Session = Depends(g
     rows = {
         r.id: r
         for r in db.scalars(
-            select(SceneAsset).where(SceneAsset.pack_id == pack_id, SceneAsset.kind == req.kind)
+            select(SceneAsset).where(
+                SceneAsset.pack_id == pack_id,
+                SceneAsset.kind == req.kind,
+                SceneAsset.parent_id.is_(None),
+            )
         )
     }
     if sorted(req.ids) != sorted(rows):
@@ -309,7 +353,7 @@ async def upload_asset_file(
     pack_id: str, asset_id: str, file: UploadFile = File(...), db: Session = Depends(get_db)
 ):
     asset = _load_asset(pack_id, asset_id, db)
-    if asset.kind == "bg":
+    if asset.kind in ("bg", "cg"):
         limit, sniff, accepted = MAX_IMAGE_BYTES, sniff_image_mime, "PNG / JPEG / WebP / GIF 图片"
     else:
         limit, sniff, accepted = MAX_AUDIO_BYTES, sniff_audio_mime, "MP3 / M4A / AAC / OGG / WAV / FLAC 音频"
@@ -334,7 +378,7 @@ def get_asset_file(
     w: int | None = Query(None, ge=MIN_WIDTH, le=MAX_WIDTH),
     db: Session = Depends(get_db),
 ):
-    """素材文件;背景带 ?w= 时缩到这个宽度的 WebP(标题画面取色用,见 app/images.py)"""
+    """素材文件;背景、CG 带 ?w= 时缩到这个宽度的 WebP(标题画面取色、插件页缩略图,见 app/images.py)"""
     asset = db.scalar(
         select(SceneAsset)
         .options(undefer(SceneAsset.data))
@@ -342,7 +386,7 @@ def get_asset_file(
     )
     if asset is None or asset.data is None or asset.mime is None:
         raise HTTPException(404, "这条素材还没有文件")
-    small = shrink_image(asset.data, w) if w and asset.kind == "bg" else None
+    small = shrink_image(asset.data, w) if w and asset.kind in ("bg", "cg") else None
     return Response(
         content=small or asset.data,
         media_type="image/webp" if small else asset.mime,

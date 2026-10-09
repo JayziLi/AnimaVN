@@ -8,11 +8,12 @@
 
 采用三个测试缝：
 
-1. FastAPI 公共 HTTP API：角色、会话、存档、聊天、连接、Persona、酒馆数据、调试聊天。
+1. FastAPI 公共 HTTP API：连接、Persona、酒馆数据（卡 / 预设）、调试聊天（也就是存档）、立绘包、场景包、语音、音效包、Jev 标注。
 2. LLM/流处理公开接口：内置 Mock provider 的离线调用，以及 `ThinkTagSplitter`。
 3. 稳定格式边界：Galgame 台词 JSON 和 SillyTavern JSONL。
 
-测试不访问真实 LLM，不依赖网络，不读取或修改 `data/animabackend.db`。
+测试不访问真实 LLM，不依赖网络，不读取或修改 `data/animabackend.db`，也不往 `data/image-cache/`
+里写（`conftest.py` 把图片硬盘缓存换成了临时目录；2026-10-06 之前会写进真实缓存，第二次跑 `test_images` 就挂）。
 
 ## 安装
 
@@ -22,8 +23,8 @@
 python -m pip install -e ".[test]"
 ```
 
-`pyproject.toml` 的 `test` 可选依赖包含 pytest、FastAPI TestClient 所需的 httpx，
-以及可选的覆盖率工具 pytest-cov。
+`pyproject.toml` 的 `test` 可选依赖包含 pytest 和可选的覆盖率工具 pytest-cov；
+TestClient 要的 httpx 本来就是主依赖。
 
 ## 运行
 
@@ -203,8 +204,11 @@ TOTAL 1766 statements, 85 missed, 95% coverage
 2026-09-24 删掉旧 galgame 后端(角色 / 存档 / 对话接口、台词解析器和 `/api/models`)
 及其测试后:`155 passed, 1 warning`(含这期间新增的立绘、场景包、语音测试)。
 
+2026-10-06:`398 passed, 1 warning`(32 个测试文件,含音效包、Jev 标注、情绪匹配、图片缩放、
+启动缺列检查)。下面的覆盖矩阵是早期写的,只列了一部分文件。
+
 唯一 warning 来自当前 FastAPI/Starlette TestClient：它提示未来应从 `httpx` 迁移到
-`httpx2`。这是依赖层弃用提示，不影响当前 134 项结果；升级 FastAPI/Starlette 时再统一处理，
+`httpx2`。这是依赖层弃用提示，不影响测试结果；升级 FastAPI/Starlette 时再统一处理，
 不要为消除 warning 擅自改测试客户端协议。
 
 覆盖率不是门禁。OpenAI/Anthropic provider 使用 SDK 后面的 HTTP fake transport 覆盖请求映射、

@@ -50,6 +50,8 @@ class BgmPlayer {
   private ducked = false;
   private current: Track | null = null;
   private buffers = new Map<string, Promise<AudioBuffer>>();
+  /** 最近一次下载 / 解码失败的曲子(play 换曲子时清掉) */
+  private failedUrl: string | null = null;
   private active = false;
   /** 插件页试听之前在放什么:停止试听时还原(在视觉小说菜单里试听完,场景的曲子接着放) */
   private beforePreview: { wanted: string | null; active: boolean } | null = null;
@@ -160,6 +162,7 @@ class BgmPlayer {
   /** 换成这首(null = 淡出到静音)。和正在放的是同一首时什么也不做 */
   play(url: string | null) {
     if (url === this.snap.wanted) return;
+    this.failedUrl = null;
     this.set({ wanted: url, error: null });
     void this.sync();
   }
@@ -241,7 +244,10 @@ class BgmPlayer {
         return r.arrayBuffer();
       })
       .then((buf) => ctx.decodeAudioData(buf));
-    p.catch(() => this.buffers.delete(url));
+    // 只删自己:这条可能早被挤出缓存、换成了同一地址的新请求,别把新的删了
+    p.catch(() => {
+      if (this.buffers.get(url) === p) this.buffers.delete(url);
+    });
     this.buffers.set(url, p);
     while (this.buffers.size > MAX_BUFFERS) {
       const oldest = this.buffers.keys().next().value as string;
@@ -256,6 +262,8 @@ class BgmPlayer {
     const master = this.master;
     if (!ctx || !master) return; // 还没解锁;unlock() 会再调一次
     if ((this.current?.url ?? null) === url) return;
+    // 这首刚失败过(404、解码不了):别每次点击解锁时都再下一遍、再报一遍错。换曲子(play)时清掉
+    if (url !== null && url === this.failedUrl) return;
     if (url === null) {
       this.fadeOut();
       this.set({ playing: null });
@@ -267,6 +275,7 @@ class BgmPlayer {
       buffer = await this.load(url);
     } catch (e) {
       if (this.snap.wanted === url) {
+        this.failedUrl = url;
         this.set({ error: e instanceof Error ? e.message : '这首曲子解码失败(格式不支持?)' });
       }
       return;
@@ -294,8 +303,10 @@ class BgmPlayer {
     if (!t || !ctx) return;
     this.current = null;
     const now = ctx.currentTime;
+    // 先读当前音量再取消排程:有的浏览器取消掉正在进行的淡入后 value 读出来是 0,音量会一下跳没
+    const level = t.gain.gain.value;
     t.gain.gain.cancelScheduledValues(now);
-    t.gain.gain.setValueAtTime(t.gain.gain.value, now);
+    t.gain.gain.setValueAtTime(level, now);
     t.gain.gain.linearRampToValueAtTime(0, now + FADE);
     t.source.onended = () => t.gain.disconnect();
     t.source.stop(now + FADE + 0.05);

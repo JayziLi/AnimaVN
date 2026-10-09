@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>定稿流程 · 封面 → 选角色 / 读档 / 存档</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&family=Cormorant+Garamond:ital,wght@1,500&display=swap">
+<style>
+/* 把定稿的几个界面串成一条能点的流程:封面(纸面 / v1)→ 选角色(夜空纸面板 / 场景毛玻璃,带资料、开场白、配置、导入)、
+   读档、游戏(主画面还没设计,先放占位)→ 存档。界面之间按定稿:0.22 秒交叉淡入淡出,进来的界面里组件一起淡入上浮 10px。
+   选角色、读档、存档直接渲染画布上的画板(project/*.dc.html),封面是 transition/v2.html 那份。 */
+:root { --ink: #2a2a33; --dim: rgba(42, 42, 51, 0.56); --paper: #fbfaf8; --serif: 'Noto Serif SC', serif; --latin: 'Cormorant Garamond', serif; --acc: #8d93b8; }
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: #0c0d14; font: 14px/1.6 'Noto Sans SC', 'Microsoft YaHei', sans-serif; color: var(--ink); overflow: hidden; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+#wrap { position: absolute; left: 50%; top: calc(50% - 26px); width: 1440px; height: 810px; transform-origin: 0 0; }
+.stage { position: absolute; inset: 0; overflow: hidden; background: #0c0d14; }
+.layer { position: absolute; inset: 0; overflow: hidden; opacity: 0; visibility: hidden; transition: opacity 0.22s ease, visibility 0s linear 0.22s; }
+.layer.on { opacity: 1; visibility: visible; transition: opacity 0.22s ease; }
+.layer.enter .ui { animation: rise 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) 0.08s both; }
+@keyframes rise { from { opacity: 0; translate: 0 10px; } }
+.abs { position: absolute; }
+.fill { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+/* ---------- 封面 ---------- */
+#cover .bg { object-fit: cover; transform: scale(1.04); }
+#cover .paper { background: var(--paper); clip-path: polygon(0 0, 62% 0, 36% 100%, 0 100%); }
+#cover .paper img { opacity: 0.14; }
+#cover .paperwrap { filter: drop-shadow(6px 0 14px rgba(30, 30, 50, 0.22)); }
+#cover .veil { background: linear-gradient(100deg, rgba(251, 250, 248, 0.94) 0%, rgba(251, 250, 248, 0.86) 24%, rgba(251, 250, 248, 0.42) 40%, rgba(251, 250, 248, 0) 54%); }
+[data-cover="paper"] #cover .veil, [data-cover="v1"] #cover .paperwrap { display: none; }
+#cover .spr { filter: drop-shadow(0 8px 21px rgba(30, 30, 60, 0.35)); }
+#cover .frame-av { position: absolute; left: 830px; top: 96px; width: 330px; height: 495px; border: 3px solid #fbfaf8; border-radius: 165px 165px 10px 10px; overflow: hidden; box-shadow: 0 18px 44px rgba(30, 30, 50, 0.35); }
+#cover .frame-av img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 18%; }
+.frame { position: absolute; inset: 19px; border: 1px solid rgba(255, 255, 255, 0.85); outline: 1px solid rgba(42, 42, 51, 0.14); outline-offset: 4px; pointer-events: none; }
+.frame svg { position: absolute; width: 16px; height: 16px; fill: #fff; }
+.lockup { position: absolute; left: 101px; top: 72px; display: flex; align-items: center; filter: invert(1) hue-rotate(180deg) brightness(0.9); }
+.lockup .mark { width: 150px; height: 150px; }
+.lockup .word { width: 446px; margin-left: -20px; }
+.menu { position: absolute; left: 124px; top: 268px; display: flex; flex-direction: column; gap: 2px; }
+.menu button { position: relative; display: flex; align-items: baseline; gap: 14px; padding: 8px 24px 8px 34px; text-align: left; }
+.menu button::before { content: ''; position: absolute; left: 12px; top: 50%; width: 4px; height: 4px; margin-top: -2px; border-radius: 50%; background: rgba(42, 42, 51, 0.28); transition: opacity 0.2s; }
+.menu button svg { position: absolute; left: 6px; top: 50%; width: 16px; height: 16px; margin-top: -8px; fill: var(--acc); opacity: 0; transform: scale(0.2) rotate(-90deg); transition: opacity 0.2s, transform 0.4s; }
+.menu button .in { display: flex; align-items: baseline; gap: 14px; transition: transform 0.3s; }
+.menu button:hover .in { transform: translateX(10px); }
+.menu button:hover svg { opacity: 1; transform: none; }
+.menu button:hover::before { opacity: 0; }
+.menu .zh { font: 700 26px/1.1 var(--serif); letter-spacing: 0.26em; }
+.menu .en { font: italic 500 15px/1 var(--latin); letter-spacing: 0.14em; color: var(--dim); }
+.menu .sub { font-size: 12px; letter-spacing: 0.08em; color: var(--dim); }
+.menu hr { width: 178px; margin: 8px 0 8px 34px; border: 0; border-top: 1px dotted rgba(42, 42, 51, 0.28); }
+.last { position: absolute; left: 900px; top: 612px; width: 454px; height: 132px; padding: 26px 24px 18px; border-radius: 6px; background: rgba(251, 250, 248, 0.86); border: 1px solid rgba(255, 255, 255, 0.9); box-shadow: 0 8px 24px rgba(60, 50, 70, 0.18); text-align: left; cursor: pointer; }
+.last .nm { position: absolute; left: 19px; top: -16px; height: 32px; padding: 0 18px; display: flex; align-items: center; border-radius: 4px; background: var(--acc); color: #fff; font: 700 16px/1 var(--serif); letter-spacing: 0.22em; box-shadow: 0 3px 8px rgba(10, 10, 30, 0.2); }
+.last .ln { font: 500 18px/1.7 var(--serif); letter-spacing: 0.06em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.last .mt { display: flex; justify-content: space-between; margin-top: 8px; font-size: 11px; letter-spacing: 0.12em; color: var(--dim); }
+.foot { position: absolute; right: 86px; bottom: 29px; font: 11px/1 var(--latin); letter-spacing: 0.3em; color: rgba(255, 255, 255, 0.85); }
+
+/* ---------- 游戏(主画面还没设计:占位) ---------- */
+#game .bg { object-fit: cover; }
+#game .spr { filter: drop-shadow(0 10px 24px rgba(5, 5, 20, 0.35)); }
+#game .tag { position: absolute; left: 50%; top: 26px; transform: translateX(-50%); padding: 6px 18px; border-radius: 999px; background: rgba(12, 14, 30, 0.6); color: #f6f6f8; font-size: 13px; letter-spacing: 0.16em; }
+#game .box { position: absolute; left: 200px; right: 200px; bottom: 70px; height: 170px; padding: 34px 40px 20px; border-radius: 8px; background: rgba(251, 250, 248, 0.88); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.9); box-shadow: 0 10px 30px rgba(20, 20, 40, 0.25); }
+#game .box .nm { position: absolute; left: 30px; top: -18px; height: 36px; padding: 0 20px; display: flex; align-items: center; border-radius: 4px; background: var(--acc); color: #fff; font: 700 17px/1 var(--serif); letter-spacing: 0.24em; }
+#game .box .ln { font: 500 20px/1.8 var(--serif); letter-spacing: 0.05em; }
+#game .quick { position: absolute; right: 214px; bottom: 82px; display: flex; gap: 6px; }
+#game .quick button { padding: 4px 12px; border-radius: 999px; background: rgba(42, 42, 51, 0.06); font-size: 12px; letter-spacing: 0.14em; color: var(--dim); }
+#game .quick button:hover { background: rgba(42, 42, 51, 0.12); color: var(--ink); }
+
+.toast { position: absolute; left: 50%; top: 40px; z-index: 9; transform: translateX(-50%); padding: 8px 20px; border-radius: 999px; background: #fbfaf8; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35); font-size: 13px; letter-spacing: 0.14em; opacity: 0; transition: opacity 0.25s; pointer-events: none; }
+.toast.show { opacity: 1; }
+
+/* ---------- 控制条 ---------- */
+.ctrl { position: fixed; left: 0; right: 0; bottom: 0; height: 52px; display: flex; align-items: center; justify-content: center; gap: 18px; background: #14151d; color: #c9c9d4; font-size: 13px; border-top: 1px solid #23242f; }
+.ctrl .grp { display: flex; align-items: center; gap: 4px; }
+.ctrl .grp > span { margin-right: 6px; color: #8a8a98; }
+.ctrl button { padding: 6px 11px; border-radius: 6px; background: #20222d; color: #c9c9d4; }
+.ctrl button.on { background: #e9e9f0; color: #14151d; }
+.ctrl .where { min-width: 150px; color: #e9e9f0; letter-spacing: 0.1em; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position: absolute"><symbol id="star" viewBox="-10 -10 20 20"><path d="M0-10C1.1-2.6 2.6-1.1 10 0 2.6 1.1 1.1 2.6 0 10-1.1 2.6-2.6 1.1-10 0-2.6-1.1-1.1-2.6 0-10Z"/></symbol></svg>
+<div id="wrap">
+<div class="stage" id="stage" data-cover="paper">
+  <div class="layer on" id="cover">
+    <img class="fill bg" id="cBg" alt="">
+    <div class="fill veil"></div>
+    <div class="fill paperwrap"><div class="fill paper"><img class="fill" src="../canvas/assets/map-left.svg" alt=""></div></div>
+    <img class="abs spr ui" id="cSpr" alt="">
+    <div class="frame-av ui" id="cAv" style="display: none"><img alt=""></div>
+    <div class="frame ui"><svg style="left: -8px; top: -8px"><use href="#star"/></svg><svg style="right: -8px; top: -8px"><use href="#star"/></svg><svg style="left: -8px; bottom: -8px"><use href="#star"/></svg><svg style="right: -8px; bottom: -8px"><use href="#star"/></svg></div>
+    <div class="lockup ui"><img class="mark" src="../canvas/assets/logo.png" alt=""><img class="word" src="../canvas/assets/wordmark.png" alt="AnimaVN"></div>
+    <nav class="menu ui" id="menu">
+      <button data-go="game"><svg><use href="#star"/></svg><span class="in"><span class="zh">继续</span><span class="en">Continue</span></span></button>
+      <button data-go="game"><svg><use href="#star"/></svg><span class="in"><span class="zh">新的故事</span><span class="en">New Story</span></span></button>
+      <button data-go="load"><svg><use href="#star"/></svg><span class="in"><span class="zh">读档</span><span class="en">Load</span></span></button>
+      <button data-go="select"><svg><use href="#star"/></svg><span class="in"><span class="zh">角色</span><span class="en">Heroine</span><span class="sub" id="menuName"></span></span></button>
+      <button data-toast="设置还没重新设计(在下一批里)"><svg><use href="#star"/></svg><span class="in"><span class="zh">设置</span><span class="en">Config</span></span></button>
+      <hr>
+      <button data-toast="调试台保持黑白灰,不在这次的流程里"><svg><use href="#star"/></svg><span class="in"><span class="zh" style="font-size: 19px; font-weight: 500">调试台</span><span class="en">Console</span></span></button>
+    </nav>
+    <button class="last ui" data-go="game"><span class="nm" id="lastName"></span><div class="ln" id="lastLine"></div><div class="mt"><span id="lastMeta"></span><b style="font-weight: 500; color: var(--ink)">接着看 ▼</b></div></button>
+    <div class="foot ui">AnimaVN · Beta</div>
+  </div>
+  <div class="layer" id="select"><div id="selNight"></div><div id="selScene" style="display: none"></div></div>
+  <div class="layer" id="load"><div id="loadHost"></div></div>
+  <div class="layer" id="save"><div id="saveHost"></div></div>
+  <div class="layer" id="game"><div id="gameHost"></div></div>
+  <div class="toast" id="toast"></div>
+</div>
+</div>
+
+<div class="ctrl">
+  <span class="where" id="where">封面</span>
+  <div class="grp"><span>封面</span><button data-k="cover" data-v="paper" class="on">纸面</button><button data-k="cover" data-v="v1">v1</button></div>
+  <div class="grp"><span>选角色</span><button data-k="sel" data-v="night" class="on">纸面板(夜空)</button><button data-k="sel" data-v="scene">场景 + 毛玻璃</button></div>
+  <div class="grp"><span>主画面</span><button data-k="game" data-v="paper" class="on">A 纸面</button><button data-k="game" data-v="ba">B 渐变</button><button data-k="game" data-v="cinema">C 宽银幕</button><button data-k="game" data-v="flow">D 对话流</button><button data-k="game" data-v="float">E 悬浮</button></div>
+  <button id="home">回到封面</button>
+</div>
+
+<script src="../transition/data.js"></script>
+<script type="module">
+import { Board, loadBlobs } from './dc.js';
+const $ = (s) => document.querySelector(s);
+const stage = $('#stage');
+const NAMES = { cover: '封面', select: '选角色', load: '读档', save: '存档', game: '游戏' };
+// 选角色画板里前 12 个和 data.js 的 CAST 同序;后面 4 张是酒馆卡(封面上用拱形相框装卡面图)
+const TAVERN = [
+  { name: 'Furina', acc: '#5b7fc4', avatar: '../canvas/pick/tav-furina.jpg', line: 'My dear people, rich and poor……' },
+  { name: 'Houshou Marine', acc: '#b8434f', avatar: '../canvas/pick/tav-marine.jpg', line: 'The warm sun shines brightly overhead……' },
+  { name: 'Aria & Amelia', acc: '#7a8296', avatar: '../canvas/pick/tav-aria.jpg', line: '' },
+  { name: '洛书晴', acc: '#8a8f9c', avatar: null, line: '洛水潋滟抒道心' },
+];
+let cur = 0, screen = 'cover', selKind = 'night';
+const history = [];
+
+function fit() {
+  const s = Math.min(innerWidth / 1440, (innerHeight - 52) / 810);
+  $('#wrap').style.transform = `scale(${s}) translate(-50%, -50%)`;
+}
+fit();
+addEventListener('resize', fit);
+
+function place(c, fh, cx, top, floor) {
+  const h = fh / c.box.h, w = h * c.size[0] / c.size[1];
+  let y = top - c.box.y * h;
+  if (floor) y = Math.max(y, floor - h);
+  return { left: cx - (c.box.x + c.box.w / 2) * w + 'px', top: y + 'px', height: h + 'px' };
+}
+const charOf = (i) => (i < CAST.length ? CAST[i] : null);
+
+function fillCover() {
+  const c = charOf(cur), t = c ? null : TAVERN[cur - CAST.length];
+  const acc = c ? c.acc : t.acc;
+  document.documentElement.style.setProperty('--acc', acc);
+  $('#cBg').src = (c && c.bg) || '../canvas/assets/sky-pick.svg';
+  $('#cSpr').style.display = c ? '' : 'none';
+  $('#cAv').style.display = c || !t.avatar ? 'none' : '';
+  if (c) { $('#cSpr').src = c.sprite; Object.assign($('#cSpr').style, place(c, 190, 994, 118)); }
+  else if (t.avatar) $('#cAv img').src = t.avatar;
+  const name = c ? c.name : t.name;
+  $('#menuName').textContent = name;
+  $('#lastName').textContent = name;
+  $('#lastLine').textContent = (c ? c.line : t.line) ? `「${c ? c.line : t.line}」` : '还没开始';
+  $('#lastMeta').textContent = c ? `${c.work} · ${c.bgLabel || '默认背景'} · ${c.last || '还没开始'}` : '酒馆卡 · 还没开始';
+}
+// 主画面方案的画板是星绘那段对话写死的:不管选了谁、读了哪个档,进来都是这段(原型)
+let gameKey = 'paper';
+const gameBoards = {};
+async function fillGame() {
+  if (!gameBoards[gameKey]) {
+    gameBoards[gameKey] = await new Board($('#gameHost'), `../canvas/project/Game-${gameKey}-read.dc.html`).load();
+    gameBoards[gameKey].onRender = () => markUi($('#gameHost'));
+  }
+  const b = gameBoards[gameKey];
+  b.host = $('#gameHost');
+  b.set({ phase: 'read', li: 0 });
+  b.render();
+}
+
+// 有 .ui 的东西进场时一起淡入上浮;画板里的东西没有 class,按「不铺满整屏」认
+function markUi(host) {
+  const root = host.firstElementChild;
+  if (!root) return;
+  [...root.children].forEach((el) => { if (el.offsetWidth < 1400 || el.offsetHeight < 780) el.classList.add('ui'); });
+}
+function show(name, push = true) {
+  if (name === screen) return;
+  if (push) history.push(screen);
+  if (name === 'cover') fillCover();
+  if (name === 'game') fillGame();
+  if (name === 'select') { const b = selKind === 'night' ? boards.night : boards.scene; b.set({ cur, hot: null, sheet: null, imp: null }); b.render(); }
+  if (name === 'load' || name === 'save') {
+    // 读档 / 存档默认看当前角色的存档(有立绘就一侧放立绘);她没有存档就看全部
+    const c = charOf(cur);
+    const b = boards[name];
+    if (name === 'load') b.set({ charName: c ? c.name : null, scope: c ? 'mine' : 'all', hot: null });
+    b.render();
+  }
+  const el = $('#' + name);
+  document.querySelectorAll('.layer').forEach((l) => l.classList.toggle('on', l === el));
+  el.classList.remove('enter');
+  void el.offsetWidth;
+  el.classList.add('enter');
+  setTimeout(() => el.classList.remove('enter'), 650);
+  screen = name;
+  $('#where').textContent = NAMES[name];
+}
+const go = (name) => show(name);
+const back = () => show(history.pop() || 'cover', false);
+function toast(t) {
+  const el = $('#toast');
+  el.textContent = t;
+  el.classList.add('show');
+  clearTimeout(toast.t);
+  toast.t = setTimeout(() => el.classList.remove('show'), 1600);
+}
+
+// 封面、游戏占位里的按钮
+document.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click', () => go(b.dataset.go)));
+document.querySelectorAll('[data-toast]').forEach((b) => b.addEventListener('click', () => toast(b.dataset.toast)));
+
+// 画板里的按钮:按文字认(画板本身不知道外面有流程)
+const nameOfText = (txt) => [...CAST.map((c) => c.name), ...TAVERN.map((t) => t.name)].findIndex((n) => txt.includes(n));
+$('#select').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  const board = selKind === 'night' ? boards.night : boards.scene;
+  if (board.state.cur != null) cur = board.state.cur;
+  if (!b) return;
+  if (b.textContent.includes('Esc')) back();
+  else if (b.classList.contains('pb') && /继续|开始/.test(b.textContent)) go('game');
+});
+for (const name of ['load', 'save']) {
+  $('#' + name).addEventListener('click', (e) => {
+    if (e.target.closest('button.bk')) { back(); return; }
+    const card = e.target.closest('.sc');
+    if (!card) return;
+    if (card.textContent.includes('在这里存档')) { toast('已存档(原型)'); return; }
+    if (e.target.closest('.ops')) { toast('重命名 / 删除(原型)'); return; }
+    const i = nameOfText(card.textContent);
+    if (i >= 0 && i < CAST.length) cur = i;
+    const title = card.querySelector('b');
+    go.saveTitle = (title ? title.textContent : '') + ' · ' + ((card.querySelector('span') || {}).textContent || '');
+    go.saveBg = (card.querySelector('img') || {}).src;
+    go('game');
+  });
+}
+// 主画面里的快捷按钮:按文字认
+$('#game').addEventListener('click', (e) => {
+  const t = (e.target.textContent || '').trim();
+  if (e.target.children.length > 1) return;
+  if (/^存档$/.test(t)) { e.stopPropagation(); go('save'); }
+  else if (/^(历史|设置|菜单|隐藏|重来|自动|跳过)$/.test(t)) { e.stopPropagation(); toast(t + '(原型里没接)'); }
+}, true);
+document.querySelectorAll('.ctrl [data-k]').forEach((b) => b.addEventListener('click', () => {
+  const k = b.dataset.k, v = b.dataset.v;
+  if (k === 'game') { gameKey = v; if (screen === 'game') fillGame(); }
+  if (k === 'cover') { stage.dataset.cover = v; fillCover(); }
+  if (k === 'sel') {
+    selKind = v;
+    $('#selNight').style.display = v === 'night' ? '' : 'none';
+    $('#selScene').style.display = v === 'scene' ? '' : 'none';
+    if (screen === 'select') { const bd = v === 'night' ? boards.night : boards.scene; bd.set({ cur }); bd.render(); }
+  }
+  document.querySelectorAll(`.ctrl [data-k="${k}"]`).forEach((x) => x.classList.toggle('on', x === b));
+}));
+$('#home').addEventListener('click', () => { history.length = 0; show('cover', false); });
+addEventListener('keydown', (e) => { if (e.key === 'Escape' && screen !== 'cover') back(); });
+
+await loadBlobs();
+const boards = {
+  night: await new Board($('#selNight'), '../canvas/project/Pick-E3.dc.html').load(),
+  scene: await new Board($('#selScene'), '../canvas/project/Pick-E4.dc.html').load(),
+  load: await new Board($('#loadHost'), '../canvas/project/Load-Char-L.dc.html').load(),
+  save: await new Board($('#saveHost'), '../canvas/project/Save-Simple.dc.html').load(),
+};
+Object.entries(boards).forEach(([k, b]) => { b.onRender = () => markUi(b.host); b.render(); });
+fillCover();
+await fillGame();
+window.flow = { go, back, boards, get cur() { return cur; } };
+</script>
+</body>
+</html>

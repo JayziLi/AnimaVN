@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>封面 ↔ 选角色 · 转场</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&family=Cormorant+Garamond:ital,wght@1,500&display=swap">
+<style>
+/* 第二版:封面和选角色是两个完整的画面,不把界面零件搬来搬去(第一版 index.html 那样用户嫌硬),
+   靠转场切换:淡出淡入 / 星光展开 / 月轮展开 / 纸幕扫过 / 镜头后拉。
+   全是 CSS(transition + keyframes),状态在 stage 的 data-mode / data-tr 上,改 React 时照搬。 */
+:root { --ink: #2a2a33; --dim: rgba(42, 42, 51, 0.56); --paper: #fbfaf8; --serif: 'Noto Serif SC', serif; --latin: 'Cormorant Garamond', serif; }
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: #0c0d14; font: 14px/1.6 'Noto Sans SC', 'Microsoft YaHei', sans-serif; color: var(--ink); overflow: hidden; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+svg.star, .star { fill: currentColor; }
+#wrap { position: absolute; left: 50%; top: calc(50% - 26px); width: 1440px; height: 810px; transform-origin: 0 0; }
+.stage { position: absolute; inset: 0; overflow: hidden; background: #0c0d14; --slow: 1; --acc: #8d93b8; }
+.layer { position: absolute; inset: 0; overflow: hidden; }
+#select { z-index: 2; }
+[data-mode="cover"] #select, [data-mode="select"] #cover { pointer-events: none; }
+.abs { position: absolute; }
+.fill { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+/* ============ 封面(纸面 / v1) ============ */
+#cover .bg { object-fit: cover; transform: scale(1.04); }
+#cover .paper { background: var(--paper); clip-path: polygon(0 0, 62% 0, 36% 100%, 0 100%); }
+#cover .paper img { opacity: 0.14; }
+#cover .paperwrap { filter: drop-shadow(6px 0 14px rgba(30, 30, 50, 0.22)); }
+#cover .veil { background: linear-gradient(100deg, rgba(251, 250, 248, 0.94) 0%, rgba(251, 250, 248, 0.86) 24%, rgba(251, 250, 248, 0.42) 40%, rgba(251, 250, 248, 0) 54%); }
+[data-cover="paper"] #cover .veil, [data-cover="v1"] #cover .paperwrap { display: none; }
+/* 封面不放换人的头像圈(Heroine 那一排):选角色是单独的界面 */
+#cover .castrow { display: none; }
+#cover .spr { filter: drop-shadow(0 8px 21px rgba(30, 30, 60, 0.35)); }
+.frame { position: absolute; inset: 19px; border: 1px solid rgba(255, 255, 255, 0.85); outline: 1px solid rgba(42, 42, 51, 0.14); outline-offset: 4px; pointer-events: none; }
+.frame svg { position: absolute; width: 16px; height: 16px; color: #fff; }
+.lockup { position: absolute; left: 101px; top: 72px; display: flex; align-items: center; filter: invert(1) hue-rotate(180deg) brightness(0.9); }
+.lockup .mark { width: 150px; height: 150px; }
+.lockup .word { width: 446px; margin-left: -20px; }
+.menu { position: absolute; left: 124px; top: 268px; display: flex; flex-direction: column; gap: 2px; }
+.menu button { position: relative; display: flex; align-items: baseline; gap: 14px; padding: 8px 24px 8px 34px; text-align: left; transition: transform 0.3s; }
+.menu button:hover { transform: translateX(10px); }
+.menu .zh { font: 700 26px/1.1 var(--serif); letter-spacing: 0.26em; }
+.menu .en { font: italic 500 15px/1 var(--latin); letter-spacing: 0.14em; color: var(--dim); }
+.menu .sub { font-size: 12px; letter-spacing: 0.08em; color: var(--dim); }
+.menu .hot .zh { color: var(--acc); }
+.menu .hot svg { position: absolute; left: 8px; top: 50%; width: 16px; height: 16px; margin-top: -8px; color: var(--acc); }
+.menu hr { width: 178px; margin: 8px 0 8px 34px; border: 0; border-top: 1px dotted rgba(42, 42, 51, 0.28); }
+.castrow { position: absolute; left: 124px; bottom: 60px; display: flex; align-items: center; gap: 10px; }
+.castrow span { font: italic 500 14px/1 var(--latin); letter-spacing: 0.16em; color: var(--dim); margin-right: 6px; }
+.castrow img { width: 48px; height: 48px; border-radius: 50%; border: 1.5px solid #fff; box-shadow: 0 2px 8px rgba(60, 50, 70, 0.22); object-fit: cover; opacity: 0.75; }
+.castrow img.cur { opacity: 1; box-shadow: 0 0 0 2.5px var(--paper), 0 0 0 4.5px var(--acc); }
+.last { position: absolute; left: 900px; top: 612px; width: 454px; height: 132px; padding: 26px 24px 18px; border-radius: 6px; background: rgba(251, 250, 248, 0.86); border: 1px solid rgba(255, 255, 255, 0.9); box-shadow: 0 8px 24px rgba(60, 50, 70, 0.18); }
+.last .nm { position: absolute; left: 19px; top: -16px; height: 32px; padding: 0 18px; display: flex; align-items: center; border-radius: 4px; background: var(--acc); color: #fff; font: 700 16px/1 var(--serif); letter-spacing: 0.22em; box-shadow: 0 3px 8px rgba(10, 10, 30, 0.2); }
+.last .ln { font: 500 18px/1.7 var(--serif); letter-spacing: 0.06em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.last .mt { display: flex; justify-content: space-between; margin-top: 8px; font-size: 11px; letter-spacing: 0.12em; color: var(--dim); }
+
+/* ============ 选角色(纸面板夜空 / 场景毛玻璃) ============ */
+#select .night { background: #161a33; }
+#select .glow { background: radial-gradient(560px 486px at 26% 40%, color-mix(in srgb, var(--acc) 34%, transparent), transparent 70%); }
+#select .zoom { clip-path: polygon(0 0, 880px 0, 880px 810px, 0 810px); }
+#select .zoom img { opacity: 0.15; filter: saturate(0.6) brightness(1.2); }
+#select .scene { object-fit: cover; }
+#select .veil2 { background: linear-gradient(180deg, rgba(12, 14, 30, 0.4) 0%, rgba(12, 14, 30, 0) 22%); }
+[data-target="night"] #select .scene, [data-target="night"] #select .veil2, [data-target="scene"] #select .nightset { display: none; }
+#select .spr { filter: drop-shadow(0 10px 24px rgba(5, 5, 20, 0.45)); }
+#select .shade { clip-path: polygon(0 0, 880px 0, 880px 810px, 0 810px); background: linear-gradient(to top, rgba(12, 14, 30, 0.9) 0%, rgba(12, 14, 30, 0.55) 30%, rgba(12, 14, 30, 0) 50%); }
+.panel { position: absolute; left: 884px; top: 18px; width: 538px; height: 774px; overflow: hidden; border-radius: 8px 8px 46px 8px; border: 1px solid rgba(255, 255, 255, 0.7); background: var(--paper); box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45); }
+[data-target="scene"] .panel { background: rgba(251, 250, 248, 0.84); backdrop-filter: blur(18px); border-color: rgba(255, 255, 255, 0.85); box-shadow: 0 20px 50px rgba(20, 20, 40, 0.3); }
+.panel .map { position: absolute; left: -884px; top: -18px; width: 1440px; height: 810px; opacity: 0.12; }
+.head { position: absolute; left: 58px; top: 36px; display: flex; align-items: center; gap: 20px; color: #f6f6f8; text-shadow: 0 1px 8px rgba(10, 10, 30, 0.45); }
+.head button { padding: 6px 14px; border: 1px solid rgba(246, 246, 248, 0.4); border-radius: 999px; font-size: 13px; letter-spacing: 0.16em; }
+.head h2 { margin: 0; font: 700 27px/1 var(--serif); letter-spacing: 0.4em; }
+.head i { font: italic 500 15px/1 var(--latin); letter-spacing: 0.2em; opacity: 0.75; }
+.detail { position: absolute; left: 58px; bottom: 44px; width: 480px; color: #f6f6f8; }
+.detail .lb { display: flex; align-items: center; gap: 10px; font: 700 14px/1 var(--serif); letter-spacing: 0.22em; opacity: 0.85; }
+.detail .lb svg { width: 12px; height: 12px; color: var(--acc); }
+.detail .nm { margin-top: 10px; font: 700 46px/1.12 var(--serif); letter-spacing: 0.12em; text-shadow: 0 2px 12px rgba(0, 0, 0, 0.5); }
+.detail .ln { margin: 10px 0 0; font: 500 15px/1.7 var(--serif); letter-spacing: 0.04em; opacity: 0.9; }
+.detail .mt { margin-top: 8px; font-size: 12px; letter-spacing: 0.1em; opacity: 0.72; }
+.detail .chips { display: flex; gap: 6px; margin-top: 10px; }
+.detail .chips span { padding: 3px 11px; border-radius: 999px; background: rgba(255, 255, 255, 0.08); font-size: 11px; letter-spacing: 0.08em; white-space: nowrap; }
+.detail .chips b { font-weight: 400; opacity: 0.6; margin-right: 6px; }
+.detail .btns { display: flex; gap: 10px; margin-top: 14px; }
+.detail .btns button { height: 44px; padding: 0 18px; border: 1px solid rgba(246, 246, 248, 0.4); border-radius: 4px; color: #f6f6f8; font: 700 15px/1 var(--serif); letter-spacing: 0.2em; }
+.detail .btns .go { display: flex; align-items: center; gap: 10px; border: 0; background: var(--paper); color: var(--ink); box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3); }
+.detail .btns .go svg { width: 12px; height: 12px; color: var(--acc); }
+.tool { position: absolute; left: 914px; top: 32px; width: 494px; display: flex; align-items: center; gap: 12px; }
+.tool .search { flex-grow: 1; height: 36px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border: 1px solid rgba(42, 42, 51, 0.2); border-radius: 999px; background: rgba(255, 255, 255, 0.7); font-size: 13px; color: rgba(42, 42, 51, 0.45); }
+.tool .seg { display: flex; padding: 3px; border-radius: 999px; background: rgba(42, 42, 51, 0.07); font-size: 12px; letter-spacing: 0.14em; }
+.tool .seg span { padding: 5px 13px; border-radius: 999px; color: var(--dim); }
+.tool .seg span:first-child { background: #fff; color: var(--ink); box-shadow: 0 1px 4px rgba(30, 30, 50, 0.16); }
+.tool .imp { height: 36px; padding: 0 16px; border-radius: 999px; background: var(--ink); color: #fff; font-size: 13px; letter-spacing: 0.14em; }
+.grid { position: absolute; left: 914px; top: 92px; width: 508px; height: 694px; overflow: hidden; display: grid; grid-template-columns: repeat(4, 112px); gap: 18px 14px; align-content: start; padding: 8px 4px; mask-image: linear-gradient(#000 0, #000 calc(100% - 50px), transparent 100%); }
+.card { position: relative; width: 112px; cursor: pointer; }
+.card .im { position: relative; width: 112px; height: 176px; border: 2px solid #fff; border-radius: 56px 56px 6px 6px; overflow: hidden; background: #161a33; box-shadow: 0 3px 10px rgba(30, 30, 50, 0.22); transition: transform 0.25s, box-shadow 0.3s; }
+.card:hover .im { transform: translateY(-5px); }
+.card .im img { position: absolute; }
+.card .im img.bgi { inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.card .nm { display: flex; justify-content: center; margin-top: 8px; font: 700 14px/1.2 var(--serif); letter-spacing: 0.06em; color: rgba(42, 42, 51, 0.62); white-space: nowrap; }
+.card svg { position: absolute; right: -5px; top: -5px; width: 9px; height: 9px; color: rgba(42, 42, 51, 0.26); transition: all 0.3s; }
+.card.cur .im { box-shadow: 0 0 0 2.5px var(--paper), 0 0 0 4.5px var(--acc), 0 10px 20px rgba(30, 30, 50, 0.28); }
+.card.cur .nm { color: var(--ink); }
+.card.cur svg { width: 15px; height: 15px; color: var(--acc); }
+
+/* 换人:立绘、背景、文字交叉淡入淡出 */
+.xf { transition: opacity calc(0.45s * var(--slow)) ease; }
+.xf.gone { opacity: 0; }
+
+/* ============ 进出场的小动作:两个画面里的东西依次浮现 ============ */
+.st { transition: opacity calc(0.45s * var(--slow)) ease, transform calc(0.6s * var(--slow)) cubic-bezier(0.2, 0.7, 0.2, 1); }
+[data-mode="cover"] #select .st { opacity: 0; transform: translateY(12px); }
+[data-mode="select"] #select .st { transition-delay: calc((var(--base) + var(--i, 0) * 0.03s) * var(--slow)); }
+[data-mode="select"] #cover .ct { opacity: 0; }
+.ct { transition: opacity calc(0.4s * var(--slow)) ease, transform calc(0.6s * var(--slow)) cubic-bezier(0.2, 0.7, 0.2, 1); }
+[data-mode="select"] #cover .ct { transform: translateX(-10px); }
+[data-mode="cover"] #cover .ct { transition-delay: calc((var(--cbase) + var(--i, 0) * 0.05s) * var(--slow)); }
+.stage { --base: 0.35s; --cbase: 0.3s; }
+
+/* ---- A 淡出淡入 ---- */
+[data-tr="fade"] #cover { transition: opacity calc(0.45s * var(--slow)) ease; }
+[data-tr="fade"] #select { transition: opacity calc(0.55s * var(--slow)) ease; }
+[data-tr="fade"][data-mode="select"] #cover { opacity: 0; }
+[data-tr="fade"][data-mode="select"] #select { transition-delay: calc(0.22s * var(--slow)); }
+[data-tr="fade"][data-mode="cover"] #select { opacity: 0; }
+[data-tr="fade"][data-mode="cover"] #cover { transition-delay: calc(0.2s * var(--slow)); }
+
+/* ---- B 星光展开:四角星从「角色」那一项长出来,星里是选角色 ---- */
+[data-tr="star"] #select { transition: clip-path calc(1s * var(--slow)) cubic-bezier(0.7, 0, 0.25, 1); }
+[data-tr="star"] #cover { transition: transform calc(1s * var(--slow)) cubic-bezier(0.6, 0, 0.3, 1), filter calc(1s * var(--slow)) ease; }
+[data-tr="star"][data-mode="select"] #cover { transform: scale(1.05); filter: brightness(0.6) blur(2px); }
+.stage[data-tr="star"] { --base: 0.55s; }
+.flare { position: absolute; z-index: 3; width: 60px; height: 60px; margin: -30px 0 0 -30px; color: #fff; opacity: 0; pointer-events: none; filter: drop-shadow(0 0 10px #fff) drop-shadow(0 0 24px var(--acc)); }
+[data-tr="star"][data-mode="select"] .flare { animation: flare calc(1s * var(--slow)) ease both; }
+@keyframes flare { 0% { opacity: 0; transform: scale(0.2) rotate(0); } 25% { opacity: 1; transform: scale(1.2) rotate(45deg); } 60% { opacity: 0.8; transform: scale(2.6) rotate(90deg); } 100% { opacity: 0; transform: scale(4) rotate(120deg); } }
+
+/* ---- C 月轮展开:从 logo 的月牙开一个圆,月亮变成整片夜空 ---- */
+[data-tr="moon"] #select { transition: clip-path calc(0.95s * var(--slow)) cubic-bezier(0.65, 0, 0.3, 1); }
+[data-tr="moon"] #cover { transition: filter calc(0.95s * var(--slow)) ease; }
+[data-tr="moon"][data-mode="select"] #cover { filter: brightness(0.55); }
+.stage[data-tr="moon"] { --base: 0.5s; }
+.ring { position: absolute; z-index: 3; border-radius: 50%; border: 1.5px solid rgba(255, 255, 255, 0.9); box-shadow: 0 0 18px var(--acc), inset 0 0 18px var(--acc); pointer-events: none; opacity: 0; }
+[data-tr="moon"][data-mode="select"] .ring { animation: ring calc(0.95s * var(--slow)) cubic-bezier(0.65, 0, 0.3, 1) both; }
+@keyframes ring { 0% { opacity: 1; transform: scale(0); } 80% { opacity: 0.8; } 100% { opacity: 0; transform: scale(1); } }
+
+/* ---- D 纸幕扫过:一张带星标的纸从左扫到右,纸过去就是新画面 ---- */
+.wipe { position: absolute; z-index: 4; left: -80px; top: 0; width: 1600px; height: 810px; transform: translateX(-110%); pointer-events: none; mask-image: linear-gradient(90deg, transparent 0, #000 90px, #000 calc(100% - 90px), transparent 100%); background: var(--paper); }
+.wipe img.map { position: absolute; left: 80px; top: 0; width: 1440px; height: 810px; opacity: 0.16; }
+.wipe .mid { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 14px; color: var(--ink); }
+.wipe .mid svg { width: 46px; height: 46px; color: var(--acc); }
+.wipe .mid b { font: 700 30px/1 var(--serif); letter-spacing: 0.5em; padding-left: 0.5em; }
+.wipe .mid i { font: italic 500 16px/1 var(--latin); letter-spacing: 0.24em; color: var(--dim); }
+[data-tr="sweep"][data-mode="select"] .wipe, [data-tr="sweep"][data-mode="cover"].went .wipe { animation: sweep calc(1.15s * var(--slow)) cubic-bezier(0.6, 0, 0.3, 1) both; }
+@keyframes sweep { 0% { transform: translateX(-110%); } 42%, 58% { transform: translateX(0); } 100% { transform: translateX(110%); } }
+[data-tr="sweep"][data-mode="select"] #select { animation: showAt calc(1.15s * var(--slow)) both; }
+[data-tr="sweep"][data-mode="cover"] #select { visibility: hidden; }
+[data-tr="sweep"][data-mode="cover"].went #select { animation: hideAt calc(1.15s * var(--slow)) both; }
+@keyframes showAt { 0%, 49.9% { visibility: hidden; } 50%, 100% { visibility: visible; } }
+@keyframes hideAt { 0%, 49.9% { visibility: visible; } 50%, 100% { visibility: hidden; } }
+.stage[data-tr="sweep"] { --base: 0.62s; --cbase: 0.62s; }
+
+/* ---- E 镜头后拉:封面往后退、虚化,选角色从近处落定 ---- */
+[data-tr="pull"] #cover, [data-tr="pull"] #select { transition: opacity calc(0.75s * var(--slow)) ease, transform calc(0.9s * var(--slow)) cubic-bezier(0.3, 0, 0.15, 1), filter calc(0.75s * var(--slow)) ease; }
+[data-tr="pull"][data-mode="select"] #cover { opacity: 0; transform: scale(0.92); filter: blur(10px) brightness(0.55); }
+[data-tr="pull"][data-mode="cover"] #select { opacity: 0; transform: scale(1.07); filter: blur(8px); }
+[data-tr="pull"][data-mode="select"] #select { transition-delay: calc(0.1s * var(--slow)); }
+.stage[data-tr="pull"] { --base: 0.3s; }
+
+
+/* ---- 定稿:简单切过去(用户 10-03:前面几种都太花哨)。两层交叉淡入淡出 0.2 秒,组件轻轻浮上来 ---- */
+[data-tr="simple"] #cover, [data-tr="simple"] #select { transition: opacity calc(0.2s * var(--slow)) ease; }
+[data-tr="simple"][data-mode="select"] #cover, [data-tr="simple"][data-mode="cover"] #select { opacity: 0; }
+/* 组件进场:淡入 + 往上浮 10px,全部一起出(用户:错开着出很丑);退场直接淡掉 */
+[data-tr="simple"] .st, [data-tr="simple"] .ct { transition: opacity calc(0.3s * var(--slow)) ease, transform calc(0.45s * var(--slow)) cubic-bezier(0.2, 0.7, 0.2, 1); }
+[data-tr="simple"][data-mode="cover"] #select .st, [data-tr="simple"][data-mode="select"] #cover .ct { opacity: 0; transform: translateY(10px); transition-delay: 0s; }
+[data-tr="simple"][data-mode="select"] #select .st { transition-delay: calc(0.12s * var(--slow)); }
+[data-tr="simple"][data-mode="cover"] #cover .ct { transition-delay: calc(0.12s * var(--slow)); }
+/* ---------- 控制条(原型用) ---------- */
+.ctrl { position: fixed; left: 0; right: 0; bottom: 0; height: 52px; display: flex; align-items: center; justify-content: center; gap: 16px; background: #14151d; color: #c9c9d4; font-size: 13px; border-top: 1px solid #23242f; }
+.ctrl .grp { display: flex; align-items: center; gap: 4px; }
+.ctrl .grp > span { margin-right: 6px; color: #8a8a98; }
+.ctrl button { padding: 6px 11px; border-radius: 6px; background: #20222d; color: #c9c9d4; }
+.ctrl button.on { background: #e9e9f0; color: #14151d; }
+.ctrl .play { background: #8d93b8; color: #fff; font-weight: 700; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position: absolute"><symbol id="star" viewBox="-10 -10 20 20"><path d="M0-10C1.1-2.6 2.6-1.1 10 0 2.6 1.1 1.1 2.6 0 10-1.1 2.6-2.6 1.1-10 0-2.6-1.1-1.1-2.6 0-10Z"/></symbol></svg>
+<div id="wrap">
+<div class="stage" id="stage" data-mode="cover" data-cover="paper" data-target="night" data-tr="simple">
+  <!-- 封面 -->
+  <div class="layer" id="cover">
+    <img class="fill bg xf" id="cBg" alt="">
+    <div class="fill veil"></div>
+    <div class="fill paperwrap"><div class="fill paper"><img class="fill" src="../canvas/assets/map-left.svg" alt=""></div></div>
+    <img class="abs spr xf ct" id="cSpr" alt="" style="--i: 0">
+    <div class="frame ct" style="--i: 0"><svg class="star" style="left: -8px; top: -8px"><use href="#star"/></svg><svg class="star" style="right: -8px; top: -8px"><use href="#star"/></svg><svg class="star" style="left: -8px; bottom: -8px"><use href="#star"/></svg><svg class="star" style="right: -8px; bottom: -8px"><use href="#star"/></svg></div>
+    <div class="lockup ct" style="--i: 0"><img class="mark" src="../canvas/assets/logo.png" alt=""><img class="word" src="../canvas/assets/wordmark.png" alt="AnimaVN"></div>
+    <nav class="menu">
+      <button class="ct" style="--i: 1"><span class="zh">继续</span><span class="en">Continue</span></button>
+      <button class="ct" style="--i: 2"><span class="zh">新的故事</span><span class="en">New Story</span></button>
+      <button class="ct" style="--i: 3"><span class="zh">读档</span><span class="en">Load</span></button>
+      <button class="ct hot" style="--i: 4" id="toPick"><svg><use href="#star"/></svg><span class="zh">角色</span><span class="en">Heroine</span><span class="sub" id="menuName"></span></button>
+      <button class="ct" style="--i: 5"><span class="zh">设置</span><span class="en">Config</span></button>
+      <hr class="ct" style="--i: 6">
+      <button class="ct" style="--i: 6"><span class="zh" style="font-size: 19px; font-weight: 500">调试台</span><span class="en">Console</span></button>
+    </nav>
+    <div class="castrow ct" style="--i: 3" id="castrow"><span>Heroine</span></div>
+    <div class="last ct" style="--i: 2"><span class="nm" id="lastName"></span><div class="ln" id="lastLine"></div><div class="mt"><span id="lastMeta"></span><b style="font-weight: 500; color: var(--ink)">接着看 ▼</b></div></div>
+  </div>
+
+  <!-- 选角色 -->
+  <div class="layer" id="select">
+    <div class="nightset">
+      <div class="fill night"></div>
+      <img class="fill" src="../canvas/assets/sky-pick.svg" alt="" style="opacity: 0.9">
+      <div class="fill glow"></div>
+      <div class="fill zoom"><img class="abs xf" id="sZoom" alt=""></div>
+    </div>
+    <img class="fill scene xf" id="sBg" alt="">
+    <div class="fill veil2"></div>
+    <img class="abs spr xf st" id="sSpr" alt="" style="--i: 0">
+    <div class="fill shade"></div>
+    <div class="panel"><img class="map" src="../canvas/assets/map-right.svg" alt=""></div>
+    <div class="head st" style="--i: 0"><button id="back">← Esc</button><h2>角色</h2><i>Heroine</i></div>
+    <div class="detail st" style="--i: 2">
+      <div class="xf" id="dIn">
+        <div class="lb"><svg><use href="#star"/></svg><span id="dWork"></span></div>
+        <div class="nm" id="dName"></div>
+        <p class="ln" id="dLine"></p>
+        <div class="mt" id="dMeta"></div>
+        <div class="chips"><span><b>预设</b><span id="dPreset"></span></span><span><b>人设</b><span id="dPersona"></span></span></div>
+      </div>
+      <div class="btns"><button class="go"><svg><use href="#star"/></svg>继续</button><button>新的故事</button><button>资料</button></div>
+    </div>
+    <div class="tool st" style="--i: 1"><div class="search">⌕ 搜索名字、标签、作者</div><div class="seg"><span>最近</span><span>名字</span></div><button class="imp">＋ 导入</button></div>
+    <div class="grid" id="grid"></div>
+  </div>
+
+  <svg class="flare" id="flare"><use href="#star"/></svg>
+  <div class="ring" id="ring"></div>
+  <div class="wipe"><img class="map" src="../canvas/assets/map-right.svg" alt=""><div class="mid"><svg><use href="#star"/></svg><b>角色</b><i>Heroine</i></div></div>
+</div>
+</div>
+
+<div class="ctrl">
+  <div class="grp"><span>转场</span><button data-k="tr" data-v="simple">简单切换(定稿)</button><button data-k="tr" data-v="fade">淡出淡入</button><button data-k="tr" data-v="star">星光展开</button><button data-k="tr" data-v="moon">月轮展开</button><button data-k="tr" data-v="sweep">纸幕扫过</button><button data-k="tr" data-v="pull">镜头后拉</button></div>
+  <div class="grp"><span>封面</span><button data-k="cover" data-v="paper">纸面</button><button data-k="cover" data-v="v1">v1</button></div>
+  <div class="grp"><span>选角色</span><button data-k="target" data-v="night">夜空</button><button data-k="target" data-v="scene">场景</button></div>
+  <div class="grp"><span>速度</span><button data-k="slow" data-v="1">正常</button><button data-k="slow" data-v="3">×3 慢放</button></div>
+  <button class="play" id="go">▶ 进入选角色</button>
+</div>
+
+<script src="data.js"></script>
+<script>
+const $ = (s) => document.querySelector(s);
+const stage = $('#stage');
+let cur = 0;
+
+function fit() {
+  const s = Math.min(innerWidth / 1440, (innerHeight - 52) / 810);
+  $('#wrap').style.transform = `scale(${s}) translate(-50%, -50%)`;
+}
+fit();
+addEventListener('resize', fit);
+
+// 按脸摆立绘
+function place(c, fh, cx, top, floor) {
+  const h = fh / c.box.h, w = h * c.size[0] / c.size[1];
+  let y = top - c.box.y * h;
+  if (floor) y = Math.max(y, floor - h);
+  return { left: cx - (c.box.x + c.box.w / 2) * w, top: y, height: h };
+}
+const setPos = (el, p) => Object.assign(el.style, { left: p.left + 'px', top: p.top + 'px', height: p.height + 'px' });
+const COVER = [190, 994, 118, null], SELECT = [160, 370, 128, 810];
+
+// 换图:先淡掉、换源、再淡回来(换人时用;进出场不用)
+function swapImg(el, src, pos, animate) {
+  const apply = () => { el.src = src; if (pos) setPos(el, pos); };
+  if (!animate) { apply(); return; }
+  el.classList.add('gone');
+  setTimeout(() => { apply(); el.onload = () => el.classList.remove('gone'); }, 260);
+}
+function setText(id, t) { $(id).textContent = t; }
+
+function fillCover(c) {
+  swapImg($('#cBg'), c.bg || '../canvas/assets/sky-pick.svg');
+  swapImg($('#cSpr'), c.sprite, place(c, ...COVER));
+  setText('#menuName', c.name);
+  setText('#lastName', c.name);
+  setText('#lastLine', `「${c.line}」`);
+  setText('#lastMeta', `${c.work} · ${c.bgLabel || '默认背景'} · ${c.last || '还没开始'}`);
+  document.querySelectorAll('#castrow img').forEach((el, i) => el.classList.toggle('cur', i === cur));
+}
+function fillSelect(c, animate) {
+  stage.style.setProperty('--acc', c.acc);
+  swapImg($('#sBg'), c.bg || '../canvas/assets/sky-pick.svg', null, animate);
+  swapImg($('#sSpr'), c.sprite, place(c, ...SELECT), animate);
+  swapImg($('#sZoom'), c.sprite, place(c, 560, 250, 120), animate);
+  const inner = $('#dIn');
+  const write = () => {
+    setText('#dWork', c.work);
+    setText('#dName', c.name);
+    setText('#dLine', `「${c.line}」`);
+    setText('#dMeta', `${c.voice} · ${c.chats ? c.chats + ' 段故事 · 上次 ' + c.last : '还没开始'}`);
+    setText('#dPreset', c.preset);
+    setText('#dPersona', c.persona || 'Lj(默认)');
+  };
+  if (animate) { inner.classList.add('gone'); setTimeout(() => { write(); inner.classList.remove('gone'); }, 260); } else write();
+  document.querySelectorAll('.card').forEach((el, i) => el.classList.toggle('cur', i === cur));
+}
+
+CAST.forEach((c, i) => {
+  const el = document.createElement('div');
+  el.className = 'card st';
+  el.style.setProperty('--i', 3 + i);
+  const h = 112 * 0.56 / c.box.h, w = h * c.size[0] / c.size[1];
+  el.innerHTML = `<div class="im"><img class="bgi" src="${c.bg || '../canvas/assets/sky-pick.svg'}"><img src="${c.sprite}" style="left:${54 - (c.box.x + c.box.w / 2) * w}px;top:${176 * 0.2 - c.box.y * h}px;height:${h}px"></div><svg><use href="#star"/></svg><div class="nm">${c.name}</div>`;
+  el.onclick = () => { if (i === cur) return; cur = i; fillSelect(CAST[i], true); };
+  $('#grid').append(el);
+  if (i < 6) {
+    const f = new Image();
+    f.src = c.face;
+    f.onclick = () => { cur = i; stage.style.setProperty('--acc', CAST[i].acc); fillCover(CAST[i]); fillSelect(CAST[i], false); };
+    $('#castrow').append(f);
+  }
+});
+
+// 星形 / 圆形遮罩:中心在点的地方(星光 = 「角色」那一项,月轮 = 她的脸)
+function starPoly(cx, cy, r) {
+  const pts = [];
+  for (let k = 0; k < 8; k++) {
+    const a = (k * 45 - 90) * Math.PI / 180, rr = k % 2 ? r * 0.2 : r;
+    pts.push(`${(cx + rr * Math.cos(a)).toFixed(1)}px ${(cy + rr * Math.sin(a)).toFixed(1)}px`);
+  }
+  return `polygon(${pts.join(', ')})`;
+}
+function origin() {
+  const tr = stage.dataset.tr;
+  // 星光 = 从「角色」那一项长出来;月轮 = 从 logo 里的月牙展开成整片夜空
+  return tr === 'star' ? [196, 425] : [176, 147];
+}
+function paintMask() {
+  const sel = $('#select'), tr = stage.dataset.tr, open = stage.dataset.mode === 'select';
+  const [x, y] = origin();
+  if (tr === 'star') sel.style.clipPath = starPoly(x, y, open ? 3600 : 0.1);
+  else if (tr === 'moon') sel.style.clipPath = `circle(${open ? 1700 : 0}px at ${x}px ${y}px)`;
+  else sel.style.clipPath = 'none';
+  Object.assign($('#flare').style, { left: x + 'px', top: y + 'px' });
+  Object.assign($('#ring').style, { left: x - 1700 + 'px', top: y - 1700 + 'px', width: '3400px', height: '3400px' });
+}
+
+function setMode(m) {
+  if (m === stage.dataset.mode) return;
+  if (m === 'cover') fillCover(CAST[cur]);
+  stage.classList.toggle('went', m === 'cover');
+  // 让 keyframes 动画每次都重新播
+  ['.wipe', '#flare', '#ring', '#select'].forEach((s) => { const el = $(s); el.style.animation = 'none'; el.offsetHeight; el.style.animation = ''; });
+  stage.dataset.mode = m;
+  paintMask();
+  $('#go').textContent = m === 'cover' ? '▶ 进入选角色' : '◀ 返回封面';
+}
+$('#toPick').onclick = () => setMode('select');
+$('#back').onclick = () => setMode('cover');
+$('#go').onclick = () => setMode(stage.dataset.mode === 'cover' ? 'select' : 'cover');
+function setOpt(k, v) {
+  if (k === 'slow') stage.style.setProperty('--slow', v);
+  else {
+    // 换转场时先把遮罩归位,不然会从上一种的状态动过来
+    const sel = $('#select'), t = sel.style.transition;
+    sel.style.transition = 'none';
+    stage.dataset[k] = v;
+    paintMask();
+    sel.offsetHeight;
+    sel.style.transition = t;
+  }
+  document.querySelectorAll(`.ctrl [data-k="${k}"]`).forEach((x) => x.classList.toggle('on', x.dataset.v === String(v)));
+}
+document.querySelectorAll('.ctrl [data-k]').forEach((b) => { b.onclick = () => setOpt(b.dataset.k, b.dataset.v); });
+['tr:simple', 'cover:paper', 'target:night', 'slow:1'].forEach((s) => { const [k, v] = s.split(':'); setOpt(k, v); });
+addEventListener('keydown', (e) => { if (e.key === 'Escape') setMode('cover'); if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('#go').click(); } });
+
+stage.style.setProperty('--acc', CAST[0].acc);
+fillCover(CAST[0]);
+fillSelect(CAST[0], false);
+paintMask();
+window.anim = { setMode, setOpt, pick: (i) => { cur = i; fillSelect(CAST[i], true); } };
+</script>
+</body>
+</html>

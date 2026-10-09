@@ -15,6 +15,7 @@ export const PLUGIN_BLOCK_IDS = [
   'anima_sprite',
   'anima_bg',
   'anima_bgm',
+  'anima_cg',
   'anima_lang',
   'anima_player',
 ] as const;
@@ -25,6 +26,26 @@ export interface PluginConfig {
   /** 「加入当前预设」时写进块里的内容 */
   blockPrompt: string;
 }
+
+/**
+ * 标签插件(立绘 / 背景 / BGM / 玩家台词)的模式:AI 按插件块自己写标签,或者交给 Jev 判断后补上
+ * (plugins/jev.ts)。默认 ai —— 不切换的人一切照旧
+ */
+export type TagMode = 'ai' | 'jev';
+
+export const normalizeTagMode = (raw: unknown): TagMode => (raw === 'jev' ? 'jev' : 'ai');
+
+/** 后端存的任意 JSON 里取一个子对象 */
+export const objectOf = (raw: unknown): Record<string, unknown> =>
+  raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+
+/** 改过的提示词:只认字符串,空白当没改(null = 用默认) */
+export const promptOf = (raw: unknown): string | null =>
+  typeof raw === 'string' && raw.trim() ? raw : null;
+
+/** 门槛:数字且在范围里,不然用默认 */
+export const thresholdOf = (raw: unknown, def: number, min: number, max: number): number =>
+  typeof raw === 'number' && Number.isFinite(raw) ? Math.min(max, Math.max(min, raw)) : def;
 
 /** 模板不合法时返回原因,合法时返回 null */
 export function validateTagTemplate(template: string, placeholder: string): string | null {
@@ -75,7 +96,7 @@ export function buildTagRegExp(template: string, placeholder: string): RegExp | 
 
 /** 展示给 AI 看的样子:占位符换成一个说明词,比如 <sprite:表情名> */
 export function tagExampleOf(template: string, placeholder: string, word: string): string {
-  return template.replace(placeholder, word);
+  return template.replace(placeholder, () => word);
 }
 
 /** 模板里占位符前面那段,用来识别流式输出时写了一半的标签 */
@@ -159,6 +180,8 @@ export function insertPluginBlock(
           systemPrompt: false,
           injectionPosition: 0,
           injectionDepth: 4,
+          injectionOrder: 100,
+          injectionTrigger: [],
           forbidOverrides: false,
         } satisfies PresetPrompt,
       ];

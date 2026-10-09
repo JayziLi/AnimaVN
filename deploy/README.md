@@ -106,10 +106,19 @@ docker compose cp backend:/app/data/animabackend.db ./animabackend.db
 
 ## 已知限制
 
-**没有数据库迁移。** 启动时跑的是 `Base.metadata.create_all`，它只**建**表，
-不会 `ALTER` 已有的表。所以以后往模型里加字段（比如给 `GameSession` 加
-`preset_id`），服务器上那份旧库不会自动长出新列 —— 要么手工 `ALTER TABLE`，
-要么删库重来。真要长期跑得引入 alembic。
+**数据库迁移要手跑。** 启动时跑的是 `Base.metadata.create_all`，它只**建**表，
+不会 `ALTER` 已有的表。新加的列靠 `AnimaBackend/scripts/migrate_*.py`（都能重复跑）。
+升级流程：
+
+```bash
+git pull
+docker compose up -d --build
+docker compose logs backend | grep 缺列     # 启动时会检查,缺了哪一列、该跑哪个脚本都写在这里
+docker compose exec backend python scripts/migrate_xxx.py   # 按日志里说的跑
+docker compose restart backend
+```
+
+真要长期跑得引入 alembic（或者启动时自动补列）。
 
 **HTTP，不是 HTTPS。** Basic Auth 的密码是 base64 编码后明文过网的，
 中间人能看到。所以：**别用你在别处用过的密码。**

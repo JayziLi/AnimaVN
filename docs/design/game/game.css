@@ -1,0 +1,176 @@
+/* AnimaVN 游戏内的几屏:① 启动 ② 进入(标题) ③ 选角色 ④ 进游戏前的加载。
+   尺寸按视口高(vh)走,横屏为主;竖屏只做了兜底。颜色:logo 的底 / 白 / 灰 + 一张暖白的纸。 */
+
+:root {
+  --bg: #1e1e24;
+  --bg-deep: #15151a;
+  --white: #f6f6f8;
+  --grey: #c7c7cf;
+  --dim: rgba(246, 246, 248, 0.58);
+  --paper: #f1eff0;
+  --ink: #1e1e24;
+  --ink-dim: rgba(30, 30, 36, 0.6);
+  --serif: 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', 'STSong', 'SimSun', serif;
+  --skew: -9deg;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg-deep); color: var(--white); font: 14px/1.6 'Noto Sans SC', 'Microsoft YaHei', sans-serif; overflow: hidden; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+img { user-select: none; -webkit-user-drag: none; }
+.star { display: inline-block; fill: currentColor; width: 1em; height: 1em; }
+
+.stage { position: fixed; inset: 0; overflow: hidden; background: var(--bg); }
+.screen { position: absolute; inset: 0; opacity: 0; visibility: hidden; transition: opacity 0.6s ease, visibility 0s 0.6s; }
+.screen.on { opacity: 1; visibility: visible; transition: opacity 0.6s ease; }
+
+.bgs img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 1s ease; }
+.bgs img.cur { opacity: 1; }
+.sprite-host { position: absolute; inset: 0; pointer-events: none; }
+.sprite-host img { position: absolute; max-width: none; filter: drop-shadow(0 1.2vh 3vh rgba(0, 0, 0, 0.4)); }
+.face { position: relative; overflow: hidden; background: var(--bg); }
+.face img { position: absolute; max-width: none; }
+
+/* 花边:两段点线夹一颗星 */
+.orn { display: flex; align-items: center; gap: 1vh; font-size: 1.4vh; opacity: 0.7; }
+.orn i { width: 8vh; border-top: 1px dotted currentColor; }
+
+/* ---------- 进度:一道往右下坠的流星(字标里那道),横贯整屏,星星是进度的头 ---------- */
+.load-line { position: absolute; left: 6vw; right: 6vw; bottom: 9.4vh; height: 1px; background: rgba(246, 246, 248, 0.16); transform: rotate(0.9deg); transform-origin: left center; }
+.load-bar { position: absolute; left: 0; top: -0.5px; height: 2px; width: calc(var(--p, 0) * 100%); background: linear-gradient(90deg, rgba(246, 246, 248, 0) 0%, var(--white) 70%); transition: width 0.35s ease; }
+.load-bar .star { position: absolute; right: -1.3vh; top: calc(1px - 1.3vh); width: 2.6vh; height: 2.6vh; animation: twinkle 1.6s ease-in-out infinite; filter: drop-shadow(0 0 0.8vh rgba(246, 246, 248, 0.5)); }
+@keyframes twinkle { 50% { transform: scale(0.78) rotate(10deg); opacity: 0.85; } }
+.load-foot { position: absolute; left: 6vw; right: 6vw; bottom: 4.4vh; display: flex; justify-content: space-between; gap: 3vh; font-size: max(1.6vh, 11px); letter-spacing: 0.22em; color: var(--dim); }
+.load-foot .tip { letter-spacing: 0.08em; text-align: right; }
+
+/* ================= ① 启动 ================= */
+.boot { background: radial-gradient(90vh 70vh at 50% 42%, #26262f, var(--bg) 70%); }
+.boot-in { position: absolute; left: 50%; top: 44%; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 2vh; }
+.boot-mark { width: min(26vh, 40vw); opacity: 0; transform: scale(0.94); }
+.boot-word { width: min(50vh, 66vw); opacity: 0; }
+.boot.on .boot-mark { animation: rise 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) 0.2s forwards; }
+.boot.on .boot-word { animation: rise 0.8s ease 0.8s forwards; }
+@keyframes rise { to { opacity: 1; transform: none; } }
+
+/* ================= ② 进入 ================= */
+.title { cursor: pointer; }
+.title .bgs img.cur { animation: drift 18s ease-out forwards; }
+@keyframes drift { from { transform: scale(1.09) translate(1%, 0.4%); } to { transform: scale(1.02) translate(-0.4%, 0); } }
+.title-grade { position: absolute; inset: 0; background:
+    linear-gradient(90deg, rgba(21, 21, 26, 0.86) 0%, rgba(21, 21, 26, 0.5) 32%, rgba(21, 21, 26, 0) 58%),
+    linear-gradient(0deg, rgba(21, 21, 26, 0.7) 0%, rgba(21, 21, 26, 0) 30%); }
+/* 上下两条黑边,像片头 */
+.band { position: absolute; left: 0; right: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 4vw; background: #0d0d11; font-size: max(1.4vh, 10px); letter-spacing: 0.34em; color: var(--dim); }
+.band.top { top: 0; height: 5vh; }
+.band.bottom { bottom: 0; height: 12vh; }
+.title-copy { position: absolute; left: 6vw; top: 50%; transform: translateY(-58%); }
+.lockup { display: flex; align-items: center; }
+.lockup .mark { height: 22vh; }
+.lockup .word { height: 20vh; margin-left: -2.8vh; }
+.tap { display: flex; align-items: center; gap: 1.6vh; margin: 3vh 0 0 1.6vh; font: 500 max(2.3vh, 14px) / 1 var(--serif); letter-spacing: 0.5em; color: var(--white); animation: breathe 2.6s ease-in-out infinite; }
+.tap i { width: 6vh; border-top: 1px solid currentColor; opacity: 0.6; }
+.tap .star { width: 1.5vh; height: 1.5vh; }
+.tap span { margin-right: -0.5em; }
+@keyframes breathe { 50% { opacity: 0.35; } }
+
+/* 底边左侧:现在是谁、上次什么时候,点了去选角色 */
+.who { display: flex; align-items: center; gap: 1.6vh; height: 8.4vh; padding: 0 2.4vh 0 0.8vh; border-radius: 4.2vh; border: 1px solid rgba(246, 246, 248, 0.22); letter-spacing: 0; text-align: left; transition: border-color 0.2s, background 0.2s; }
+.who:hover { border-color: var(--white); background: rgba(246, 246, 248, 0.06); }
+.who-face { width: 6.8vh; height: 6.8vh; border-radius: 50%; border: 1.5px solid var(--white); }
+.who-text b { display: block; font: 700 max(2.3vh, 15px) / 1.2 var(--serif); letter-spacing: 0.14em; color: var(--white); }
+.who-text small { font-size: max(1.4vh, 10.5px); color: var(--dim); letter-spacing: 0.06em; }
+.who-swap { display: flex; align-items: center; gap: 0.4vh; margin-left: 2vh; font-size: max(1.5vh, 11px); letter-spacing: 0.2em; color: var(--grey); }
+.who-swap svg { width: 1.8vh; height: 1.8vh; transform: scaleX(-1); }
+.title-tools { display: flex; gap: 3.4vh; font-size: max(1.8vh, 12px); letter-spacing: 0.3em; }
+.title-tools button:hover { color: var(--white); }
+
+/* ================= ③ 选角色 ================= */
+.select { background: radial-gradient(120vh 80vh at 70% 40%, #2a2a36, var(--bg) 60%, var(--bg-deep)); }
+.sel-head { position: absolute; left: 0; right: 0; top: 0; height: 13vh; display: flex; align-items: center; gap: 4vh; padding: 0 4vw; }
+.sel-head h1 { margin: 0; font: 700 max(3.8vh, 22px) / 1.1 var(--serif); letter-spacing: 0.3em; }
+.sel-head .orn { margin-top: 1vh; }
+.sel-mark { margin-left: auto; height: 6vh; opacity: 0.85; }
+.back { display: flex; align-items: center; gap: 0.6vh; padding: 0.8vh 2vh 0.8vh 1.2vh; border: 1px solid rgba(246, 246, 248, 0.3); border-radius: 999px; font-size: max(1.7vh, 12px); letter-spacing: 0.2em; color: var(--grey); }
+.back svg { width: 2vh; height: 2vh; }
+.back:hover { color: var(--white); border-color: var(--white); }
+
+/* 左边:作品。一条竖线串着,当前的那个亮一颗星 */
+.works { position: absolute; left: 4vw; top: 17vh; bottom: 11vh; width: 17vh; display: flex; flex-direction: column; justify-content: center; gap: 0.6vh; }
+.works::before { content: ''; position: absolute; left: 1.05vh; top: 0; bottom: 0; border-left: 1px dotted rgba(246, 246, 248, 0.3); }
+.works button { position: relative; display: flex; align-items: center; gap: 1.6vh; padding: 1.3vh 0; font-size: max(1.9vh, 13px); letter-spacing: 0.18em; color: var(--dim); text-align: left; transition: color 0.2s; }
+.works button::before { content: ''; flex: none; width: 0.7vh; height: 0.7vh; margin: 0 0.75vh; border-radius: 50%; background: var(--bg); border: 1px solid rgba(246, 246, 248, 0.5); position: relative; }
+.works button .star { position: absolute; left: 0; top: 50%; width: 2.2vh; height: 2.2vh; margin-top: -1.1vh; opacity: 0; transform: scale(0.3) rotate(-45deg); transition: opacity 0.2s, transform 0.35s; }
+.works button:hover { color: var(--white); }
+.works button.on { color: var(--white); font-weight: 700; }
+.works button.on::before { opacity: 0; }
+.works button.on .star { opacity: 1; transform: none; }
+.works button small { margin-left: auto; font-size: max(1.4vh, 10px); opacity: 0.6; font-weight: 400; }
+
+/* 右边:一排斜切的长条。整排斜一下,里面的内容斜回来 */
+.strips { position: absolute; left: calc(4vw + 23vh); right: 6vw; top: 16vh; bottom: 10vh; display: flex; gap: 1.2vh; transform: skewX(var(--skew)); }
+.strip { position: relative; flex: 1 1 0; min-width: 0; overflow: hidden; border-radius: 0.6vh; background: var(--bg-deep); cursor: pointer; transition: flex-grow 0.55s cubic-bezier(0.2, 0.7, 0.2, 1), filter 0.3s, box-shadow 0.3s; filter: saturate(0.55) brightness(0.62); }
+.strip:hover { filter: saturate(0.85) brightness(0.85); }
+.strip.on { flex-grow: 5.2; filter: none; cursor: default; box-shadow: 0 0 0 1px rgba(246, 246, 248, 0.55), 0 2vh 5vh rgba(0, 0, 0, 0.5); }
+/* 斜回来的内层:比长条宽一圈,斜切的两个角才盖得住 */
+.strip-in { position: absolute; top: 0; bottom: 0; left: -8vh; right: -8vh; transform: skewX(calc(var(--skew) * -1)); }
+.strip-bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.strip-shade { position: absolute; inset: 0; background: linear-gradient(0deg, rgba(21, 21, 26, 0.92) 0%, rgba(21, 21, 26, 0.2) 42%, rgba(21, 21, 26, 0.1) 100%); transition: background 0.4s; }
+.strip.on .strip-shade { background: linear-gradient(90deg, rgba(21, 21, 26, 0) 30%, rgba(21, 21, 26, 0.74) 62%, rgba(21, 21, 26, 0.9) 100%); }
+.strip-spr { position: absolute; max-width: none; transition: left 0.55s cubic-bezier(0.2, 0.7, 0.2, 1); filter: drop-shadow(0 1vh 2.4vh rgba(0, 0, 0, 0.45)); }
+/* 收着的时候:竖排名字 */
+.strip-tab { position: absolute; left: 50%; bottom: 3vh; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 1.2vh; transition: opacity 0.25s; }
+.strip-tab b { writing-mode: vertical-rl; font: 700 max(2.6vh, 15px) / 1 var(--serif); letter-spacing: 0.3em; }
+.strip-tab .star { width: 1.3vh; height: 1.3vh; opacity: 0.7; }
+.strip.on .strip-tab { opacity: 0; }
+/* 展开以后:右半边的资料 */
+.strip-info { position: absolute; left: 52%; right: 10vh; top: 0; bottom: 0; display: flex; flex-direction: column; justify-content: center; opacity: 0; transform: translateX(3vh); pointer-events: none; transition: opacity 0.3s, transform 0.4s; }
+.strip.on .strip-info { opacity: 1; transform: none; pointer-events: auto; transition-delay: 0.22s; }
+.strip-info small { font-size: max(1.7vh, 12px); font-weight: 600; letter-spacing: 0.4em; color: var(--grey); }
+.strip-info h2 { margin: 0.4vh 0 0; font: 900 max(8.6vh, 36px) / 1.15 var(--serif); letter-spacing: 0.08em; white-space: nowrap; }
+.strip-info ul { display: flex; flex-wrap: wrap; gap: 0.8vh; margin: 1.4vh 0 0; padding: 0; list-style: none; }
+.strip-info li { padding: 0.3vh 1.4vh; border: 1px solid rgba(246, 246, 248, 0.4); border-radius: 999px; font-size: max(1.5vh, 11px); letter-spacing: 0.1em; }
+.strip-info blockquote { margin: 2.6vh 0 0; padding: 0 0 0 1.6vh; border-left: 2px solid var(--white); font: 500 max(2vh, 13px) / 1.6 var(--serif); letter-spacing: 0.06em; }
+.strip-info blockquote span { display: block; margin-top: 0.5vh; font: 400 max(1.4vh, 10.5px) / 1.4 'Noto Sans SC', sans-serif; color: var(--dim); letter-spacing: 0.1em; }
+.strip-acts { display: flex; flex-wrap: wrap; gap: 1.4vh; margin-top: 3.4vh; }
+.btn { display: inline-flex; align-items: center; gap: 1.2vh; height: 6.4vh; padding: 0 3.2vh; border: 1.5px solid var(--white); font-size: max(1.9vh, 13px); font-weight: 700; letter-spacing: 0.24em; white-space: nowrap; transform: skewX(var(--skew)); transition: background 0.2s, color 0.2s, transform 0.2s; }
+.btn > * { transform: skewX(calc(var(--skew) * -1)); }
+.btn > span { display: inline-block; }
+.btn .star { width: 1.3vh; height: 1.3vh; }
+.btn.solid { background: var(--white); color: var(--ink); }
+.btn:hover { transform: skewX(var(--skew)) translateY(-0.3vh); }
+.btn:not(.solid):hover { background: rgba(246, 246, 248, 0.14); }
+.sel-foot { position: absolute; left: 4vw; right: 4vw; bottom: 3.4vh; display: flex; justify-content: space-between; font-size: max(1.4vh, 10.5px); letter-spacing: 0.22em; color: var(--dim); }
+
+/* ================= ④ 进游戏前的加载 ================= */
+.gate .bgs img { filter: blur(1.4vh) saturate(0.8); transform: scale(1.06); }
+.gate-grade { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(21, 21, 26, 0.9), rgba(21, 21, 26, 0.55) 60%, rgba(21, 21, 26, 0.72)); }
+.gate-card { position: absolute; left: 8vw; top: 46%; transform: translateY(-50%); display: flex; align-items: flex-end; gap: 4vh; }
+.gate-arch { width: 21vh; height: 31vh; border-radius: 10.5vh 10.5vh 0.8vh 0.8vh; border: 2px solid var(--white); box-shadow: 0 0 0 0.6vh rgba(21, 21, 26, 0.6), 0 0 0 0.75vh rgba(246, 246, 248, 0.35); }
+.gate-text { padding-bottom: 1vh; max-width: 60vh; }
+.gate-text small { font-size: max(1.7vh, 12px); font-weight: 600; letter-spacing: 0.4em; color: var(--grey); }
+.gate-text b { display: block; font: 900 max(8vh, 34px) / 1.2 var(--serif); letter-spacing: 0.08em; }
+.gate-text p { margin: 1.4vh 0 0; padding-left: 1.6vh; border-left: 2px solid var(--white); font: 500 max(2.1vh, 13px) / 1.6 var(--serif); letter-spacing: 0.06em; color: var(--grey); }
+
+/* ================= ⑤ 游戏(占位) ================= */
+.game-box { position: absolute; left: 12vw; right: 12vw; bottom: 6vh; padding: 2.4vh 3vh; border-radius: 1.2vh; background: rgba(21, 21, 26, 0.84); backdrop-filter: blur(6px); }
+.game-box b { font: 700 max(2.2vh, 14px) / 1 var(--serif); letter-spacing: 0.2em; }
+.game-box p { margin: 1vh 0; font-size: max(2.2vh, 14px); }
+.game-box span { font-size: max(1.4vh, 10.5px); color: var(--dim); letter-spacing: 0.1em; }
+
+/* ================= 竖屏兜底(没细排) ================= */
+@media (max-aspect-ratio: 1/1) {
+  .lockup .mark { height: 9vh; } .lockup .word { height: 8vh; margin-left: -1.2vh; }
+  .title-copy { top: 22%; } .title-tools { display: none; }
+  .works { display: none; }
+  .strips { left: 5vw; right: 5vw; transform: none; flex-direction: column; }
+  .strip-in { transform: none; left: 0; right: 0; }
+  .strip-tab b { writing-mode: horizontal-tb; }
+  .strip-info h2 { font-size: 4.4vh; } .strip-info { left: 48%; right: 2vh; }
+  .gate-card { flex-direction: column; align-items: flex-start; gap: 2vh; }
+}
+
+/* 演示开关(原型用,不进产品) */
+.demo { position: fixed; left: 50%; transform: translateX(-50%); top: 8px; z-index: 50; display: flex; gap: 4px; padding: 4px; border-radius: 999px; background: rgba(10, 10, 14, 0.8); font-size: 12px; color: var(--dim); }
+.demo button { padding: 3px 12px; border-radius: 999px; }
+.demo button:hover, .demo button.on { background: rgba(246, 246, 248, 0.16); color: var(--white); }
+@media (prefers-reduced-motion: reduce) { * { animation-duration: 0.01s !important; transition-duration: 0.01s !important; } }

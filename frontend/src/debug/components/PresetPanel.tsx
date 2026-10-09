@@ -500,6 +500,15 @@ export function PresetPanel({
                     </span>
                     <span className={`block-badge ${badge.cls}`}>{badge.text}</span>
 
+                    {prompt && !prompt.marker && prompt.injectionPosition === 1 && (
+                      <span
+                        className="block-badge badge-depth"
+                        title={`绝对深度:插进聊天记录里倒数第 ${prompt.injectionDepth} 条之前,不按这里的顺序排`}
+                      >
+                        @{prompt.injectionDepth}
+                      </span>
+                    )}
+
                     {/* 覆盖是一直开着且静默的 —— 一张带 system_prompt 的卡会直接
                         顶掉你的 main 块,不标出来根本发现不了 */}
                     {overridden.has(entry.identifier) && (

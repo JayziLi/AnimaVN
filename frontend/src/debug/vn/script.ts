@@ -7,7 +7,8 @@
  *   2. 按换行分段;段内「」“”『』"" 包起来的是台词,归角色;其余是旁白。
  *      引号紧跟在汉字、字母、数字后面的不算(「眼神里写满了「我就知道」」「印着「RHODES
  *      ISLAND」的肩带」),那是旁白里的强调或专有名词 —— 台词前面总有标点、空白或者就在段首
- *   3. 台词前紧挨着「名字：」的,说话人用这个名字(一张卡里有多个角色时有用)
+ *   3. 台词前紧挨着「名字：」的,说话人用这个名字(一张卡里有多个角色时有用);名字加粗也认。
+ *      不带引号的剧本式「角色名：台词」也当台词,只认角色和玩家的名字
  *   4. 太长的一段按句号再切,免得一句塞满整个对话框
  *
  * 标签对哪一句生效:位置落在某句结束之前的标签,从那一句开始生效。
@@ -17,6 +18,8 @@
  *   - <我> 落到的那句是玩家({{user}})说的
  *   - 回复里有立绘标签时,角色的台词必须自己带立绘标签才算角色的 —— 模型替玩家写的
  *     台词常常不写「名字：」,不这样就会被当成角色的台词、用角色的声音念出来
+ *   - Jev 标过的回复(plugins/jev.ts)不管有没有立绘标签都这么认:Jev 判成别人说的台词
+ *     不带标签。Jev 没判过的句子(loose:还在判、或者原文改过标注对不上了)照切句的认法
  */
 
 export interface VNLine {
@@ -68,8 +71,14 @@ export interface ParsedReply {
 const MAX_LINE = 90;
 
 const QUOTE_RE = /「[^」]*」?|『[^』]*』?|“[^”]*”?|"[^"\n]*"?/g;
-/** 台词前的「名字：」 */
+/** 台词前的「名字：」(名字加粗的 **名字**：、**名字：** 去掉星号以后也是它) */
 const NAME_PREFIX_RE = /^\s*([^\s，。！？、：:「」『』“”"*]{1,8})\s*[：:]\s*$/;
+/**
+ * 剧本式的一段:「名字：台词」不带引号,名字可以加粗。只认角色和玩家的名字 ——
+ * 「时间：晚上八点」「地点：客厅」这种不是台词
+ */
+const SCRIPT_LINE_RE = /^(\s*\**\s*([^\s，。！？、：:「」『』“”"*]{1,8})\s*\**\s*[：:]\s*\**\s*)(\S[^]*)$/;
+const ANY_QUOTE_RE = /[「『“"]/;
 /**
  * 「她说：」「他低声道：」「她别过脸去：」这种是旁白引出台词,不是说话人名字。
  * 以代词开头、或者以说话类动词结尾的,都不当名字
@@ -78,7 +87,8 @@ const NOT_A_NAME_RE = /^[她他它我你您]|(说|道|问|答|喊|叫|笑|嚷|�
 /** 引号前一个字是这些(汉字、字母、数字),引号就嵌在旁白句子里,不是台词 */
 const EMBEDDED_AFTER_RE = /[\p{L}\p{N}]/u;
 /** 只剩标点和空白的碎片(比如两句台词之间的「，」)不单独成句 */
-const PUNCT_ONLY_RE = /^[\s，。、；：:;,.!！?？…—~～\-*]*$/;
+// 后引号也算:「他说「明天见」就走了。」这种嵌套引号会剩下一个落单的 」
+const PUNCT_ONLY_RE = /^[\s，。、；：:;,.!！?？…—~～\-*」』”"]*$/;
 
 interface Span {
   start: number;
@@ -106,6 +116,12 @@ function splitLong(text: string, start: number): { start: number; end: number }[
     }
   }
   if (chunkStart < text.length) out.push({ start: start + chunkStart, end: start + text.length });
+  // 硬切在最后一个句号前面时,剩下的「。」「。」」会自己成一句(还会被拿去配音):并回前一块
+  const last = out[out.length - 1];
+  if (out.length > 1 && PUNCT_ONLY_RE.test(text.slice(last.start - start, last.end - start))) {
+    out.pop();
+    out[out.length - 1].end = last.end;
+  }
   return out;
 }
 
@@ -113,11 +129,23 @@ function splitParagraph(
   para: string,
   offset: number,
   charName: string,
+  userName: string,
   nextGroup: () => number,
 ): Span[] {
   const spans: Span[] = [];
   let cursor = 0;
   let pendingSpeaker: string | null = null;
+
+  // 剧本式:整段是「角色名：台词」,名字前缀不显示(和带引号的「名字：」一样)
+  const script = ANY_QUOTE_RE.test(para) ? null : SCRIPT_LINE_RE.exec(para);
+  if (script && (script[2] === charName || script[2] === userName)) {
+    const text = script[3].replace(/\s*\**\s*$/, '');
+    // 「**星绘：**」单独一行(台词在下一段):剩下的是空的,别出一句空台词让人白点一下
+    if (!text) return spans;
+    const group = nextGroup();
+    for (const c of splitLong(text, offset + script[1].length)) spans.push({ ...c, speaker: script[2], group });
+    return spans;
+  }
 
   const pushNarration = (from: number, to: number) => {
     const piece = para.slice(from, to);
@@ -131,7 +159,7 @@ function splitParagraph(
     // 旁白里的强调:留在旁白里,cursor 不动,后面一起并进旁白
     if (at > 0 && EMBEDDED_AFTER_RE.test(para[at - 1])) continue;
     const before = para.slice(cursor, at);
-    const named = NAME_PREFIX_RE.exec(before);
+    const named = NAME_PREFIX_RE.exec(before.replace(/\*/g, ''));
     if (named && !NOT_A_NAME_RE.test(named[1])) {
       pendingSpeaker = named[1];
     } else {
@@ -225,6 +253,7 @@ function attributeSpans(
   lineIndexes: readonly number[],
   charName: string,
   userName: string,
+  jev: { strict?: boolean; loose?: ReadonlySet<number> },
 ): { player?: boolean; untagged?: boolean }[] {
   const groupsOf = (kind: string) =>
     new Set(
@@ -234,13 +263,13 @@ function attributeSpans(
     );
   const players = groupsOf('player');
   const tagged = groupsOf('sprite');
-  const strict = tags.some((t) => t.kind === 'sprite');
-  return spans.map((s) => {
+  const strict = Boolean(jev.strict) || tags.some((t) => t.kind === 'sprite');
+  return spans.map((s, i) => {
     if (players.has(s.group)) {
       s.speaker = userName;
       return { player: true };
     }
-    if (strict && s.speaker === charName && !tagged.has(s.group)) {
+    if (strict && s.speaker === charName && !tagged.has(s.group) && !jev.loose?.has(i)) {
       s.speaker = null;
       return { untagged: true };
     }
@@ -256,6 +285,10 @@ export function parseReply(
     userName: string;
     tags: readonly TagKind[];
     streaming: boolean;
+    /** Jev 标过的回复:没带立绘标签的台词一律不算角色的(见文件头) */
+    strict?: boolean;
+    /** Jev 没判过的句子(句号):照切句的认法 */
+    loose?: ReadonlySet<number>;
   },
 ): ParsedReply {
   // 1. 摘标签,记位置
@@ -267,7 +300,7 @@ export function parseReply(
   let groups = 0;
   const nextGroup = () => groups++;
   for (const para of text.split('\n')) {
-    if (para.trim()) spans.push(...splitParagraph(para, offset, opts.charName, nextGroup));
+    if (para.trim()) spans.push(...splitParagraph(para, offset, opts.charName, opts.userName, nextGroup));
     offset += para.length + 1;
   }
 
@@ -275,7 +308,7 @@ export function parseReply(
   const lineIndexes = tags.map((t) => spans.findIndex((s) => s.end > t.pos));
 
   // 4. 按标签校正说话人:玩家台词、没带立绘标签的台词
-  const marks = attributeSpans(spans, tags, lineIndexes, opts.charName, opts.userName);
+  const marks = attributeSpans(spans, tags, lineIndexes, opts.charName, opts.userName, opts);
 
   const lines: VNLine[] = spans.map((s, i) => ({
     speaker: s.speaker,

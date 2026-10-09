@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import {
   debugApi,
   sceneFileUrl,
+  sceneThumbUrl,
   spriteImageUrl,
-  type CardSprite,
+  type PackSprite,
+  type SpriteEffect,
   type EmotionStatus,
   type SceneKind,
 } from '../lib/api';
@@ -12,11 +14,16 @@ import type { LangPluginConfig } from '../plugins/lang';
 import type { PlayerPluginConfig } from '../plugins/player';
 import {
   SCENE,
+  SWITCH_THRESHOLD,
+  CG_OFF_WORD,
   backgroundsOf,
   bgmsOf,
+  cgVariantsOf,
+  cgsOf,
   sceneTagExample,
   validateSceneTemplate,
   type SceneKindKey,
+  type ScenePluginConfig,
 } from '../plugins/scene';
 import {
   DEFAULT_BLOCK_PROMPT,
@@ -27,12 +34,17 @@ import {
 } from '../plugins/sprite';
 import type { ScenePluginState } from '../plugins/useScenePlugin';
 import type { SpriteLayoutState } from '../plugins/useSpriteLayout';
+import type { SpritePackState } from '../plugins/useSpritePacks';
 import type { VoicePluginState } from '../plugins/useVoicePlugin';
 import { bgmPlayer, useBgm } from '../vn/bgm';
 import { CommitField, DeleteButton } from './pluginFields';
+import { JevCommon, ModeBar, PromptField, ThresholdField, type JevControls } from './JevSettings';
 import { LangPanel } from './LangPanel';
 import { PlayerPanel } from './PlayerPanel';
 import { SpritePosition } from './SpritePosition';
+import { SpriteFxFields } from './SpriteFxFields';
+import { SpriteBubble } from '../vn/SpriteBubble';
+import { MOTION_FRAMES, playFxSound } from '../plugins/spriteFx';
 import { errText, formatSize, useRunner } from './pluginRunner';
 import { VoicePanel } from './VoicePanel';
 
@@ -40,8 +52,8 @@ import { VoicePanel } from './VoicePanel';
  * 插件抽屉 —— 左边是插件列表,右边是选中插件的配置。
  *
  * 每个插件都是同一个结构:提示词块(写进预设)、标签格式、提示词模板、素材表。
- * 立绘的素材按卡;背景和 BGM 的素材在场景包里,卡绑定一个包(两页共用顶上的
- * 场景包选择器)。语音的素材是语音服务那台机器上的模型和参考音频,这里只存路径,
+ * 立绘的素材在立绘包里,卡挂一个或几个包、游戏里随时换;背景、BGM、CG 的素材在场景包里,
+ * 卡绑定一个包(三页共用顶上的场景包选择器)。语音的素材是语音服务那台机器上的模型和参考音频,这里只存路径,
  * 见 VoicePanel。
  */
 
@@ -55,7 +67,7 @@ export interface BlockControls {
 }
 
 /** 有提示词块的插件 */
-export type PluginKey = 'sprite' | 'bg' | 'bgm' | 'lang' | 'player';
+export type PluginKey = 'sprite' | 'bg' | 'bgm' | 'cg' | 'lang' | 'player';
 /** 抽屉左边列的插件;语音没有提示词块,所以不在 PluginKey 里 */
 export type PluginSection = PluginKey | 'voice';
 /** 打开到哪个插件;有提示词模板的滚到模板那儿。nonce 变了就再跳一次 */
@@ -76,8 +88,8 @@ interface Props {
     config: SpritePluginConfig;
     onChangeConfig: (next: SpritePluginConfig) => void;
     block: BlockControls;
-    sprites: CardSprite[];
-    onSpritesChange: (cardId: string, next: CardSprite[]) => void;
+    /** 这张卡挂的立绘包、当前包和它的立绘 */
+    packs: SpritePackState;
     /** 立绘在游戏里怎么摆 */
     layout: SpriteLayoutState;
   };
@@ -105,6 +117,9 @@ interface Props {
     block: BlockControls;
   };
 
+  /** Jev 标注:立绘 / 背景 / BGM / 玩家台词每个插件可以选让 Jev 标(几个插件共用的设置在这里) */
+  jev: JevControls;
+
   /** 从左栏点插件块跳过来:打开到这个插件,滚到提示词模板(语音没有模板,只切过去) */
   focus: PluginFocus | null;
 
@@ -116,10 +131,11 @@ const PLUGINS = [
   { key: 'sprite', name: '立绘', ready: true },
   { key: 'bg', name: '背景', ready: true },
   { key: 'bgm', name: 'BGM', ready: true },
+  { key: 'cg', name: 'CG', ready: true },
   { key: 'voice', name: '语音', ready: true },
   { key: 'lang', name: '外语', ready: true },
   { key: 'player', name: '玩家台词', ready: true },
-] as const;
+] as const satisfies readonly { key: PluginSection; name: string; ready: boolean }[];
 
 /** 示例立绘:Ren'Py 官方示例游戏 The Question 里的 Sylvie(MIT 授权,见 public/vn/CREDITS.txt) */
 const SAMPLE_SPRITES = [
@@ -193,9 +209,9 @@ export function PluginsDrawer(props: Props) {
     };
   }, [focus]);
 
-  // 场景包的数量、素材数这些在别处(别的设备)也可能变,进背景 / BGM 页时刷新一次
+  // 场景包的数量、素材数这些在别处(别的设备)也可能变,进背景 / BGM / CG 页时刷新一次
   useEffect(() => {
-    if (section === 'bg' || section === 'bgm') void refreshPacks();
+    if (section === 'bg' || section === 'bgm' || section === 'cg') void refreshPacks();
   }, [section, refreshPacks]);
 
   return (
@@ -227,14 +243,14 @@ export function PluginsDrawer(props: Props) {
 
         <div className="sp-body">
           {section === 'sprite' && <SpriteSection {...props} />}
-          {(section === 'bg' || section === 'bgm') && (
+          {(section === 'bg' || section === 'bgm' || section === 'cg') && (
             <SceneSection key={section} kind={section} {...props} />
           )}
           {section === 'voice' && (
             <VoicePanel
               voice={props.voice}
               card={props.card}
-              sprites={enabledOnly(props.sprite.sprites)}
+              sprites={enabledOnly(props.sprite.packs.sprites)}
               notify={props.notify}
             />
           )}
@@ -254,25 +270,69 @@ export function PluginsDrawer(props: Props) {
               }
             />
           )}
-          {section === 'player' && (
-            <PlayerPanel
-              config={props.player.config}
-              onChangeConfig={props.player.onChangeConfig}
-              blockGroup={
-                <BlockGroup
-                  what="玩家台词"
-                  block={props.player.block}
-                  presetName={props.presetName}
-                  presetDirty={props.presetDirty}
-                  presetBusy={props.presetBusy}
-                  onSavePreset={props.onSavePreset}
-                />
-              }
-            />
-          )}
+          {section === 'player' && <PlayerSection {...props} />}
         </div>
       </div>
     </div>
+  );
+}
+
+// ─────────────────────────── 玩家台词 ───────────────────────────
+
+/** 玩家台词:AI 按块写 <我>,或者 Jev 认出玩家说的台词(见 PlayerPanel / plugins/jev.ts) */
+function PlayerSection({ player, jev, notify, presetName, presetDirty, presetBusy, onSavePreset }: Props) {
+  const { config, onChangeConfig } = player;
+  return (
+    <>
+      <ModeBar
+        name="玩家台词"
+        kind="player"
+        mode={config.mode}
+        onChangeMode={(mode) => onChangeConfig({ ...config, mode })}
+        jev={jev}
+        aiNote="AI 按「玩家台词」块在玩家说的每一句前写 <我>"
+        jevNote="LLM 只写正文,哪句是玩家说的由 Jev 判断后补上"
+      />
+      {config.mode === 'jev' ? (
+        <>
+          <JevCommon jev={jev} notify={notify} />
+          <div className="sp-group">
+            <div className="sp-group-head">
+              <span className="sp-group-title">弹成选项</span>
+              <span className="sp-group-note">
+                模型替玩家写的台词,Jev 认出来以后怎么显示。「谁说的」这道题的问法和门槛在上面的通用设置里。
+              </span>
+            </div>
+            <label className="vp-check">
+              <input
+                type="checkbox"
+                checked={config.jev.popup}
+                onChange={(e) => onChangeConfig({ ...config, jev: { ...config.jev, popup: e.target.checked } })}
+              />
+              Jev 认出的玩家台词弹成选项
+            </label>
+            <span className="sp-group-note">
+              开:翻到这句先弹一个选项,选中后以玩家的名义显示,不念、不切立绘。关:照常显示成旁白的样子,名牌留空、不念。
+            </span>
+          </div>
+        </>
+      ) : (
+        <PlayerPanel
+          config={config}
+          onChangeConfig={onChangeConfig}
+          blockGroup={
+            <BlockGroup
+              what="玩家台词"
+              block={player.block}
+              presetName={presetName}
+              presetDirty={presetDirty}
+              presetBusy={presetBusy}
+              onSavePreset={onSavePreset}
+            />
+          }
+        />
+      )}
+    </>
   );
 }
 
@@ -343,7 +403,7 @@ function BlockGroup({
 }
 
 /** 「标签格式」+「提示词模板」两组 */
-function ConfigGroups({
+function ConfigGroups<C extends PluginConfig>({
   anchor,
   config,
   onChangeConfig,
@@ -358,8 +418,8 @@ function ConfigGroups({
 }: {
   /** 提示词模板那一组的 id,左栏点插件块时滚到这里 */
   anchor: string;
-  config: PluginConfig;
-  onChangeConfig: (next: PluginConfig) => void;
+  config: C;
+  onChangeConfig: (next: C) => void;
   validate: (template: string) => string | null;
   tagNote: string;
   /** 模板 → AI 写出来的样子,比如 <sprite:微笑>「……」 */
@@ -374,6 +434,10 @@ function ConfigGroups({
 }) {
   // 模板允许暂时是半成品(正在打字),合法了才往外交
   const [templateDraft, setTemplateDraft] = useState(config.tagTemplate);
+  // 外面的配置变了(设置从后端读回来晚于抽屉打开、点了恢复默认)要跟上:不然显示的是旧模板,
+  // 下一次按键就拿旧模板改一个字存回去,把读回来的自定义模板盖掉。自己打的合法模板交出去以后
+  // 两边一样,这里不会动它
+  useEffect(() => setTemplateDraft(config.tagTemplate), [config.tagTemplate]);
   const templateError = validate(templateDraft);
 
   return (
@@ -491,110 +555,387 @@ function SpriteSection({
   onSavePreset,
   card,
   notify,
+  jev,
 }: Props) {
-  const { config, onChangeConfig, block, sprites, onSpritesChange } = sprite;
+  const { config, onChangeConfig, block, packs } = sprite;
+  const { sprites, packId } = packs;
   const macros = spriteMacros(config, enabledOnly(sprites));
+  const pack = packs.packs.find((p) => p.id === packId) ?? null;
+  const noPack = !card ? (
+    <div className="sp-empty">先在右栏选一张角色卡。</div>
+  ) : (
+    <div className="sp-empty">这张卡还没有立绘包。在上面新建一个,或者挂一个已有的。</div>
+  );
 
   return (
     <>
-      <BlockGroup
-        what="立绘"
-        block={block}
-        presetName={presetName}
-        presetDirty={presetDirty}
-        presetBusy={presetBusy}
-        onSavePreset={onSavePreset}
-      />
-      <ConfigGroups
-        anchor="pl-prompt-sprite"
-        config={config}
-        onChangeConfig={onChangeConfig}
-        validate={validateTemplate}
-        tagNote="AI 用这个格式标出表情,视觉小说界面也按它来识别。{表情} 的位置写表情名。"
-        sampleTag={(t) => `${t.replace('{表情}', sprites[0]?.label ?? '微笑')}「……」`}
-        defaultPrompt={DEFAULT_BLOCK_PROMPT}
-        promptNote={
-          <>
-            「立绘指令 · 插件」块的正文,所有预设共用,改完立即生效。{'{{sprites}}'} 会展开成当前角色卡的表情列表
-            (没配立绘时是内置基础表情),{'{{sprite_tag}}'} 展开成标签示例,{'{{sprite_examples}}'} 展开成正误示范。
-          </>
-        }
-        exampleMacro="sprite_tag"
-        example={tagExample(config.tagTemplate)}
-        previews={[
-          { name: 'sprites', value: macros.sprites },
-          { name: 'sprite_examples', value: macros.sprite_examples },
-        ]}
+      <ModeBar
+        name="立绘"
+        kind="sprite"
+        mode={config.mode}
+        onChangeMode={(mode) => onChangeConfig({ ...config, mode })}
+        jev={jev}
+        aiNote="AI 按「立绘指令」块在角色的每句台词前写表情标签"
+        jevNote="LLM 只写正文,每句台词是谁说的、什么表情由 Jev 判断后补上"
       />
 
-      <EmotionModelStatus />
+      <SpritePackBar card={card} packs={packs} notify={notify} />
+
+      {config.mode === 'jev' ? (
+        <>
+          <JevCommon jev={jev} notify={notify} />
+          <div className="sp-group">
+            <div className="sp-group-head">
+              <span className="sp-group-title">表情题</span>
+              <span className="sp-group-note">
+                问 Jev「这句说出口时她是什么表情」。选项是下面这个立绘包里的每张立绘,<b>说明会作为选项说明给 Jev 看</b>,
+                写清楚表情是什么样的(比如「嘴角上扬,心情不错」),Jev 挑得越准。
+              </span>
+            </div>
+            <PromptField
+              label="问法"
+              promptKey="emotion"
+              value={config.jev.emotionPrompt}
+              defaults={jev.defaults}
+              placeholders={['n', 'line', 'char', 'user']}
+              onChange={(v) => onChangeConfig({ ...config, jev: { ...config.jev, emotionPrompt: v } })}
+            />
+          </div>
+        </>
+      ) : (
+        <>
+          <BlockGroup
+            what="立绘"
+            block={block}
+            presetName={presetName}
+            presetDirty={presetDirty}
+            presetBusy={presetBusy}
+            onSavePreset={onSavePreset}
+          />
+          <ConfigGroups
+            anchor="pl-prompt-sprite"
+            config={config}
+            onChangeConfig={onChangeConfig}
+            validate={validateTemplate}
+            tagNote="AI 用这个格式标出表情,视觉小说界面也按它来识别。{表情} 的位置写表情名。"
+            sampleTag={(t) => `${t.replace('{表情}', sprites[0]?.label ?? '微笑')}「……」`}
+            defaultPrompt={DEFAULT_BLOCK_PROMPT}
+            promptNote={
+              <>
+                「立绘指令 · 插件」块的正文,所有预设共用,改完立即生效。{'{{sprites}}'} 会展开成当前角色卡正在用的立绘包的表情列表
+                (没配立绘时是内置基础表情),{'{{sprite_tag}}'} 展开成标签示例,{'{{sprite_examples}}'} 展开成正误示范。
+              </>
+            }
+            exampleMacro="sprite_tag"
+            example={tagExample(config.tagTemplate)}
+            previews={[
+              { name: 'sprites', value: macros.sprites },
+              { name: 'sprite_examples', value: macros.sprite_examples },
+            ]}
+          />
+
+          <EmotionModelStatus />
+        </>
+      )}
 
       <div className="sp-group">
         <div className="sp-group-head">
-          <span className="sp-group-title">位置{card ? ` · ${card.name || '(未命名)'}` : ''}</span>
+          <span className="sp-group-title">位置{pack ? ` · ${pack.name}` : ''}</span>
           <span className="sp-group-note">
             所有角色按脸对齐:脸一样大、头在同一高度,换角色、换表情时人不会忽大忽小。上传立绘时自动找脸;
-            不满意可以在画面上拖动、放大缩小,或者调所有角色共用的人物大小和头的高度。
+            不满意可以在画面上拖动、放大缩小(跟着立绘包走,包挂到别的卡上也带着),或者调所有角色共用的人物大小和头的高度。
           </span>
         </div>
-        {card ? (
+        {card && packId ? (
           <SpritePosition
-            key={card.id}
+            key={packId}
             card={card}
+            packName={pack?.name ?? ''}
             sprites={sprites}
             sceneAssets={scene.assets}
             cards={cards}
             state={sprite.layout}
           />
         ) : (
-          <div className="sp-empty">先在右栏选一张角色卡。</div>
+          noPack
         )}
       </div>
 
       <div className="sp-group">
         <div className="sp-group-head">
-          <span className="sp-group-title">
-            表情映射{card ? ` · ${card.name || '(未命名)'}` : ''}
-          </span>
+          <span className="sp-group-title">表情{pack ? ` · ${pack.name}` : ''}</span>
           <span className="sp-group-note">
-            每张卡一套。AI 写的表情名(或别名)对上哪一行,就换成那一行的图;对不上的由情绪识别模型挑最像的一行。排第一的是默认表情。
-            不想用的点「禁用」:游戏里当它不存在,图和名字都留着,随时能再启用。
+            AI 写的表情名(或别名)对上哪一行,就换成那一行的图;对不上的由情绪识别模型挑最像的一行。排第一的是默认表情。
+            几个包最好用同一套表情名,换包时按名字对上。不想用的点「禁用」:游戏里当它不存在,图和名字都留着,随时能再启用。
+            {pack && pack.card_count > 1 && `这个包有 ${pack.card_count} 张卡在用,改动对它们都生效。`}
           </span>
         </div>
-        {card ? (
+        {card && packId ? (
           <SpriteTable
-            key={card.id}
-            cardId={card.id}
+            key={packId}
+            packId={packId}
             sprites={sprites}
-            onSpritesChange={onSpritesChange}
+            packs={packs}
             notify={notify}
           />
         ) : (
-          <div className="sp-empty">先在右栏选一张角色卡。</div>
+          noPack
         )}
       </div>
     </>
   );
 }
 
-function SpriteTable({
-  cardId,
-  sprites,
-  onSpritesChange,
+/** 示例立绘包的名字:载入过就直接挂上,不再建一个 */
+const SAMPLE_SPRITE_PACK = '示例 · Sylvie';
+
+/** 这张卡的立绘包:挂着哪些、换哪个,以及挂 / 新建 / 改名 / 拿掉 / 删除 / 载入示例 */
+function SpritePackBar({
+  card,
+  packs,
   notify,
 }: {
-  cardId: string;
-  sprites: CardSprite[];
-  onSpritesChange: (cardId: string, next: CardSprite[]) => void;
+  card: Props['card'];
+  packs: SpritePackState;
+  notify: Props['notify'];
+}) {
+  const [naming, setNaming] = useState<'new' | 'rename' | null>(null);
+  const [draft, setDraft] = useState('');
+  const [busy, setBusy] = useState<string | null>(null);
+  const { packIds, packId, refreshPacks } = packs;
+  const byId = new Map(packs.packs.map((p) => [p.id, p]));
+  const pack = packId ? (byId.get(packId) ?? null) : null;
+  const loose = packs.packs.filter((p) => !packIds.includes(p.id));
+
+  // 包的立绘数、在用的卡数在别处也会变,进立绘页时刷新一次
+  useEffect(() => {
+    void refreshPacks();
+  }, [refreshPacks]);
+
+  const act = async (label: string, fn: () => Promise<void>) => {
+    setBusy(label);
+    try {
+      await fn();
+    } catch (e) {
+      notify('error', errText(e));
+    } finally {
+      setBusy(null);
+      await refreshPacks();
+    }
+  };
+
+  /** 挂上一个包并换成它(插件页编辑的就是当前包) */
+  const attach = (id: string) => packs.setPacks([...packIds, id], id);
+
+  const submitName = () => {
+    const name = draft.trim();
+    if (!name) return;
+    const mode = naming;
+    setNaming(null);
+    void act(mode === 'new' ? '新建' : '重命名', async () => {
+      if (mode === 'new') {
+        await attach((await debugApi.createSpritePack(name)).id);
+      } else if (pack) {
+        await debugApi.updateSpritePack(pack.id, { name });
+      }
+    });
+  };
+
+  const loadSample = () =>
+    act('载入示例', async () => {
+      const existing = packs.packs.find((p) => p.name === SAMPLE_SPRITE_PACK);
+      if (existing) {
+        if (packIds.includes(existing.id)) await packs.switchPack(existing.id);
+        else await attach(existing.id);
+        notify('ok', `「${SAMPLE_SPRITE_PACK}」已经有了,已换成它`);
+        return;
+      }
+      const created = await debugApi.createSpritePack(
+        SAMPLE_SPRITE_PACK,
+        "Ren'Py 示例游戏里的 Sylvie,随仓库附带,可以先用来试效果",
+      );
+      for (const s of SAMPLE_SPRITES) {
+        const res = await fetch(`/vn/sample-sprites/${s.file}`);
+        if (!res.ok) throw new Error(`示例图 ${s.file} 下载失败`);
+        const row = await debugApi.createSprite(created.id, {
+          label: s.label,
+          aliases: s.aliases,
+          description: s.description,
+        });
+        await debugApi.uploadSpriteImage(created.id, row.id, await res.blob());
+      }
+      await attach(created.id);
+      notify('ok', `已载入示例立绘包:${SAMPLE_SPRITES.length} 个表情`);
+    });
+
+  return (
+    <div className="sp-group">
+      <div className="sp-group-head">
+        <span className="sp-group-title">立绘包{card ? ` · ${card.name || '(未命名)'}` : ''}</span>
+        <span className="sp-group-note">
+          一个包是一整套表情立绘。一张卡可以挂几个包,点一下就换(游戏里在菜单「角色」页换),换了以后这张卡所有对话、存档都用新的;
+          同一个包也能挂在好几张卡上。下面的位置和表情改的是当前这个包。
+        </span>
+      </div>
+      {!card ? (
+        <div className="sp-empty">先在右栏选一张角色卡。</div>
+      ) : (
+        <>
+          {packIds.length > 0 && (
+            <div className="pl-row">
+              {packIds.map((id) => {
+                const p = byId.get(id);
+                const on = id === packId;
+                return (
+                  <button
+                    key={id}
+                    className={`btn small${on ? ' accent' : ''}`}
+                    aria-pressed={on}
+                    disabled={!!busy}
+                    onClick={() => {
+                      if (!on) void act('换包', () => packs.switchPack(id));
+                    }}
+                    title={on ? '正在用的包' : '换成这个包'}
+                  >
+                    {p ? `${p.name} · ${p.sprite_count} 张` : '…'}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          <div className="pl-row">
+            <select
+              className="text-input pl-pack-select"
+              value=""
+              disabled={!!busy || loose.length === 0}
+              onChange={(e) => {
+                if (e.target.value) void act('挂上', () => attach(e.target.value));
+              }}
+            >
+              <option value="">
+                {loose.length ? '挂一个已有的立绘包…' : '没有别的立绘包了'}
+              </option>
+              {loose.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}({p.sprite_count} 张 · {p.card_count ? `${p.card_count} 张卡在用` : '没有卡在用'})
+                </option>
+              ))}
+            </select>
+            {busy && (
+              <span className="sp-group-note">
+                <span className="spinner tiny" /> {busy}…
+              </span>
+            )}
+          </div>
+          {naming ? (
+            <div className="pl-row">
+              <input
+                className="text-input pl-pack-name"
+                value={draft}
+                autoFocus
+                placeholder="立绘包名字,比如 夜莺"
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.nativeEvent.isComposing) submitName();
+                  if (e.key === 'Escape') setNaming(null);
+                }}
+              />
+              <button className="btn small accent" disabled={!draft.trim()} onClick={submitName}>
+                {naming === 'new' ? '新建并挂上' : '改名'}
+              </button>
+              <button className="btn small" onClick={() => setNaming(null)}>
+                取消
+              </button>
+            </div>
+          ) : (
+            <div className="pl-row">
+              <button
+                className="btn small"
+                disabled={!!busy}
+                onClick={() => {
+                  setDraft('');
+                  setNaming('new');
+                }}
+              >
+                + 新建立绘包
+              </button>
+              {pack && (
+                <>
+                  <button
+                    className="btn small"
+                    disabled={!!busy}
+                    onClick={() => {
+                      setDraft(pack.name);
+                      setNaming('rename');
+                    }}
+                  >
+                    重命名
+                  </button>
+                  <button
+                    className="btn small"
+                    disabled={!!busy}
+                    title="只是这张卡不再用它,包和里面的图都留着"
+                    onClick={() =>
+                      void act('拿掉', () => packs.setPacks(packIds.filter((id) => id !== pack.id)))
+                    }
+                  >
+                    从这张卡拿掉
+                  </button>
+                </>
+              )}
+              <button
+                className="btn small"
+                disabled={!!busy}
+                onClick={() => void loadSample()}
+                title="Ren'Py 示例游戏里的角色 Sylvie,四个表情,可以先用来试效果"
+              >
+                载入示例立绘包
+              </button>
+              {pack && (
+                <DeleteButton
+                  disabled={!!busy}
+                  label={pack.card_count > 1 ? `删除这个包(${pack.card_count} 张卡在用)` : '删除这个包'}
+                  onConfirm={() =>
+                    void act('删除', async () => {
+                      await debugApi.deleteSpritePack(pack.id);
+                      await packs.reload();
+                      notify(
+                        'ok',
+                        pack.card_count > 1
+                          ? `已删除「${pack.name}」,另外 ${pack.card_count - 1} 张卡也不再用它`
+                          : `已删除「${pack.name}」`,
+                      );
+                    })
+                  }
+                />
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function SpriteTable({
+  packId,
+  sprites,
+  packs,
+  notify,
+}: {
+  packId: string;
+  sprites: PackSprite[];
+  packs: SpritePackState;
   notify: Props['notify'];
 }) {
   const batchRef = useRef<HTMLInputElement>(null);
   const replaceRef = useRef<HTMLInputElement>(null);
   const replaceTarget = useRef<string | null>(null);
 
-  const [busy, run] = useRunner(notify, async () =>
-    onSpritesChange(cardId, await debugApi.listSprites(cardId)),
-  );
+  const [busy, run] = useRunner(notify, async () => {
+    packs.changeSprites(packId, await debugApi.listSprites(packId));
+    await packs.refreshPacks();
+  });
 
   /** 所有已被占用的名字(小写),新建时避开 */
   const takenNames = () =>
@@ -602,49 +943,51 @@ function SpriteTable({
 
   const addEmpty = () =>
     run('新建', async () => {
-      await debugApi.createSprite(cardId, { label: uniqueLabel('新表情', '表情', takenNames()) });
+      await debugApi.createSprite(packId, { label: uniqueLabel('新表情', '表情', takenNames()) });
     });
 
   const batchUpload = (files: File[]) =>
     run(`上传 ${files.length} 张`, async () => {
       const taken = takenNames();
       for (const f of files) {
-        const created = await debugApi.createSprite(cardId, {
+        const created = await debugApi.createSprite(packId, {
           label: uniqueLabel(labelFromFile(f.name), '表情', taken),
         });
-        await debugApi.uploadSpriteImage(cardId, created.id, f);
+        await debugApi.uploadSpriteImage(packId, created.id, f);
       }
       notify('ok', `已添加 ${files.length} 个表情,记得把名字改成 AI 好理解的词`);
     });
 
-  const loadSamples = () =>
-    run('载入示例', async () => {
-      const taken = takenNames();
-      let added = 0;
-      for (const s of SAMPLE_SPRITES) {
-        if (taken.has(s.label.toLowerCase())) continue;
-        const res = await fetch(`/vn/sample-sprites/${s.file}`);
-        if (!res.ok) throw new Error(`示例图 ${s.file} 下载失败`);
-        const created = await debugApi.createSprite(cardId, {
-          label: s.label,
-          aliases: s.aliases.filter((a) => !taken.has(a.toLowerCase())),
-          description: s.description,
-        });
-        await debugApi.uploadSpriteImage(cardId, created.id, await res.blob());
-        added++;
-      }
-      notify('ok', added ? `已载入 ${added} 个示例表情` : '示例表情都已经在列表里了');
-    });
-
   const update = (spriteId: string, patch: { label?: string; aliases?: string[]; description?: string }) =>
     run('保存', async () => {
-      await debugApi.updateSprite(cardId, spriteId, patch);
+      await debugApi.updateSprite(packId, spriteId, patch);
     });
 
   const setEnabled = (spriteId: string, enabled: boolean) =>
     run(enabled ? '启用' : '禁用', async () => {
-      await debugApi.updateSprite(cardId, spriteId, { enabled });
+      await debugApi.updateSprite(packId, spriteId, { enabled });
     });
+
+  const setEffect = (spriteId: string, effect: SpriteEffect | null) =>
+    run('保存特效', async () => {
+      await debugApi.updateSprite(packId, spriteId, { effect });
+    });
+
+  // 「试一下」:在这张的缩略图上跳一下、冒气泡、响一声(和视觉小说里同一套)
+  const thumbs = useRef(new Map<string, HTMLButtonElement>());
+  const [preview, setPreview] = useState<{ id: string; bubble: string | null; n: number } | null>(null);
+  useEffect(() => {
+    if (!preview) return;
+    const t = window.setTimeout(() => setPreview(null), 1500);
+    return () => window.clearTimeout(t);
+  }, [preview]);
+  const playPreview = (spriteId: string, effect: SpriteEffect) => {
+    playFxSound(effect.sound, 0.8);
+    const motion = effect.motion ? MOTION_FRAMES[effect.motion] : undefined;
+    const img = thumbs.current.get(spriteId)?.querySelector('img');
+    if (motion && img) img.animate(motion.frames, motion.timing);
+    setPreview({ id: spriteId, bubble: effect.bubble, n: (preview?.n ?? 0) + 1 });
+  };
 
   /** 默认表情 = 排在最前面的、没禁用的那张 */
   const defaultId = sprites.find((s) => s.enabled)?.id ?? null;
@@ -657,14 +1000,6 @@ function SpriteTable({
         </button>
         <button className="btn small" disabled={!!busy} onClick={() => batchRef.current?.click()}>
           批量上传图片
-        </button>
-        <button
-          className="btn small"
-          disabled={!!busy}
-          onClick={loadSamples}
-          title="Ren'Py 示例游戏里的角色 Sylvie,四个表情,可以先用来试效果"
-        >
-          载入示例立绘
         </button>
         {busy && (
           <span className="sp-group-note">
@@ -696,7 +1031,7 @@ function SpriteTable({
           e.target.value = '';
           if (f && target) {
             void run('换图', async () => {
-              await debugApi.uploadSpriteImage(cardId, target, f);
+              await debugApi.uploadSpriteImage(packId, target, f);
             });
           }
         }}
@@ -704,7 +1039,7 @@ function SpriteTable({
 
       {sprites.length === 0 ? (
         <div className="sp-empty">
-          还没有表情。批量上传时文件名就是表情名(比如 微笑.png);没有素材的话先载入示例立绘试试。
+          这个包里还没有表情。批量上传时文件名就是表情名(比如 微笑.png);没有素材的话先在上面载入示例立绘包试试。
         </div>
       ) : (
         <div className="pl-sprite-list">
@@ -716,12 +1051,19 @@ function SpriteTable({
                   className="pl-thumb"
                   title={url ? '点击换图' : '点击上传图片'}
                   disabled={!!busy}
+                  ref={(el) => {
+                    if (el) thumbs.current.set(s.id, el);
+                    else thumbs.current.delete(s.id);
+                  }}
                   onClick={() => {
                     replaceTarget.current = s.id;
                     replaceRef.current?.click();
                   }}
                 >
                   {url ? <img src={url} alt={s.label} /> : <span>上传</span>}
+                  {preview?.id === s.id && preview.bubble && (
+                    <SpriteBubble key={preview.n} kind={preview.bubble} style={THUMB_BUBBLE} />
+                  )}
                 </button>
                 <LabelFields
                   noun="表情名"
@@ -729,7 +1071,14 @@ function SpriteTable({
                   isDefault={s.id === defaultId}
                   descPlaceholder="给 AI 看的:什么时候用这个表情"
                   onCommit={(patch) => update(s.id, patch)}
-                />
+                >
+                  <SpriteFxFields
+                    effect={s.effect}
+                    disabled={!!busy}
+                    onCommit={(fx) => void setEffect(s.id, fx)}
+                    onPreview={(fx) => playPreview(s.id, fx)}
+                  />
+                </LabelFields>
                 <div className="pl-actions">
                   <EnableButton
                     enabled={s.enabled}
@@ -741,7 +1090,7 @@ function SpriteTable({
                     disabled={s.id === defaultId || !s.enabled || !!busy}
                     onClick={() =>
                       void run('排序', async () => {
-                        await debugApi.reorderSprites(cardId, [
+                        await debugApi.reorderSprites(packId, [
                           s.id,
                           ...sprites.map((x) => x.id).filter((id) => id !== s.id),
                         ]);
@@ -755,7 +1104,7 @@ function SpriteTable({
                     disabled={!!busy}
                     onConfirm={() =>
                       void run('删除', async () => {
-                        await debugApi.deleteSprite(cardId, s.id);
+                        await debugApi.deleteSprite(packId, s.id);
                       })
                     }
                   />
@@ -768,6 +1117,9 @@ function SpriteTable({
     </div>
   );
 }
+
+/** 缩略图上的气泡:右上角,缩略图宽的一半 */
+const THUMB_BUBBLE = { right: 2, top: 2, width: 30, height: 30 } as const;
 
 /** 禁用 / 启用:禁用的素材游戏里当作不存在,但留着,不用删 */
 function EnableButton({
@@ -843,7 +1195,7 @@ function LabelFields({
   );
 }
 
-// ─────────────────────────── 背景 / BGM ───────────────────────────
+// ─────────────────────────── 背景 / BGM / CG ───────────────────────────
 
 const SCENE_TEXT: Record<
   SceneKindKey,
@@ -863,6 +1215,25 @@ const SCENE_TEXT: Record<
     macros: ['bgms', 'current_bgm'],
     exampleMacro: 'bgm_tag',
   },
+  cg: {
+    what: 'CG',
+    tagNote: `AI 进入 CG 对得上的场面、场面变了时用这个格式。{CG} 的位置写 CG 名,写「${CG_OFF_WORD}」收起 CG。`,
+    sample: '海边烟花',
+    macros: ['cgs', 'current_cg'],
+    exampleMacro: 'cg_tag',
+  },
+};
+
+const SCENE_NAME: Record<SceneKindKey, string> = { bg: '背景', bgm: 'BGM', cg: 'CG' };
+const SCENE_AI_WHEN: Record<SceneKindKey, string> = {
+  bg: '换场景',
+  bgm: '气氛转变',
+  cg: '进入 CG 场面、场面变化、场面结束',
+};
+const SCENE_JEV_WHAT: Record<SceneKindKey, string> = {
+  bg: '场景换没换、换到哪',
+  bgm: '气氛变没变、换哪首',
+  cg: '每句画面上该是哪张 CG(或者不显示)',
 };
 
 function SceneSection({
@@ -876,56 +1247,177 @@ function SceneSection({
   onSavePreset,
   card,
   notify,
+  jev,
+  sprite,
 }: Props & { kind: SceneKindKey }) {
   const text = SCENE_TEXT[kind];
   const config = scene.configs[kind];
   const [listMacro, currentMacro] = text.macros;
   const pack = scene.packs.find((p) => p.id === scene.packId) ?? null;
 
+  const change = (next: ScenePluginConfig) => scene.changeConfig(kind, next);
+  const changeJev = (patch: Partial<ScenePluginConfig['jev']>) =>
+    change({ ...config, jev: { ...config.jev, ...patch } });
+  const keep = jev.defaults?.keep ?? '不换';
+  const off = jev.defaults?.cg_off ?? '不显示CG';
+
   return (
     <>
+      <ModeBar
+        name={SCENE_NAME[kind]}
+        kind={kind}
+        mode={config.mode}
+        onChangeMode={(mode) => change({ ...config, mode })}
+        jev={jev}
+        aiNote={`AI 按「${SCENE[kind].blockName}」块在${SCENE_AI_WHEN[kind]}时写标签`}
+        jevNote={`LLM 只写正文,${SCENE_JEV_WHAT[kind]}由 Jev 判断后补上`}
+      />
+
       <PackBar card={card} scene={scene} notify={notify} />
 
-      <BlockGroup
-        what={text.what}
-        block={sceneBlocks[kind]}
-        presetName={presetName}
-        presetDirty={presetDirty}
-        presetBusy={presetBusy}
-        onSavePreset={onSavePreset}
-      />
-      <ConfigGroups
-        anchor={`pl-prompt-${kind}`}
-        config={config}
-        onChangeConfig={(next) => scene.changeConfig(kind, next)}
-        validate={(t) => validateSceneTemplate(kind, t)}
-        tagNote={text.tagNote}
-        sampleTag={(t) => t.replace(SCENE[kind].placeholder, text.sample)}
-        defaultPrompt={SCENE[kind].defaults.blockPrompt}
-        promptNote={
-          <>
-            「{SCENE[kind].blockName}」块的正文,所有预设共用,改完立即生效。{`{{${listMacro}}}`} 展开成场景包里的{text.what}列表,
-            {`{{${currentMacro}}}`} 展开成对话进行到现在的{text.what}。
-          </>
-        }
-        exampleMacro={text.exampleMacro}
-        example={sceneTagExample(kind, config.tagTemplate)}
-        previews={[
-          { name: listMacro, value: sceneMacros[listMacro] ?? '' },
-          { name: currentMacro, value: sceneMacros[currentMacro] ?? '' },
-        ]}
-      />
+      {config.mode === 'jev' && kind === 'cg' ? (
+        <>
+          <JevCommon jev={jev} notify={notify} />
+          <div className="sp-group">
+            <div className="sp-group-head">
+              <span className="sp-group-title">出 CG / 换 CG / 收起</span>
+              <span className="sp-group-note">
+                每一句问 Jev 一道选择题:选项是「{keep}」「{off}」和场景包里的每张 CG(<b>说明会给 Jev 看</b>,先写场面和在做什么,
+                衣着、小细节放最后当参考)。Jev 还会看到现在的背景(名字和说明),只当参考。
+                几张相似的 CG 把握加起来算:加起来够门槛就换成其中最高的那张;「{off}」的把握够门槛就收起。换场景不收 CG。
+                画面上显示哪张差分跟着这句的表情走,不用 Jev 判。
+              </span>
+            </div>
+            <ThresholdField
+              label="门槛"
+              value={config.jev.threshold}
+              def={SWITCH_THRESHOLD.def}
+              min={SWITCH_THRESHOLD.min}
+              max={SWITCH_THRESHOLD.max}
+              low="多换"
+              high="少换"
+              note="Jev 的把握到这么多才出 / 换 / 收起 CG。低:反应快,也容易出错图;高:换得稳,也会漏掉一些该出的"
+              onChange={(v) => changeJev({ threshold: v })}
+            />
+            <PromptField
+              label="CG 题"
+              promptKey="cg"
+              value={config.jev.prompt}
+              defaults={jev.defaults}
+              placeholders={['n', 'line', 'char', 'user']}
+              onChange={(v) => changeJev({ prompt: v })}
+              rows={5}
+            />
+            <PromptField
+              label={`选项「${keep}」的说明`}
+              promptKey="cg_keep"
+              value={config.jev.keepPrompt}
+              defaults={jev.defaults}
+              placeholders={['current']}
+              onChange={(v) => changeJev({ keepPrompt: v })}
+              rows={2}
+            />
+            <PromptField
+              label={`选项「${off}」的说明`}
+              promptKey="cg_off"
+              value={config.jev.offPrompt}
+              defaults={jev.defaults}
+              placeholders={['char', 'user']}
+              onChange={(v) => changeJev({ offPrompt: v })}
+              rows={2}
+            />
+          </div>
+        </>
+      ) : config.mode === 'jev' ? (
+        <>
+          <JevCommon jev={jev} notify={notify} />
+          <div className="sp-group">
+            <div className="sp-group-head">
+              <span className="sp-group-title">{kind === 'bg' ? '换场景' : '换音乐'}</span>
+              <span className="sp-group-note">
+                每条回复的第一句和旁白问 Jev 一道选择题:选项是「{keep}」和场景包里的每个{text.what}
+                (<b>说明会给 Jev 看</b>,{kind === 'bg' ? '写上地点和白天 / 夜晚' : '写清楚适合什么气氛'})。
+                选了「{keep}」以外的、把握又够,就换。一条回复最多换一次{text.what}
+                {kind === 'bgm' ? ';换背景时音乐自动换成那个背景的默认曲' : ''}。
+              </span>
+            </div>
+            <ThresholdField
+              label="门槛"
+              value={config.jev.threshold}
+              def={SWITCH_THRESHOLD.def}
+              min={SWITCH_THRESHOLD.min}
+              max={SWITCH_THRESHOLD.max}
+              low="多换"
+              high="少换"
+              note={`Jev 的把握到这么多才换${text.what}。低:反应快,也容易换错;高:换得稳,也会漏掉一些该换的`}
+              onChange={(v) => changeJev({ threshold: v })}
+            />
+            <PromptField
+              label={kind === 'bg' ? '场景题' : '音乐题'}
+              promptKey={kind}
+              value={config.jev.prompt}
+              defaults={jev.defaults}
+              placeholders={['n', 'line', 'current', 'char', 'user']}
+              onChange={(v) => changeJev({ prompt: v })}
+            />
+            <PromptField
+              label={`选项「${keep}」的说明`}
+              promptKey={`${kind}_keep`}
+              value={config.jev.keepPrompt}
+              defaults={jev.defaults}
+              placeholders={['current', 'current_desc']}
+              onChange={(v) => changeJev({ keepPrompt: v })}
+              rows={2}
+            />
+          </div>
+        </>
+      ) : (
+        <>
+          <BlockGroup
+            what={text.what}
+            block={sceneBlocks[kind]}
+            presetName={presetName}
+            presetDirty={presetDirty}
+            presetBusy={presetBusy}
+            onSavePreset={onSavePreset}
+          />
+          <ConfigGroups
+            anchor={`pl-prompt-${kind}`}
+            config={config}
+            onChangeConfig={change}
+            validate={(t) => validateSceneTemplate(kind, t)}
+            tagNote={text.tagNote}
+            sampleTag={(t) => t.replace(SCENE[kind].placeholder, text.sample)}
+            defaultPrompt={SCENE[kind].defaults.blockPrompt}
+            promptNote={
+              <>
+                「{SCENE[kind].blockName}」块的正文,所有预设共用,改完立即生效。{`{{${listMacro}}}`} 展开成场景包里的{text.what}列表,
+                {`{{${currentMacro}}}`} 展开成对话进行到现在的{text.what}
+                {kind === 'cg' && <>,{'{{cg_off_tag}}'} 展开成收起 CG 的标签</>}。
+              </>
+            }
+            exampleMacro={text.exampleMacro}
+            example={sceneTagExample(kind, config.tagTemplate)}
+            previews={[
+              { name: listMacro, value: sceneMacros[listMacro] ?? '' },
+              { name: currentMacro, value: sceneMacros[currentMacro] ?? '' },
+            ]}
+          />
+        </>
+      )}
 
       <div className="sp-group">
         <div className="sp-group-head">
           <span className="sp-group-title">
-            {kind === 'bg' ? '背景' : '音乐'}
+            {kind === 'bg' ? '背景' : kind === 'cg' ? 'CG' : '音乐'}
             {pack ? ` · ${pack.name}` : ''}
           </span>
           <span className="sp-group-note">
             {kind === 'bg'
               ? '排第一的是默认场景。每个场景可以指定一首默认音乐:换到这个场景时自动换上。'
-              : '按气氛起名(日常、温馨、紧张、伤感…),AI 看名字和说明挑曲子;真正的曲名写在说明里。'}
+              : kind === 'cg'
+                ? '一张 CG = 一个构图(场面、地点、衣着),AI / Jev 点的是它;名字和说明写清楚。每张 CG 可以挂几张差分,差分的名字用立绘的表情名(比如 微笑、害羞):游戏里跟着这句的表情换,没有对应的就用 CG 本身那张。CG 不换音乐,换场景也不会收起。'
+                : '按气氛起名(日常、温馨、紧张、伤感…),AI 看名字和说明挑曲子;真正的曲名写在说明里。'}
             不想用的点「禁用」:游戏里当它不存在,文件留在包里,随时能再启用。
             {pack && pack.card_count > 1 && `这个包有 ${pack.card_count} 张卡在用,禁用对它们都生效。`}
           </span>
@@ -936,6 +1428,14 @@ function SceneSection({
           <div className="sp-empty">这张卡还没有绑定场景包。在上面选一个,或者新建一个。</div>
         ) : kind === 'bg' ? (
           <BgTable key={scene.packId} packId={scene.packId} scene={scene} notify={notify} />
+        ) : kind === 'cg' ? (
+          <CgTable
+            key={scene.packId}
+            packId={scene.packId}
+            scene={scene}
+            emotions={enabledOnly(sprite.packs.sprites).map((x) => x.label)}
+            notify={notify}
+          />
         ) : (
           <BgmTable key={scene.packId} packId={scene.packId} scene={scene} notify={notify} />
         )}
@@ -1032,7 +1532,7 @@ function PackBar({
       <div className="sp-group-head">
         <span className="sp-group-title">场景包{card ? ` · ${card.name || '(未命名)'}` : ''}</span>
         <span className="sp-group-note">
-          一组背景 + 音乐。每张卡绑一个包,同一个世界观的几张卡可以绑同一个;背景和 BGM 两页共用。
+          一组背景 + 音乐 + CG。每张卡绑一个包,同一个世界观的几张卡可以绑同一个;背景、BGM、CG 三页共用。
         </span>
       </div>
       {!card ? (
@@ -1049,7 +1549,7 @@ function PackBar({
               <option value="">不使用场景包</option>
               {scene.packs.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.name}({p.bg_count} 个场景 · {p.bgm_count} 首音乐)
+                  {p.name}({p.bg_count} 个场景 · {p.bgm_count} 首音乐{p.cg_count ? ` · ${p.cg_count} 张 CG` : ''})
                 </option>
               ))}
             </select>
@@ -1137,16 +1637,16 @@ function PackBar({
   );
 }
 
-/** 背景表和音乐表共用的增删改 */
+/** 背景表、音乐表、CG 表共用的增删改(CG 只管构图,差分见 CgVariants) */
 function useAssetOps(packId: string, kind: SceneKind, scene: ScenePluginState, notify: Props['notify']) {
   const [busy, run] = useRunner(notify, async () => {
     scene.changeAssets(packId, await debugApi.listSceneAssets(packId));
     await scene.refreshPacks();
   });
-  const mine = scene.assets.filter((a) => a.kind === kind);
+  const mine = scene.assets.filter((a) => a.kind === kind && !a.parent_id);
   const takenNames = () =>
     new Set(mine.flatMap((a) => [a.label, ...a.aliases]).map((n) => n.toLowerCase()));
-  const fallback = kind === 'bg' ? '场景' : '音乐';
+  const fallback = kind === 'bg' ? '场景' : kind === 'cg' ? 'CG' : '音乐';
 
   return {
     busy,
@@ -1156,7 +1656,7 @@ function useAssetOps(packId: string, kind: SceneKind, scene: ScenePluginState, n
       run('新建', async () => {
         await debugApi.createSceneAsset(packId, {
           kind,
-          label: uniqueLabel(kind === 'bg' ? '新场景' : '新音乐', fallback, takenNames()),
+          label: uniqueLabel(kind === 'bg' ? '新场景' : kind === 'cg' ? '新CG' : '新音乐', fallback, takenNames()),
         });
       }),
     batchUpload: (files: File[]) =>
@@ -1334,6 +1834,241 @@ function BgTable({
   );
 }
 
+function CgTable({
+  packId,
+  scene,
+  emotions,
+  notify,
+}: {
+  packId: string;
+  scene: ScenePluginState;
+  /** 立绘包里的表情名:差分用它们起名 */
+  emotions: string[];
+  notify: Props['notify'];
+}) {
+  const ops = useAssetOps(packId, 'cg', scene, notify);
+  const { busy } = ops;
+  const batchRef = useRef<HTMLInputElement>(null);
+  const replaceRef = useRef<HTMLInputElement>(null);
+  const replaceTarget = useRef<string | null>(null);
+
+  return (
+    <div className="pl-sprites">
+      <div className="pl-row">
+        <button className="btn small" disabled={!!busy} onClick={() => void ops.addEmpty()}>
+          + 添加 CG
+        </button>
+        <button className="btn small" disabled={!!busy} onClick={() => batchRef.current?.click()}>
+          批量上传图片
+        </button>
+        {busy && (
+          <span className="sp-group-note">
+            <span className="spinner tiny" /> {busy}…
+          </span>
+        )}
+      </div>
+      <input
+        ref={batchRef}
+        type="file"
+        accept={IMAGE_ACCEPT}
+        multiple
+        hidden
+        onChange={(e) => {
+          const files = Array.from(e.target.files ?? []);
+          e.target.value = '';
+          if (files.length) void ops.batchUpload(files);
+        }}
+      />
+      <input
+        ref={replaceRef}
+        type="file"
+        accept={IMAGE_ACCEPT}
+        hidden
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = '';
+          if (f && replaceTarget.current) void ops.replaceFile(replaceTarget.current, f);
+        }}
+      />
+
+      {ops.mine.length === 0 ? (
+        <div className="sp-empty">
+          还没有 CG。批量上传时文件名就是 CG 名;横图(16:9)效果最好。上传后把名字和说明改成 AI 看得懂的:先写场面和在做什么,地点、衣着放最后当参考。
+        </div>
+      ) : (
+        <div className="pl-sprite-list">
+          {cgsOf(ops.mine).map((a) => {
+            const url = sceneThumbUrl(a, 480);
+            return (
+              <div key={a.id} className={`pl-sprite pl-scene bg${a.enabled ? '' : ' off'}`}>
+                <button
+                  className="pl-thumb pl-thumb-wide"
+                  title={url ? '点击换图' : '点击上传图片'}
+                  disabled={!!busy}
+                  onClick={() => {
+                    replaceTarget.current = a.id;
+                    replaceRef.current?.click();
+                  }}
+                >
+                  {url ? <img src={url} alt={a.label} /> : <span>上传</span>}
+                </button>
+                <LabelFields
+                  noun="CG 名"
+                  item={a}
+                  isDefault={false}
+                  descPlaceholder="给 AI / Jev 看的:场面|在做什么|不算|场景参考"
+                  onCommit={(patch) => ops.update(a.id, patch)}
+                >
+                  {url && (
+                    <FocusSlider
+                      url={url}
+                      value={a.focus_x}
+                      onCommit={(v) => void ops.update(a.id, { focus_x: v })}
+                    />
+                  )}
+                  <CgVariants
+                    packId={packId}
+                    cg={a}
+                    scene={scene}
+                    emotions={emotions}
+                    busy={busy}
+                    run={ops.run}
+                  />
+                </LabelFields>
+                <div className="pl-actions">
+                  <EnableButton
+                    enabled={a.enabled}
+                    disabled={!!busy}
+                    onChange={(on) => void ops.setEnabled(a.id, on)}
+                  />
+                  <DeleteButton disabled={!!busy} onConfirm={() => void ops.remove(a.id)} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 一张 CG 的差分:每张一个表情名,游戏里这句的表情是它就显示它 */
+function CgVariants({
+  packId,
+  cg,
+  scene,
+  emotions,
+  busy,
+  run,
+}: {
+  packId: string;
+  cg: { id: string; label: string };
+  scene: ScenePluginState;
+  emotions: string[];
+  busy: string | null;
+  run: (label: string, fn: () => Promise<void>) => Promise<boolean>;
+}) {
+  const variants = cgVariantsOf(scene.assets, cg.id);
+  const used = new Set(variants.map((v) => v.label));
+  const free = emotions.filter((e) => !used.has(e));
+  const [pick, setPick] = useState('');
+  const fileRef = useRef<HTMLInputElement>(null);
+  const replaceRef = useRef<HTMLInputElement>(null);
+  const replaceTarget = useRef<string | null>(null);
+  const label = pick && free.includes(pick) ? pick : (free[0] ?? '');
+
+  return (
+    <div className="pl-field">
+      <span className="conn-label">差分</span>
+      <div className="pl-cg-variants">
+        {variants.map((v) => {
+          const url = sceneThumbUrl(v, 240);
+          return (
+            <div key={v.id} className="pl-cg-variant">
+              <button
+                className="pl-thumb pl-thumb-wide"
+                title="点击换图"
+                disabled={!!busy}
+                onClick={() => {
+                  replaceTarget.current = v.id;
+                  replaceRef.current?.click();
+                }}
+              >
+                {url ? <img src={url} alt={v.label} /> : <span>上传</span>}
+              </button>
+              <span className="pl-cg-variant-name" title={emotions.includes(v.label) ? v.label : '立绘包里没有这个表情名'}>
+                {emotions.includes(v.label) ? v.label : `${v.label}(?)`}
+              </span>
+              <DeleteButton
+                disabled={!!busy}
+                onConfirm={() =>
+                  void run('删除差分', async () => {
+                    await debugApi.deleteSceneAsset(packId, v.id);
+                  })
+                }
+              />
+            </div>
+          );
+        })}
+      </div>
+      <div className="pl-row">
+        <select
+          className="text-input"
+          value={label}
+          disabled={!!busy || free.length === 0}
+          onChange={(e) => setPick(e.target.value)}
+          aria-label="差分对应的表情"
+        >
+          {free.length === 0 && <option value="">立绘包里的表情都有差分了</option>}
+          {free.map((e) => (
+            <option key={e} value={e}>
+              {e}
+            </option>
+          ))}
+        </select>
+        <button
+          className="btn small"
+          disabled={!!busy || !label}
+          onClick={() => fileRef.current?.click()}
+          title="选一张图,作为这个表情时显示的差分"
+        >
+          + 上传这个表情的差分
+        </button>
+      </div>
+      <input
+        ref={fileRef}
+        type="file"
+        accept={IMAGE_ACCEPT}
+        hidden
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = '';
+          if (!f || !label) return;
+          void run('上传差分', async () => {
+            const created = await debugApi.createSceneAsset(packId, { kind: 'cg', label, parent_id: cg.id });
+            await debugApi.uploadSceneFile(packId, created.id, f);
+          });
+        }}
+      />
+      <input
+        ref={replaceRef}
+        type="file"
+        accept={IMAGE_ACCEPT}
+        hidden
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = '';
+          const target = replaceTarget.current;
+          if (f && target)
+            void run('换图', async () => {
+              await debugApi.uploadSceneFile(packId, target, f);
+            });
+        }}
+      />
+    </div>
+  );
+}
+
 /** 竖屏焦点:手机竖着玩时只看得到横图的一窄条,拖滑条决定对准哪儿,旁边是竖屏裁切的预览 */
 function FocusSlider({
   url,
@@ -1347,7 +2082,15 @@ function FocusSlider({
   const [draft, setDraft] = useState(value);
   useEffect(() => setDraft(value), [value]);
   const timer = useRef<number | undefined>(undefined);
-  useEffect(() => () => window.clearTimeout(timer.current), []);
+  // 还没存的那一下:拖完半秒内就关了抽屉,卸载时补存,不能丢
+  const pending = useRef<(() => void) | null>(null);
+  useEffect(
+    () => () => {
+      window.clearTimeout(timer.current);
+      pending.current?.();
+    },
+    [],
+  );
 
   return (
     <div className="pl-field">
@@ -1368,7 +2111,11 @@ function FocusSlider({
             setDraft(v);
             // 拖动时只改预览,停手半秒再存
             window.clearTimeout(timer.current);
-            timer.current = window.setTimeout(() => onCommit(v), 500);
+            pending.current = () => {
+              pending.current = null;
+              onCommit(v);
+            };
+            timer.current = window.setTimeout(() => pending.current?.(), 500);
           }}
         />
         <span className="sp-slider-value">{draft < 34 ? '偏左' : draft > 66 ? '偏右' : '居中'}</span>

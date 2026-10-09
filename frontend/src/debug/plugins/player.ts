@@ -14,7 +14,14 @@
 
 import type { PresetOrderEntry, TavernPreset } from '../lib/presetParser';
 import type { TagKind } from '../vn/script';
-import { insertPluginBlock, pluginBlockState, type BlockState } from './common';
+import {
+  insertPluginBlock,
+  normalizeTagMode,
+  objectOf,
+  pluginBlockState,
+  type BlockState,
+  type TagMode,
+} from './common';
 
 export const PLAYER_SETTING_KEY = 'plugin.player';
 export const PLAYER_BLOCK_ID = 'anima_player';
@@ -30,18 +37,29 @@ export const DEFAULT_PLAYER_BLOCK_PROMPT = `[玩家台词]
 export interface PlayerPluginConfig {
   /** 「加入当前预设」时写进块里的内容;预设里的这块始终跟着它 */
   blockPrompt: string;
+  /** AI 写 <我> / Jev 认出玩家说的台词(plugins/jev.ts) */
+  mode: TagMode;
+  jev: {
+    /** Jev 认出的玩家台词弹成选项;关了这种台词照常显示、不念 */
+    popup: boolean;
+  };
 }
 
 export const DEFAULT_PLAYER_CONFIG: PlayerPluginConfig = {
   blockPrompt: DEFAULT_PLAYER_BLOCK_PROMPT,
+  mode: 'ai',
+  jev: { popup: true },
 };
 
 /** 后端存的是任意 JSON —— 缺字段或类型不对的就退回默认值 */
 export function normalizePlayerConfig(raw: unknown): PlayerPluginConfig {
-  const r = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const r = objectOf(raw);
+  const j = objectOf(r.jev);
   return {
     blockPrompt:
       typeof r.blockPrompt === 'string' ? r.blockPrompt : DEFAULT_PLAYER_CONFIG.blockPrompt,
+    mode: normalizeTagMode(r.mode),
+    jev: { popup: typeof j.popup === 'boolean' ? j.popup : DEFAULT_PLAYER_CONFIG.jev.popup },
   };
 }
 

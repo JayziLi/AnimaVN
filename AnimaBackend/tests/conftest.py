@@ -34,6 +34,18 @@ def emotion_model_missing(tmp_path_factory, monkeypatch):
     service.reset()
 
 
+@pytest.fixture(autouse=True)
+def image_cache_isolated(tmp_path_factory, monkeypatch):
+    """转好的 WebP 会存一份到硬盘:测试里换成临时目录,不往真实的 data/image-cache/ 里写,
+    也不会读到上一次跑测试留下的结果"""
+    from app import images
+
+    monkeypatch.setattr(images, "DISK_DIR", tmp_path_factory.mktemp("image-cache"))
+    images.clear_cache()
+    yield
+    images.clear_cache()
+
+
 @pytest.fixture
 def client() -> Iterator[TestClient]:
     engine = create_engine(
@@ -107,6 +119,26 @@ def make_card(client: TestClient):
         response = client.post("/api/tavern/cards", json=payload)
         assert response.status_code == 200
         return response.json()
+
+    return create
+
+
+@pytest.fixture
+def make_sprite_pack(client: TestClient):
+    """建一个立绘包;给了 card_id 就挂到那张卡上(排在已有的包后面)。"""
+
+    def create(name: str = "夜莺", card_id: str | None = None):
+        response = client.post("/api/sprite-packs", json={"name": name})
+        assert response.status_code == 200
+        pack = response.json()
+        if card_id is not None:
+            bound = client.get(f"/api/tavern/cards/{card_id}/sprite-packs").json()
+            attached = client.put(
+                f"/api/tavern/cards/{card_id}/sprite-packs",
+                json={"pack_ids": [*bound["pack_ids"], pack["id"]]},
+            )
+            assert attached.status_code == 200
+        return pack
 
     return create
 

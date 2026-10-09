@@ -94,6 +94,26 @@ def test_speak_synthesizes_once_then_serves_from_cache(client: TestClient, gsv):
     assert client.get("/api/tts/cache").json()["count"] == 1
 
 
+def test_speak_sends_aux_refs_only_when_the_emotion_has_them(client: TestClient, gsv):
+    _, voice = setup_voice(client)
+    emotions = client.get("/api/voices").json()[0]["emotions"]
+    happy = next(e for e in emotions if e["label"] == "开心")
+
+    speak(client, voice["id"], emotion="开心")
+    assert "aux_ref_audio_paths" not in gsv.calls[-1][1]
+
+    client.put(
+        f"/api/voices/{voice['id']}/emotions/{happy['id']}",
+        json={"aux_refs": ["D:/refs/开心2.wav", "D:/refs/开心3.wav"]},
+    )
+    again = speak(client, voice["id"], emotion="开心")
+    # 音色变了,不能拿没配辅助参考时合成的那条
+    assert again.headers["x-tts-cache"] == "miss"
+    assert gsv.calls[-1][1]["aux_ref_audio_paths"] == ["D:/refs/开心2.wav", "D:/refs/开心3.wav"]
+    # 辅助参考也能在语音详情里试听
+    assert reference(client, voice["id"], "D:/refs/开心3.wav").status_code == 200
+
+
 def test_speak_fresh_resynthesizes_and_replaces_cached_take(client: TestClient, gsv):
     _, voice = setup_voice(client)
     first = speak(client, voice["id"])

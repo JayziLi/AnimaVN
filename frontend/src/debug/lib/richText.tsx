@@ -46,3 +46,28 @@ export function renderQuoted(text: string, enabled: boolean): ReactNode {
   if (cursor < text.length) parts.push(text.slice(cursor));
   return parts;
 }
+
+/**
+ * 同上,另外把 marks 标出的几段(Jev 加的标签,见 plugins/jevNotes.ts)单独标出来 ——
+ * 一眼看得出哪些标签是 Jev 加的、哪些是模型自己写的。marks 按位置排好、互不重叠
+ */
+export function renderMarked(
+  text: string,
+  marks: readonly { from: number; to: number }[],
+  quotes: boolean,
+): ReactNode {
+  if (marks.length === 0) return renderQuoted(text, quotes);
+  const parts: ReactNode[] = [];
+  let cursor = 0;
+  marks.forEach((m, i) => {
+    if (m.from > cursor) parts.push(<span key={`t${i}`}>{renderQuoted(text.slice(cursor, m.from), quotes)}</span>);
+    parts.push(
+      <span className="chat-jev-tag" key={`j${i}`}>
+        {text.slice(m.from, m.to)}
+      </span>,
+    );
+    cursor = m.to;
+  });
+  if (cursor < text.length) parts.push(<span key="tail">{renderQuoted(text.slice(cursor), quotes)}</span>);
+  return parts;
+}

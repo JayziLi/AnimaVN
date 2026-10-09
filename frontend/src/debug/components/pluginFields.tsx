@@ -1,6 +1,6 @@
 /** 插件抽屉几页共用的两个表单小件 */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 /** 两次点击才生效的删除按钮 */
 export function DeleteButton({
@@ -46,8 +46,14 @@ export function CommitField({
 }) {
   const [draft, setDraft] = useState(value);
   useEffect(() => setDraft(value), [value]);
+  // Esc 要放弃改动:blur() 会同步触发 onBlur,那时 commit 拿到的还是改过的 draft,得跳过这一次
+  const cancelling = useRef(false);
 
   const commit = async () => {
+    if (cancelling.current) {
+      cancelling.current = false;
+      return;
+    }
     if (draft.trim() === value.trim()) {
       setDraft(value);
       return;
@@ -67,6 +73,7 @@ export function CommitField({
         onKeyDown={(e) => {
           if (e.key === 'Enter' && !e.nativeEvent.isComposing) (e.target as HTMLInputElement).blur();
           if (e.key === 'Escape') {
+            cancelling.current = true;
             setDraft(value);
             (e.target as HTMLInputElement).blur();
           }

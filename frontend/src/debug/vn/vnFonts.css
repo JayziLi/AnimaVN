@@ -1,0 +1,19 @@
+/* 打包进游戏的圆体(设置 → 外观 → 对话框文字 → 圆体)。
+   资源圆体 Resource Han Rounded(CyanoHao/Resource-Han-Rounded v1.910,SIL OFL 1.1,基于思源黑体),
+   简体可变字体取了两个子集(脚本 frontend/scripts/build-round-font.py):
+     rhr-core  —— GB2312 一级 3755 字 + 标点、假名、拉丁(约 2.8 MB)
+     rhr-extra —— GB2312 二级 3008 字(约 2.2 MB)
+   浏览器按声明的反序找字:先用 core,core 里没有的字才去下 extra。只有选了圆体才会下载。 */
+@font-face {
+  font-family: 'AnimaRound';
+  src: url('/vn/fonts/rhr-extra.woff2') format('woff2');
+  font-weight: 200 900;
+  font-display: swap;
+  unicode-range: U+4E00-9FFF;
+}
+@font-face {
+  font-family: 'AnimaRound';
+  src: url('/vn/fonts/rhr-core.woff2') format('woff2');
+  font-weight: 200 900;
+  font-display: swap;
+}

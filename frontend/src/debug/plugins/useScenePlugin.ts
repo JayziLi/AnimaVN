@@ -1,5 +1,5 @@
 /**
- * 背景 / BGM 插件在调试台里的全部状态:两份全局配置、场景包列表、
+ * 背景 / BGM / CG 插件在调试台里的全部状态:三份全局配置、场景包列表、
  * 当前这张卡绑的包,以及包里的素材。
  *
  * 配置和立绘一样:先改内存,停手半秒再写库。素材跟着「当前卡绑的包」走,
@@ -8,16 +8,15 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { debugApi, type SceneAsset, type ScenePack } from '../lib/api';
-import type { PluginConfig } from './common';
-import { SCENE, normalizeSceneConfig, type SceneKindKey } from './scene';
+import { SCENE, normalizeSceneConfig, type SceneKindKey, type ScenePluginConfig } from './scene';
 
 type Notify = (kind: 'ok' | 'error', message: string) => void;
 
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 export interface ScenePluginState {
-  configs: Record<SceneKindKey, PluginConfig>;
-  changeConfig: (kind: SceneKindKey, next: PluginConfig) => void;
+  configs: Record<SceneKindKey, ScenePluginConfig>;
+  changeConfig: (kind: SceneKindKey, next: ScenePluginConfig) => void;
   packs: ScenePack[];
   refreshPacks: () => Promise<void>;
   /** 当前卡绑的场景包;没选卡或没绑时为 null */
@@ -34,16 +33,19 @@ export interface ScenePluginState {
   changeAssets: (packId: string, next: SceneAsset[]) => void;
   /** 包被删了:如果正绑着它,本地也解绑 */
   forgetPack: (packId: string) => void;
+  /** 当前卡的场景素材列表拿到了(没绑包、读失败也算):游戏的素材等待页据此知道要等哪些图 */
+  ready: boolean;
 }
 
 export function useScenePlugin(cardId: string | null, notify: Notify): ScenePluginState {
-  const [configs, setConfigs] = useState<Record<SceneKindKey, PluginConfig>>({
+  const [configs, setConfigs] = useState<Record<SceneKindKey, ScenePluginConfig>>({
     bg: SCENE.bg.defaults,
     bgm: SCENE.bgm.defaults,
+    cg: SCENE.cg.defaults,
   });
   const saveTimers = useRef<Partial<Record<SceneKindKey, number>>>({});
 
-  const changeConfig = (kind: SceneKindKey, next: PluginConfig) => {
+  const changeConfig = (kind: SceneKindKey, next: ScenePluginConfig) => {
     setConfigs((c) => ({ ...c, [kind]: next }));
     window.clearTimeout(saveTimers.current[kind]);
     saveTimers.current[kind] = window.setTimeout(() => {
@@ -55,7 +57,7 @@ export function useScenePlugin(cardId: string | null, notify: Notify): ScenePlug
 
   // 开机读一次配置。StrictMode 双跑也没关系:两次读到的是同一份
   useEffect(() => {
-    for (const kind of ['bg', 'bgm'] as const) {
+    for (const kind of ['bg', 'bgm', 'cg'] as const) {
       debugApi
         .getSetting(SCENE[kind].settingKey)
         .then((v) => {
@@ -67,6 +69,7 @@ export function useScenePlugin(cardId: string | null, notify: Notify): ScenePlug
     return () => {
       window.clearTimeout(timers.bg);
       window.clearTimeout(timers.bgm);
+      window.clearTimeout(timers.cg);
     };
   }, [notify]);
 
@@ -81,6 +84,8 @@ export function useScenePlugin(cardId: string | null, notify: Notify): ScenePlug
 
   const [packId, setPackId] = useState<string | null>(null);
   const [assets, setAssets] = useState<SceneAsset[]>([]);
+  // 哪张卡的列表已经拿到了
+  const [loadedFor, setLoadedFor] = useState<string | null>(null);
   const cardRef = useRef<string | null>(null);
   const packRef = useRef<string | null>(null);
 
@@ -89,7 +94,13 @@ export function useScenePlugin(cardId: string | null, notify: Notify): ScenePlug
       packRef.current = pid;
       setPackId(pid);
       setAssets([]);
-      if (!pid) return;
+      const loaded = () => {
+        if (cardRef.current === forCard) setLoadedFor(forCard);
+      };
+      if (!pid) {
+        loaded();
+        return;
+      }
       try {
         // 包的列表顺手刷一下:封面音乐记在包上
         const [list] = await Promise.all([debugApi.listSceneAssets(pid), refreshPacks()]);
@@ -97,6 +108,7 @@ export function useScenePlugin(cardId: string | null, notify: Notify): ScenePlug
       } catch (e) {
         notify('error', `场景素材读取失败: ${errText(e)}`);
       }
+      loaded();
     },
     [notify, refreshPacks],
   );
@@ -106,13 +118,17 @@ export function useScenePlugin(cardId: string | null, notify: Notify): ScenePlug
     packRef.current = null;
     setPackId(null);
     setAssets([]);
+    setLoadedFor(null);
     if (!cardId) return;
     debugApi
       .getCardScenePack(cardId)
       .then((pid) => {
         if (cardRef.current === cardId) void loadAssets(cardId, pid);
       })
-      .catch((e: unknown) => notify('error', `场景包绑定读取失败: ${errText(e)}`));
+      .catch((e: unknown) => {
+        notify('error', `场景包绑定读取失败: ${errText(e)}`);
+        if (cardRef.current === cardId) setLoadedFor(cardId);
+      });
   }, [cardId, loadAssets, notify]);
 
   const bindPack = async (pid: string | null) => {
@@ -165,5 +181,6 @@ export function useScenePlugin(cardId: string | null, notify: Notify): ScenePlug
     bindPack,
     changeAssets,
     forgetPack,
+    ready: cardId === null || loadedFor === cardId,
   };
 }

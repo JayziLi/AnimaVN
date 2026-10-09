@@ -1,9 +1,11 @@
+import { useEffect } from 'react';
 import type { StoredCard } from '../lib/api';
 
 /**
  * 角色列表 —— 酒馆首页的角色列表的对应物,占满右栏、盖住角色卡编辑器:
  * 每行一个角色(头像 / 名字 / 创作者注释),点行选中并切回编辑器。
- * 名字搜索是本地过滤;头像由 DebugApp 按需懒加载(data URL 走 id → url 缓存)。
+ * 名字搜索是本地过滤;头像由 DebugApp 按需懒加载(data URL 走 id → url 缓存),
+ * 列表挂出来时开口要。
  */
 
 interface Props {
@@ -11,6 +13,8 @@ interface Props {
   selectedId: string | null;
   /** id → 头像 data URL;没头像的行不一定会出现(还没拉到) */
   avatars: Map<string, string>;
+  /** 列表挂出来时要这些卡的头像 */
+  onNeedAvatars: (ids: string[]) => void;
   busy: boolean;
   onSelect: (id: string) => void;
 }
@@ -18,7 +22,11 @@ interface Props {
 /** 列表里每行头像的默认位图,和聊天消息里人设的兜底是同一个 */
 const DEFAULT_AVATAR = '/assets/default-avatar.jpg';
 
-export function CharacterList({ cards, selectedId, avatars, busy, onSelect }: Props) {
+export function CharacterList({ cards, selectedId, avatars, onNeedAvatars, busy, onSelect }: Props) {
+  useEffect(() => {
+    onNeedAvatars(cards.map((c) => c.id));
+  }, [cards, onNeedAvatars]);
+
   return (
     <div className="panel-body">
       {cards.length === 0 && (

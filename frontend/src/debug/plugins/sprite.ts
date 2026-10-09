@@ -7,28 +7,33 @@
  *   提示词块                写进预设,identifier 固定为 anima_sprite;和普通块一样
  *                            可以开关、拖动位置、改写内容。插件只新增这一块,
  *                            预设里原有的块一个字都不动
- *   表情 → 图的映射          每张卡一套,存在后端 card_sprites
+ *   表情 → 图的映射          在立绘包里(后端 pack_sprites);卡挂一个或几个包,
+ *                            用的是当前那个,游戏里随时换
  *
  * 块的内容通过 {{sprites}} / {{sprite_tag}} / {{sprite_examples}} 几个宏引用映射表和标签格式,
- * 所以换卡、改格式之后都不用回头改块。
+ * 所以换卡、换包、改格式之后都不用回头改块。
  *
  * AI 在 {{char}} 的每句台词前都写一个标签(照 LingChat 的做法);对不上立绘名的交给
  * 后端模型挑列表里最像的,见 plugins/emotionMatch.ts 和
  * docs/superpowers/specs/2026-09-25-sprite-emotion-matching-design.md
  */
 
-import type { CardSprite } from '../lib/api';
+import type { PackSprite } from '../lib/api';
 import type { PresetOrderEntry, TavernPreset } from '../lib/presetParser';
 import {
   buildTagRegExp,
   insertPluginBlock,
   normalizePluginConfig,
+  normalizeTagMode,
+  objectOf,
   pluginBlockState,
+  promptOf,
   resolveByLabel,
   tagExampleOf,
   validateTagTemplate,
   type BlockState,
   type PluginConfig,
+  type TagMode,
 } from './common';
 import { BUILTIN_EMOTIONS } from './emotions';
 
@@ -37,7 +42,14 @@ export const SPRITE_SETTING_KEY = 'plugin.sprite';
 /** 标签模板里代表表情名的占位符 */
 export const PLACEHOLDER = '{表情}';
 
-export type SpritePluginConfig = PluginConfig;
+export interface SpritePluginConfig extends PluginConfig {
+  /** AI 写标签 / Jev 标(plugins/jev.ts) */
+  mode: TagMode;
+  jev: {
+    /** 改过的表情题;null = 用后端默认 */
+    emotionPrompt: string | null;
+  };
+}
 export type SpriteBlockState = BlockState;
 
 export const DEFAULT_BLOCK_PROMPT = `[立绘指令]
@@ -66,13 +78,19 @@ const OLD_DEFAULT_BLOCK_PROMPTS = [
 export const DEFAULT_SPRITE_CONFIG: SpritePluginConfig = {
   tagTemplate: '<sprite:{表情}>',
   blockPrompt: DEFAULT_BLOCK_PROMPT,
+  mode: 'ai',
+  jev: { emotionPrompt: null },
 };
 
 export function normalizeSpriteConfig(raw: unknown): SpritePluginConfig {
   const config = normalizePluginConfig(raw, DEFAULT_SPRITE_CONFIG, PLACEHOLDER);
-  return OLD_DEFAULT_BLOCK_PROMPTS.includes(config.blockPrompt)
-    ? { ...config, blockPrompt: DEFAULT_BLOCK_PROMPT }
-    : config;
+  const r = objectOf(raw);
+  return {
+    ...config,
+    blockPrompt: OLD_DEFAULT_BLOCK_PROMPTS.includes(config.blockPrompt) ? DEFAULT_BLOCK_PROMPT : config.blockPrompt,
+    mode: normalizeTagMode(r.mode),
+    jev: { emotionPrompt: promptOf(objectOf(r.jev).emotionPrompt) },
+  };
 }
 
 export const validateTemplate = (template: string) => validateTagTemplate(template, PLACEHOLDER);
@@ -82,7 +100,7 @@ export const tagRegExp = (template: string) => buildTagRegExp(template, PLACEHOL
 /** 展示给 AI 看的样子:<sprite:表情名> */
 export const tagExample = (template: string) => tagExampleOf(template, PLACEHOLDER, '表情名');
 
-export const resolveSprite = (label: string, sprites: readonly CardSprite[]) =>
+export const resolveSprite = (label: string, sprites: readonly PackSprite[]) =>
   resolveByLabel(label, sprites);
 
 /** {{sprite_examples}}:照 LingChat 的正误示范,标签按当前格式写 */
@@ -103,7 +121,7 @@ function spriteExamples(template: string): string {
 /** 插件提供的宏,并入自定义宏的查找表(键是小写宏名) */
 export function spriteMacros(
   config: SpritePluginConfig,
-  sprites: readonly CardSprite[],
+  sprites: readonly PackSprite[],
 ): Record<string, string> {
   // 一张立绘都没配:给内置基础表情,照样每句写、照样匹配(语音靠它带语气)
   const list =

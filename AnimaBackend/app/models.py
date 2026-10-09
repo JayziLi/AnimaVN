@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, LargeBinary, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -76,21 +76,38 @@ class TavernCard(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 
 
-class CardSprite(Base):
-    """立绘插件:一张角色卡上的一条「表情名 → 立绘图」映射。
+class SpritePack(Base):
+    """立绘包:一整套表情立绘(比如香奈美的舞台装、私服各一套)。
+
+    和场景包一样不属于某张卡:通过 CardSpritePack 挂到卡上,一张卡可以挂几个包、
+    游戏里随时换;同一个包也能挂在好几张卡上。名字全局唯一(撞名由接口拦)。
+    """
+
+    __tablename__ = "sprite_packs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    name: Mapped[str] = mapped_column(String(120))
+    description: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class PackSprite(Base):
+    """立绘包里的一条「表情名 → 立绘图」映射。
 
     AI 在正文里写的是 label(或 aliases 里的任何一个),前端按它找到这一行的图。
-    表情名只属于这张卡 —— 每个角色的差分不一样;标签格式是全局的,在 AppSetting 里。
+    表情名只在一个包里唯一 —— 几个包最好用同一套名字,换包时才对得上;
+    标签格式是全局的,在 AppSetting 里。
 
     图直接存成 BLOB,而不是落盘文件:部署脚本的备份只拷数据库,单独的素材目录
-    会被漏掉;删卡时连行一起删就行,不用另外管文件的生命周期。
+    会被漏掉;删包时连行一起删就行,不用另外管文件的生命周期。
     image 列是 deferred 的 —— 列映射表时不会把图一起拖出来,只有取图的端点才读它。
     """
 
-    __tablename__ = "card_sprites"
+    __tablename__ = "pack_sprites"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
-    card_id: Mapped[str] = mapped_column(ForeignKey("tavern_cards.id"), index=True)
+    pack_id: Mapped[str] = mapped_column(ForeignKey("sprite_packs.id"), index=True)
     label: Mapped[str] = mapped_column(String(80))
     aliases: Mapped[list] = mapped_column(JSON, default=list)
     # 给 AI 看的一句用法说明,{{sprites}} 宏展开时跟在表情名后面
@@ -104,23 +121,45 @@ class CardSprite(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     # 图里的脸在哪(app/sprite_faces.py 的结果),视觉小说按它对齐。null = 还没找过
     face_scan: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=True)
+    # 视觉小说换到这张图时放的特效 {"motion", "bubble", "sound"}(碧蓝档案那种跳一下、头顶冒气泡、
+    # 响一声),见 schemas.SpriteEffect。null = 没设,和以前一样只淡入
+    effect: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 
 
-class CardSpriteLayout(Base):
-    """一张卡的立绘在视觉小说里怎么摆:在按脸自动对齐的基础上再挪一挪、放大缩小。
-    所有角色共用的「人物大小」「头的高度」在立绘插件的全局配置里。单独一张表的理由同 CardScenePack。
+class SpritePackLayout(Base):
+    """一个立绘包在视觉小说里怎么摆:在按脸自动对齐的基础上再挪一挪、放大缩小。
+    跟着包走而不是跟着卡:它补的是这套图本身的构图,包挂到别的卡上也该带着。
+    所有角色共用的「人物大小」「头的高度」在立绘插件的全局配置里。
     dx / dy 以舞台高度为单位,正数往右 / 往下。"""
 
-    __tablename__ = "card_sprite_layouts"
+    __tablename__ = "sprite_pack_layouts"
 
-    card_id: Mapped[str] = mapped_column(ForeignKey("tavern_cards.id"), primary_key=True)
+    pack_id: Mapped[str] = mapped_column(ForeignKey("sprite_packs.id"), primary_key=True)
     # 关掉 = 不按脸对齐,回到撑满舞台高度、居中
     auto: Mapped[bool] = mapped_column(Boolean, default=True)
     zoom: Mapped[float] = mapped_column(Float, default=1.0)
     dx: Mapped[float] = mapped_column(Float, default=0.0)
     dy: Mapped[float] = mapped_column(Float, default=0.0)
+
+
+class CardSpritePack(Base):
+    """角色卡 → 立绘包,多对多。一张卡挂着的包按 sort 排,其中正好一个 is_current:
+    游戏里用的就是它,换了以后这张卡所有对话、存档都用新的(存在这里而不是前端设置里,
+    标题画面要给每张卡取当前包的脸)。
+
+    老表 card_sprites / card_sprite_layouts 由 scripts/migrate_sprite_packs.py 搬过来,
+    之后不再使用,等确认没问题再删。"""
+
+    __tablename__ = "card_sprite_packs"
+
+    card_id: Mapped[str] = mapped_column(ForeignKey("tavern_cards.id"), primary_key=True)
+    pack_id: Mapped[str] = mapped_column(
+        ForeignKey("sprite_packs.id"), primary_key=True, index=True
+    )
+    sort: Mapped[int] = mapped_column(Integer, default=0)
+    is_current: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class AppSetting(Base):
@@ -140,7 +179,7 @@ class AppSetting(Base):
 class ScenePack(Base):
     """场景包:一组背景 + BGM,给视觉小说的背景插件和 BGM 插件用。
 
-    和立绘不同,场景素材不属于某张卡:同一个世界观的角色(比如罗德岛上的干员)
+    场景素材不属于某张卡:同一个世界观的角色(比如罗德岛上的干员)
     共用一套场景和音乐,一首曲子几 MB,没必要每张卡存一份。卡通过
     CardScenePack 绑定一个包,多张卡可以绑同一个。
     """
@@ -157,17 +196,20 @@ class ScenePack(Base):
 
 
 class SceneAsset(Base):
-    """场景包里的一条素材:背景图(kind=bg)或背景音乐(kind=bgm)。
+    """场景包里的一条素材:背景图(kind=bg)、背景音乐(kind=bgm)或 CG(kind=cg)。
 
     和立绘一样,AI 在正文里写 label(或 aliases 里的任何一个),前端按它找到这一行。
-    文件存 BLOB(理由同 CardSprite),data 列 deferred。
+    文件存 BLOB(理由同 PackSprite),data 列 deferred。
+
+    CG 分两层:构图(parent_id 为空,AI / Jev 点的是它)和它下面的差分(parent_id 指向构图,
+    label 是立绘的表情名)。视觉小说按当前表情挑差分,没有对应的就用构图本身那张。
     """
 
     __tablename__ = "scene_assets"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
     pack_id: Mapped[str] = mapped_column(ForeignKey("scene_packs.id"), index=True)
-    kind: Mapped[str] = mapped_column(String(8))  # "bg" | "bgm"
+    kind: Mapped[str] = mapped_column(String(8))  # "bg" | "bgm" | "cg"
     label: Mapped[str] = mapped_column(String(80))
     aliases: Mapped[list] = mapped_column(JSON, default=list)
     description: Mapped[str] = mapped_column(Text, default="")
@@ -178,9 +220,11 @@ class SceneAsset(Base):
     sort: Mapped[int] = mapped_column(Integer, default=0)
     # 仅背景:竖屏只看得到横图中间一窄条,这个百分比决定对准哪儿(0 最左,100 最右)
     focus_x: Mapped[int] = mapped_column(Integer, default=50)
-    # 仅背景:换到这个场景时自动换上的曲子(同一个包里的一条 bgm)
+    # 仅背景:换到这个场景时自动换上的曲子(同一个包里的一条 bgm)。CG 不带曲子
     bgm_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    # 同 CardSprite.enabled。包是几张卡共用的,关了对这些卡都生效
+    # 仅 CG 差分:它属于哪张 CG(同一个包里一条没有 parent 的 cg)
+    parent_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    # 同 PackSprite.enabled。包是几张卡共用的,关了对这些卡都生效
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
@@ -261,6 +305,9 @@ class VoiceEmotion(Base):
     ref_path: Mapped[str] = mapped_column(String(500), default="")
     # 参考音频里说的话,要一字不差
     prompt_text: Mapped[str] = mapped_column(Text, default="")
+    # GSV 的辅助参考(语音服务那台机器上的路径):音色取这几段和主参考的平均,语气、节奏
+    # 还是跟主参考走,所以不用原文。只有 v2 / v2Pro 系列的模型认,v3 / v4 只用主参考
+    aux_refs: Mapped[list] = mapped_column(JSON, default=list)
     # IndexTTS 的 8 维情绪向量 [高兴, 愤怒, 悲伤, 害怕, 厌恶, 忧郁, 惊讶, 平静];空 = 不用向量
     emo_vector: Mapped[list | None] = mapped_column(JSON, nullable=True, default=None)
     sort: Mapped[int] = mapped_column(Integer, default=0)
@@ -286,13 +333,17 @@ class TtsCache(Base):
     要听到同一段,所以按「权重 + 请求体」的哈希存下来。data 列 deferred,统计时不拖出来。"""
 
     __tablename__ = "tts_cache"
+    # 算总大小、按最久没用排队淘汰,只读这个索引。size / last_used_at 在表里排在音频后面,
+    # SQLite 扫表取它们得把每段音频的数据页翻一遍:缓存到 500 MB 时每存一句多花 0.7–1.3 秒。
+    # 老库用 scripts/migrate_tts_cache_evict_index.py 补上
+    __table_args__ = (Index("ix_tts_cache_evict", "last_used_at", "size", "key"),)
 
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     data: Mapped[bytes] = mapped_column(LargeBinary, deferred=True)
     mime: Mapped[str] = mapped_column(String(40))
     size: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
-    last_used_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+    last_used_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
 class PromptPreset(Base):
@@ -345,6 +396,9 @@ class DebugChat(Base):
     # children back to roots in the tree instead of cascading.
     parent_chat_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     parent_message_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    # macro variables set by {{setvar}} & co. — ST keeps these in the chat file's
+    # chat_metadata.variables; name → string or number
+    variables: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 

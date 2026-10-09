@@ -8,7 +8,8 @@ _BACKEND_DIR = Path(__file__).resolve().parent.parent
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    # .env 也按 AnimaBackend 目录找:从仓库根目录启动 uvicorn 时,相对路径的 .env 会被悄悄忽略
+    model_config = SettingsConfigDict(env_file=_BACKEND_DIR / ".env", extra="ignore")
 
     # only read on first startup to seed default connections; after that,
     # connections live in the DB and are managed via /api/connections
@@ -29,6 +30,9 @@ class Settings(BaseSettings):
     # 情绪识别模型(立绘标签的兜底匹配)。下载:python scripts/download_emotion_model.py。
     # Docker 里放 /app/models —— /app/data 是数据卷的挂载点,放进去会被盖住
     emotion_model_dir: str = str(_BACKEND_DIR / "models" / "bge-small-zh-v1.5")
+    # Jev(TypeSafe 的判断模型)的 key:立绘 / 场景 / 音乐 / 说话人交给它标(app/annotate)。
+    # 不设就用插件页里填的那个
+    jev_api_key: str | None = None
 
 
 settings = Settings()

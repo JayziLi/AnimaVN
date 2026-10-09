@@ -146,9 +146,12 @@ export function planVoiceLines(o: {
   streaming: boolean;
   /** 情绪不变(插件设置) */
   fixedEmotion: boolean;
+  /** Jev 还在判的第一句:从它起先不念,判完知道是谁说的、什么表情再念 */
+  jevPendingFrom?: number;
 }): (SpeakRequest | null)[] {
   return o.lines.map((ln, i) => {
     if (o.streaming && i === o.lines.length - 1) return null;
+    if (o.jevPendingFrom !== undefined && i >= o.jevPendingFrom) return null;
     // 玩家台词不念(就算碰巧有个声音和玩家同名)
     if (ln.player) return null;
     const profile = voiceForSpeaker(ln.speaker, o.ctx.charName, o.cast);
@@ -177,13 +180,14 @@ export const spriteHitsUpTo = (hits: readonly TagHit[], i: number, charName: str
 export function voiceSkipReason(
   ln: VNLine,
   profile: VoiceProfile | null,
-  o: { streamingLast: boolean; pendingTag: boolean },
+  o: { streamingLast: boolean; pendingTag: boolean; jevPending?: boolean; jev?: boolean },
 ): string {
   if (ln.player) return '玩家台词,不念';
-  if (ln.untagged) return '没写立绘标签,不算角色的台词,不念';
+  if (ln.untagged) return o.jev ? 'Jev 判成不是角色说的,不念' : '没写立绘标签,不算角色的台词,不念';
   if (!ln.speaker) return '旁白,不念';
   if (!profile) return `没有「${ln.speaker}」的声音`;
   if (o.streamingLast) return '还在写,写完再念';
+  if (o.jevPending) return 'Jev 还在判这句,判完再念';
   if (speechText(ln, profile.text_lang) === null) {
     return isJaLang(profile.text_lang) ? '缺日语,没念' : '只有日语,中文声音不念';
   }
@@ -246,7 +250,7 @@ export function voiceSignature(p: VoiceProfile, connections: readonly TtsConnect
   const c = connections.find((x) => x.id === p.connection_id);
   return JSON.stringify([
     [p.connection_id, p.gpt_weights, p.sovits_weights, p.ref_path, p.text_lang, p.speed, p.params],
-    p.emotions.map((e) => [e.label, e.aliases, e.ref_path, e.prompt_text, e.emo_vector]),
+    p.emotions.map((e) => [e.label, e.aliases, e.ref_path, e.prompt_text, e.aux_refs, e.emo_vector]),
     c ? [c.base_url, c.api_type, c.sample_steps, c.emo_alpha] : null,
   ]);
 }

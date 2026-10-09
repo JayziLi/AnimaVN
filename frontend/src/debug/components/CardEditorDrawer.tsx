@@ -1,10 +1,12 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AssemblyResult, BudgetReport, PromptPart } from '../lib/assembler';
 import type { TavernCard } from '../lib/cardParser';
 import type { PresetOrderEntry, TavernPreset } from '../lib/presetParser';
 // 这张表块详情弹窗也要读(反向查 marker 的内容来源),所以搬进了 lib
 import { PROMPT_FIELDS, type PromptFieldDef } from '../lib/cardFields';
 import { estimateTokens, formatTokens } from '../lib/tokens';
+import { BookEditor } from './BookEditor';
+import { DeleteButton } from './pluginFields';
 
 /**
  * 角色卡完整编辑抽屉 —— 右滑,和完整提示词检视器同一套范式。
@@ -26,6 +28,8 @@ type FieldStatus =
   | 'missing'
   /** 有内容,但这块标了 forbid_overrides,覆盖不了 */
   | 'forbidden'
+  /** 有内容、块也开着,但一条消息都没产出(示例拆不出说话人、被预算丢掉……) */
+  | 'silent'
   /** 还没选预设,算不出来 */
   | 'unknown';
 
@@ -39,6 +43,8 @@ interface FieldState {
   /** 这个字段最终产生的消息,预览就是它 */
   produced: { role: string; content: string }[];
   sortKey: number;
+  /** 不生效时给用户看的那句话 */
+  note: string;
 }
 
 const STATUS_NOTE: Record<Exclude<FieldStatus, 'active' | 'empty'>, string> = {
@@ -46,7 +52,18 @@ const STATUS_NOTE: Record<Exclude<FieldStatus, 'active' | 'empty'>, string> = {
   missing: '当前预设里没有这个块 —— 填了也不会发出去',
   forbidden: '这块标了 forbid_overrides —— 预设不允许角色卡覆盖它',
   unknown: '还没选预设,算不出装配位置',
+  silent: '这块开着,但没产出任何消息 —— 填了也不会发出去',
 };
+
+/** 块开着却一条消息都没出:说清是哪种情况,别笼统地说「被关掉了」 */
+function silentNote(target: string, result: AssemblyResult, charName: string): string {
+  if (target !== 'dialogueExamples') return STATUS_NOTE.silent;
+  if (result.skipped.some((s) => s.identifier === target && s.reason === '超出 token 预算')) {
+    return '上下文预算不够,示例对话整段被丢了 —— 这次不会发出去';
+  }
+  // 照酒馆:只认「{{user}}:」「{{char}}:」开头的行来分句,一行都没有就整段不发
+  return `没有一行以「{{char}}:」(${charName}:)或「{{user}}:」开头 —— 酒馆靠这个拆句,一句都拆不出来,整段不会发出去`;
+}
 
 interface Props {
   card: TavernCard;
@@ -101,7 +118,7 @@ export function CardEditorDrawer({
       else if (!entry?.enabled) status = 'disabled';
       else if (def.mode === 'override' && block.forbidOverrides) status = 'forbidden';
       else if (produced.length > 0) status = 'active';
-      else status = 'disabled';
+      else status = 'silent';
 
       const first = produced[0];
       return {
@@ -112,6 +129,12 @@ export function CardEditorDrawer({
         tokens: produced.reduce((n, m) => n + m.tokens, 0),
         produced: produced.map((m) => ({ role: m.role, content: m.content })),
         sortKey: orderIndex.get(def.target) ?? 100 + def.fallback,
+        note:
+          status === 'silent'
+            ? silentNote(def.target, result, card.name)
+            : status === 'active' || status === 'empty'
+              ? ''
+              : STATUS_NOTE[status],
       };
     });
 
@@ -119,8 +142,16 @@ export function CardEditorDrawer({
   }, [card, preset, order, result]);
 
   const promptTokens = fields.reduce((n, f) => n + f.tokens, 0);
+
+  const bookRows = result.worldInfo?.rows ?? [];
+  const bookTotal = card.character_book?.entries.length ?? 0;
+  const bookPlaced = bookRows.filter((r) => r.placed).length;
   const warnCount = fields.filter(
-    (f) => f.status === 'disabled' || f.status === 'missing' || f.status === 'forbidden',
+    (f) =>
+      f.status === 'disabled' ||
+      f.status === 'missing' ||
+      f.status === 'forbidden' ||
+      f.status === 'silent',
   ).length;
 
   const jump = (key: string) => {
@@ -206,20 +237,22 @@ export function CardEditorDrawer({
               </button>
             ))}
 
+            <button
+              className={`ce-nav-item${active === 'book' ? ' active' : ''}`}
+              onClick={() => jump('book')}
+            >
+              <span className="ce-nav-seq muted">·</span>
+              <span className="ce-nav-label">世界书</span>
+              <span className={`ce-nav-token ${bookPlaced > 0 ? 'active' : 'muted'}`}>
+                {bookTotal === 0 ? '空' : `${bookPlaced}/${bookTotal}`}
+              </span>
+            </button>
+
             <div className="ce-nav-group">不进提示词</div>
             {[
               { key: 'greetings', label: '开场白', note: `${greetings.length} 条` },
               { key: 'notes', label: '创作者注释', note: '' },
               { key: 'meta', label: '标签 / 元数据', note: '' },
-              ...(card.character_book
-                ? [
-                    {
-                      key: 'book',
-                      label: '角色世界书',
-                      note: `${card.character_book.entries.length} 条`,
-                    },
-                  ]
-                : []),
             ].map((s) => (
               <button
                 key={s.key}
@@ -272,7 +305,7 @@ export function CardEditorDrawer({
                   <div className="ce-sec-hint">{def.hint}</div>
 
                   {f.status !== 'active' && f.status !== 'empty' && (
-                    <div className="ce-sec-warn">{STATUS_NOTE[f.status]}</div>
+                    <div className="ce-sec-warn">{f.note}</div>
                   )}
 
                   <textarea
@@ -317,6 +350,34 @@ export function CardEditorDrawer({
                 </section>
               );
             })}
+
+            <section className="ce-section" ref={bindSection('book')}>
+              <div className="ce-sec-head">
+                <span className="ce-seq muted">·</span>
+                <span className="ce-sec-title">世界书 · Character Book</span>
+                <div style={{ flex: 1 }} />
+                <span className="ce-sec-target">
+                  下一次请求 {bookPlaced}/{bookTotal} 条
+                </span>
+                <span className="ce-sec-token">
+                  {formatTokens(result.budget.parts.worldInfo)} tok
+                </span>
+              </div>
+              <div className="ce-sec-hint">
+                聊天里提到关键词时才进提示词的设定;标成「常驻」的每一轮都进。
+                每行右边写着这条下一次会不会触发、为什么。规则和酒馆一样,扫描条数、预算在「设置 › 世界书」
+              </div>
+              {result.worldInfo?.overflowed && (
+                <div className="ce-sec-warn">
+                  世界书超出预算({formatTokens(result.worldInfo.budget ?? 0)} tok),排在后面的条目没有进提示词
+                </div>
+              )}
+              <BookEditor
+                book={card.character_book}
+                rows={bookRows}
+                onChange={(character_book) => onChange({ character_book })}
+              />
+            </section>
 
             <div className="ce-divider">
               以下内容不会进入提示词
@@ -379,10 +440,13 @@ export function CardEditorDrawer({
                 >
                   ＋ 其他开场
                 </button>
+                {/* 删了 600ms 后就自动存进库:和别处的删除一样点两次 */}
                 {greetingIndex > 0 && (
-                  <button
-                    className="btn small danger"
-                    onClick={() => {
+                  <DeleteButton
+                    key={greetingIndex}
+                    disabled={false}
+                    label="删除这条"
+                    onConfirm={() => {
                       onChange({
                         alternate_greetings: card.alternate_greetings.filter(
                           (_, i) => i !== greetingIndex - 1,
@@ -390,9 +454,7 @@ export function CardEditorDrawer({
                       });
                       setGreetingIndex(Math.max(0, greetingIndex - 1));
                     }}
-                  >
-                    删除这条
-                  </button>
+                  />
                 )}
               </div>
             </section>
@@ -440,51 +502,10 @@ export function CardEditorDrawer({
               </div>
               <label className="ce-inline-field">
                 <span>标签 · Tags（逗号分隔）</span>
-                <input
-                  className="text-input"
-                  style={{ maxWidth: 'none' }}
-                  value={card.tags.join(', ')}
-                  onChange={(e) =>
-                    onChange({
-                      tags: e.target.value
-                        .split(',')
-                        .map((t) => t.trim())
-                        .filter(Boolean),
-                    })
-                  }
-                />
+                <TagsInput tags={card.tags} onChange={(tags) => onChange({ tags })} />
               </label>
             </section>
 
-            {card.character_book && (
-              <section className="ce-section" ref={bindSection('book')}>
-                <div className="ce-sec-head">
-                  <span className="ce-seq muted">·</span>
-                  <span className="ce-sec-title">角色世界书 · Character Book</span>
-                  <div style={{ flex: 1 }} />
-                  <span className="ce-sec-token">
-                    {card.character_book.entries.length} 条
-                  </span>
-                </div>
-                <div className="ce-sec-hint">
-                  目前只读。组装时按 insertion_order 拼进 worldInfo 占位符 ——
-                  那部分 token 算在世界书头上,不在上面的卡片合计里
-                </div>
-                <div className="ce-book">
-                  {card.character_book.entries.map((e, i) => (
-                    <div key={i} className={`ce-book-row${e.enabled ? '' : ' off'}`}>
-                      <span className="ce-book-order">{e.insertion_order}</span>
-                      <span className="ce-book-keys">
-                        {e.keys.join(', ') || e.comment || '(无关键词)'}
-                      </span>
-                      <span className="ce-book-token">
-                        {formatTokens(estimateTokens(e.content))}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
           </div>
 
           {/* 右缘竖排小条:点开向右展开整个提示词的 token 分布 */}
@@ -578,5 +599,38 @@ function TokenRail({ report, budget }: { report: BudgetReport; budget: number | 
         )}
       </div>
     </aside>
+  );
+}
+
+const parseTags = (text: string) =>
+  text
+    .split(/[,，]/)
+    .map((t) => t.trim())
+    .filter(Boolean);
+
+/**
+ * 逗号分隔的标签框。输入框显示自己的草稿:直接拿 tags.join 当 value 的话,刚敲下的逗号
+ * 会被解析掉、立刻消失,第二个标签就没法往下打了。中文逗号也认
+ */
+function TagsInput({ tags, onChange }: { tags: string[]; onChange: (tags: string[]) => void }) {
+  const [draft, setDraft] = useState(() => tags.join(', '));
+  // 换了卡、或者别处改了标签:草稿解析出来和现在的对不上才重置(自己打字时不会对不上)
+  const joined = tags.join('\u0000');
+  useEffect(() => {
+    setDraft((d) => (parseTags(d).join('\u0000') === joined ? d : tags.join(', ')));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 只跟着内容变
+  }, [joined]);
+  return (
+    <input
+      className="text-input"
+      style={{ maxWidth: 'none' }}
+      value={draft}
+      onChange={(e) => {
+        setDraft(e.target.value);
+        const next = parseTags(e.target.value);
+        if (next.join('\u0000') !== joined) onChange(next);
+      }}
+      onBlur={() => setDraft(tags.join(', '))}
+    />
   );
 }

@@ -21,6 +21,20 @@
   container: vn-title / size;
   animation: vn-tt-in 0.4s ease both;
 }
+/* 从黑场进来(刚打开、刚换角色):封面自己不能半透明地淡入 —— 底下就是游戏画面,会透出来闪一下。
+   封面直接不透明,上面盖一层黑的淡出去,看起来一样是从黑里亮起来 */
+.vn-title.cold:not(.leaving) {
+  animation: none;
+}
+.vn-title.cold::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  background: #07070d;
+  pointer-events: none;
+  animation: vn-fade-out 0.4s ease both;
+}
 :where(.vn-title) button {
   font: inherit;
   color: inherit;
@@ -77,6 +91,11 @@
 .vn-tt-brand .vn-feather {
   width: max(2.2cqh, 14px);
   height: max(2.2cqh, 14px);
+}
+/* logo 细节比羽毛多,给大一点 */
+.vn-tt-brand .vn-logo {
+  width: max(3cqh, 20px);
+  height: max(3cqh, 20px);
 }
 .vn-tt-brand .vn-beta {
   margin-left: 0.2em;
@@ -419,8 +438,7 @@
   letter-spacing: 0.3em;
   color: var(--tt-acc-deep);
 }
-.vn-title.poster.dark .vn-tt-tag,
-.vn-title.poster.dark .vn-tt-quote::before {
+.vn-title.poster.dark .vn-tt-tag {
   color: var(--tt-acc);
 }
 .vn-tt-tag::before {
@@ -443,25 +461,25 @@
   letter-spacing: 0.06em;
   color: color-mix(in srgb, var(--tt-ink) 58%, transparent);
 }
-.vn-tt-quote {
-  position: relative;
-  margin: 3cqh 0 0;
-  padding-left: 3.6cqh;
-  max-width: 26em;
-  font: 400 max(2.05cqh, 13px) / 1.75 var(--tt-serif);
-  color: color-mix(in srgb, var(--tt-ink) 80%, transparent);
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-  overflow: hidden;
+/* 名字下面的其余标签:细线小签,和纸面同色系 */
+.vn-tt-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1cqh;
+  max-width: 30em;
+  margin: 2.8cqh 0 0;
+  padding: 0;
+  list-style: none;
 }
-.vn-tt-quote::before {
-  content: '\201C';
-  position: absolute;
-  left: 0;
-  top: -1.2cqh;
-  font: 500 6cqh / 1 var(--tt-latin);
-  color: var(--tt-acc-deep);
+.vn-tt-tags li {
+  padding: 0.5cqh 1.5cqh;
+  border: 1px solid color-mix(in srgb, var(--tt-ink) 24%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tt-ink) 5%, transparent);
+  font: 400 max(1.8cqh, 12px) / 1.45 var(--tt-serif);
+  letter-spacing: 0.08em;
+  color: color-mix(in srgb, var(--tt-ink) 78%, transparent);
+  white-space: nowrap;
 }
 .vn-title.poster .vn-tt-menu {
   margin-top: auto;
@@ -569,15 +587,13 @@
   .vn-tt-exit {
     display: none;
   }
-  .vn-tt-quote {
+  .vn-tt-tags {
     margin-top: 2cqh;
-    padding-left: 5.5cqw;
-    font-size: 3.5cqw;
-    -webkit-line-clamp: 2;
+    gap: 1.8cqw;
   }
-  .vn-tt-quote::before {
-    font-size: 9cqw;
-    top: -1cqh;
+  .vn-tt-tags li {
+    padding: 0.4cqh 2.6cqw;
+    font-size: 3.1cqw;
   }
   .vn-title.poster .vn-tt-menu {
     display: grid;
@@ -713,7 +729,12 @@
   color: var(--tt-acc);
 }
 .vn-title.cinema .vn-tt-meta {
-  font: 400 max(1.7cqh, 11px) / 1 var(--vn-font);
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 400 max(1.7cqh, 11px) / 1.2 var(--vn-font);
   letter-spacing: 0.16em;
   color: rgba(244, 241, 246, 0.5);
   animation: vn-tt-in 1s ease 1.1s both;
@@ -953,11 +974,370 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .vn-title.cold::after,
   .vn-title *,
   .vn-title *::before,
   .vn-title *::after {
     animation-duration: 0.01s !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01s !important;
+  }
+}
+
+/* ══════════ 纸面 / 明亮(10-04 定稿,画布「定稿方向」;按 1440×810 的画板换成 cqh / cqw) ══════════
+   纸面:左边一张斜切的纸(印着淡淡的星图)放 logo 和菜单,右边透出上次的场景和她。
+   明亮:整张场景,左边一层白纱。两种共用菜单、右下「上次那句」的卡、内框。
+   进场:整页 0.22 秒淡入,所有组件一起上浮 10px(不排队)。 */
+
+.vn-title:is(.paper, .bright) {
+  --tt2-paper: #fbfaf8;
+  --tt2-ink: #2a2a33;
+  --tt2-dim: rgba(42, 42, 51, 0.56);
+  animation-duration: 0.22s;
+  color: var(--tt2-ink);
+}
+.vn-title:is(.paper, .bright).leaving {
+  animation: vn-fade-out 0.3s ease forwards;
+}
+.vn-title:is(.paper, .bright) .vn-tt2-bg {
+  transform: scale(1.04);
+}
+.vn-tt2-paper {
+  position: absolute;
+  inset: 0;
+  background: var(--tt2-paper);
+  clip-path: polygon(0 0, 62% 0, 36% 100%, 0 100%);
+}
+.vn-tt2-paper img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.14;
+}
+/* 纸的投影:clip-path 会把自己的投影一起剪掉,投影放在外面一层 */
+.vn-tt2-paperwrap {
+  position: absolute;
+  inset: 0;
+  filter: drop-shadow(6px 0 14px rgba(30, 30, 50, 0.22));
+}
+/* 斜边上一道角色主题色细线 */
+.vn-tt2-cut {
+  position: absolute;
+  inset: 0;
+  background: var(--tt-acc);
+  opacity: 0.7;
+  clip-path: polygon(62% 0, calc(62% + 1px) 0, calc(36% + 1px) 100%, 36% 100%);
+  pointer-events: none;
+}
+.vn-tt2-veil {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    rgba(251, 250, 248, 0.94) 0%,
+    rgba(251, 250, 248, 0.86) 24%,
+    rgba(251, 250, 248, 0.42) 40%,
+    rgba(251, 250, 248, 0) 54%
+  );
+}
+.vn-tt2-bloom {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 60% 50% at 70% 20%, rgba(255, 255, 255, 0.22), transparent 70%);
+  pointer-events: none;
+}
+.vn-title:is(.paper, .bright) .vn-tt-spr {
+  filter: drop-shadow(0 1cqh 2.6cqh rgba(30, 30, 60, 0.35));
+}
+
+/* 内框:白细线 + 外圈一道淡墨线 */
+.vn-tt2-frame {
+  position: absolute;
+  inset: 2.35cqh;
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  outline: 1px solid rgba(42, 42, 51, 0.14);
+  outline-offset: 4px;
+  pointer-events: none;
+}
+.vn-tt2-frame i {
+  position: absolute;
+  width: 2cqh;
+  height: 2cqh;
+  margin: -1cqh;
+  background: #fff;
+  clip-path: polygon(50% 0, 58% 42%, 100% 50%, 58% 58%, 50% 100%, 42% 58%, 0 50%, 42% 42%);
+}
+.vn-tt2-frame i:nth-child(1) {
+  left: 0;
+  top: 0;
+}
+.vn-tt2-frame i:nth-child(2) {
+  right: 0;
+  top: 0;
+  margin: -1cqh -1cqh 0 0;
+}
+.vn-tt2-frame i:nth-child(3) {
+  left: 0;
+  bottom: 0;
+  margin: 0 0 -1cqh -1cqh;
+}
+.vn-tt2-frame i:nth-child(4) {
+  right: 0;
+  bottom: 0;
+  margin: 0 -1cqh -1cqh 0;
+}
+
+.vn-tt2-ui {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.vn-tt2-ui > *,
+.vn-title:is(.paper, .bright) .vn-tt-sprite-in {
+  animation: vn-tt2-rise 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) 0.08s both;
+}
+.vn-title:is(.paper, .bright) .vn-tt-sprite-in {
+  animation:
+    vn-tt2-rise 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) 0.08s both,
+    vn-tt-breathe 6s ease-in-out 0.6s infinite;
+}
+@keyframes vn-tt2-rise {
+  from {
+    opacity: 0;
+    translate: 0 10px;
+  }
+}
+.vn-tt2-ui > :is(nav, button) {
+  pointer-events: auto;
+}
+
+/* logo 是白色的,纸上反成深色 */
+.vn-tt2-lockup {
+  position: absolute;
+  left: 7cqw;
+  top: 8.9cqh;
+  display: flex;
+  align-items: center;
+  filter: invert(1) hue-rotate(180deg) brightness(0.9);
+}
+.vn-tt2-lockup .mark {
+  width: 18.5cqh;
+  height: 18.5cqh;
+}
+.vn-tt2-lockup .word {
+  width: 55cqh;
+  margin-left: -2.5cqh;
+}
+
+.vn-tt2-menu {
+  position: absolute;
+  left: 8.6cqw;
+  top: 33cqh;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25cqh;
+}
+.vn-tt2-menu button {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  padding: 1cqh 3cqh 1cqh 4.2cqh;
+  text-align: left;
+}
+.vn-tt2-menu button::before {
+  content: '';
+  position: absolute;
+  left: 1.5cqh;
+  top: 50%;
+  width: 4px;
+  height: 4px;
+  margin-top: -2px;
+  border-radius: 50%;
+  background: rgba(42, 42, 51, 0.28);
+  transition: opacity 0.2s;
+}
+.vn-tt2-menu .star {
+  position: absolute;
+  left: 0.75cqh;
+  top: 50%;
+  width: 2cqh;
+  height: 2cqh;
+  margin-top: -1cqh;
+  fill: var(--tt-acc);
+  opacity: 0;
+  transform: scale(0.2) rotate(-90deg);
+  transition:
+    opacity 0.2s,
+    transform 0.4s;
+}
+.vn-tt2-menu .in {
+  display: flex;
+  align-items: baseline;
+  gap: 1.75cqh;
+  transition: transform 0.3s;
+}
+.vn-tt2-menu button:not(:disabled):is(:hover, :focus-visible) .in {
+  transform: translateX(1.25cqh);
+}
+.vn-tt2-menu button:not(:disabled):is(:hover, :focus-visible) .star {
+  opacity: 1;
+  transform: none;
+}
+.vn-tt2-menu button:not(:disabled):is(:hover, :focus-visible)::before {
+  opacity: 0;
+}
+.vn-tt2-menu .zh {
+  font: 700 max(3.2cqh, 17px) / 1.1 var(--tt-serif);
+  letter-spacing: 0.26em;
+}
+.vn-tt2-menu .en {
+  font: italic 500 max(1.85cqh, 11px) / 1 var(--tt-latin);
+  letter-spacing: 0.14em;
+  color: var(--tt2-dim);
+}
+.vn-tt2-menu .sub {
+  font-size: max(1.5cqh, 11px);
+  letter-spacing: 0.08em;
+  color: var(--tt2-dim);
+}
+.vn-tt2-menu .minor .zh {
+  font-size: max(2.35cqh, 14px);
+  font-weight: 500;
+}
+.vn-tt2-menu hr {
+  width: 22cqh;
+  margin: 1cqh 0 1cqh 4.2cqh;
+  border: 0;
+  border-top: 1px dotted rgba(42, 42, 51, 0.28);
+}
+
+/* 右下:上次那句 */
+.vn-tt2-last {
+  position: absolute;
+  right: 6cqw;
+  bottom: 8.1cqh;
+  width: min(31.5cqw, 60cqh);
+  padding: 3.2cqh 3cqh 2.2cqh;
+  border-radius: 6px;
+  background: rgba(251, 250, 248, 0.86) !important;
+  border: 1px solid rgba(255, 255, 255, 0.9) !important;
+  box-shadow: 0 1cqh 3cqh rgba(60, 50, 70, 0.18);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  text-align: left;
+  color: var(--tt2-ink);
+  transition: box-shadow 0.2s, transform 0.2s;
+}
+.vn-tt2-last:hover {
+  box-shadow: 0 1.4cqh 3.6cqh rgba(60, 50, 70, 0.26);
+}
+.vn-tt2-last .nm {
+  position: absolute;
+  left: 2.35cqh;
+  top: -2cqh;
+  height: 4cqh;
+  padding: 0 2.2cqh;
+  display: flex;
+  align-items: center;
+  border-radius: 4px;
+  background: var(--tt-acc);
+  color: #fff;
+  font: 700 max(2cqh, 13px) / 1 var(--tt-serif);
+  letter-spacing: 0.22em;
+  box-shadow: 0 3px 8px rgba(10, 10, 30, 0.2);
+}
+.vn-tt2-last .ln {
+  display: block;
+  font: 500 max(2.2cqh, 14px) / 1.7 var(--tt-serif);
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.vn-tt2-last .mt {
+  display: flex;
+  justify-content: space-between;
+  gap: 2cqh;
+  margin-top: 1cqh;
+  font-size: max(1.36cqh, 10px);
+  letter-spacing: 0.12em;
+  color: var(--tt2-dim);
+}
+.vn-tt2-last .mt b {
+  flex: none;
+  font-weight: 500;
+  color: var(--tt2-ink);
+}
+.vn-tt2-foot {
+  position: absolute;
+  right: 6cqw;
+  bottom: 3.6cqh;
+  font: max(1.36cqh, 10px) / 1 var(--tt-latin);
+  letter-spacing: 0.3em;
+  color: rgba(255, 255, 255, 0.85);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+
+/* 竖屏:纸 / 白纱铺在下半,菜单在下面,她站在上半;上次那句的卡收起来(菜单里有「继续」) */
+@container vn-title (max-aspect-ratio: 1/1) {
+  .vn-tt2-paper {
+    clip-path: polygon(0 52%, 100% 44%, 100% 100%, 0 100%);
+  }
+  .vn-tt2-cut {
+    clip-path: polygon(0 52%, 100% 44%, 100% calc(44% + 1px), 0 calc(52% + 1px));
+  }
+  .vn-tt2-veil {
+    background: linear-gradient(0deg, rgba(251, 250, 248, 0.95) 0%, rgba(251, 250, 248, 0.86) 38%, rgba(251, 250, 248, 0) 60%);
+  }
+  /* logo 放左上角,白色带一点影子(压在她的场景上);没选角色时上半是默认背景,也有东西 */
+  .vn-tt2-lockup {
+    left: 5cqw;
+    top: 3.5cqh;
+    filter: drop-shadow(0 1px 6px rgba(10, 10, 30, 0.45));
+  }
+  .vn-tt2-lockup .mark {
+    width: 7cqh;
+    height: 7cqh;
+  }
+  .vn-tt2-lockup .word {
+    width: 22cqh;
+    margin-left: -1cqh;
+  }
+  .vn-title.paper:not(.has-card) .vn-tt2-lockup,
+  .vn-title.bright:not(.has-card) .vn-tt2-lockup {
+    filter: invert(1) hue-rotate(180deg) brightness(0.9);
+  }
+  .vn-tt2-menu {
+    left: 50%;
+    top: auto;
+    bottom: 6cqh;
+    translate: -50% 0;
+    white-space: nowrap;
+  }
+  .vn-tt2-menu .zh {
+    font-size: max(2.6cqh, 17px);
+  }
+  .vn-tt2-foot {
+    color: rgba(42, 42, 51, 0.4);
+    text-shadow: none;
+    right: 50%;
+    translate: 50% 0;
+    bottom: 2cqh;
+  }
+  .vn-tt2-last,
+  .vn-tt2-frame i {
+    display: none;
+  }
+  .vn-tt2-frame {
+    inset: 1.4cqh;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vn-tt2-ui > *,
+  .vn-title:is(.paper, .bright) .vn-tt-sprite-in {
+    animation: none;
   }
 }

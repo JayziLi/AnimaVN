@@ -257,3 +257,45 @@ def test_background_file_serves_a_shrunk_copy_but_audio_ignores_width(client: Te
     img = cv2.imdecode(np.frombuffer(small.content, np.uint8), cv2.IMREAD_UNCHANGED)
     assert img.shape[:2] == (36, 64)
     assert client.get(f"{base}/{bgm['id']}/file?w=64").content == MP3
+
+
+def test_cg_variants_hang_under_a_cg_and_follow_it(client: TestClient):
+    pack = _pack(client)
+    base = _assets(pack["id"])
+    cg = client.post(base, json={"kind": "cg", "label": "海边烟花", "description": "夜晚的海边"}).json()
+    other = client.post(base, json={"kind": "cg", "label": "撑伞"}).json()
+    music = client.post(base, json={"kind": "bgm", "label": "温馨"}).json()
+
+    # 差分的名字是表情名:同一张 CG 里不能重,不同 CG 之间可以重,也不和构图的名字抢
+    v1 = client.post(base, json={"kind": "cg", "label": "开心", "parent_id": cg["id"]})
+    assert v1.status_code == 200 and v1.json()["parent_id"] == cg["id"]
+    assert client.post(base, json={"kind": "cg", "label": "开心", "parent_id": cg["id"]}).status_code == 409
+    assert client.post(base, json={"kind": "cg", "label": "开心", "parent_id": other["id"]}).status_code == 200
+    assert client.post(base, json={"kind": "cg", "label": "撑伞", "parent_id": cg["id"]}).status_code == 200
+    # 只能挂在 CG 构图下面
+    v_id = v1.json()["id"]
+    assert client.post(base, json={"kind": "cg", "label": "x", "parent_id": v_id}).status_code == 400
+    assert client.post(base, json={"kind": "cg", "label": "x", "parent_id": music["id"]}).status_code == 400
+    assert client.post(base, json={"kind": "bg", "label": "x", "parent_id": cg["id"]}).status_code == 400
+
+    # CG 不带音乐(和背景、音乐互不牵连),差分也不能
+    assert client.put(f"{base}/{cg['id']}", json={"bgm_id": music["id"]}).status_code == 400
+    assert client.put(f"{base}/{v_id}", json={"bgm_id": music["id"]}).status_code == 400
+    # 差分改名也只和同一张 CG 的差分比
+    assert client.put(f"{base}/{v_id}", json={"label": "撑伞"}).status_code == 409
+
+    # 包的计数只数构图;排序只排构图
+    counted = next(p for p in client.get(PACKS).json() if p["id"] == pack["id"])
+    assert counted["cg_count"] == 2
+    order = client.post(f"{base}/reorder", json={"kind": "cg", "ids": [other["id"], cg["id"]]})
+    assert [a["label"] for a in order.json()] == ["撑伞", "海边烟花"]
+
+    # CG 收图片,带 ?w= 也缩
+    assert client.put(f"{base}/{cg['id']}/file", files={"file": ("a.mp3", MP3)}).status_code == 400
+    assert client.put(f"{base}/{v_id}/file", files={"file": ("a.png", PNG)}).status_code == 200
+
+    # 删 CG 时差分一起删
+    client.delete(f"{base}/{music['id']}")
+    client.delete(f"{base}/{cg['id']}")
+    left = client.get(base).json()
+    assert [(a["label"], a["parent_id"] == other["id"]) for a in left] == [("撑伞", False), ("开心", True)]

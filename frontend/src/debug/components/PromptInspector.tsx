@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { AssemblyResult } from '../lib/assembler';
 import { findUnresolvedMacros } from '../lib/macros';
+import { POSITION_LABELS } from '../lib/characterBook';
 import { formatTokens } from '../lib/tokens';
 
 interface Props {
@@ -11,12 +12,15 @@ interface Props {
   onNotify: (kind: 'ok' | 'error', message: string) => void;
 }
 
-type Tab = 'messages' | 'json' | 'skipped';
+type Tab = 'messages' | 'json' | 'skipped' | 'world';
 
 export function PromptInspector({ result, lastRaw, onClose, onNotify }: Props) {
   const [tab, setTab] = useState<Tab>('messages');
 
   const payload = result.messages.map((m) => ({ role: m.role, content: m.content }));
+  const world = result.worldInfo;
+  const worldPlaced = world?.rows.filter((r) => r.placed) ?? [];
+  const worldMissed = world?.rows.filter((r) => !r.placed) ?? [];
   const unresolved = [
     ...new Set(result.messages.flatMap((m) => findUnresolvedMacros(m.content))),
   ];
@@ -77,6 +81,14 @@ export function PromptInspector({ result, lastRaw, onClose, onNotify }: Props) {
           >
             被跳过 ({result.skipped.length})
           </button>
+          {world && world.rows.length > 0 && (
+            <button
+              className={`inspector-tab ${tab === 'world' ? 'active' : ''}`}
+              onClick={() => setTab('world')}
+            >
+              世界书 ({worldPlaced.length}/{world.rows.length})
+            </button>
+          )}
           {lastRaw !== null && (
             <button
               className={`inspector-tab ${tab === ('raw' as Tab) ? 'active' : ''}`}
@@ -156,6 +168,30 @@ export function PromptInspector({ result, lastRaw, onClose, onNotify }: Props) {
                 <div key={`${s.identifier}:${i}`} className="skip-row">
                   <span style={{ color: 'var(--text-dim)' }}>{s.name}</span>
                   <span className="skip-reason">{s.reason}</span>
+                </div>
+              ))}
+            </>
+          )}
+
+          {tab === 'world' && world && (
+            <>
+              <div className="notice">
+                扫描了 {world.loops} 轮 · 预算{' '}
+                {world.budget === null ? '不限' : `${formatTokens(world.budget)} tok`}
+                {world.overflowed && ' · 已超出,排在后面的条目没有进提示词'}
+              </div>
+              {worldPlaced.map((r) => (
+                <div key={r.uid} className="skip-row wi-hit">
+                  <span>{r.title}</span>
+                  <span className="wi-tag">{POSITION_LABELS[r.position] ?? r.position}</span>
+                  <span className="imsg-tokens">{formatTokens(r.tokens)}</span>
+                  <span className="skip-reason">{r.reason}</span>
+                </div>
+              ))}
+              {worldMissed.map((r) => (
+                <div key={r.uid} className="skip-row">
+                  <span style={{ color: 'var(--text-dim)' }}>{r.title}</span>
+                  <span className="skip-reason">{r.reason}</span>
                 </div>
               ))}
             </>

@@ -196,6 +196,24 @@ def test_chat_list_preview_uses_selected_swipe_and_flattens_whitespace(
     assert listed[0]["message_count"] == 1
 
 
+def test_card_filtered_chat_list_counts_and_previews_only_its_own_chats(
+    client: TestClient, make_card, make_debug_chat, put_debug_message
+):
+    mine = make_card(name="我的卡")
+    other = make_card(name="别的卡")
+    chat = make_debug_chat(card_id=mine["id"])
+    elsewhere = make_debug_chat(card_id=other["id"])
+    put_debug_message(chat["id"], "a", idx=0, swipes=["第一句"])
+    put_debug_message(chat["id"], "b", idx=1, role="assistant", swipes=["最后一句"])
+    put_debug_message(elsewhere["id"], "c", idx=0, swipes=["别处的话"])
+
+    listed = client.get("/api/debug/chats", params={"card_id": mine["id"]}).json()
+
+    assert [(c["id"], c["message_count"], c["last_message"]) for c in listed] == [
+        (chat["id"], 2, "最后一句")
+    ]
+
+
 def test_chat_list_preview_is_bounded(client: TestClient, make_debug_chat, put_debug_message):
     chat = make_debug_chat()
     put_debug_message(chat["id"], "long", swipes=["长" * 200])
@@ -391,3 +409,74 @@ def test_jsonl_import_rebuilds_parent_and_branch_point_from_multiple_files(
     child_detail = client.get(f"/api/debug/chats/{by_name['Child']['id']}").json()
     assert child_detail["parent_chat_id"] == root_detail["id"]
     assert child_detail["parent_message_id"] == root_detail["messages"][0]["id"]
+
+
+def test_chat_variables_default_empty_and_are_replaced_wholesale(
+    client: TestClient, make_debug_chat
+):
+    chat = make_debug_chat(name="变量")
+    assert chat["variables"] == {}
+
+    first = client.put(
+        f"/api/debug/chats/{chat['id']}",
+        json={"variables": {"style": "轻小说", "好感度": 3}},
+    )
+    assert first.status_code == 200
+    assert first.json()["variables"] == {"style": "轻小说", "好感度": 3}
+
+    # 整份替换,不是合并:删掉的变量不能留在库里
+    client.put(f"/api/debug/chats/{chat['id']}", json={"variables": {"好感度": 4}})
+    assert client.get(f"/api/debug/chats/{chat['id']}").json()["variables"] == {"好感度": 4}
+
+    # 改别的字段不碰变量
+    client.put(f"/api/debug/chats/{chat['id']}", json={"name": "改名"})
+    assert client.get(f"/api/debug/chats/{chat['id']}").json()["variables"] == {"好感度": 4}
+
+    client.put(f"/api/debug/chats/{chat['id']}", json={"variables": None})
+    assert client.get(f"/api/debug/chats/{chat['id']}").json()["variables"] == {}
+
+
+def test_branch_carries_variables_but_does_not_share_them(
+    client: TestClient, make_debug_chat, put_debug_message
+):
+    parent = make_debug_chat(name="主聊天")
+    put_debug_message(parent["id"], "fork")
+    client.put(f"/api/debug/chats/{parent['id']}", json={"variables": {"mode": "战斗"}})
+
+    branch = client.post(
+        f"/api/debug/chats/{parent['id']}/branch", json={"message_id": "fork"}
+    ).json()
+    assert branch["variables"] == {"mode": "战斗"}
+
+    client.put(f"/api/debug/chats/{branch['id']}", json={"variables": {"mode": "日常"}})
+    assert client.get(f"/api/debug/chats/{parent['id']}").json()["variables"] == {"mode": "战斗"}
+
+
+def test_variables_round_trip_through_sillytavern_jsonl(
+    client: TestClient, make_debug_chat, put_debug_message
+):
+    chat = make_debug_chat(name="带变量")
+    put_debug_message(chat["id"], "u", role="user", swipes=["你好"])
+    client.put(f"/api/debug/chats/{chat['id']}", json={"variables": {"style": "轻小说", "n": 2}})
+
+    exported = client.get(f"/api/debug/chats/{chat['id']}/export").text
+    header = json.loads(exported.splitlines()[0])
+    assert header["chat_metadata"]["variables"] == {"style": "轻小说", "n": 2}
+
+    imported = client.post(
+        "/api/debug/chats/import",
+        files=[("files", ("回来.jsonl", exported.encode(), "application/jsonl"))],
+    ).json()
+    assert imported[0]["variables"] == {"style": "轻小说", "n": 2}
+
+
+def test_jsonl_without_variables_imports_as_empty(client: TestClient):
+    plain = (
+        '{"user_name":"User","character_name":"X","chat_metadata":{"variables":"oops"}}\n'
+        '{"is_user":false,"mes":"回复"}\n'
+    )
+    imported = client.post(
+        "/api/debug/chats/import",
+        files=[("files", ("plain.jsonl", plain.encode(), "application/jsonl"))],
+    ).json()
+    assert imported[0]["variables"] == {}

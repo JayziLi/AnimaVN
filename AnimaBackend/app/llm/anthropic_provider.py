@@ -16,6 +16,11 @@ logger = logging.getLogger(__name__)
 # second request inside the window, which a live chat easily hits
 EPHEMERAL = {"type": "ephemeral"}
 
+# 思考也算在 max_tokens 里。Opus 5.5 关不掉思考、也不返回思考内容，1024 时
+# 思考吃掉一半多，正文只剩一两段就被切断(2026-09-28 实测中转站)。回复多长由
+# 提示词管，这里只防失控；16000 也是 SDK 非流式请求不报超时警告的上限
+MAX_TOKENS = 16000
+
 
 def _log_usage(model: str, usage: Any) -> None:
     """One line per request, so a relay that silently drops cache_control
@@ -32,6 +37,15 @@ def _log_usage(model: str, usage: Any) -> None:
         "Anthropic %s 用量：缓存读 %d · 缓存写 %d · 未缓存 %d · 输出 %d · 命中 %s",
         model, read, write, fresh, usage.output_tokens or 0, hit,
     )
+
+
+def _warn_if_truncated(model: str, stop_reason: str | None, limit: int) -> None:
+    """The reply just stops mid-sentence on screen, so leave a trace here."""
+    if stop_reason == "max_tokens":
+        logger.warning(
+            "Anthropic %s 回复被截断：输出到了 max_tokens 上限 %d（思考也算在内）",
+            model, limit,
+        )
 
 
 class AnthropicProvider(LLMProvider):
@@ -87,12 +101,13 @@ class AnthropicProvider(LLMProvider):
                 model=model,
                 system=system,
                 messages=turns,
-                max_tokens=1024,
+                max_tokens=MAX_TOKENS,
                 **self._extra,
             )
         except Exception as e:
             raise self._map_error(e) from e
         _log_usage(model, response.usage)
+        _warn_if_truncated(model, response.stop_reason, MAX_TOKENS)
         return "".join(block.text for block in response.content if block.type == "text")
 
     async def stream(
@@ -106,7 +121,7 @@ class AnthropicProvider(LLMProvider):
                 model=model,
                 system=system,
                 messages=turns,
-                max_tokens=1024,
+                max_tokens=MAX_TOKENS,
                 stream=True,
                 **self._extra,
             )
@@ -114,14 +129,17 @@ class AnthropicProvider(LLMProvider):
             raise self._map_error(e) from e
 
         usage = None
+        stop_reason = None
         try:
             async for event in events:
                 # input/cache counts arrive up front; the final output count
-                # arrives in message_delta just before the stream ends
+                # and stop reason arrive in message_delta just before the end
                 if event.type == "message_start":
                     usage = event.message.usage
-                elif event.type == "message_delta" and usage is not None:
-                    usage.output_tokens = event.usage.output_tokens
+                elif event.type == "message_delta":
+                    stop_reason = event.delta.stop_reason
+                    if usage is not None:
+                        usage.output_tokens = event.usage.output_tokens
                 if event.type != "content_block_delta":
                     continue
                 delta = event.delta
@@ -133,6 +151,7 @@ class AnthropicProvider(LLMProvider):
         except Exception as e:
             raise self._map_error(e) from e
         _log_usage(model, usage)
+        _warn_if_truncated(model, stop_reason, MAX_TOKENS)
 
     async def list_models(self) -> list[str]:
         try:

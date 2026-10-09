@@ -36,3 +36,13 @@ AnimaBackend/data/*
 !AnimaBackend/data/.gitkeep
 # 情绪识别模型:scripts/download_emotion_model.py 下载,几十 MB,不进仓库
 AnimaBackend/models/
+
+# 界面设计的参考截图(几百 MB)和 Claude Design 画布的素材 / 源文件,留在本机,不进仓库
+docs/design/refs/
+docs/design/canvas/
+
+# 本机 AI 工具的私人记录和启动脚本:记忆里有私人路径、服务器信息和角色记录
+.codex/
+AGENTS.md
+.claude/remote-control/
+.claude/scheduled_tasks.lock

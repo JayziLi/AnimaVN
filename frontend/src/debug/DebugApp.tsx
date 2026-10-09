@@ -19,7 +19,8 @@ import {
   saveChatSettings,
   type ChatSettings,
 } from './lib/chatSettings';
-import { buildMacroContext } from './lib/macros';
+import { buildMacroContext, type MacroVars, type VarValue } from './lib/macros';
+import { loadGlobalVariables, saveGlobalVariables } from './lib/globalVariables';
 import {
   loadCustomMacros,
   saveCustomMacros,
@@ -32,19 +33,22 @@ import { PromptInspector } from './components/PromptInspector';
 import { assemble, type AssemblyResult, type BudgetReport, type ChatTurn } from './lib/assembler';
 import {
   debugApi,
-  type CardSprite,
   type ChatPayload,
   type ChatSummary,
   type DebugPersona,
+  type JevDefaults,
+  type JevKeyStatus,
   type StoredCard,
   type StoredPreset,
 } from './lib/api';
 import {
   addTruncatedSwipe,
   appendSwipe,
+  currentInfo,
   currentText,
   dropSwipe,
   fromStored,
+  lastUserText,
   makeGreetingEntry,
   makePendingEntry,
   makeUserEntry,
@@ -57,6 +61,8 @@ import {
   type SwipeInfo,
 } from './lib/chatEntry';
 import { resolveMarkerSource } from './lib/cardFields';
+import type { WorldInfoSettings } from './lib/worldInfo';
+import { loadWorldInfoSettings, saveWorldInfoSettings } from './lib/worldInfoSettings';
 import { EMPTY_CARD, parseCardFile, type TavernCard } from './lib/cardParser';
 import { cardFromStored, cardToFileJson, cardToStored, fileToDataUrl } from './lib/cardStore';
 import {
@@ -81,6 +87,9 @@ import {
 } from './plugins/sprite';
 import {
   SCENE,
+  backgroundsOf,
+  bgmsOf,
+  cgsOf,
   insertSceneBlock,
   sceneAtEnd,
   sceneBlockState,
@@ -89,6 +98,7 @@ import {
 } from './plugins/scene';
 import { useScenePlugin } from './plugins/useScenePlugin';
 import { useSpriteLayout } from './plugins/useSpriteLayout';
+import { useSpritePacks } from './plugins/useSpritePacks';
 import { useVoicePlugin } from './plugins/useVoicePlugin';
 import { enabledOnly, isPluginBlock, syncPluginBlocks } from './plugins/common';
 import {
@@ -100,6 +110,30 @@ import {
   normalizeLangConfig,
   type LangPluginConfig,
 } from './plugins/lang';
+import {
+  DEFAULT_JEV_CONFIG,
+  JEV_SETTING_KEY,
+  emotionBefore,
+  anyJev,
+  jevLangPrompt,
+  jevOrder,
+  jevStripPrompt,
+  jevTagKinds,
+  normalizeJevConfig,
+  promptOverrides,
+  wantsTagFreeLang,
+  type JevKinds,
+  type JevPluginConfig,
+} from './plugins/jev';
+import {
+  JEV_SETTLE_MS,
+  JevRun,
+  type AnnotateChoice,
+  type JevSnapshot,
+  type JevTrial,
+} from './plugins/jevRun';
+import { cutJev, jevText } from './plugins/jevNotes';
+import { BUILTIN_EMOTIONS } from './plugins/emotions';
 import {
   DEFAULT_PLAYER_CONFIG,
   PLAYER_BLOCK_ID,
@@ -131,10 +165,10 @@ import { VNScreen } from './vn/VNScreen';
 import { stripTags, vnTagKinds } from './vn/tags';
 import {
   autoRange,
+  budgetFromParams,
   DEFAULT_BUDGET,
-  loadBudget,
   loadRange,
-  saveBudget,
+  paramsWithBudget,
   saveRange,
 } from './lib/budget';
 
@@ -270,27 +304,13 @@ export default function DebugApp() {
     avatarInputRef.current?.click();
   };
 
-  // token 预算:localStorage 有就用(包括明确关掉的 'off');从没设过就等
-  // 预设载入后拿它的 openai_max_context 播种,再没有就 16384
-  const [tokenBudget, setTokenBudget] = useState<number | null | undefined>(() => loadBudget());
-  const budgetSeeded = useRef(loadBudget() !== undefined);
-  const [rangeScale, setRangeScale] = useState(() => {
-    const saved = loadRange();
-    if (saved) return saved;
-    const b = loadBudget();
-    return autoRange(typeof b === 'number' ? b : DEFAULT_BUDGET);
-  });
-
+  // token 预算记在预设里(openai_max_context,同酒馆):换预设跟着变。预设没载入时不截断
+  const tokenBudget = rawPreset ? budgetFromParams(rawPreset.params) : null;
+  const [rangeScale, setRangeScale] = useState(() => loadRange() ?? autoRange(DEFAULT_BUDGET));
+  // 换到预算更大的预设时,量程换到装得下的挡
   useEffect(() => {
-    if (budgetSeeded.current || !rawPreset) return;
-    budgetSeeded.current = true;
-    const fromPreset = Number(rawPreset.params.openai_max_context);
-    const seeded =
-      Number.isFinite(fromPreset) && fromPreset > 0 ? Math.floor(fromPreset) : DEFAULT_BUDGET;
-    setTokenBudget(seeded);
-    // 播种值不写 localStorage —— 那是用户的旋钮,预设只提供初值
-    setRangeScale((r) => (seeded > r ? autoRange(seeded) : r));
-  }, [rawPreset]);
+    if (tokenBudget !== null) setRangeScale((r) => (tokenBudget > r ? autoRange(tokenBudget) : r));
+  }, [tokenBudget]);
 
   const [entries, setEntries] = useState<ChatEntry[]>([]);
   const [sending, setSending] = useState(false);
@@ -372,6 +392,27 @@ export default function DebugApp() {
   };
 
   /**
+   * 宏变量。局部的跟着对话(库里 debug_chats.variables),全局的存在这台机器上。
+   * 预览只读这两份;真的发出去之后,把组装算出来的新值写回来(见 commitVariables)。
+   */
+  const [chatVars, setChatVars] = useState<Record<string, VarValue>>({});
+  const [globalVars, setGlobalVars] = useState<Record<string, VarValue>>(loadGlobalVariables);
+  const variables: MacroVars = useMemo(
+    () => ({ local: chatVars, global: globalVars }),
+    [chatVars, globalVars],
+  );
+  /** 最近一次生成是哪种 —— {{lastGenerationType}} 读它 */
+  const generationType = useRef('');
+
+  /** 世界书的全局设置:扫几条、预算多少、递不递归。会影响提示词,对所有角色生效 */
+  const [worldInfoSettings, setWorldInfoSettings] =
+    useState<WorldInfoSettings>(loadWorldInfoSettings);
+  const changeWorldInfoSettings = (next: WorldInfoSettings) => {
+    setWorldInfoSettings(next);
+    saveWorldInfoSettings(next);
+  };
+
+  /**
    * 自定义宏。和显示偏好分开存 —— 它会进提示词,不是「我的眼睛怎么舒服」,
    * 「恢复默认」也不该顺手把人写的宏清空。
    */
@@ -398,7 +439,6 @@ export default function DebugApp() {
         );
     }, 500);
   };
-  const [sprites, setSprites] = useState<CardSprite[]>([]);
 
   /** 外语插件(日语配音、中文字幕):全局配置,和立绘插件一样停手半秒再写库 */
   const [langConfig, setLangConfig] = useState<LangPluginConfig>(DEFAULT_LANG_CONFIG);
@@ -430,6 +470,31 @@ export default function DebugApp() {
     }, 500);
   };
 
+  /**
+   * Jev 标注:每个标签插件可以选「AI 写」或「Jev 标」(模式存在各插件自己的配置里,plugins/jev.ts)。
+   * 这里是几个插件共用的那份(立绘和文字同步、说话人门槛、通用问法),同样停手半秒再写库;
+   * key 只在后端,这里只知道设了没有。默认问法从后端拿(只存一份)
+   */
+  const [jevConfig, setJevConfig] = useState<JevPluginConfig>(DEFAULT_JEV_CONFIG);
+  const [jevKey, setJevKey] = useState<JevKeyStatus | null>(null);
+  const [jevDefaults, setJevDefaults] = useState<JevDefaults | null>(null);
+  const jevSaveTimer = useRef<number | undefined>(undefined);
+  const changeJevConfig = (next: JevPluginConfig) => {
+    setJevConfig(next);
+    window.clearTimeout(jevSaveTimer.current);
+    jevSaveTimer.current = window.setTimeout(() => {
+      debugApi
+        .putSetting(JEV_SETTING_KEY, next)
+        .catch((e: unknown) =>
+          notify('error', `插件配置保存失败: ${e instanceof Error ? e.message : String(e)}`),
+        );
+    }, 500);
+  };
+  const saveJevKey = async (key: string) => {
+    await debugApi.setJevKey(key);
+    setJevKey(await debugApi.annotateStatus());
+  };
+
   // 视觉小说模式。刻意不跨刷新保留:开机不会自动选角色卡,刷新后直接进视觉小说
   // 只会看到一个「先选卡」的空界面 —— 还不如回到开始界面,选完卡再点一次入口
   const [vnOpen, setVnOpen] = useState(false);
@@ -455,10 +520,22 @@ export default function DebugApp() {
   /** 正在跑的那次生成,跑完(含被停下)才 resolve —— 插话要等它收完尾再接着发 */
   const inflightRef = useRef<Promise<void>>(Promise.resolve());
   // 逐操作写库的水位线(见 persist effect):条目对象或位置变了才需要写
+  // 后端已经存下的提示词快照(按哈希)。快照只增不删,这次打开页面里存过的就不用再随消息发
+  const savedSnapshots = useRef(new Set<string>());
   const persistedRef = useRef<{
     chatId: string | null;
     rows: Map<string, { entry: ChatEntry; idx: number }>;
   }>({ chatId: null, rows: new Map() });
+  // 每条消息的写库请求排队:同一条的 PUT / DELETE 按发出的顺序落库。不排的话,刚发出去的消息
+  // 在保存请求回来之前就删掉,删除根本不会发(水位线里还没有它),然后保存落库,这条就一直留在库里;
+  // 改完马上翻分支也可能是旧的那次 PUT 最后到
+  const writeChain = useRef(new Map<string, Promise<unknown>>());
+  // 已经排上队、还没落库的:{entry, idx} = 要写成这样,null = 要删。只管当前这张对话
+  // (换对话的路不止一条:loadChat / newChat 自己会把水位线换成新对话的,所以按对话 id 认)
+  const queuedRef = useRef<{
+    chatId: string | null;
+    map: Map<string, { entry: ChatEntry; idx: number } | null>;
+  }>({ chatId: null, map: new Map() });
   const taintedRef = useRef(false);
   const metaRef = useRef<{ card_id: string | null; preset_id: string | null; user_name: string }>(
     { card_id: null, preset_id: null, user_name: 'User' },
@@ -480,8 +557,11 @@ export default function DebugApp() {
     toastTimer.current = window.setTimeout(() => setToast(null), 4000);
   }, []);
 
-  /** 背景 / BGM 插件:配置、场景包、当前卡绑的包和素材 */
+  /** 背景 / BGM / CG 插件:配置、场景包、当前卡绑的包和素材 */
   const scenePlugin = useScenePlugin(cardId, notify);
+  /** 立绘包:这张卡挂着哪些包、游戏里用哪个(换了跟着卡走),以及那个包里的立绘 */
+  const spritePacks = useSpritePacks(cardId, notify);
+  const { sprites } = spritePacks;
   /** 语音插件:配置、语音服务、声音,以及当前卡用哪些声音 */
   const voicePlugin = useVoicePlugin(cardId, notify);
   // 游戏、提示词、语音、存档缩略图只看没禁用的素材;插件抽屉拿完整列表,好重新打开
@@ -491,17 +571,17 @@ export default function DebugApp() {
     () => [
       sceneTagKind('bg', scenePlugin.configs.bg.tagTemplate),
       sceneTagKind('bgm', scenePlugin.configs.bgm.tagTemplate),
+      sceneTagKind('cg', scenePlugin.configs.cg.tagTemplate),
     ],
     [scenePlugin.configs],
   );
-  // 整段对话末尾是哪个场景、在放哪首 —— {{current_bg}} / {{current_bgm}}
+  // 整段对话末尾是哪个场景、在放哪首、画面上有没有 CG —— {{current_bg}} / {{current_bgm}} / {{current_cg}}
   const sceneNow = useMemo(
     () => sceneAtEnd(entries, sceneKinds, activeSceneAssets),
     [entries, sceneKinds, activeSceneAssets],
   );
   const sceneMacroValues = useMemo(
-    () =>
-      sceneMacros(scenePlugin.configs, scenePlugin.packId !== null, activeSceneAssets, sceneNow),
+    () => sceneMacros(scenePlugin.configs, scenePlugin.packId !== null, activeSceneAssets, sceneNow),
     [scenePlugin.configs, scenePlugin.packId, activeSceneAssets, sceneNow],
   );
 
@@ -512,6 +592,7 @@ export default function DebugApp() {
       [SPRITE_BLOCK_ID]: spriteConfig.blockPrompt,
       [SCENE.bg.blockId]: scenePlugin.configs.bg.blockPrompt,
       [SCENE.bgm.blockId]: scenePlugin.configs.bgm.blockPrompt,
+      [SCENE.cg.blockId]: scenePlugin.configs.cg.blockPrompt,
       [LANG_BLOCK_ID]: langConfig.blockPrompt,
       [PLAYER_BLOCK_ID]: playerConfig.blockPrompt,
     }),
@@ -521,6 +602,41 @@ export default function DebugApp() {
     () => syncPluginBlocks(rawPreset, pluginTemplates),
     [rawPreset, pluginTemplates],
   );
+
+  /** 视觉小说认的几类标签(立绘 / 背景 / 音乐 / CG / <我>);「历史」页默认把它们摘掉只给人看正文 */
+  const vnKinds = useMemo(
+    () =>
+      vnTagKinds(
+        spriteConfig.tagTemplate,
+        scenePlugin.configs.bg.tagTemplate,
+        scenePlugin.configs.bgm.tagTemplate,
+        scenePlugin.configs.cg.tagTemplate,
+      ),
+    [spriteConfig.tagTemplate, scenePlugin.configs],
+  );
+
+  /** 哪几类标签在用 Jev:插件选了 Jev、而且后端有 key(没 key 时照旧由 AI 写) */
+  const hasJevKey = Boolean(jevKey?.has_key);
+  const jevKinds: JevKinds = useMemo(
+    () => ({
+      sprite: hasJevKey && spriteConfig.mode === 'jev',
+      bg: hasJevKey && scenePlugin.configs.bg.mode === 'jev',
+      bgm: hasJevKey && scenePlugin.configs.bgm.mode === 'jev',
+      cg: hasJevKey && scenePlugin.configs.cg.mode === 'jev',
+      player: hasJevKey && playerConfig.mode === 'jev',
+    }),
+    [hasJevKey, spriteConfig.mode, scenePlugin.configs, playerConfig.mode],
+  );
+  const jevOn = anyJev(jevKinds);
+  /** 在用 Jev 的那几类标签:提示词里摘掉、模型自己写的也摘掉 */
+  const jevStripKinds = useMemo(() => jevTagKinds(jevKinds, vnKinds), [jevKinds, vnKinds]);
+  /** 最新一条 AI 回复的 Jev 统计(插件页标题栏显示) */
+  const lastJevStats = useMemo(() => {
+    for (let i = entries.length - 1; i >= 0; i--) {
+      if (entries[i].role === 'assistant') return currentInfo(entries[i])?.jev ?? null;
+    }
+    return null;
+  }, [entries]);
 
   /** 插件抽屉要打开到哪个插件的提示词模板;nonce 让连点同一个也能再跳一次 */
   const [pluginFocus, setPluginFocus] = useState<{ section: PluginKey; nonce: number } | null>(
@@ -533,6 +649,8 @@ export default function DebugApp() {
       ? 'bg'
       : identifier === SCENE.bgm.blockId
         ? 'bgm'
+        : identifier === SCENE.cg.blockId
+        ? 'cg'
         : identifier === LANG_BLOCK_ID
           ? 'lang'
           : identifier === PLAYER_BLOCK_ID
@@ -595,24 +713,41 @@ export default function DebugApp() {
    * 选中一张卡时套用它的人设;已经是那个就不动。不直接弹提示,返回要说的话 ——
    * 选卡时和预设的合成一条。bindings 默认用存着的,卡编辑器里刚改的绑定直接传进来
    */
+  // 人设切换排队、只认最后一次:快速点 A 再点 B,两次激活请求谁后到谁生效,
+  // A 的晚到就会让屏幕上是 B、激活的却是 A 的人设
+  const personaSeq = useRef(0);
+  const personaChain = useRef<Promise<unknown>>(Promise.resolve());
+  // 刚激活的是谁:排在后面的那次可能在列表重新渲染之前就跑了,personaRef 里的 is_active 还是旧的。
+  // 列表一更新(服务器上的状态到了)就作废
+  const justActivated = useRef<string | null>(null);
+  useEffect(() => {
+    justActivated.current = null;
+  }, [personas]);
   const applyBoundPersona = useCallback(
-    async (forCardId: string, bindings = personaRef.current.bindings): Promise<Said> => {
-      const { personas: list } = personaRef.current;
-      const target = personaForCard(
-        bindings,
-        forCardId,
-        list.map((p) => p.id),
-      );
-      const active = list.find((p) => p.is_active);
-      if (!target || target.id === active?.id) return null;
-      try {
-        await debugApi.activatePersona(target.id);
-        await refreshPersonas();
-        const name = list.find((p) => p.id === target.id)?.name ?? '';
-        return { kind: 'ok', text: `人设换成了「${name}」(${target.bound ? '这张卡绑定的' : '默认人设'})` };
-      } catch (e) {
-        return { kind: 'error', text: `人设切换失败: ${e instanceof Error ? e.message : String(e)}` };
-      }
+    (forCardId: string, bindings?: PersonaBindings): Promise<Said> => {
+      const mine = ++personaSeq.current;
+      const run = personaChain.current.then(async (): Promise<Said> => {
+        if (mine !== personaSeq.current) return null; // 后面又切了,这次不用换了
+        const { personas: list } = personaRef.current;
+        const target = personaForCard(
+          bindings ?? personaRef.current.bindings,
+          forCardId,
+          list.map((p) => p.id),
+        );
+        const activeId = justActivated.current ?? list.find((p) => p.is_active)?.id;
+        if (!target || target.id === activeId) return null;
+        try {
+          await debugApi.activatePersona(target.id);
+          justActivated.current = target.id;
+          await refreshPersonas();
+          const name = list.find((p) => p.id === target.id)?.name ?? '';
+          return { kind: 'ok', text: `人设换成了「${name}」(${target.bound ? '这张卡绑定的' : '默认人设'})` };
+        } catch (e) {
+          return { kind: 'error', text: `人设切换失败: ${e instanceof Error ? e.message : String(e)}` };
+        }
+      });
+      personaChain.current = run.catch(() => undefined);
+      return run;
     },
     [refreshPersonas],
   );
@@ -670,15 +805,19 @@ export default function DebugApp() {
   );
 
   /** 刷新分支树:当前卡 + 孤儿对话(card_id 为空)。显式传卡 id,免得拿到旧闭包 */
+  // 只认最后一次:快速切 A → B 时 A 的结果晚到会把 A 的树盖到 B 上
+  const treeSeq = useRef(0);
   const refreshTree = useCallback(async (forCardId: string | null) => {
+    const seq = ++treeSeq.current;
     setTreeLoading(true);
     try {
       const all = await debugApi.listChats(null);
+      if (seq !== treeSeq.current) return;
       setTreeChats(all.filter((c) => c.card_id === forCardId || c.card_id === null));
     } catch {
       // 树是辅助导航,拉取失败不弹错 —— 顶栏下拉和对话本身才是主路径
     } finally {
-      setTreeLoading(false);
+      if (seq === treeSeq.current) setTreeLoading(false);
     }
   }, []);
 
@@ -790,6 +929,8 @@ export default function DebugApp() {
       );
       const mapped = detail.messages.map((m, i) => fromStored(m, i));
       setEntries(mapped);
+      setChatVars(detail.variables ?? {});
+      generationType.current = '';
       setTainted(detail.tainted);
       taintedRef.current = detail.tainted;
       metaRef.current = {
@@ -813,7 +954,13 @@ export default function DebugApp() {
         try {
           const row = await debugApi.getPreset(detail.preset_id);
           if (seq !== chatSeq.current) return null; // settle 交给接班的那次
-          selectPreset(row);
+          // 和换绑定预设一样:有没保存的改动就不换,换了改动就丢了
+          if (presetRef.current.dirty) {
+            notify('error', `预设有没保存的改动,没换成这张对话当时用的「${row.name}」`);
+            // 下面那个同步绑定的 effect 看到「对话记的 ≠ 现在用的」会把现在这套写进对话,
+            // 对话原来记的预设就被悄悄改掉了。这次没换是临时的,对话记录保持原样
+            metaRef.current.preset_id = presetRef.current.id;
+          } else selectPreset(row);
         } catch {
           // 预设被删了:对话里的引用已经是空,不动当前选择
         }
@@ -830,7 +977,12 @@ export default function DebugApp() {
       // context 让 selectCard 在状态还没提交时也能带着新卡直接开聊
       const c = context?.card ?? card;
       const cid = context?.cardId ?? cardId;
-      if (!c || !cid || sending) return;
+      if (!c || !cid) return;
+      // 以前生成中点了什么也不发生(存档页、标题的「新的故事」、历史里的新对话),像是坏了
+      if (sending) {
+        notify('error', '回复还在生成,先停下再开新对话');
+        return;
+      }
       const seq = ++chatSeq.current;
       // 也接管 chatLoading:建对话同样是网络往返,而且这一跳会作废在途的 loadChat,
       // 那次的 settle 不会执行 —— 圈得由这里关
@@ -869,6 +1021,8 @@ export default function DebugApp() {
       setChats((prev) => [{ ...created, message_count: seeded.length }, ...prev]);
       refreshTree(cid);
       setEntries(seeded);
+      setChatVars({});
+      generationType.current = '';
       setTainted(false);
       taintedRef.current = false;
       metaRef.current = { card_id: cid, preset_id: presetId, user_name: userName };
@@ -946,7 +1100,11 @@ export default function DebugApp() {
   /** 「从这里开始」—— 复制 [0, 该消息] 前缀到新分支,然后切过去 */
   const branchHere = useCallback(
     async (messageId: string) => {
-      if (!chatId || sending || chatOp) return;
+      if (!chatId || chatOp) return;
+      if (sending) {
+        notify('error', '回复还在生成,先停下再从这里分支');
+        return;
+      }
       setChatOp('branch');
       try {
         const created = await debugApi.branchChat(chatId, messageId);
@@ -1121,6 +1279,23 @@ export default function DebugApp() {
         notify('error', `玩家台词插件配置读取失败: ${e instanceof Error ? e.message : String(e)}`),
       );
     debugApi
+      .getSetting(JEV_SETTING_KEY)
+      .then((v) => {
+        if (v !== null) setJevConfig(normalizeJevConfig(v));
+      })
+      .catch((e: unknown) =>
+        notify('error', `Jev 标注配置读取失败: ${e instanceof Error ? e.message : String(e)}`),
+      );
+    debugApi
+      .annotateStatus()
+      .then(setJevKey)
+      .catch(() => setJevKey({ has_key: false, source: null }));
+    // 后端还是旧版(没有这个接口)时为 null:插件页提示重启后端
+    debugApi
+      .annotateDefaults()
+      .then(setJevDefaults)
+      .catch(() => setJevDefaults(null));
+    debugApi
       .health()
       .then((h) => setVersion(h.version))
       .catch(() => setVersion(''));
@@ -1161,43 +1336,36 @@ export default function DebugApp() {
     [],
   );
 
-  // 换卡就换一套表情映射。切得快时旧请求可能后到 —— 只收当前这张卡的结果
-  const spriteCardRef = useRef<string | null>(null);
-  useEffect(() => {
-    spriteCardRef.current = cardId;
-    setSprites([]);
-    if (!cardId) return;
-    debugApi
-      .listSprites(cardId)
-      .then((list) => {
-        if (spriteCardRef.current === cardId) setSprites(list);
-      })
-      .catch((e: unknown) =>
-        notify('error', `表情映射读取失败: ${e instanceof Error ? e.message : String(e)}`),
-      );
-  }, [cardId, notify]);
-  const changeSprites = (forCard: string, next: CardSprite[]) => {
-    if (spriteCardRef.current === forCard) setSprites(next);
-  };
-  /** 立绘怎么摆:所有角色共用的构图、当前卡的微调,顺带给没找过脸的立绘补识别 */
-  const spriteLayout = useSpriteLayout(cardId, sprites, changeSprites, notify);
+  /** 立绘怎么摆:所有角色共用的构图、当前包的微调,顺带给没找过脸的立绘补识别 */
+  const spriteLayout = useSpriteLayout(spritePacks.packId, sprites, spritePacks.changeSprites, notify);
 
   /**
-   * 列表视图的头像懒加载:不进列表一张都不拉(data URL 都不小);
-   * 进了列表把没拉过的并发取回来,拉到进 cardAvatars 缓存,删卡时清掉。
-   * in-flight 集合防重:缓存每次更新都会重跑这个 effect,不能让同一张被拉两遍。
+   * 卡面头像按需懒加载:谁要显示谁开口(wantAvatars),没人要的一张都不拉 —— 卡面头像是整张
+   * 卡图转的 data URL,一张能有近 1 MB(刷新页面时靠 ETag 回 304)。角色列表挂出来时要全部;
+   * 视觉小说的标题画面、等待页平时用按脸裁的小图,只有小图读不到时才要那一张
+   * (以前一进视觉小说就全拉,公网上和等待页要等的图抢带宽)。
+   * 拉到进 cardAvatars 缓存,删卡时清掉。
+   * avatarRequested 防重:缓存每次更新都会重跑这个 effect。拉到了也不划掉 —— 渲染是切片的,
+   * 「写进缓存」那次提交之前别的头像先触发一次重跑,就会看到这张既不在缓存里、也不在途,
+   * 以前每次进来都有几张被拉两遍。只有拉失败才划掉,下次有人要时再试。
    */
-  const avatarInflight = useRef(new Set<string>());
+  const [avatarWanted, setAvatarWanted] = useState<ReadonlySet<string>>(() => new Set());
+  const wantAvatars = useCallback((ids: readonly string[]) => {
+    setAvatarWanted((prev) => (ids.every((id) => prev.has(id)) ? prev : new Set([...prev, ...ids])));
+  }, []);
+  const avatarRequested = useRef(new Set<string>());
   useEffect(() => {
-    // 视觉小说的标题画面也要挑角色,开着它时同样要头像
-    if (cardView !== 'list' && !vnOpen) return;
     for (const c of savedCards) {
-      if (!c.has_avatar || cardAvatars.has(c.id) || avatarInflight.current.has(c.id)) continue;
-      avatarInflight.current.add(c.id);
+      if (!avatarWanted.has(c.id)) continue;
+      if (!c.has_avatar || cardAvatars.has(c.id) || avatarRequested.current.has(c.id)) continue;
+      avatarRequested.current.add(c.id);
       debugApi
         .getCardAvatar(c.id)
         .then((dataUrl) => {
-          if (!dataUrl) return;
+          if (!dataUrl) {
+            avatarRequested.current.delete(c.id);
+            return;
+          }
           setCardAvatars((prev) => {
             if (prev.has(c.id)) return prev;
             const next = new Map(prev);
@@ -1207,10 +1375,10 @@ export default function DebugApp() {
         })
         .catch(() => {
           // 拉不到就用默认头像兜底,不弹错 —— 列表是导航,不是告警通道
-        })
-        .finally(() => avatarInflight.current.delete(c.id));
+          avatarRequested.current.delete(c.id);
+        });
     }
-  }, [cardView, vnOpen, savedCards, cardAvatars]);
+  }, [avatarWanted, savedCards, cardAvatars]);
 
   // ---- 载入 ----
 
@@ -1416,6 +1584,22 @@ export default function DebugApp() {
       enabled: overrides[o.identifier] ?? o.enabled,
     }));
   }, [preset, groupIndex, overrides]);
+  // 组装用的预设和编排:在用 Jev 的插件块不发;开着的标签插件块全是 Jev 时,外语块换成不提标签的
+  // 版本(plugins/jev.ts)。只影响发出去的提示词,左栏看到、保存的还是原来的
+  const assemblyOrder = useMemo(() => (jevOn ? jevOrder(order, jevKinds) : order), [jevOn, order, jevKinds]);
+  const tagFreeLang = wantsTagFreeLang(jevKinds, order);
+  const assemblyPreset = useMemo(
+    () =>
+      tagFreeLang && preset
+        ? {
+            ...preset,
+            prompts: preset.prompts.map((p) =>
+              p.identifier === LANG_BLOCK_ID ? { ...p, content: jevLangPrompt(p.content, vnKinds) } : p,
+            ),
+          }
+        : preset,
+    [tagFreeLang, preset, vnKinds],
+  );
 
   // ---- 预设 CRUD ----
 
@@ -1426,7 +1610,12 @@ export default function DebugApp() {
       await debugApi.updatePreset(presetId, presetToStored(preset, groupIndex, order));
       const list = await debugApi.listPresets();
       setSavedPresets(list);
-      // 开关已经写进 prompt_order 了,本地覆盖层可以清掉
+      // 开关已经写进 prompt_order 了:内存里的编排也换成合并后的,再清覆盖层,
+      // 不然覆盖层一清就退回保存前的开关
+      setPreset({
+        ...preset,
+        orderGroups: preset.orderGroups.map((g, i) => (i === groupIndex ? { ...g, order } : g)),
+      });
       setOverrides({});
       setPresetDirty(false);
       notify('ok', `已保存预设「${preset.name}」`);
@@ -1686,6 +1875,8 @@ export default function DebugApp() {
       systemPrompt: false,
       injectionPosition: 0,
       injectionDepth: 4,
+      injectionOrder: 100,
+      injectionTrigger: [],
       forbidOverrides: false,
     };
 
@@ -1752,9 +1943,11 @@ export default function DebugApp() {
     return s;
   }, [card, preset]);
 
+  // 发给模型的历史是「原文 + Jev 另外存的标注」(plugins/jevNotes.ts);现在是 Jev 模式的那几类,
+  // 组装完再整个摘掉(assembleForSend)—— 切回 AI 写以后,以前 Jev 标的照样当示例
   const history: ChatTurn[] = useMemo(
-    () => entries.map((e) => ({ role: e.role, content: currentText(e) })),
-    [entries],
+    () => entries.map((e) => ({ role: e.role, content: jevText(e, vnKinds) })),
+    [entries, vnKinds],
   );
 
   /** 聊天区显示时展开宏用的取值。和组装提示词共用同一个构造函数,两边不会算出不同的 {{user}} */
@@ -1766,8 +1959,10 @@ export default function DebugApp() {
         personaDescription: persona,
         history,
         custom: macroLookup,
+        variables,
+        extra: { chatId: chatId ?? '', isMobile },
       }),
-    [card, userName, persona, history, macroLookup],
+    [card, userName, persona, history, macroLookup, variables, chatId, isMobile],
   );
 
   const activeConnection = connections.find((c) => c.id === connectionId) ?? null;
@@ -1833,35 +2028,79 @@ export default function DebugApp() {
       // 切了对话(或刚建):把当前状态认作水位线,不回写
       const rows = new Map<string, { entry: ChatEntry; idx: number }>();
       entries.forEach((e, i) => {
-        if (!e.streaming) rows.set(e.id, { entry: e, idx: i });
+        if (!e.streaming && e.jevPending === undefined) rows.set(e.id, { entry: e, idx: i });
       });
       persistedRef.current = { chatId, rows };
       return;
     }
     if (!chatId) return;
 
+    const enqueue = (id: string, op: () => Promise<unknown>) => {
+      const key = `${chatId}:${id}`;
+      const next = (writeChain.current.get(key) ?? Promise.resolve()).catch(() => undefined).then(op);
+      writeChain.current.set(key, next);
+      next
+        .finally(() => {
+          if (writeChain.current.get(key) === next) writeChain.current.delete(key);
+        })
+        .catch(() => undefined);
+      return next;
+    };
+    // 回调晚到时可能已经切到别的对话了:旧对话的 id 不能记进新对话的水位线
+    const stillHere = () => persistedRef.current.chatId === chatId;
+    if (queuedRef.current.chatId !== chatId) queuedRef.current = { chatId, map: new Map() };
+    const queued = queuedRef.current.map;
+
+    // 后端每写一条都会刷新这条对话的 updated_at;本地列表跟着改,标题画面的「上次 · 刚刚」
+    // 和存档页的条数、时间不用等下次拉列表
+    const count = entries.length;
+    const touch = () =>
+      setChats((prev) =>
+        prev.map((c) =>
+          c.id === chatId ? { ...c, updated_at: new Date().toISOString(), message_count: count } : c,
+        ),
+      );
     const seen = new Set<string>();
     entries.forEach((entry, idx) => {
       seen.add(entry.id);
-      if (entry.streaming) return;
-      const prev = persistedRef.current.rows.get(entry.id);
+      // Jev 还在判最后几句:标签还要缝进去,等判完那次提交(jevPending 去掉)再写
+      if (entry.streaming || entry.jevPending !== undefined) return;
+      const prev = queued.has(entry.id) ? queued.get(entry.id) : persistedRef.current.rows.get(entry.id);
       if (prev && prev.entry === entry && prev.idx === idx) return;
-      debugApi
-        .putChatMessage(chatId, toStored(entry, idx))
-        .then(() => persistedRef.current.rows.set(entry.id, { entry, idx }))
+      const mark = { entry, idx };
+      queued.set(entry.id, mark);
+      enqueue(entry.id, () => debugApi.putChatMessage(chatId, toStored(entry, idx, savedSnapshots.current)))
+        .then(() => {
+          if (stillHere()) persistedRef.current.rows.set(entry.id, mark);
+          for (const info of entry.swipeInfo) {
+            if (info.snapshot && info.snapshotHash) savedSnapshots.current.add(info.snapshotHash);
+          }
+          touch();
+        })
         .catch((e: unknown) =>
           notify('error', `对话保存失败: ${e instanceof Error ? e.message : String(e)}`),
-        );
+        )
+        .finally(() => {
+          if (queued.get(entry.id) === mark) queued.delete(entry.id);
+        });
     });
-    for (const id of persistedRef.current.rows.keys()) {
-      if (!seen.has(id)) {
-        debugApi
-          .deleteChatMessage(chatId, id)
-          .then(() => persistedRef.current.rows.delete(id))
-          .catch((e: unknown) =>
-            notify('error', `对话保存失败: ${e instanceof Error ? e.message : String(e)}`),
-          );
-      }
+    // 库里有的 + 正在写进库的,不在当前条目里的都删
+    const known = new Set(persistedRef.current.rows.keys());
+    for (const [id, q] of queued) if (q !== null) known.add(id);
+    for (const id of known) {
+      if (seen.has(id) || queued.get(id) === null) continue;
+      queued.set(id, null);
+      enqueue(id, () => debugApi.deleteChatMessage(chatId, id))
+        .then(() => {
+          if (stillHere()) persistedRef.current.rows.delete(id);
+          touch();
+        })
+        .catch((e: unknown) =>
+          notify('error', `对话保存失败: ${e instanceof Error ? e.message : String(e)}`),
+        )
+        .finally(() => {
+          if (queued.get(id) === null) queued.delete(id);
+        });
     }
   }, [entries, chatId, notify]);
 
@@ -1904,40 +2143,103 @@ export default function DebugApp() {
     return () => window.clearTimeout(timer);
   }, [chatId, presetId, cardId, userName, notify]);
 
+  /** 宏能读到的那些「当前状态」:模型、对话、上一次是怎么生成的 */
+  const macroExtraFor = (type: string) => ({
+    model: connections.find((c) => c.id === connectionId)?.model ?? '',
+    chatId: chatId ?? '',
+    isMobile,
+    lastGenerationType: type,
+    maxResponse:
+      typeof preset?.params.openai_max_tokens === 'number' ? preset.params.openai_max_tokens : 0,
+  });
+
+  /**
+   * 把一次组装算出来的变量收下:界面上换成新的,局部的写回对话,全局的写本机。
+   * 只在真的发请求时调 —— 预览每敲一个字就重算一遍,要是也收,{{incvar}} 会自己往上涨。
+   */
+  const commitVariables = (next: MacroVars | undefined, targetChat: string | null = chatId) => {
+    if (!next) return;
+    const changed = (a: object, b: object) => JSON.stringify(a) !== JSON.stringify(b);
+    if (changed(next.global, globalVars)) {
+      setGlobalVars(next.global);
+      saveGlobalVariables(next.global);
+    }
+    if (changed(next.local, chatVars)) {
+      setChatVars(next.local);
+      if (targetChat) {
+        debugApi.updateChat(targetChat, { variables: next.local }).catch((e: unknown) =>
+          notify('error', `变量保存失败: ${e instanceof Error ? e.message : String(e)}`),
+        );
+      }
+    }
+  };
+
+  /**
+   * 组装提示词;在用 Jev 的那几类标签全摘掉(历史、卡里的对话示例……模型看见就会照着写)。
+   * AI 模式的那几类留着,模型才会接着写
+   */
+  const assembleForSend = (input: Parameters<typeof assemble>[0]) =>
+    jevOn ? jevStripPrompt(assemble(input), jevStripKinds) : assemble(input);
+
   /** 下一次请求会发出去的东西 —— 输入框上方的统计就来自这里 */
   const preview = useMemo(() => {
-    if (!card || !preset) return EMPTY_RESULT;
-    return assemble({
+    if (!card || !assemblyPreset) return EMPTY_RESULT;
+    return assembleForSend({
       card,
-      preset,
-      order,
+      preset: assemblyPreset,
+      order: assemblyOrder,
       history,
       userName,
       personaDescription: persona,
       customMacros: macroLookup,
       allowCardOverrides: true,
-      tokenBudget: tokenBudget ?? null,
+      tokenBudget,
+      worldInfo: worldInfoSettings,
+      variables,
+      macroExtra: macroExtraFor(generationType.current),
     });
-  }, [card, preset, order, history, userName, persona, macroLookup, tokenBudget]);
+    // macroExtraFor 每次渲染都是新函数,它读的那几样已经单独列在下面了
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    card,
+    assemblyPreset,
+    assemblyOrder,
+    jevOn,
+    jevStripKinds,
+    history,
+    userName,
+    persona,
+    macroLookup,
+    tokenBudget,
+    worldInfoSettings,
+    variables,
+    chatId,
+    isMobile,
+    connections,
+    connectionId,
+  ]);
 
   const ready = Boolean(card && preset && order.length > 0);
 
-  /** 视觉小说「历史」页默认把这几类标签摘掉,只给人看正文 */
-  const vnKinds = useMemo(
-    () =>
-      vnTagKinds(
-        spriteConfig.tagTemplate,
-        scenePlugin.configs.bg.tagTemplate,
-        scenePlugin.configs.bgm.tagTemplate,
-      ),
-    [spriteConfig.tagTemplate, scenePlugin.configs],
-  );
-
-  // 预算/量程的写口:改了就持久化。手输的值超过当前量程时自动换到装得下的挡
+  // 预算/量程的写口。预算直接写回当前预设(拖滑块停下半秒后存),不算「未保存的改动」——
+  // 只动库里的 params,预设别的没保存的改动不受影响。手输的值超过当前量程时自动换到装得下的挡
+  const budgetSaveTimer = useRef<number | undefined>(undefined);
   const changeBudget = (v: number | null) => {
-    setTokenBudget(v);
-    saveBudget(v);
+    setPreset((p) => (p ? { ...p, params: paramsWithBudget(p.params, v) } : p));
     if (v !== null && v > rangeScale) setRangeScale(autoRange(v));
+    const id = presetId;
+    if (!id) return;
+    window.clearTimeout(budgetSaveTimer.current);
+    budgetSaveTimer.current = window.setTimeout(() => {
+      const row = presetRef.current.saved.find((r) => r.id === id);
+      if (!row) return;
+      debugApi
+        .updatePreset(id, { params: paramsWithBudget(row.params, v) })
+        .then((updated) => setSavedPresets((list) => list.map((r) => (r.id === updated.id ? updated : r))))
+        .catch((e: unknown) =>
+          notify('error', `预算没存进预设: ${e instanceof Error ? e.message : String(e)}`),
+        );
+    }, 500);
   };
   const changeRange = (r: number) => {
     setRangeScale(r);
@@ -1946,19 +2248,111 @@ export default function DebugApp() {
 
   // ---- 发送 ----
 
-  const buildSnapshot = (turns: ChatTurn[]) => {
-    if (!card || !preset) return null;
-    return assemble({
+  /** type:这次是发送(normal)、重新生成(regenerate)还是接着用户那句生成(continue) */
+  const buildSnapshot = (turns: ChatTurn[], type = 'normal') => {
+    if (!card || !assemblyPreset) return null;
+    generationType.current = type;
+    return assembleForSend({
       card,
-      preset,
-      order,
+      preset: assemblyPreset,
+      order: assemblyOrder,
       history: turns,
       userName,
       personaDescription: persona,
       customMacros: macroLookup,
       allowCardOverrides: true,
-      tokenBudget: tokenBudget ?? null,
+      tokenBudget,
+      worldInfo: worldInfoSettings,
+      variables,
+      macroExtra: macroExtraFor(type),
     });
+  };
+
+  /** 条目 → 发给模型的一条历史(和 history 一样合并了 Jev 的标注) */
+  const turnOf = (e: ChatEntry): ChatTurn => ({ role: e.role, content: jevText(e, vnKinds) });
+
+  /**
+   * 一条回复的 Jev 标注(plugins/jevRun.ts),按现在各插件的模式、门槛、问法。before 是这条回复
+   * 之前的条目(算回复开始时的场景、表情),prev 是玩家上一句
+   */
+  const makeJevRun = (
+    before: readonly ChatEntry[],
+    prev: string,
+    onChange: (snap: JevSnapshot) => void,
+  ): JevRun => {
+    const scene = sceneAtEnd(before, sceneKinds, activeSceneAssets);
+    const choice = (x: { label: string; aliases: readonly string[]; description?: string }): AnnotateChoice => ({
+      label: x.label,
+      aliases: [...x.aliases],
+      description: x.description ?? '',
+    });
+    const emotions = activeSprites.length > 0 ? activeSprites.map(choice) : BUILTIN_EMOTIONS.map(choice);
+    const { bg, bgm, cg } = scenePlugin.configs;
+    const backgrounds = backgroundsOf(activeSceneAssets);
+    // 一张 CG 都没有时这道题不问(也就不用一句一句排队等)
+    const cgsNow = cgsOf(activeSceneAssets);
+    return new JevRun({
+      charName: card?.name ?? '',
+      userName,
+      prev,
+      kinds: vnKinds,
+      jevKinds: cgsNow.length ? jevKinds : { ...jevKinds, cg: false },
+      templates: { sprite: spriteConfig.tagTemplate, bg: bg.tagTemplate, bgm: bgm.tagTemplate, cg: cg.tagTemplate },
+      emotions,
+      bgs: backgrounds.map(choice),
+      bgms: bgmsOf(activeSceneAssets).map(choice),
+      cgs: cgsNow.map(choice),
+      scene: { bg: scene.bg?.label ?? null, bgm: scene.bgm?.label ?? null, cg: scene.cg?.label ?? null },
+      // CG 对不对得上地点很要紧(测试里不给地点,严格准确率低 14 个点):背景名 + 说明
+      placeOf: (label) => {
+        const b = label ? backgrounds.find((x) => x.label === label) : null;
+        return b ? (b.description.trim() ? `${b.label}(${b.description.trim()})` : b.label) : '';
+      },
+      emotionBefore: emotionBefore(before, vnKinds, emotions),
+      popup: playerConfig.jev.popup,
+      thresholds: {
+        speaker: jevConfig.speakerThreshold,
+        bg: bg.jev.threshold,
+        bgm: bgm.jev.threshold,
+        cg: cg.jev.threshold,
+      },
+      prompts: promptOverrides(jevConfig, spriteConfig, bg, bgm, cg),
+      annotate: (req, signal) => debugApi.annotateLines(req, signal),
+      onChange,
+    });
+  };
+
+  /**
+   * 这次生成的 Jev 标注:跟着流式输出走,每写完一句交给 Jev 判,判完记成这句的标注
+   * (正文不动,标注存进 swipe_info.jev)。prev 是玩家上一句。没有插件在用 Jev 时是 null
+   */
+  const startJev = (
+    targetId: string,
+    prev: string,
+    write: (snap: JevSnapshot) => void,
+  ): JevRun | null => {
+    if (!jevOn) return null;
+    void debugApi.annotateWarmup().catch(() => {});
+    // 回复开始时的场景、表情:按这条之前的条目算(重新生成时不算被换掉的那个分支)
+    const before = latest.current.entries.filter((e) => e.id !== targetId);
+    return makeJevRun(before, prev, write);
+  };
+
+  /**
+   * 试判:用现在的设置和问法把当前对话最新一条 AI 回复整条判一遍,按句列出结果,不改存档。
+   * 调问法、调门槛时看效果用
+   */
+  const trialJev = async (): Promise<JevTrial> => {
+    if (!jevOn) throw new Error('还没有插件在用 Jev(或者后端没有 key)');
+    const all = latest.current.entries;
+    const idx = all.findLastIndex((e) => e.role === 'assistant' && !e.streaming);
+    if (idx === -1) throw new Error('当前对话里还没有 AI 回复');
+    const before = all.slice(0, idx);
+    const run = makeJevRun(before, lastUserText(before), () => {});
+    const started = performance.now();
+    run.feed(currentText(all[idx]), false);
+    await run.settle(JEV_SETTLE_MS * 2);
+    return { lines: run.results(), stats: run.currentStats(), ms: Math.round(performance.now() - started) };
   };
 
   /**
@@ -1969,9 +2363,13 @@ export default function DebugApp() {
     targetId: string,
     snapshot: AssemblyResult,
     rollback: () => void,
+    /** 玩家上一句(Jev 判断时的上下文) */
+    prev: string,
   ) => {
     setError(null);
     setSending(true);
+    // 这一轮的宏已经求过值了,它们写下的变量从现在起算数 —— 请求成不成功都一样,和酒馆一致
+    commitVariables(snapshot.variables);
     let finish: () => void = () => {};
     inflightRef.current = new Promise<void>((resolve) => {
       finish = resolve;
@@ -1981,7 +2379,12 @@ export default function DebugApp() {
     const controller = new AbortController();
     abortRef.current = controller;
 
-    const messages = snapshot.messages.map((m) => ({ role: m.role, content: m.content }));
+    // name 只有示例对话里的句子有(example_user / example_assistant),和酒馆发的一样
+    const messages = snapshot.messages.map((m) => ({
+      role: m.role,
+      content: m.content,
+      ...(m.name ? { name: m.name } : {}),
+    }));
     const model = activeConnection?.model || undefined;
     const startedAt = performance.now();
     const patch = (fn: (e: ChatEntry) => ChatEntry) =>
@@ -1989,6 +2392,27 @@ export default function DebugApp() {
 
     // 累加在闭包里,setEntries 只负责渲染 —— 免得每帧都去读上一次的 state
     let body = '';
+    // 这次写的是哪个分支:第一次写的时候记下(Jev 的结果可能在流式结束后才回来,那时不能写到别的分支上)
+    let swipe: number | null = null;
+    const target = (e: ChatEntry) => (swipe ??= e.swipeIndex);
+    // 正文只存模型写的原文;Jev 的标注另外记在这个分支的 swipe_info.jev 里,用的时候合并
+    const jev = startJev(targetId, prev, ({ record, pendingFrom }) =>
+      patch((e) => ({ ...patchSwipeInfo(e, { jev: record }, target(e)), jevPending: pendingFrom ?? undefined })),
+    );
+    controller.signal.addEventListener('abort', () => jev?.abort());
+    // 一开始就记上「这个分支是 Jev 标的」:切句从第一句起就按严格规则认说话人
+    if (jev) patch((e) => patchSwipeInfo(e, { jev: jev.record() }, target(e)));
+    const writeBody = () => {
+      patch((e) => setSwipeText(e, body, target(e)));
+      jev?.feed(body, true);
+    };
+    /** 写完了:等 Jev 判完最后几句(最多 JEV_SETTLE_MS),统计和标注记到这个分支上 */
+    const settleJev = async () => {
+      if (!jev) return;
+      await jev.settle(JEV_SETTLE_MS);
+      const record = jev.record();
+      patch((e) => ({ ...patchSwipeInfo(e, { jev: record }, target(e)), jevPending: undefined }));
+    };
 
     try {
       if (useStreaming) {
@@ -2013,11 +2437,12 @@ export default function DebugApp() {
             },
             onDelta: (t) => {
               body += t;
-              patch((e) => setSwipeText(e, body));
+              writeBody();
             },
           },
         );
         setLastRaw(body);
+        if (jev) jev.feed(body, false);
         patch((e) => ({
           ...patchSwipeInfo(e, {
             totalMs: done.total_ms,
@@ -2030,8 +2455,9 @@ export default function DebugApp() {
         const res = await debugApi.complete(messages, connectionId, model, controller.signal);
         body = res.raw;
         setLastRaw(res.raw);
+        if (jev) jev.feed(body, false);
         patch((e) => ({
-          ...patchSwipeInfo(setSwipeText(e, res.raw), {
+          ...patchSwipeInfo(setSwipeText(e, res.raw, target(e)), {
             connection: res.connection_name,
             model: res.model,
             totalMs: Math.round(performance.now() - startedAt),
@@ -2039,6 +2465,7 @@ export default function DebugApp() {
           streaming: false,
         }));
       }
+      await settleJev();
     } catch (e) {
       const aborted = e instanceof DOMException && e.name === 'AbortError';
       // 已经吐出来的留着,一个字都没有的气泡才撤销 —— 不管是手动停止、网络断线,
@@ -2051,6 +2478,11 @@ export default function DebugApp() {
       }
       patch((entry) => ({ ...entry, streaming: false }));
       if (!body.trim()) rollback();
+      // 停下时写到哪算哪:没判完的句子照没标处理,不再等 Jev
+      else if (jev) {
+        jev.abort();
+        await settleJev();
+      }
     } finally {
       setSending(false);
       finish();
@@ -2066,8 +2498,11 @@ export default function DebugApp() {
     setEntries((prev) => [...prev, makeUserEntry(text), pending]);
     setTainted(true);
 
-    await runGeneration(pending.id, snapshot, () =>
-      setEntries((prev) => prev.filter((e) => e.id !== pending.id)),
+    await runGeneration(
+      pending.id,
+      snapshot,
+      () => setEntries((prev) => prev.filter((e) => e.id !== pending.id)),
+      text,
     );
   };
 
@@ -2121,6 +2556,13 @@ export default function DebugApp() {
     await sendAfter(base, text, base[base.length - 1].id, keep);
   };
 
+  /** 插话截断出的新分支:原文截到 keep,Jev 的标注只留截下来的那几句 */
+  const truncateTo = (e: ChatEntry, keep: string): ChatEntry => {
+    const cut = addTruncatedSwipe(e, keep);
+    const jev = currentInfo(cut)?.jev;
+    return jev ? patchSwipeInfo(cut, { jev: cutJev(jev, keep, vnKinds) }) : cut;
+  };
+
   /** 在 base 这组条目后面发玩家这句;entryId / keep 怎么截见 interject */
   const sendAfter = async (
     from: ChatEntry[],
@@ -2139,31 +2581,34 @@ export default function DebugApp() {
             ? base.map((e, i) => (i === idx ? dropSwipe(e, e.swipeIndex) : e))
             : base.filter((_, i) => i !== idx);
       } else if (keep !== full.trimEnd()) {
-        base = base.map((e, i) => (i === idx ? addTruncatedSwipe(e, keep) : e));
+        base = base.map((e, i) => (i === idx ? truncateTo(e, keep) : e));
       }
     } else if (idx !== -1 && !currentText(base[idx]).trim()) {
       // 停下时一个字都没写出来的空回复,收尾时已经撤掉了;这里防一手还没提交的情况
       base = base.filter((_, i) => i !== idx);
     }
 
-    const snapshot = buildSnapshot([
-      ...base.map((e) => ({ role: e.role, content: currentText(e) })),
-      { role: 'user' as const, content: text },
-    ]);
+    const snapshot = buildSnapshot([...base.map(turnOf), { role: 'user' as const, content: text }]);
     if (!snapshot) return;
     const pending = makePendingEntry(snapshot);
     setEntries([...base, makeUserEntry(text), pending]);
     setTainted(true);
-    await runGeneration(pending.id, snapshot, () =>
-      setEntries((prev) => prev.filter((e) => e.id !== pending.id)),
+    await runGeneration(
+      pending.id,
+      snapshot,
+      () => setEntries((prev) => prev.filter((e) => e.id !== pending.id)),
+      text,
     );
   };
 
   /** 右滑越过最后一个分支 —— 新开一个分支重新生成,旧的那次原样留着 */
   const regenerate = async (entry: ChatEntry) => {
     // 只有最后一条能滑,所以「这条之前的历史」就是去掉末尾
+    const before = latest.current.entries.slice(0, -1);
     const snapshot = buildSnapshot(
-      latest.current.entries.slice(0, -1).map((e) => ({ role: e.role, content: currentText(e) })),
+      before.map(turnOf),
+      // 我们的「重新生成」是往这条消息上加一个分支,对应酒馆的 swipe
+      'swipe',
     );
     if (!snapshot) return;
 
@@ -2171,8 +2616,11 @@ export default function DebugApp() {
     setEntries((prev) => prev.map((e) => (e.id === entry.id ? appendSwipe(e, snapshot) : e)));
     setTainted(true);
 
-    await runGeneration(entry.id, snapshot, () =>
-      setEntries((prev) => prev.map((e) => (e.id === entry.id ? dropSwipe(e, at) : e))),
+    await runGeneration(
+      entry.id,
+      snapshot,
+      () => setEntries((prev) => prev.map((e) => (e.id === entry.id ? dropSwipe(e, at) : e))),
+      lastUserText(before),
     );
   };
 
@@ -2184,9 +2632,10 @@ export default function DebugApp() {
    * 可重跑的角色消息),又只能靠再发一条话把上一句顶掉。
    */
   const continueFromUser = async () => {
+    const before = latest.current.entries;
     const snapshot = buildSnapshot(
       // 不去尾:最后一条用户发言正是这次要回应的那句
-      latest.current.entries.map((e) => ({ role: e.role, content: currentText(e) })),
+      before.map(turnOf),
     );
     if (!snapshot) return;
 
@@ -2194,8 +2643,11 @@ export default function DebugApp() {
     setEntries((prev) => [...prev, pending]);
     setTainted(true);
 
-    await runGeneration(pending.id, snapshot, () =>
-      setEntries((prev) => prev.filter((e) => e.id !== pending.id)),
+    await runGeneration(
+      pending.id,
+      snapshot,
+      () => setEntries((prev) => prev.filter((e) => e.id !== pending.id)),
+      lastUserText(before),
     );
   };
 
@@ -2324,13 +2776,12 @@ export default function DebugApp() {
         config: spriteConfig,
         onChangeConfig: changeSpriteConfig,
         block: blockControls('sprite'),
-        sprites,
-        onSpritesChange: changeSprites,
+        packs: spritePacks,
         layout: spriteLayout,
       }}
       cards={savedCards.map((c) => ({ id: c.id, name: c.name }))}
       scene={scenePlugin}
-      sceneBlocks={{ bg: blockControls('bg'), bgm: blockControls('bgm') }}
+      sceneBlocks={{ bg: blockControls('bg'), bgm: blockControls('bgm'), cg: blockControls('cg') }}
       sceneMacros={sceneMacroValues}
       voice={voicePlugin}
       lang={{ config: langConfig, onChangeConfig: changeLangConfig, block: blockControls('lang') }}
@@ -2338,6 +2789,17 @@ export default function DebugApp() {
         config: playerConfig,
         onChangeConfig: changePlayerConfig,
         block: blockControls('player'),
+      }}
+      jev={{
+        config: jevConfig,
+        onChangeConfig: changeJevConfig,
+        keyStatus: jevKey,
+        onSaveKey: saveJevKey,
+        defaults: jevDefaults,
+        onTest: () => debugApi.annotateTest(),
+        onTrial: trialJev,
+        kinds: jevKinds,
+        lastStats: lastJevStats,
       }}
       focus={focus}
       notify={notify}
@@ -2386,9 +2848,21 @@ export default function DebugApp() {
       defaultPersonaName={personas.find((p) => p.id === personaBindings.default)?.name ?? null}
       presets={savedPresets}
       presetId={boundPresetId}
+      spritePacks={spritePacks.packIds.map((id) => ({
+        id,
+        name: spritePacks.packs.find((p) => p.id === id)?.name ?? '…',
+      }))}
+      otherSpritePacks={spritePacks.packs.filter((p) => !spritePacks.packIds.includes(p.id))}
+      spritePackId={spritePacks.packId}
       busy={cardBusy}
       onPersona={(id) => void bindPersonaToCard(id)}
       onPreset={bindPresetToCard}
+      // 别的包:挂到这张卡的包后面并换过去(素材包哪张卡都能直接用)
+      onSpritePack={(id) =>
+        void (spritePacks.packIds.includes(id)
+          ? spritePacks.switchPack(id)
+          : spritePacks.setPacks([...spritePacks.packIds, id], id))
+      }
     />
   ) : null;
 
@@ -2404,6 +2878,9 @@ export default function DebugApp() {
       collapsed={at.collapsed}
       onToggleCollapse={at.onToggleCollapse}
       onPickGroup={(i) => {
+        // 块的开关是按顺序组记的,换组就清掉 —— 有改过的先问一句,别悄悄没了
+        const n = Object.keys(overrides).length;
+        if (n > 0 && !window.confirm(`换顺序组会清掉刚才改的 ${n} 个块的开关,继续?`)) return;
         setGroupIndex(i);
         setOverrides({});
       }}
@@ -2444,6 +2921,19 @@ export default function DebugApp() {
     />
   );
 
+  // 给 VN 的角色列表:每次渲染都 map 出一个新数组的话,流式生成时每来一个字选角页和等待页
+  // 就要重算一遍、选角页的加载循环被打断重来
+  const vnCards = useMemo(
+    () =>
+      savedCards.map((c) => ({
+        id: c.id,
+        name: c.name,
+        avatar: cardAvatars.get(c.id) ?? null,
+        hasLastChat: Boolean(c.last_chat_id),
+      })),
+    [savedCards, cardAvatars],
+  );
+
   return (
     // vn-open:视觉小说盖在最上面时,从它里面打开的弹窗(块编辑、高级定义、看提示词)得压过它
     <div className={`console${vnOpen ? ' vn-open' : ''}`}>
@@ -2462,7 +2952,7 @@ export default function DebugApp() {
       {/* 开机遮罩:预设→卡→最近对话是串行的,盖住这段免得界面一格格长出来 */}
       {booting && (
         <div className="boot-veil">
-          <div className="boot-mark">◆</div>
+          <img className="boot-logo" src="/anima-logo.svg?v=72" alt="" draggable={false} />
           <div className="boot-title">ANIMABACKEND</div>
           <div className="boot-line">
             <span className="spinner" /> 正在载入角色卡与预设……
@@ -2472,6 +2962,7 @@ export default function DebugApp() {
 
       <div className="topbar">
         <div className="topbar-brand">
+          <img className="topbar-logo" src="/anima-logo.svg?v=72" alt="" draggable={false} />
           <span className="topbar-title">
             <span className="topbar-title-wide">ANIMABACKEND</span>
             <span className="topbar-title-compact">ANIMA</span>
@@ -2671,7 +3162,7 @@ export default function DebugApp() {
           {!leftCollapsed && (
             <BudgetBar
               report={preview.budget}
-              value={tokenBudget ?? null}
+              value={tokenBudget}
               onChange={changeBudget}
               range={rangeScale}
               onRange={changeRange}
@@ -2716,6 +3207,11 @@ export default function DebugApp() {
               macros={displayMacros}
               custom={customMacros}
               onChangeCustom={changeCustomMacros}
+              variables={variables}
+              onChangeVariables={(next) => commitVariables(next)}
+              hasChat={chatId !== null}
+              worldInfo={worldInfoSettings}
+              onChangeWorldInfo={changeWorldInfoSettings}
               onClose={() => setDrawer(null)}
             />
           )}
@@ -2804,6 +3300,7 @@ export default function DebugApp() {
             onBranch={branchHere}
             onReset={() => void newChat()}
             onRegenerate={regenerateLast}
+            tagKinds={vnKinds}
           />
         </div>
 
@@ -2822,6 +3319,7 @@ export default function DebugApp() {
           selectedId={cardId}
           view={cardView}
           avatars={cardAvatars}
+          onNeedAvatars={wantAvatars}
           saveState={cardSaveState}
           busy={cardBusy}
           onToggleCollapse={() => setRightCollapsed((v) => !v)}
@@ -2889,7 +3387,7 @@ export default function DebugApp() {
           preset={preset}
           order={order}
           result={preview}
-          budget={tokenBudget ?? null}
+          budget={tokenBudget}
           avatarUrl={avatarUrl}
           onChange={changeCard}
           onPickAvatar={() => avatarInputRef.current?.click()}
@@ -2912,10 +3410,13 @@ export default function DebugApp() {
           onChangeTitleBgm={(id) => void scenePlugin.setTitleBgm(id)}
           bgTemplate={scenePlugin.configs.bg.tagTemplate}
           bgmTemplate={scenePlugin.configs.bgm.tagTemplate}
+          cgTemplate={scenePlugin.configs.cg.tagTemplate}
           voiceConfig={voicePlugin.config}
           voiceCast={voicePlugin.cast}
           onChangeVoiceConfig={voicePlugin.changeConfig}
           showJa={langConfig.showJa}
+          onChangeShowJa={(showJa) => changeLangConfig({ ...langConfig, showJa })}
+          jevSync={jevConfig.syncText}
           enterKey={chatSettings.enterKey}
           onChangeEnterKey={(enterKey) => changeChatSettings({ ...chatSettings, enterKey })}
           sending={sending}
@@ -2929,8 +3430,9 @@ export default function DebugApp() {
             return c ? chatLabel(c) : '';
           })()}
           chatUpdatedAt={chats.find((x) => x.id === chatId)?.updated_at ?? null}
-          cardTag={card?.tags?.find((t) => t.trim())?.trim() ?? null}
+          cardTags={card?.tags?.map((t) => t.trim()).filter(Boolean) ?? []}
           loading={chatLoading}
+          assetsReady={spritePacks.ready && scenePlugin.ready}
           modelLabel={activeModel}
           onSend={(text) => void send(text)}
           onInterject={(text, entryId, keep) => void interject(text, entryId, keep)}
@@ -2938,12 +3440,9 @@ export default function DebugApp() {
           onStop={() => abortRef.current?.abort()}
           onRegenerate={regenerateLast}
           onExit={() => toggleVn(false)}
-          cards={savedCards.map((c) => ({
-            id: c.id,
-            name: c.name,
-            avatar: cardAvatars.get(c.id) ?? null,
-            hasLastChat: Boolean(c.last_chat_id),
-          }))}
+          cards={vnCards}
+          onWantAvatar={(id) => wantAvatars([id])}
+          onImportCard={() => cardInputRef.current?.click()}
           currentCardId={cardId}
           onPickCard={(id, fresh) => {
             const row = savedCards.find((c) => c.id === id);
@@ -2955,10 +3454,12 @@ export default function DebugApp() {
                 <div className="vn-embed vn-log-embed">
                   <ChatPanel
                     variant="backlog"
-                    // 默认只给人看正文:标签摘掉、宏展开;「显示原文」= 库里存的原样
+                    // 默认只给人看正文:标签摘掉、宏展开;「显示原文」= 库里存的原样(模型写的,不含 Jev 另存的标注)
                     displayText={ctx.raw ? (raw) => raw : (_raw, shown) => stripTags(shown, vnKinds)}
+                    tagKinds={vnKinds}
                     // 看正文时按画面上的句子列,要念的句子带重播 / 重新生成;看原文时照原样
                     renderBody={ctx.raw ? undefined : ctx.lineView}
+                    hideReasoning={!ctx.showThinking}
                     onJump={ctx.jumpTo}
                     entries={entries}
                     settings={chatSettings}
@@ -2996,6 +3497,7 @@ export default function DebugApp() {
             if (page === 'save') {
               return (
                 <VNSaves
+                  cardId={cardId}
                   chats={chats}
                   currentChatId={chatId}
                   currentEntries={entries}
@@ -3033,6 +3535,7 @@ export default function DebugApp() {
                     selectedId={cardId}
                     view={cardView}
                     avatars={cardAvatars}
+                    onNeedAvatars={wantAvatars}
                     saveState={cardSaveState}
                     busy={cardBusy}
                     onToggleCollapse={ctx.close}
@@ -3071,6 +3574,14 @@ export default function DebugApp() {
                     // 插件块的正文在插件页里改:换到菜单的插件页,滚到那个插件的模板
                     onOpenPlugin: (identifier) => ctx.openPlugin(pluginOfBlock(identifier)),
                   })}
+                  {/* 和调试台左栏一样:预算记在这个预设里 */}
+                  <BudgetBar
+                    report={preview.budget}
+                    value={tokenBudget}
+                    onChange={changeBudget}
+                    range={rangeScale}
+                    onRange={changeRange}
+                  />
                 </div>
               );
             }

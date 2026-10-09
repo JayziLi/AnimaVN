@@ -10,7 +10,8 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, undefer
 
 from app.models import TtsCache
@@ -50,9 +51,19 @@ def cache_put(db: Session, key: str, data: bytes, mime: str) -> None:
             TtsCache(key=key, data=data, mime=mime, size=len(data), created_at=now, last_used_at=now)
         )
     else:
-        # 重新生成的新版替换旧版;同一句同时有两个请求没命中时也是后到的覆盖先到的
+        # 重新生成的新版替换旧版
         row.data, row.mime, row.size, row.last_used_at = data, mime, len(data), now
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError:
+        # 同一句同时有两个请求没命中(手机和电脑、游戏和插件页):两边都去合成,上面查的时候
+        # 还都没有,先写完的那个占了主键。后到的覆盖先到的,不能因为这个让已经合成好的这句 500
+        db.rollback()
+        db.execute(
+            update(TtsCache)
+            .where(TtsCache.key == key)
+            .values(data=data, mime=mime, size=len(data), last_used_at=now)
+        )
     _evict(db)
     db.commit()
 

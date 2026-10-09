@@ -1,0 +1,278 @@
+{
+ "note": "输入是手写的边界情况;expected 是把酒馆 1.18 的宏引擎原样放进 node 里跑出来的(随机数钉成 0)。别手改 expected。",
+ "env": {
+  "user": "U",
+  "char": "C",
+  "description": "D",
+  "personality": "P",
+  "scenario": "S",
+  "persona": "PE",
+  "charPrompt": "CP",
+  "charInstruction": "CI",
+  "mesExamplesRaw": "<START>\nhi\nyo",
+  "version": "v1",
+  "charDepthPrompt": "DP",
+  "creatorNotes": "CN",
+  "firstMessage": "hello",
+  "alternateGreetings": [
+   "alt1"
+  ],
+  "model": "m1",
+  "original": "ORIG"
+ },
+ "chat": [
+  {
+   "is_user": false,
+   "mes": "c1"
+  },
+  {
+   "is_user": true,
+   "mes": "u1"
+  }
+ ],
+ "cases": [
+  {
+   "id": "管道符",
+   "texts": [
+    "{{// a | b}} {{user}}",
+    "{{setvar::x::{{char}} | y}}[{{getvar::x}}] {{user}}",
+    "{{setvar::x::a | {{getvar::y}} and {{char}}}} {{user}}",
+    "{{.x = a | b}}[{{.x}}]",
+    "{{setvar::x::a \\| b}}[{{getvar::x}}]",
+    "{{setvar::x::a|b c}}[{{getvar::x}}] {{user}}",
+    "{{setvar::x::a| 中文 b}}[{{getvar::x}}] {{user}}",
+    "{{setvar::x::a | 中文}} tail {{user}} more}} {{char}}",
+    "a{{setvar::p::1 | 2}}b[{{getvar::p}}]"
+   ],
+   "expected": [
+    "{{// a | b}} U",
+    "{{setvar::x::C | y}}[] U",
+    "{{setvar::x::a | {{getvar::y}} and C}} U",
+    "[a | b]",
+    "{{setvar::x::a \\| b}}[a | b]",
+    "{{setvar::x::a|b c}}[a | b] U",
+    "{{setvar::x::a| 中文 b}}[a | b] U",
+    "{{setvar::x::a | 中文}} tail U more}} C",
+    "a{{setvar::p::1 | 2}}b[{{getvar::p}}]"
+   ],
+   "local": {
+    "x": "a | b"
+   },
+   "global": {}
+  },
+  {
+   "id": "宏头",
+   "texts": [
+    "{{user.name}}",
+    "{{char's thing}}",
+    "{{user's}}",
+    "{{user-x}}",
+    "{{user_x}}",
+    "{{user:}}",
+    "{{user::}}",
+    "{{user::a}}",
+    "{{user a}}",
+    "{{ user}} {{user }} {{  USER  }} {{Char}}",
+    "{{}}",
+    "{{ }}",
+    "{{{{char}}'s}}",
+    "{{{char}}}",
+    "{{{{{char}}}}}",
+    "{{123}}",
+    "{{1}}{{user}}",
+    "{{@@}} {{char}}",
+    "{{user}} {{char",
+    "{{角色}} {{unknown::a}} {{unknown}}",
+    "<USER> <BOT> <CHAR> <GROUP> <CHARIFNOTGROUP>",
+    "\\{\\{x\\}\\} \\{{user}}",
+    "{{!user}} {{?user}} {{~user}} {{#user}} {{>user}}"
+   ],
+   "expected": [
+    "U",
+    "{{char's thing}}",
+    "U",
+    "{{user-x}}",
+    "{{user_x}}",
+    "{{user:}}",
+    "{{user::}}",
+    "{{user::a}}",
+    "{{user a}}",
+    "U U U C",
+    "{{}}",
+    "{{ }}",
+    "{{C's}}",
+    "{C}",
+    "{{{C}}}",
+    "{{123}}",
+    "{{1}}U",
+    "{{@@}} C",
+    "U {{char",
+    "{{角色}} {{unknown::a}} {{unknown}}",
+    "U C C C C",
+    "{{x}} \\U",
+    "U U U U U"
+   ],
+   "local": {},
+   "global": {}
+  },
+  {
+   "id": "成对块",
+   "texts": [
+    "{{foo}}x{{user}}{{/foo}}",
+    "{{trim}}a {{user}} b{{/trim}}|",
+    "{{setvar::s}}  long {{char}}  {{/setvar}}[{{getvar::s}}]",
+    "{{#setvar::s}}  keep  {{/setvar}}[{{getvar::s}}]",
+    "{{if 1}}a{{/if}}{{/if}}",
+    "{{if {{getvar::nope}}}}a{{else}}b{{/if}}",
+    "{{if user}}has user{{/if}} {{if !persona}}no persona{{/if}} {{if .s}}s set{{/if}} {{if $g}}g{{else}}no g{{/if}}",
+    "{{if 1::inline}} {{if 0::inline}}|{{if::1::inline}}|{{if::0::inline}}|",
+    "{{if 1}}\n  indented\n    more\n{{/if}}|",
+    "{{user}}{{else}}{{char}}",
+    "{{if 0}}a{{else}}{{if 1}}b{{else}}c{{/if}}{{/if}}",
+    "{{if x}}1{{/if}} {{if}}2{{/if}} {{#if 1}} keep {{/if}}|",
+    "{{if false}}a{{/if}}|{{if off}}a{{/if}}|{{if OFF}}a{{/if}}|{{if 0}}a{{/if}}|{{if  }}a{{/if}}|{{if no}}a{{/if}}",
+    "{{if 1}}{{setvar::side::yes}}{{else}}{{setvar::side::no}}{{/if}}[{{getvar::side}}]",
+    "{{setvar::a::1}}{{/setvar}} {{getvar::a}}{{/getvar}}",
+    "x{{trim}}\n\ny\n\n{{trim}}\nz {{TRIM}} w",
+    "{{setvar::deep}}{{if 1}}in {{char}}{{/if}}{{/setvar}}[{{getvar::deep}}]"
+   ],
+   "expected": [
+    "{{foo}}xU}}",
+    "a U b|",
+    "[long C]",
+    "[  keep  ]",
+    "a{{/if}}",
+    "b",
+    "has user  s set no g",
+    "{{if 1::inline}} {{if 0::inline}}|inline||",
+    "indented\n  more|",
+    "UC",
+    "b",
+    "1 {{if}}2{{/if}}  keep |",
+    "||||{{if  }}a{{/if}}|a",
+    "[yes]",
+    "{{setvar::a::1}}{{/setvar}} {{getvar::a}}{{/getvar}}",
+    "xyz  w",
+    "[in C]"
+   ],
+   "local": {
+    "s": "  keep  ",
+    "side": "yes",
+    "deep": "in C"
+   },
+   "global": {}
+  },
+  {
+   "id": "变量简写",
+   "texts": [
+    "{{.n ++}}{{.n++}}{{.n}} {{.n--}} {{.n += 5}}{{.n}} {{.n -= 2}}{{.n}} {{.n == 4}} {{.n != 4}} {{.n > 3}} {{.n >= 4}} {{.n < 4}} {{.n <= 4}}",
+    "{{.q ?? dflt}}|{{.q || alt}}|{{.q ??= first}}|{{.q ??= second}}|{{.z ||= zz}}|{{.z}}",
+    "{{$g = 1}}{{$g}}{{getglobalvar::g}}{{hasglobalvar::g}}{{deleteglobalvar::g}}{{hasglobalvar::g}}",
+    "{{.my-var = 3}}{{.my-var}}{{.my-var--}}{{.my-}}",
+    "{{.a=b=c}}{{.a}}|{{. a = x }}{{.a}}|{{.a =}}[{{.a}}]",
+    "{{.v = {{char}} and {{user}}}}[{{.v}}]",
+    "{{.w > abc}}|{{.w -= abc}}|{{.w += abc}}{{.w}}|{{.w == abc}}",
+    "{{.5}} {{.}} {{$}} {{.a b}} {{.a ==}}|{{.nope}}|{{.nope == }}"
+   ],
+   "expected": [
+    "122 1 6 4 true false true true false true",
+    "dflt|alt|first|first|zz|zz",
+    "11truefalse",
+    "32{{.my-}}",
+    "b=c|x|[]",
+    "[C and U]",
+    "false||abc|true",
+    "{{.5}}    true||true"
+   ],
+   "local": {
+    "n": 4,
+    "q": "first",
+    "z": "zz",
+    "my-var": 2,
+    "a": "",
+    "v": "C and U",
+    "w": "abc"
+   },
+   "global": {}
+  },
+  {
+   "id": "变量宏",
+   "texts": [
+    "{{setvar::a::{{char}}!}}{{getvar::a}} {{getvar a}} {{setvar a::b}} {{hasvar::a}}|{{deletevar::a}}{{hasvar::a}}|{{incvar::n}}{{incvar::n}}|{{addvar::s::ab}}{{addvar::s::cd}}{{getvar::s}}",
+    "{{setvar::n::5}}{{addvar::n::2}}{{getvar::n}} {{setvar::t::ab}}{{addvar::t::3}}{{getvar::t}} {{setvar::arr::[1]}}{{addvar::arr::2}}{{getvar::arr}} {{incvar::t}} {{setvar::e::}}[{{getvar::e}}]{{hasvar::e}} {{setvar::sp::  }}[{{getvar::sp}}] {{setvar::num::007}}{{getvar::num}} {{setvar::f::1.50}}{{getvar::f}}",
+    "{{getvar::}} {{setvar::::v}} {{setvar::k}} {{getvar}} {{decvar::fresh}} {{decvar::fresh}}",
+    "{{setglobalvar::G::x}}{{addglobalvar::G::y}}{{getglobalvar::G}}|{{incglobalvar::GN}}|{{decglobalvar::GN}}|{{globalvarexists::G}}|{{flushglobalvar::G}}{{globalvarexists::G}}",
+    "{{varexists::n}}|{{flushvar::n}}{{varexists::n}}",
+    "{{setvar::multi::line one\nline two}}[{{getvar::multi}}]",
+    "{{setvar::Case::1}}{{getvar::case}}|{{getvar::Case}}|{{SETVAR::up::2}}{{GetVar::up}}"
+   ],
+   "expected": [
+    "C! C! {{setvar a::b}} true|false|12|abcd",
+    "7 ab3 [1,\"2\"] ab31 []true [] 7 1.5",
+    " {{setvar::::v}} {{setvar::k}} {{getvar}} -1 -2",
+    "xy|1|0|true|false",
+    "true|false",
+    "[line one\nline two]",
+    "|1|2"
+   ],
+   "local": {
+    "s": "abcd",
+    "t": "ab31",
+    "arr": "[1,\"2\"]",
+    "e": "",
+    "sp": "",
+    "num": "007",
+    "f": "1.50",
+    "fresh": -2,
+    "multi": "line one\nline two",
+    "Case": "1",
+    "up": "2"
+   },
+   "global": {
+    "GN": 0
+   }
+  },
+  {
+   "id": "工具和随机",
+   "texts": [
+    "{{roll:d20}} {{roll:2d6+3}} {{roll 0}} {{roll:abc}} {{roll}} {{roll::1d4::x}} {{roll:1d100}} {{roll 20}} {{roll::3d6-2}}",
+    "{{random::}}|{{random}}|{{random:}}|{{random::a}}|{{random:a\\,b,c}}|{{pick::x::y}}|{{pick:x,y}}|{{random:p::q}}|{{random::a::b::c}}|{{random a,b}}",
+    "{{newline::x}}|{{space::-1}}|{{space::0}}|{{space::3}}|{{newline}}|{{newline::2}}|{{reverse::}}|{{reverse}}|{{reverse::abc}}|{{noop}}",
+    "{{comment::x}}|{{comment}}|{{//}}|{{///}}mid{{// a::b}}end|{{// {{setvar::fromcomment::1}} }}{{getvar::fromcomment}}",
+    "{{banned::x}}|{{outlet::k}}|{{outlet}}|{{input}}|{{hasExtension::x}}|{{isMobile}}|{{lastGenerationType}}"
+   ],
+   "expected": [
+    "1 5   {{roll}} {{roll::1d4::x}} 1 1 1",
+    "|||a|a,b|x|x|p|a|a",
+    "{{newline::x}}|{{space::-1}}||   |\n|\n\n||{{reverse}}|cba|",
+    "|||midend|1",
+    "||{{outlet}}||false|false|"
+   ],
+   "local": {
+    "fromcomment": "1"
+   },
+   "global": {}
+  },
+  {
+   "id": "角色和聊天",
+   "texts": [
+    "{{description}}|{{charDescription}}|{{personality}}|{{charPersonality}}|{{scenario}}|{{charScenario}}|{{persona}}|{{charPrompt}}|{{charInstruction}}|{{mesExamplesRaw}}|{{charDepthPrompt}}|{{creatorNotes}}|{{charCreatorNotes}}|{{charVersion}}|{{version}}|{{char_version}}",
+    "{{group}}|{{groupNotMuted}}|{{notChar}}|{{charIfNotGroup}}|{{user}}|{{char}}",
+    "{{greeting}}|{{greeting::0}}|{{greeting::1}}|{{greeting::9}}|{{greeting::x}}|{{charFirstMessage}}|{{charFirstMessage::1}}",
+    "{{lastMessage}}|{{lastMessageId}}|{{lastUserMessage}}|{{lastCharMessage}}|{{lastSwipeId}}|{{currentSwipeId}}|{{allChatRange}}|{{firstIncludedMessageId}}",
+    "{{maxPrompt}}|{{maxPromptTokens}}|{{maxContext}}|{{maxContextTokens}}|{{maxResponse}}|{{maxResponseTokens}}|{{model}}|{{original}}",
+    "{{instructInput}}|{{instructStop}}|{{systemPrompt}}|{{defaultSystemPrompt}}|{{instructSystem}}|{{instructUserFiller}}|{{instructLastOutputPrefix}}"
+   ],
+   "expected": [
+    "D|D|P|P|S|S|PE|CP|CI|<START>\nhi\nyo|DP|CN|CN|v1|v1|v1",
+    "C|C|U|C|U|C",
+    "hello|hello|alt1||{{greeting::x}}|hello|alt1",
+    "u1|1|u1|c1|||0-1|",
+    "8192|8192|16384|16384|1024|1024|m1|ORIG",
+    "||||||"
+   ],
+   "local": {},
+   "global": {}
+  }
+ ]
+}

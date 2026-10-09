@@ -26,6 +26,24 @@ def _reasoning_of(delta: Any) -> str:
     return ""
 
 
+def _wire(m: ChatMessage) -> dict[str, str]:
+    # name 只在有的时候带上 —— 有些中转站见到 "name": null 会报错
+    out = {"role": m.role, "content": m.content}
+    if m.name:
+        out["name"] = m.name
+    return out
+
+
+def _is_web_page(e: openai.APIStatusError) -> bool:
+    """A redirect or an HTML body means the request landed on a website (the
+    relay's homepage, an nginx default page), not on an API route — almost
+    always a base URL missing its /v1."""
+    if 300 <= e.status_code < 400:
+        return True
+    content_type = e.response.headers.get("content-type", "")
+    return "text/html" in content_type or e.response.text.lstrip()[:1] == "<"
+
+
 class OpenAICompatibleProvider(LLMProvider):
     """OpenAI official API plus anything speaking its chat-completions dialect:
     relay/proxy services, OpenRouter, DeepSeek, Ollama, LM Studio, vLLM, ...
@@ -40,10 +58,19 @@ class OpenAICompatibleProvider(LLMProvider):
             api_key=api_key or "sk-no-key", base_url=base_url, http_client=make_http_client()
         )
 
+    def _web_page_message(self, status: int) -> str:
+        base = (self._base_url or "").rstrip("/")
+        head = f"Base URL 不对：{base or '这个地址'} 返回的是网页，不是 API 接口 ({status})。"
+        if base and not base.endswith("/v1"):
+            return f"{head}OpenAI 兼容类型的地址一般要以 /v1 结尾，试试 {base}/v1"
+        return f"{head}对照服务商文档检查地址"
+
     def _map_error(self, e: Exception) -> LLMError:
         endpoint = self._base_url or "OpenAI 官方端点"
         # order matters: specific status errors subclass APIStatusError,
         # and APITimeoutError subclasses APIConnectionError
+        if isinstance(e, openai.APIStatusError) and _is_web_page(e):
+            return LLMError(self._web_page_message(e.status_code), explained=True)
         if isinstance(e, openai.AuthenticationError):
             return LLMError("API 密钥无效或已过期 (401)")
         if isinstance(e, openai.PermissionDeniedError):
@@ -64,7 +91,7 @@ class OpenAICompatibleProvider(LLMProvider):
         try:
             response = await self._client.chat.completions.create(
                 model=model,
-                messages=[{"role": m.role, "content": m.content} for m in messages],
+                messages=[_wire(m) for m in messages],
                 **self._extra,
             )
         except Exception as e:
@@ -81,7 +108,7 @@ class OpenAICompatibleProvider(LLMProvider):
         try:
             events = await self._client.chat.completions.create(
                 model=model,
-                messages=[{"role": m.role, "content": m.content} for m in messages],
+                messages=[_wire(m) for m in messages],
                 stream=True,
                 **self._extra,
             )

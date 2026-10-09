@@ -1,7 +1,44 @@
 /**
- * 酒馆的宏替换。大小写不敏感,可以嵌套一层(比如 personality_format 里
- * 套了 {{char}} 又套 {{personality}})。
+ * 宏替换的对外入口。语法和求值在 macroEngine.ts,有哪些宏在 macroDefs.ts;
+ * 这里负责把调试台手上的东西(角色卡、人设、聊天记录、变量)整理成引擎要的样子。
+ *
+ * 大小写不敏感,宏里可以再套宏。规则和酒馆 1.18 的新宏引擎一致。
  */
+
+import { MACRO_DEFS, MACRO_REGISTRY } from './macroDefs';
+import {
+  evaluateMacros,
+  type MacroCategory,
+  type MacroChatMessage,
+  type MacroEnv,
+  type MacroVars,
+} from './macroEngine';
+
+export type { MacroVars, VarValue } from './macroEngine';
+
+/** 除了名字和那几个常用字段以外、宏还能读到的东西。都有缺省值,用不上的可以不给 */
+export interface MacroExtras {
+  charPrompt: string;
+  charInstruction: string;
+  mesExamplesRaw: string;
+  charVersion: string;
+  charDepthPrompt: string;
+  creatorNotes: string;
+  firstMessage: string;
+  alternateGreetings: string[];
+  model: string;
+  chatId: string;
+  firstIncludedMessageId: number | null;
+  firstDisplayedMessageId: number | null;
+  maxContext: number;
+  maxResponse: number;
+  input: string;
+  lastGenerationType: string;
+  isMobile: boolean;
+  /** 不给 = 不在「卡覆盖预设块」的场合,{{original}} 原样留着 */
+  original: string | undefined;
+  outlets: Record<string, string>;
+}
 
 export interface MacroContext {
   char: string;
@@ -14,6 +51,11 @@ export interface MacroContext {
   lastCharMessage: string;
   /** 用户自定义的宏,键是小写宏名。内置宏优先,这里覆盖不了 {{char}} 之类 */
   custom: Record<string, string>;
+  /** 聊天记录,旧的在前。不给的话 {{lastMessage}} 一类靠上面两个字段凑 */
+  messages?: MacroChatMessage[];
+  /** 变量。不给就是空的 */
+  vars?: MacroVars;
+  extra?: Partial<MacroExtras>;
 }
 
 export const EMPTY_MACRO_CONTEXT: MacroContext = {
@@ -28,23 +70,45 @@ export const EMPTY_MACRO_CONTEXT: MacroContext = {
   custom: {},
 };
 
+export const emptyVars = (): MacroVars => ({ local: {}, global: {} });
+
+export const cloneVars = (vars: MacroVars | undefined): MacroVars => ({
+  local: { ...vars?.local },
+  global: { ...vars?.global },
+});
+
+/** 角色卡上会被宏读到的字段。只要有 name 和那三段就能用,其余有就带上 */
+interface MacroCard {
+  name: string;
+  description: string;
+  personality: string;
+  scenario: string;
+  system_prompt?: string;
+  post_history_instructions?: string;
+  mes_example?: string;
+  creator_notes?: string;
+  first_mes?: string;
+  alternate_greetings?: string[];
+  character_version?: string;
+  extensions?: Record<string, unknown>;
+}
+
 /** 组装提示词和聊天区显示共用同一份取值 —— 两边算出不同的 {{user}} 是最难查的那种 bug */
 export function buildMacroContext(input: {
-  card: {
-    name: string;
-    description: string;
-    personality: string;
-    scenario: string;
-  } | null;
+  card: MacroCard | null;
   userName: string;
   personaDescription: string;
   history: readonly { role: 'user' | 'assistant'; content: string }[];
   /** 自定义宏的查找表(见 lib/customMacros 的 toLookup) */
   custom?: Record<string, string>;
+  /** 变量。会复制一份,求值时改的是副本 */
+  variables?: MacroVars;
+  extra?: Partial<MacroExtras>;
 }): MacroContext {
-  const { card, userName, personaDescription, history, custom } = input;
+  const { card, userName, personaDescription, history, custom, variables, extra } = input;
   const last = (role: 'user' | 'assistant') =>
     [...history].reverse().find((h) => h.role === role)?.content ?? '';
+  const depthPrompt = card?.extensions?.depth_prompt;
   return {
     char: card?.name || 'Character',
     user: userName || 'User',
@@ -55,6 +119,22 @@ export function buildMacroContext(input: {
     lastUserMessage: last('user'),
     lastCharMessage: last('assistant'),
     custom: custom ?? {},
+    messages: history.map((h) => ({ isUser: h.role === 'user', text: h.content })),
+    vars: cloneVars(variables),
+    extra: {
+      charPrompt: card?.system_prompt ?? '',
+      charInstruction: card?.post_history_instructions ?? '',
+      mesExamplesRaw: card?.mes_example ?? '',
+      charVersion: card?.character_version ?? '',
+      charDepthPrompt:
+        typeof depthPrompt === 'object' && depthPrompt !== null
+          ? String((depthPrompt as { prompt?: unknown }).prompt ?? '')
+          : '',
+      creatorNotes: card?.creator_notes ?? '',
+      firstMessage: card?.first_mes ?? '',
+      alternateGreetings: card?.alternate_greetings ?? [],
+      ...extra,
+    },
   };
 }
 
@@ -64,104 +144,21 @@ export interface MacroOptions {
    *
    * 聊天区是每次 React 重渲染都跑一遍替换的,不定种子的话你在输入框里敲个字,
    * 上面开场白里的骰子就换个点数。传消息 id 进来,同一条消息永远掷出同一个数。
-   * 思路照搬酒馆的 `{{pick}}`(macros.js:516 —— chatIdHash + contentHash + offset)。
    *
    * 不传 = 真随机,组装提示词走的是这条:每次发送本来就该重掷。
    */
   seed?: string;
+  /**
+   * 让 {{setvar}} 这类宏真的改 ctx.vars。
+   *
+   * 默认不改:求值用的是变量的副本,结束就扔。聊天区显示、块的预览都属于这种 ——
+   * 它们每次重渲染都会跑,真改的话 {{incvar}} 会自己一直往上涨。
+   * 只有组装提示词传 true,它有自己的一份变量,算完把结果交回去。
+   */
+  mutate?: boolean;
+  /** 所有随机类的宏(包括 {{pick}})都用这个取数。对照测试用它把随机数钉死 */
+  random?: () => number;
 }
-
-/**
- * 内置宏总表 —— 解析和「设置 › 宏」那张说明表读的是同一份,
- * 加宏只需要往这里加一行,不会出现「实现支持了但界面没写」的漂移。
- */
-export interface MacroInfo {
-  /** 小写宏名,也是查找键 */
-  key: string;
-  /** 界面上怎么写它 */
-  syntax: string;
-  note: string;
-  /** 同一个宏的别名 */
-  alias?: string[];
-  /** 当前会展开成什么 */
-  value: (ctx: MacroContext) => string;
-  /** 每次求值都可能不同(骰子、时间)—— 表里标一下,免得以为是固定映射 */
-  dynamic?: boolean;
-}
-
-export const BUILTIN_MACROS: MacroInfo[] = [
-  { key: 'char', syntax: '{{char}}', note: '角色卡的名字', alias: ['bot'], value: (c) => c.char },
-  { key: 'user', syntax: '{{user}}', note: '当前激活人设的名字', value: (c) => c.user },
-  { key: 'persona', syntax: '{{persona}}', note: '当前激活人设的描述', value: (c) => c.persona },
-  { key: 'description', syntax: '{{description}}', note: '角色描述', value: (c) => c.description },
-  {
-    key: 'personality',
-    syntax: '{{personality}}',
-    note: '角色性格',
-    value: (c) => c.personality,
-  },
-  { key: 'scenario', syntax: '{{scenario}}', note: '场景', value: (c) => c.scenario },
-  {
-    key: 'lastusermessage',
-    syntax: '{{lastUserMessage}}',
-    note: '最后一条玩家消息',
-    value: (c) => c.lastUserMessage,
-  },
-  {
-    key: 'lastcharmessage',
-    syntax: '{{lastCharMessage}}',
-    note: '最后一条角色消息',
-    value: (c) => c.lastCharMessage,
-  },
-  { key: 'newline', syntax: '{{newline}}', note: '一个换行符', value: () => '\n' },
-  {
-    key: 'original',
-    // 只在「卡覆盖预设块」的场景里有值,组装时我们不走覆盖,所以恒为空
-    syntax: '{{original}}',
-    note: '被覆盖掉的预设原文 —— 本工具不走覆盖,恒为空',
-    value: () => '',
-  },
-  {
-    key: 'random',
-    syntax: '{{random:红,绿,蓝}}',
-    note: '逗号分隔,随机挑一个',
-    dynamic: true,
-    value: () => '每次求值都不同',
-  },
-  {
-    key: 'roll',
-    syntax: '{{roll:d20}}',
-    note: '掷一个 N 面骰',
-    dynamic: true,
-    value: () => '每次求值都不同',
-  },
-  {
-    key: 'time',
-    syntax: '{{time}}',
-    note: '当前时间',
-    dynamic: true,
-    value: () => new Date().toLocaleTimeString('zh-CN'),
-  },
-  {
-    key: 'date',
-    syntax: '{{date}}',
-    note: '当前日期',
-    dynamic: true,
-    value: () => new Date().toLocaleDateString('zh-CN'),
-  },
-];
-
-/** 自定义宏不许占用这些名字 —— 内置的优先,占了也不会生效,不如提前拦住 */
-export const RESERVED_MACRO_NAMES: ReadonlySet<string> = new Set(
-  BUILTIN_MACROS.flatMap((m) => [m.key, ...(m.alias ?? [])]),
-);
-
-/** 简单替换:宏名 → 取值函数(含别名) */
-const SIMPLE: Record<string, (ctx: MacroContext) => string> = Object.fromEntries(
-  BUILTIN_MACROS.filter((m) => !m.dynamic).flatMap((m) =>
-    [m.key, ...(m.alias ?? [])].map((k) => [k, m.value] as const),
-  ),
-);
 
 function hash32(s: string): number {
   let h = 0x811c9dc5;
@@ -170,7 +167,7 @@ function hash32(s: string): number {
 }
 
 /** mulberry32。不求分布多漂亮,只求「同一条消息每次渲染掷出同一个数」 */
-function seededRandom(seed: string): () => number {
+export function seededRandom(seed: string): () => number {
   let a = hash32(seed);
   return () => {
     a = (a + 0x6d2b79f5) | 0;
@@ -180,66 +177,135 @@ function seededRandom(seed: string): () => number {
   };
 }
 
-function resolveOne(
-  name: string,
-  arg: string,
-  ctx: MacroContext,
-  rand: () => number,
-): string | null {
-  const key = name.toLowerCase();
-
-  const simple = SIMPLE[key];
-  if (simple) return simple(ctx);
-
-  if (key === 'random') {
-    const options = arg.split(',').map((s) => s.trim()).filter(Boolean);
-    return options.length ? options[Math.floor(rand() * options.length)] : '';
-  }
-  if (key === 'roll') {
-    const sides = Number.parseInt(arg.replace(/^d/i, ''), 10);
-    return Number.isFinite(sides) && sides > 0 ? String(Math.floor(rand() * sides) + 1) : '';
-  }
-  if (key === 'time') return new Date().toLocaleTimeString('zh-CN');
-  if (key === 'date') return new Date().toLocaleDateString('zh-CN');
-
-  // 自定义宏排在内置之后:占不到 {{char}} 这种名字,也就不会把角色名改没了
-  const own = ctx.custom[key];
-  if (own !== undefined) return own;
-
-  return null; // 不认识的宏原样留着,方便在调试台里看见
+/** 只有第一次取到值,之后是空 */
+function oneShot(value: string | undefined): (() => string) | undefined {
+  if (value === undefined) return undefined;
+  let used = false;
+  return () => {
+    if (used) return '';
+    used = true;
+    return value;
+  };
 }
 
-const MACRO_RE = /\{\{([^{}:]+?)(?::([^{}]*))?\}\}/g;
+function toEnv(ctx: MacroContext, opts: MacroOptions): MacroEnv {
+  const x = ctx.extra ?? {};
+  const messages =
+    ctx.messages ??
+    [
+      { isUser: false, text: ctx.lastCharMessage },
+      { isUser: true, text: ctx.lastUserMessage },
+    ].filter((m) => m.text);
+  const maxContext = x.maxContext ?? 0;
+  const maxResponse = x.maxResponse ?? 0;
 
-export function substituteMacros(
-  text: string,
-  ctx: MacroContext,
-  opts: MacroOptions = {},
-  depth = 2,
-): string {
-  if (!text) return '';
-  let out = text.replace(
-    MACRO_RE,
-    (whole: string, name: string, arg: string | undefined, offset: number) => {
-      // 位置也进种子:同一条消息里的两个 {{roll:d6}} 该是两个独立的骰子
-      const rand =
-        opts.seed === undefined ? Math.random : seededRandom(`${opts.seed}:${offset}:${whole}`);
-      const resolved = resolveOne(name.trim(), arg ?? '', ctx, rand);
-      return resolved === null ? whole : resolved;
+  // 同一个位置连掷几次(3d6)要是几个不同的数,所以每个位置留一个发生器
+  const seeded = new Map<string, () => number>();
+  const fromSeed = (key: string) => {
+    let next = seeded.get(key);
+    if (!next) {
+      next = seededRandom(key);
+      seeded.set(key, next);
+    }
+    return next();
+  };
+
+  return {
+    names: { user: ctx.user, char: ctx.char, group: ctx.char, groupNotMuted: ctx.char, notChar: ctx.user },
+    character: {
+      charPrompt: x.charPrompt ?? '',
+      charInstruction: x.charInstruction ?? '',
+      description: ctx.description,
+      personality: ctx.personality,
+      scenario: ctx.scenario,
+      persona: ctx.persona,
+      mesExamplesRaw: x.mesExamplesRaw ?? '',
+      version: x.charVersion ?? '',
+      charDepthPrompt: x.charDepthPrompt ?? '',
+      creatorNotes: x.creatorNotes ?? '',
+      firstMessage: x.firstMessage ?? '',
+      alternateGreetings: x.alternateGreetings ?? [],
     },
-  );
-  // 展开出来的内容里可能还有宏(格式模板套字段的情况)
-  if (depth > 0 && MACRO_RE.test(out)) {
-    MACRO_RE.lastIndex = 0;
-    out = substituteMacros(out, ctx, opts, depth - 1);
-  }
-  MACRO_RE.lastIndex = 0;
-  return out;
+    model: x.model ?? '',
+    chat: {
+      id: x.chatId ?? '',
+      messages,
+      firstIncludedId: x.firstIncludedMessageId ?? null,
+      firstDisplayedId: x.firstDisplayedMessageId ?? null,
+    },
+    limits: { maxContext, maxResponse, maxPrompt: Math.max(0, maxContext - maxResponse) },
+    input: x.input ?? '',
+    lastGenerationType: x.lastGenerationType ?? '',
+    isMobile: x.isMobile ?? false,
+    original: oneShot(x.original),
+    outlets: x.outlets ?? {},
+    vars: opts.mutate ? (ctx.vars ??= emptyVars()) : cloneVars(ctx.vars),
+    custom: ctx.custom,
+    random: (key) => {
+      if (opts.random) return opts.random();
+      // {{pick}} 无论如何都按位置定种子 —— 它的意义就是「同一处永远挑到同一个」
+      if (key.startsWith('pick:')) return fromSeed(key);
+      return opts.seed === undefined ? Math.random() : fromSeed(`${opts.seed}:${key}`);
+    },
+    now: () => new Date(),
+  };
 }
+
+export function substituteMacros(text: string, ctx: MacroContext, opts: MacroOptions = {}): string {
+  if (!text) return '';
+  // 聊天记录每次渲染都要展开宏,页面上又没有错误边界:宏引擎哪里抛了(比如奇怪的卡、AI 写出来的怪写法),
+  // 整个界面就白屏,存在 localStorage 里的还会刷新后接着白。出错就原样显示
+  try {
+    return evaluateMacros(text, toEnv(ctx, opts), MACRO_REGISTRY);
+  } catch (e) {
+    console.error('宏展开出错,原样显示', e);
+    return text;
+  }
+}
+
+/**
+ * 内置宏的说明 —— 「设置 › 宏」那张表读它。和引擎用的是同一份定义,
+ * 不会出现「实现支持了但界面没写」的漂移。
+ */
+export interface MacroInfo {
+  /** 小写宏名,也是查找键 */
+  key: string;
+  /** 界面上怎么写它 */
+  syntax: string;
+  note: string;
+  example?: string;
+  category: MacroCategory;
+  /** 同一个宏的别名 */
+  alias?: string[];
+  /** 要不要带参数 —— 带参数的没有「当前值」可看 */
+  takesArgs: boolean;
+  /** 每次求值都可能不同(骰子、时间)—— 表里标一下,免得以为是固定映射 */
+  dynamic?: boolean;
+  /** 当前会展开成什么。带参数的宏返回空 */
+  value: (ctx: MacroContext) => string;
+}
+
+export const BUILTIN_MACROS: MacroInfo[] = MACRO_DEFS.map((def) => {
+  const takesArgs = def.minArgs > 0 || def.list === true || def.name === 'else';
+  return {
+    key: def.name.toLowerCase(),
+    syntax: def.syntax,
+    note: def.description,
+    example: def.example,
+    category: def.category,
+    alias: def.aliases,
+    takesArgs,
+    dynamic: def.dynamic,
+    value: (ctx) => (takesArgs ? '' : substituteMacros(`{{${def.name}}}`, ctx, { seed: 'table' })),
+  };
+});
+
+/** 自定义宏不许占用这些名字 —— 内置的优先,占了也不会生效,不如提前拦住 */
+export const RESERVED_MACRO_NAMES: ReadonlySet<string> = new Set(MACRO_REGISTRY.keys());
 
 /** 找出文本里所有没被解析掉的宏,调试台上标黄提示 */
 export function findUnresolvedMacros(text: string): string[] {
   const found = new Set<string>();
-  for (const m of text.matchAll(MACRO_RE)) found.add(m[0]);
+  for (const m of text.matchAll(/\{\{[^{}]*\}\}/g)) found.add(m[0]);
   return [...found];
 }

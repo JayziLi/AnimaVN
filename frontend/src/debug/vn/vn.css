@@ -140,8 +140,139 @@
 .vn-sprite.entering {
   animation: vn-fade-in 0.32s ease both;
 }
+
+/* 立绘切换特效:动作(VNScreen 的 SPRITE_MOTIONS)播在这一层上,缩放以脚底为准 */
+.vn-sprite-fx {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 100%;
+}
+
+/* 头顶气泡:位置大小由 bubbleStyle 按脸算好;弹出来、停一会儿、往上飘着消失 */
+.vn-bubble {
+  position: absolute;
+  overflow: visible;
+  filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.28));
+  transform-origin: 20% 90%;
+  animation: vn-bubble-pop 1.4s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+}
+/* 汗、泪往下滑一点 */
+.vn-bubble-sweat,
+.vn-bubble-tear {
+  animation-name: vn-bubble-drip;
+}
+@keyframes vn-bubble-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.3) translateY(15%);
+  }
+  14% {
+    opacity: 1;
+    transform: scale(1.12);
+  }
+  24% {
+    transform: scale(1);
+  }
+  78% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-12%);
+  }
+}
+@keyframes vn-bubble-drip {
+  0% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  15% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+  25% {
+    transform: none;
+  }
+  78% {
+    opacity: 1;
+    transform: translateY(14%);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(22%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vn-bubble,
+  .vn-bubble-sweat,
+  .vn-bubble-tear {
+    animation: vn-fade-in 0.2s ease both;
+  }
+}
 .vn-sprite.leaving {
   animation: vn-fade-out 0.32s ease both;
+}
+
+/* ---- CG:盖在背景和立绘上面,有 CG 时立绘淡出 ---- */
+
+.vn-sprite-stage {
+  transition: opacity 0.5s ease;
+}
+.vn-stage.cg-on .vn-sprite-stage {
+  opacity: 0;
+}
+.vn-cg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #000;
+  pointer-events: none;
+}
+/* 同一张 CG 换差分(表情):快速交叉淡入,看起来像同一张图在变脸 */
+.vn-cg.entering {
+  animation: vn-fade-in 0.28s ease both;
+}
+.vn-cg.leaving {
+  animation: vn-fade-out 0.28s ease both;
+}
+/* 出现、收起、换成另一张 CG:慢一点 */
+.vn-cg-stage.slow .vn-cg.entering {
+  animation-duration: 0.7s;
+}
+.vn-cg-stage.slow .vn-cg.leaving {
+  animation-duration: 0.7s;
+}
+/* 竖长的 CG(全身图):上下来回慢慢移着看,原作里是卷动的。两头各停一会儿;
+   --cg-pan-delay 按钟点算,换差分时新图接着同一个位置移 */
+.vn-cg.tall {
+  animation: vn-cg-pan var(--cg-pan-ms) ease-in-out var(--cg-pan-delay) infinite alternate;
+}
+.vn-cg.tall.entering {
+  animation:
+    vn-fade-in 0.28s ease both,
+    vn-cg-pan var(--cg-pan-ms) ease-in-out var(--cg-pan-delay) infinite alternate;
+}
+.vn-cg.tall.leaving {
+  animation:
+    vn-fade-out 0.28s ease both,
+    vn-cg-pan var(--cg-pan-ms) ease-in-out var(--cg-pan-delay) infinite alternate;
+}
+.vn-cg-stage.slow .vn-cg.tall.entering,
+.vn-cg-stage.slow .vn-cg.tall.leaving {
+  animation-duration: 0.7s, var(--cg-pan-ms);
+}
+@keyframes vn-cg-pan {
+  0%,
+  12% {
+    object-position: 50% 0%;
+  }
+  88%,
+  100% {
+    object-position: 50% 100%;
+  }
 }
 
 @keyframes vn-fade-in {
@@ -192,6 +323,36 @@
   }
   50% {
     transform: translateY(-6px) rotate(6deg);
+  }
+}
+
+/* ---- logo(AnimaLogo):loading、菜单、封面字标 ---- */
+
+.vn-logo {
+  display: block;
+  flex: none;
+  user-select: none;
+}
+.vn-logo.mark {
+  filter: drop-shadow(0 1px 6px rgba(0, 0, 0, 0.35));
+}
+.vn-logo.badge {
+  border-radius: 22.5%;
+}
+.vn-logo.breathe {
+  animation: vn-breathe 1.6s ease-in-out infinite;
+}
+/* 圆形的 logo 摆来摆去像在晃,只上下浮 */
+.vn-logo.drift {
+  animation: vn-logo-float 2.8s ease-in-out infinite;
+}
+@keyframes vn-logo-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
   }
 }
 
@@ -1269,6 +1430,11 @@
   color: var(--vn-text);
   cursor: pointer;
 }
+/* 快捷栏「自动」后面的倍数:贴着「自动」,看得出是一组 */
+.vn-quick .vn-auto-speed {
+  margin-left: -6px;
+  font-variant-numeric: tabular-nums;
+}
 .vn-set-select option {
   background: var(--vn-glass-strong);
   color: var(--vn-text);
@@ -1416,9 +1582,110 @@
   color: var(--vn-text-faint);
 }
 
+/* 素材等待页(VNLoading / assetGate.ts):盖在封面和游戏上面。
+   blank:刚打开、刚换角色的头 180ms 先黑着,有缓存就直接进,不闪等待页 */
+.vn-gate {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: #07070d;
+}
+.vn-gate:not(.blank) {
+  animation: vn-fade-in 0.25s ease both;
+}
+.vn-gate-backdrop {
+  position: absolute;
+  inset: -40px;
+  width: calc(100% + 80px);
+  height: calc(100% + 80px);
+  object-fit: cover;
+  filter: blur(24px) brightness(0.35) saturate(0.9);
+}
+.vn-gate-center {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
+  text-align: center;
+}
+.vn-gate-face {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 140px;
+  height: 140px;
+  margin-bottom: 4px;
+}
+.vn-gate-face img,
+.vn-gate-initial {
+  width: 112px;
+  height: 112px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+}
+.vn-gate-initial {
+  display: grid;
+  place-items: center;
+  font-size: 40px;
+  color: var(--vn-text-dim);
+}
+.vn-gate-ring {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+.vn-gate-ring circle {
+  fill: none;
+  stroke-width: 3;
+}
+.vn-gate-ring .track {
+  stroke: rgba(255, 255, 255, 0.12);
+}
+.vn-gate-ring .bar {
+  stroke: var(--vn-accent);
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.3s ease;
+}
+.vn-gate-name {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--vn-text);
+}
+.vn-gate-detail {
+  font-size: 12px;
+  color: var(--vn-text-dim);
+}
+.vn-gate-skip {
+  margin-top: 8px;
+  padding: 6px 14px;
+  border: 1px solid var(--vn-border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--vn-text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.vn-gate-skip:hover {
+  border-color: var(--vn-accent);
+  color: var(--vn-accent);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .vn-feather.breathe,
   .vn-feather.drift,
+  .vn-logo.breathe,
+  .vn-logo.drift,
   .vn-next,
   .vn-caret,
   .vn-slot-thumb.loading {
@@ -1448,10 +1715,15 @@
   }
 }
 
-/* 窄屏:快捷按钮只留历史 / 自动 / 菜单,其余都在菜单里;菜单导航变成顶部一排标签 */
+/* 窄屏:存档、设置在菜单第一排就有,快捷按钮里收掉;跳过 / 重来 / 隐藏别处没有入口,留着。
+   按钮收紧一点,一排放得下。菜单导航变成顶部一排标签 */
 @media (max-width: 640px) {
   .vn-quick .wide-only {
     display: none;
+  }
+  .vn-quick button {
+    padding: 4px 6px;
+    letter-spacing: 0.04em;
   }
   .vn-menu {
     grid-template-columns: minmax(0, 1fr);
@@ -1612,6 +1884,184 @@
   font-size: 12px;
   color: #ffd7a8;
   border-color: rgba(255, 170, 90, 0.55);
+}
+
+/* 右上角的语音标签和快捷面板(VoiceQuick)。面板挂在顶栏上、贴右边,窄屏不会被挤出画面 */
+.vn-vq {
+  display: contents;
+}
+.vn-chip.vn-vq-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  pointer-events: auto;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.vn-chip.vn-vq-chip[aria-expanded='true'] {
+  color: var(--vn-text);
+  border-color: rgba(var(--vn-accent-rgb), 0.6);
+}
+.vn-chip.vn-vq-chip.fail {
+  color: #ffd7a8;
+  border-color: rgba(255, 170, 90, 0.55);
+}
+.vn-vq-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--vn-text-faint);
+}
+.vn-vq-chip.ok .vn-vq-dot,
+.vn-vq-dot.ok {
+  background: var(--vn-ok);
+}
+.vn-vq-chip.fail .vn-vq-dot,
+.vn-vq-dot.fail {
+  background: #ffaa5a;
+}
+.vn-vq-chip.testing .vn-vq-dot,
+.vn-vq-dot.testing {
+  background: #ffd36e;
+}
+.vn-vq-chip.busy .vn-vq-dot,
+.vn-vq-chip.testing .vn-vq-dot {
+  animation: vn-voice-wait 1.2s ease-in-out infinite;
+}
+.vn-vq-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: min(340px, calc(100vw - 2 * var(--vn-gutter)));
+  max-height: calc(100dvh - 120px);
+  overflow-y: auto;
+  padding: 14px;
+  border-radius: var(--vn-radius);
+  border: 1px solid var(--vn-border);
+  background: var(--vn-glass-strong);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+  color: var(--vn-text);
+  font-size: 13px;
+  pointer-events: auto;
+  cursor: auto;
+}
+.vn-vq-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.vn-vq-status .vn-vq-dot {
+  width: 9px;
+  height: 9px;
+}
+.vn-vq-state {
+  flex: 1;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.vn-pill.vn-vq-test {
+  font-size: 12px;
+  padding: 4px 11px;
+}
+.vn-vq-error {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--vn-miss);
+  word-break: break-word;
+}
+.vn-vq-info {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 12px;
+  margin: 12px 0 0;
+  padding: 10px 0 0;
+  border-top: 1px solid var(--vn-border);
+  font-size: 12px;
+}
+.vn-vq-info dt {
+  color: var(--vn-text-dim);
+}
+.vn-vq-info dd {
+  margin: 0;
+  min-width: 0;
+}
+.vn-vq-dim {
+  color: var(--vn-text-dim);
+}
+.vn-vq-url {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--vn-mono);
+  font-size: 11px;
+  color: var(--vn-text-faint);
+}
+.vn-vq-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--vn-border);
+}
+.vn-vq-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.vn-vq-label {
+  flex: none;
+  font-size: 12px;
+  color: var(--vn-text-dim);
+}
+.vn-vq-row .vn-seg button {
+  font-size: 12px;
+  padding: 4px 11px;
+}
+.vn-vq-volume {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  justify-content: flex-end;
+}
+.vn-vq-volume input[type='range'] {
+  flex: 1;
+  min-width: 0;
+  max-width: 170px;
+}
+.vn-pill.vn-vq-mute {
+  min-width: 52px;
+  font-size: 12px;
+  padding: 4px 10px;
+  font-variant-numeric: tabular-nums;
+}
+.vn-pill.vn-vq-mute.on {
+  color: #ffd7a8;
+  border-color: rgba(255, 170, 90, 0.55);
+}
+.vn-vq-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+.vn-vq-foot .vn-pill {
+  flex: 1;
+  font-size: 12px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .vn-vq-chip .vn-vq-dot {
+    animation: none !important;
+  }
 }
 
 /* 一句语音的两颗小按钮(重播 / 重新生成):对话框底边最左,历史里每句末尾 */
@@ -1866,4 +2316,11 @@
 .vn-log-line .vn-voice-ctl.speaking,
 .vn-log-line .vn-voice-ctl.busy {
   opacity: 1;
+}
+
+/* 设置 → 外观 → 对话框文字:选中的字体写一句给人看 */
+.vn-set-font-preview {
+  font-size: 18px;
+  letter-spacing: 0.04em;
+  color: var(--vn-text);
 }

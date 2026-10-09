@@ -5,14 +5,16 @@ PNG 解析留在前端 —— 前端解析完把 JSON 和头像一起 POST 过�
 后端只负责存取，不重复实现 PNG chunk 解析。
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Response
-from sqlalchemy import select, update
-from sqlalchemy.orm import Session
+import hashlib
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from sqlalchemy import and_, select, update
+from sqlalchemy.orm import Session, defer
 
 from app.api.scenes import copy_card_scene_binding, delete_card_scene_binding
-from app.api.sprites import copy_card_sprites, delete_card_sprites
+from app.api.sprites import copy_card_sprite_packs, delete_card_sprite_packs
 from app.api.voices import copy_card_voices, delete_card_voices
-from app.db import get_db
+from app.db import get_db, without_required_nulls
 from app.models import DebugChat, PromptPreset, TavernCard
 from app.schemas import (
     DuplicateRequest,
@@ -27,7 +29,7 @@ from app.schemas import (
 router = APIRouter(prefix="/api/tavern", tags=["tavern"])
 
 
-def _card_out(card: TavernCard) -> TavernCardOut:
+def _card_out(card: TavernCard, has_avatar: bool | None = None) -> TavernCardOut:
     return TavernCardOut(
         id=card.id,
         name=card.name,
@@ -46,7 +48,7 @@ def _card_out(card: TavernCard) -> TavernCardOut:
         character_book=card.character_book,
         extensions=card.extensions or {},
         spec=card.spec,
-        has_avatar=bool(card.avatar),
+        has_avatar=bool(card.avatar) if has_avatar is None else has_avatar,
         last_chat_id=card.last_chat_id,
         created_at=card.created_at,
         updated_at=card.updated_at,
@@ -84,8 +86,13 @@ def _load_card(card_id: str, db: Session) -> TavernCard:
 
 @router.get("/cards", response_model=list[TavernCardOut])
 def list_cards(db: Session = Depends(get_db)):
-    cards = db.scalars(select(TavernCard).order_by(TavernCard.created_at)).all()
-    return [_card_out(c) for c in cards]
+    # 头像是整张 PNG 的 data URL(一张几百 KB,本机 21 张卡共 6 MB),列表只要知道有没有,
+    # 不把它读出来
+    has_avatar = and_(TavernCard.avatar.is_not(None), TavernCard.avatar != "")
+    rows = db.execute(
+        select(TavernCard, has_avatar).options(defer(TavernCard.avatar)).order_by(TavernCard.created_at)
+    ).all()
+    return [_card_out(c, bool(h)) for c, h in rows]
 
 
 @router.get("/cards/{card_id}", response_model=TavernCardOut)
@@ -106,7 +113,7 @@ def create_card(req: TavernCardCreate, db: Session = Depends(get_db)):
 def update_card(card_id: str, req: TavernCardUpdate, db: Session = Depends(get_db)):
     card = _load_card(card_id, db)
     # exclude_unset: the console sends only the field the user just edited
-    for field, value in req.model_dump(exclude_unset=True).items():
+    for field, value in without_required_nulls(TavernCard, req.model_dump(exclude_unset=True)).items():
         setattr(card, field, value)
     db.commit()
     db.refresh(card)
@@ -119,7 +126,7 @@ def delete_card(card_id: str, db: Session = Depends(get_db)):
     # 对话比卡活得久:每条分支都存着完整提示词快照,历史照样能回看。
     # 引用置空而不是删对话(SQLAlchemy 的 FK 不带 pragma 不级联,手动来)。
     db.execute(update(DebugChat).where(DebugChat.card_id == card_id).values(card_id=None))
-    delete_card_sprites(card_id, db)
+    delete_card_sprite_packs(card_id, db)
     delete_card_scene_binding(card_id, db)
     delete_card_voices(card_id, db)
     db.delete(card)
@@ -151,8 +158,8 @@ def duplicate_card(card_id: str, req: DuplicateRequest, db: Session = Depends(ge
         # 就打开原卡的对话
     )
     db.add(copy)
-    db.flush()  # 先拿到副本的 id,立绘行要挂在它下面
-    copy_card_sprites(src.id, copy.id, db)
+    db.flush()  # 先拿到副本的 id,绑定行要挂在它下面
+    copy_card_sprite_packs(src.id, copy.id, db)
     copy_card_scene_binding(src.id, copy.id, db)
     copy_card_voices(src.id, copy.id, db)
     db.commit()
@@ -161,12 +168,19 @@ def duplicate_card(card_id: str, req: DuplicateRequest, db: Session = Depends(ge
 
 
 @router.get("/cards/{card_id}/avatar")
-def get_card_avatar(card_id: str, db: Session = Depends(get_db)):
-    """头像单独取,列表接口只回 has_avatar,免得列一堆卡时把图全拖下来。"""
+def get_card_avatar(card_id: str, request: Request, db: Session = Depends(get_db)):
+    """头像单独取,列表接口只回 has_avatar,免得列一堆卡时把图全拖下来。
+
+    一张能有近 1 MB,ETag 按内容算:刷新页面时浏览器带着它来问,没换图就回 304,不用整张重下。
+    """
     card = _load_card(card_id, db)
     if not card.avatar:
         raise HTTPException(404, "这张卡没有头像")
-    return Response(content=card.avatar, media_type="text/plain")
+    etag = f'"{hashlib.blake2b(card.avatar.encode(), digest_size=16).hexdigest()}"'
+    headers = {"ETag": etag, "Cache-Control": "private, no-cache"}
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=headers)
+    return Response(content=card.avatar, media_type="text/plain", headers=headers)
 
 
 # ══════════════ 预设 ══════════════
@@ -205,7 +219,7 @@ def create_preset(req: PromptPresetCreate, db: Session = Depends(get_db)):
 @router.put("/presets/{preset_id}", response_model=PromptPresetOut)
 def update_preset(preset_id: str, req: PromptPresetUpdate, db: Session = Depends(get_db)):
     preset = _load_preset(preset_id, db)
-    updates = req.model_dump(exclude_unset=True)
+    updates = without_required_nulls(PromptPreset, req.model_dump(exclude_unset=True))
     if "name" in updates and not (updates["name"] or "").strip():
         raise HTTPException(400, "预设名不能为空")
     if "name" in updates:

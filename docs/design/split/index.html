@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AnimaVN · 斜切式主界面原型</title>
+<style>
+  /* 照 Astrae Oratio 官网角色页的排法(用户给的截图,2026-09-30):
+     一道斜线把画面切成两半 —— 深色一侧是她:放大的脸当底纹 + 全身立绘压在斜线上 + 几颗星芒;
+     纸面一侧是字和按钮;最边上一列是角色选择。字体用粗的无衬线体。右上角可以镜像。 */
+  :root {
+    --bg: #1e1e24;
+    --bg-deep: #131317;
+    --white: #f6f6f8;
+    --grey: #c7c7cf;
+    --paper: #f3f2f0;
+    --ink: #1e1e24;
+    --ink-dim: rgba(30, 30, 36, 0.6);
+    --acc: #8d93b8;          /* 跟角色走(原型里写死在演示数据上,真做时 accentOf(立绘)) */
+    --nav-h: max(7.4vh, 46px);
+    --rail-w: 19vh;
+    --cut-t: 60%;            /* 斜线在顶边、底边的位置(相对舞台宽) */
+    --cut-b: 17%;
+    --sans: 'Noto Sans SC', 'Source Han Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg-deep); color: var(--ink); font: 14px/1.6 var(--sans); overflow: hidden; }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
+  img { user-select: none; -webkit-user-drag: none; }
+  .star { display: inline-block; fill: currentColor; width: 1em; height: 1em; }
+
+  /* ---------- 顶栏 ---------- */
+  .nav { position: fixed; z-index: 10; left: 0; right: 0; top: 0; height: var(--nav-h); display: flex; align-items: center; gap: 4vh; padding: 0 3.4vw; background: #121215; color: var(--white); }
+  .nav-brand { display: flex; align-items: center; }
+  .nav-brand .mark { height: calc(var(--nav-h) * 0.7); }
+  .nav-brand .word { height: calc(var(--nav-h) * 0.64); margin-left: -0.4vh; }
+  .nav-tools { margin-left: auto; display: flex; align-items: center; gap: 3vh; font-size: max(1.8vh, 12px); font-weight: 700; letter-spacing: 0.12em; color: rgba(246, 246, 248, 0.62); }
+  .nav-tools button:hover { color: var(--white); }
+  .nav-tools .flip { padding: 0.4vh 1.6vh; border: 1px solid rgba(246, 246, 248, 0.3); border-radius: 999px; font-weight: 500; }
+
+  /* ---------- 舞台:镜像时整块翻过来,字和图再各自翻回去 ---------- */
+  .stage { position: fixed; left: 0; right: 0; top: var(--nav-h); bottom: 0; overflow: hidden; background: var(--bg-deep); }
+  .stage.mirror { transform: scaleX(-1); }
+  .stage.mirror .unflip { transform: scaleX(-1); }
+
+  /* 纸面:整个舞台(除了最边上那一列),右下角一个大圆角 */
+  .paper { position: absolute; left: 0; top: 0; bottom: 0; right: var(--rail-w); background: var(--paper); border-radius: 0 0 7vh 0; overflow: hidden; }
+  .paper-tex { position: absolute; inset: 0; width: 100%; height: 100%; color: var(--ink); opacity: 0.13; }
+
+  /* 深色一侧 */
+  .dark { position: absolute; inset: 0; clip-path: polygon(0 0, var(--cut-t) 0, var(--cut-b) 100%, 0 100%); background: radial-gradient(80vh 70vh at 30% 40%, #2b2b38, var(--bg) 60%, var(--bg-deep)); }
+  /* 放大的脸:去色以后罩一层角色的颜色,只当底纹 */
+  .closeup { position: absolute; inset: 0; opacity: 0.5; filter: grayscale(1) contrast(1.15) brightness(0.9); transition: opacity 0.5s; }
+  .closeup img { position: absolute; max-width: none; }
+  .tint { position: absolute; inset: 0; background: var(--acc); mix-blend-mode: color; opacity: 0.85; transition: background 0.6s; }
+  .dark-shade { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(19, 19, 23, 0.55), rgba(19, 19, 23, 0.1) 50%, rgba(19, 19, 23, 0.4)); }
+
+  /* 斜线上一道细的点缀色 */
+  .edge { position: absolute; inset: 0; background: var(--acc); clip-path: polygon(var(--cut-t) 0, calc(var(--cut-t) + 0.45vw) 0, calc(var(--cut-b) + 0.45vw) 100%, var(--cut-b) 100%); transition: background 0.6s; }
+
+  /* 星芒:围着她,颜色跟角色 */
+  .sparks .star { position: absolute; color: var(--acc); filter: drop-shadow(0 0 0.8vh var(--acc)); animation: twinkle 3s ease-in-out infinite; transition: color 0.6s; }
+  @keyframes twinkle { 50% { transform: scale(0.55) rotate(12deg); opacity: 0.5; } }
+
+  /* 立绘:压在斜线上 */
+  .sprite { position: absolute; inset: 0; pointer-events: none; }
+  .sprite img { position: absolute; max-width: none; pointer-events: auto; cursor: pointer; filter: drop-shadow(0 1.2vh 3vh rgba(10, 10, 16, 0.45)); animation: spr-in 0.55s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+  .sprite img.leaving { animation: spr-out 0.3s ease both; pointer-events: none; }
+  @keyframes spr-in { from { opacity: 0; translate: -3vh 0; } }
+  @keyframes spr-out { to { opacity: 0; } }
+
+  /* ---------- 纸面上的字和按钮 ---------- */
+  .info { position: absolute; left: 57%; right: calc(var(--rail-w) + 5vw); top: 15%; }
+  .info > * { animation: rise 0.6s cubic-bezier(0.2, 0.7, 0.2, 1) both; animation-delay: calc(var(--i, 0) * 0.06s + 0.1s); }
+  @keyframes rise { from { opacity: 0; translate: 0 1.6vh; } }
+  .work { display: flex; align-items: center; gap: 1.2vh; font-size: max(2.4vh, 15px); font-weight: 700; letter-spacing: 0.04em; }
+  .work .star { width: 1.8vh; height: 1.8vh; }
+  .name { margin: 0.6vh 0 0; font-size: max(9vh, 40px); font-weight: 900; line-height: 1.12; letter-spacing: 0.02em; }
+  .pill { display: inline-flex; align-items: center; gap: 1.2vh; margin-top: 2vh; height: 4.6vh; padding: 0 2vh 0 0.5vh; border: 1.5px solid var(--ink); border-radius: 999px; font-size: max(1.8vh, 12px); font-weight: 500; }
+  .pill i { display: grid; place-items: center; width: 3.6vh; height: 3.6vh; border-radius: 50%; background: var(--ink); color: var(--white); font-style: normal; }
+  .pill i .star { width: 1.7vh; height: 1.7vh; }
+  .quote { margin: 2.6vh 0 0; font-size: max(2.5vh, 15px); font-weight: 700; line-height: 1.5; }
+  .desc { margin: 1vh 0 0; font-size: max(1.8vh, 12px); color: var(--ink-dim); }
+
+  /* 按钮:深色圆角块,右下错开一圈细框(截图里「Share this character」那种) */
+  .acts { display: grid; grid-template-columns: repeat(3, auto); justify-content: start; gap: 1.8vh 1.6vh; margin-top: 4vh; }
+  .btn { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 1.2vh; height: 6.4vh; padding: 0 3vh; border-radius: 0.6vh 0.6vh 1.6vh 0.6vh; background: var(--paper); border: 1.5px solid var(--ink); font-size: max(2vh, 13px); font-weight: 700; letter-spacing: 0.08em; transition: translate 0.18s, background 0.18s, color 0.18s; }
+  .btn::after { content: ''; position: absolute; inset: 0.5vh -0.6vh -0.6vh 0.5vh; border: 1.5px solid var(--ink); border-left: 0; border-top: 0; border-radius: 0 0 1.8vh 0; pointer-events: none; transition: inset 0.18s; }
+  .btn .star { width: 1.5vh; height: 1.5vh; }
+  .btn:hover { translate: 0.3vh 0.3vh; background: var(--ink); color: var(--white); }
+  .btn:hover::after { inset: 0.2vh -0.3vh -0.3vh 0.2vh; }
+  .btn.main { grid-column: 1 / -1; justify-self: start; height: 7.6vh; padding: 0 5vh; background: var(--ink); color: var(--white); font-size: max(2.5vh, 15px); letter-spacing: 0.3em; }
+  .btn.main:hover { background: #000; }
+
+  /* 底下:这个角色最近的几段,拱形缩略图 —— 「继续」接的是选中的那段 */
+  .slots { position: absolute; left: 57%; bottom: 5.4%; animation: rise 0.6s ease 0.5s both; }
+  .slots-row { display: flex; align-items: center; gap: 1.2vh; margin-left: -4.6vh; }
+  .arrow { width: 3.4vh; height: 3.4vh; display: grid; place-items: center; opacity: 0.55; font-size: 2.4vh; line-height: 1; }
+  .arrow:hover { opacity: 1; }
+  .slot { position: relative; width: 9.4vh; height: 14vh; border-radius: 4.7vh 4.7vh 0.5vh 0.5vh; overflow: hidden; background: var(--bg); border: 2px solid var(--bg); opacity: 0.8; transition: opacity 0.2s, translate 0.2s, box-shadow 0.2s; }
+  .slot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .slot b { position: absolute; left: 0; right: 0; bottom: 0; padding: 2vh 0.4vh 0.5vh; background: linear-gradient(0deg, rgba(19, 19, 23, 0.9), rgba(19, 19, 23, 0)); color: var(--white); font-size: max(1.3vh, 9.5px); font-weight: 500; text-align: center; letter-spacing: 0.06em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .slot:hover { opacity: 1; }
+  .slot.cur { opacity: 1; translate: 0 -0.6vh; box-shadow: 0 0 0 0.3vh var(--paper), 0 0 0 0.55vh var(--acc); }
+  .dots { display: flex; align-items: center; gap: 1.3vh; margin: 1.4vh 0 0 0.4vh; }
+  .dots i { width: 0.8vh; height: 0.8vh; border-radius: 50%; background: rgba(30, 30, 36, 0.3); }
+  .dots .star { width: 2vh; height: 2vh; }
+
+  /* ---------- 最边上:角色选择 ---------- */
+  .rail { position: absolute; right: 0; top: 0; bottom: 0; width: var(--rail-w); padding: 1.6vh 1.4vh; display: flex; flex-direction: column; gap: 1.4vh; overflow-y: auto; scrollbar-width: none; }
+  .rail::-webkit-scrollbar { display: none; }
+  .card { position: relative; flex: none; height: 19vh; border-radius: 0.8vh 0.8vh 2.6vh 0.8vh; background: #2a2a31; color: var(--grey); box-shadow: 0.35vh 0.35vh 0 #0b0b0e; overflow: hidden; transition: background 0.25s, color 0.25s, translate 0.2s; }
+  .card::before { content: ''; position: absolute; inset: 0.7vh; border: 1px solid rgba(246, 246, 248, 0.12); border-radius: 0.5vh 0.5vh 2.1vh 0.5vh; pointer-events: none; }
+  .card-face { position: absolute; left: 50%; top: 1.8vh; width: 9.6vh; height: 11.4vh; margin-left: -4.8vh; border-radius: 4.8vh 4.8vh 0.4vh 0.4vh; overflow: hidden; background: var(--bg-deep); filter: grayscale(0.9) brightness(0.8); transition: filter 0.25s; }
+  .card-face img { position: absolute; max-width: none; }
+  .card b { position: absolute; left: 0; right: 0; bottom: 1.5vh; text-align: center; font-size: max(1.8vh, 12px); font-weight: 700; letter-spacing: 0.08em; }
+  .card:hover { translate: -0.3vh 0; color: var(--white); }
+  .card:hover .card-face { filter: none; }
+  .card.cur { background: var(--paper); color: var(--ink); }
+  .card.cur::before { border-color: rgba(30, 30, 36, 0.16); }
+  .card.cur .card-face { filter: none; }
+  .card.add { display: grid; place-items: center; align-content: center; gap: 0.6vh; height: 12vh; opacity: 0.5; font-size: max(1.6vh, 11px); text-align: center; }
+  .card.add .star { width: 3vh; height: 3vh; }
+
+  /* ---------- 竖屏兜底(没细排) ---------- */
+  @media (max-aspect-ratio: 1/1) {
+    :root { --rail-w: 0px; }
+    .rail { top: auto; left: 0; bottom: 0; width: auto; height: 12vh; flex-direction: row; padding: 1vh 2vw; }
+    .card { width: 9vh; height: 100%; } .card-face { width: 6vh; height: 6.4vh; margin-left: -3vh; top: 0.8vh; } .card b { bottom: 0.6vh; font-size: 11px; }
+    .paper { right: 0; bottom: 12vh; border-radius: 0; }
+    .dark, .edge { clip-path: polygon(0 0, 100% 0, 100% 40%, 0 50%); }
+    .edge { display: none; }
+    .info { left: 7%; right: 7%; top: 50%; } .name { font-size: 5vh; } .slots { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { animation-duration: 0.01s !important; transition-duration: 0.01s !important; } }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="star" viewBox="-10 -10 20 20"><path d="M0-10C1.1-2.6 2.6-1.1 10 0 2.6 1.1 1.1 2.6 0 10-1.1 2.6-2.6 1.1-10 0-2.6-1.1-1.1-2.6 0-10Z"/></symbol>
+</svg>
+
+<header class="nav">
+  <div class="nav-brand"><img class="mark" src="../home/assets/logo.svg" alt=""><img class="word" src="../home/assets/wordmark.png" alt="AnimaVN"></div>
+  <div class="nav-tools"><button>设置</button><button>调试台</button><button class="flip" id="flip">镜像</button></div>
+</header>
+
+<main class="stage" id="stage">
+  <div class="paper"><svg class="paper-tex" id="tex" preserveAspectRatio="xMidYMid slice"></svg></div>
+  <div class="dark">
+    <div class="closeup unflip" id="closeup"></div>
+    <div class="tint"></div>
+    <div class="dark-shade"></div>
+  </div>
+  <div class="edge"></div>
+  <div class="sparks" id="sparks"></div>
+  <div class="sprite unflip" id="sprite"></div>
+
+  <section class="info unflip" id="info">
+    <div class="work" style="--i:0"><svg class="star"><use href="#star"/></svg><span id="work"></span></div>
+    <h1 class="name" id="name" style="--i:1"></h1>
+    <div class="pill" style="--i:2"><i><svg class="star"><use href="#star"/></svg></i><span id="pill"></span></div>
+    <p class="quote" id="quote" style="--i:3"></p>
+    <p class="desc" id="desc" style="--i:4"></p>
+    <div class="acts" style="--i:5">
+      <button class="btn main" data-mood="continue"><svg class="star"><use href="#star"/></svg>继续<svg class="star"><use href="#star"/></svg></button>
+      <button class="btn" data-mood="new">新的故事</button>
+      <button class="btn" data-mood="load" onclick="location.href='saves.html'">读档</button>
+      <button class="btn" data-mood="config">设置</button>
+    </div>
+  </section>
+
+  <section class="slots unflip">
+    <div class="slots-row"><button class="arrow" id="slotPrev" aria-label="上一段">◀</button><div id="slots" style="display:flex;gap:1.2vh"></div><button class="arrow" id="slotNext" aria-label="下一段">▶</button></div>
+    <div class="dots" id="dots"></div>
+  </section>
+
+  <nav class="rail unflip" id="rail" aria-label="角色"></nav>
+</main>
+
+<script src="../home/data.js"></script>
+<script>
+// 演示逻辑。数据在 ../home/data.js(CAST、BLOBS)。改 React 时整个换掉。
+const $ = (s) => document.querySelector(s);
+const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
+const STAR = '<svg class="star"><use href="#star"/></svg>';
+const src = (blob) => BLOBS + blob;
+const cast = CAST.filter((c) => c.sprites[0] && c.sprites[0].face && c.scenes.length);
+// 演示用的「上次」和点缀色:真做时来自对话记录和 accentOf(立绘)
+const DEMO = [
+  { ago: '3 小时前', line: '……那、明天也要来哦?说好了。', acc: '#8f86d8' },
+  { ago: '昨天', line: '茶要凉了,先喝一口再说吧。', acc: '#e0a23c' },
+  { ago: '2 天前', line: '欸嘿嘿,被你发现了。', acc: '#c04f7c' },
+  { ago: '上周', line: '这份报告我已经看完了,老师。', acc: '#6fa3e6' },
+  { ago: '上周', line: '博士,今天也请多指教。', acc: '#3f93c8' },
+  { ago: '9 月 12 日', line: '雨停了,要不要出去走走?', acc: '#9aa38c' },
+];
+cast.forEach((c, i) => Object.assign(c, DEMO[i % DEMO.length]));
+const MOODS = { continue: /开心|大笑|兴奋/, new: /温柔|微笑/, load: /认真|观察|平静/, config: /平静|说话/, poke: /不好意思|害羞|担心|幽怨/ };
+let cur = 0, slot = 0, mood = null, shown = null;
+const stage = $('#stage');
+const mirrored = () => stage.classList.contains('mirror');
+
+/** 按脸裁的小头像:ratio = 框的高 / 宽 */
+function faceImg(sp, ratio, fill, top) {
+  const img = new Image();
+  img.src = src(sp.src);
+  const k = fill / sp.face.w;
+  img.style.width = `${k * 100}%`;
+  img.style.left = `${(0.5 - (sp.face.x + sp.face.w / 2) * k) * 100}%`;
+  img.style.top = `${(top - (sp.face.y * k * (sp.h / sp.w)) / ratio) * 100}%`;
+  return img;
+}
+/** 按脸摆:脸高占舞台高的 faceH,脸顶在 faceTop,脸的中线在 cx。镜像时舞台整个翻了、图又翻回来,所以 cx 要换成 1 - cx */
+function place(img, sp, pose) {
+  const H = stage.clientHeight, W = stage.clientWidth;
+  let h = (pose.faceH * H) / sp.face.h;
+  // 只画到大腿的立绘:放大到脚下那条边落在舞台外,不让它悬在半空
+  if (pose.floor) h = Math.max(h, (H * (1.02 - pose.faceTop)) / (1 - sp.face.y));
+  const w = (h * sp.w) / sp.h;
+  const cx = mirrored() ? 1 - pose.cx : pose.cx;
+  img.style.height = `${h}px`;
+  img.style.left = `${cx * W - (sp.face.x + sp.face.w / 2) * w}px`;
+  img.style.top = `${pose.faceTop * H - sp.face.y * h}px`;
+}
+
+function renderSprite(force) {
+  const c = cast[cur];
+  const sp = (mood && c.sprites.find((s) => s.face && MOODS[mood].test(s.label))) || c.sprites[0];
+  if (sp === shown && !force) return;
+  shown = sp;
+  const portrait = stage.clientWidth < stage.clientHeight;
+  const img = new Image();
+  img.src = src(sp.src);
+  place(img, sp, portrait ? { faceH: 0.12, faceTop: 0.06, cx: 0.5 } : { faceH: 0.2, faceTop: 0.1, cx: 0.4, floor: true });
+  img.onclick = () => { mood = 'poke'; renderSprite(); setTimeout(() => { mood = null; renderSprite(); }, 1800); };
+  const host = $('#sprite');
+  [...host.children].forEach((old) => { old.classList.add('leaving'); setTimeout(() => old.remove(), 320); });
+  host.append(img);
+}
+
+function render() {
+  const c = cast[cur];
+  document.documentElement.style.setProperty('--acc', c.acc);
+  // 放大的脸:同一张立绘放得很大,脸占舞台高的一大半,偏在深色那一侧的外沿
+  const big = new Image();
+  big.src = src(c.sprites[0].src);
+  place(big, c.sprites[0], { faceH: 0.78, faceTop: 0.06, cx: 0.13 });
+  $('#closeup').replaceChildren(big);
+  renderSprite(true);
+
+  $('#work').textContent = c.work;
+  $('#name').textContent = c.name;
+  $('#desc').textContent = c.tags.filter((t) => !/测试/.test(t)).join(' · ');
+  // 重放入场动画
+  const info = $('#info');
+  info.style.display = 'none';
+  void info.offsetWidth;
+  info.style.display = '';
+
+  slot = 0;
+  renderSlots();
+  [...$('#rail').querySelectorAll('.card:not(.add)')].forEach((b, i) => b.classList.toggle('cur', i === cur));
+}
+
+// 这个角色最近的几段(演示:拿场景包里的前几个地点当「停在哪儿」)
+function renderSlots() {
+  const c = cast[cur], list = c.scenes.slice(0, 3);
+  const AGO = [c.ago, '4 天前', '上个月'];
+  const LINES = [c.line, '今天就到这里吧,晚安。', '下次、还能一起来吗?'];
+  $('#slots').replaceChildren(...list.map((s, i) => {
+    const b = el('button', `slot${i === slot ? ' cur' : ''}`);
+    const im = new Image();
+    im.src = src(s.src);
+    im.style.objectPosition = `${s.focus}% 50%`;
+    b.append(im, el('b', '', s.label));
+    b.onclick = () => { slot = i; renderSlots(); };
+    return b;
+  }));
+  $('#dots').replaceChildren(...list.map((_, i) => (i === slot ? el('span', '', STAR).firstChild : el('i'))));
+  $('#pill').textContent = `上次 · ${AGO[slot]} · ${list[slot].label}`;
+  $('#quote').textContent = `「${LINES[slot]}」`;
+}
+$('#slotPrev').onclick = () => { slot = (slot + 2) % 3; renderSlots(); };
+$('#slotNext').onclick = () => { slot = (slot + 1) % 3; renderSlots(); };
+
+// 最边上:角色
+cast.forEach((c, i) => {
+  const b = el('button', 'card');
+  const f = el('div', 'card-face');
+  f.append(faceImg(c.sprites[0], 11.4 / 9.6, 0.66, 0.2));
+  b.append(f, el('b', '', c.name));
+  b.onclick = () => { cur = i; render(); };
+  $('#rail').append(b);
+});
+$('#rail').append(el('button', 'card add', `${STAR}<span>导入角色卡</span>`));
+
+// 纸面的底纹:很淡的星图(点 + 几条连线)。种子固定,每次打开一样
+(() => {
+  let seed = 72;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const W = 1600, H = 900, pts = Array.from({ length: 90 }, () => [rnd() * W, rnd() * H, 0.8 + rnd() * rnd() * 3.2]);
+  let s = '';
+  for (let i = 0; i < pts.length; i++) {
+    const [x, y, r] = pts[i];
+    s += r > 2.6 ? `<use href="#star" x="${x - r * 3}" y="${y - r * 3}" width="${r * 6}" height="${r * 6}" fill="currentColor"/>` : `<circle cx="${x}" cy="${y}" r="${r}" fill="currentColor"/>`;
+    // 离得近的连一条细线
+    for (let j = i + 1; j < pts.length; j++) {
+      const d = Math.hypot(pts[j][0] - x, pts[j][1] - y);
+      if (d < 120 && rnd() < 0.5) s += `<line x1="${x}" y1="${y}" x2="${pts[j][0]}" y2="${pts[j][1]}" stroke="currentColor" stroke-width="0.8"/>`;
+    }
+  }
+  const tex = $('#tex');
+  tex.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  tex.innerHTML = s;
+})();
+
+// 星芒:摆在斜线两侧、她的周围(位置是舞台的百分比)
+[[46, 12, 4.2], [52, 38, 5], [49.5, 47, 2.4], [47, 62, 3.6], [27, 16, 3.2], [24, 28, 5.4], [55, 22, 2], [20, 60, 2.6], [36, 84, 3]].forEach(([x, y, size], i) => {
+  const s = el('span', '', STAR).firstChild;
+  s.style.cssText = `left:${x}%;top:${y}%;width:${size}vh;height:${size}vh;margin:${-size / 2}vh;animation-delay:${-i * 0.37}s;animation-duration:${2.4 + (i % 4) * 0.6}s`;
+  $('#sparks').append(s);
+});
+
+document.querySelectorAll('[data-mood]').forEach((b) => {
+  const on = () => { mood = b.dataset.mood; renderSprite(); };
+  const off = () => { mood = null; renderSprite(); };
+  b.addEventListener('pointerenter', on);
+  b.addEventListener('pointerleave', off);
+  b.addEventListener('focus', on);
+  b.addEventListener('blur', off);
+});
+$('#flip').onclick = () => { stage.classList.toggle('mirror'); render(); };
+addEventListener('resize', render);
+if (location.hash === '#mirror') stage.classList.add('mirror');
+render();
+</script>
+</body>
+</html>

@@ -14,17 +14,23 @@ import {
   normalizeVoiceConfig,
   type VoicePluginConfig,
 } from '../plugins/voice';
+import { playTypeSound, TYPE_SOUNDS } from '../plugins/spriteFx';
 import { bgmPlayer, useBgm } from './bgm';
 import { useVoice, voicePlayer } from './voice';
 import {
   AUTO_MAX,
   AUTO_MIN,
+  AUTO_SPEEDS,
   DUCK_LEVELS,
   OPACITY_MIN,
   SCALE_MAX,
   SCALE_MIN,
   TEXT_SPEEDS,
   TITLE_STYLES,
+  BOX_SKINS,
+  TEXT_FONTS,
+  TEXT_FONT_STACKS,
+  TYPE_SOUND_OFF,
   type VNSettings,
 } from './vnSettings';
 import { VN_ACCENTS } from './accent';
@@ -35,13 +41,14 @@ const ACCENT_NOTE = {
   pink: '原来的粉色',
 } as const;
 
-type Tab = 'text' | 'sound' | 'control' | 'display';
+export type SettingsTab = 'text' | 'sound' | 'control' | 'display' | 'look';
 
-const TABS: { key: Tab; name: string }[] = [
+const TABS: { key: SettingsTab; name: string }[] = [
   { key: 'text', name: '文字' },
   { key: 'sound', name: '声音' },
   { key: 'control', name: '操作' },
   { key: 'display', name: '显示' },
+  { key: 'look', name: '外观' },
 ];
 
 interface Props {
@@ -55,6 +62,11 @@ interface Props {
   voiceCastName: string | null | undefined;
   /** 去插件页的语音:换声音、试音、调参数 */
   onOpenVoice: () => void;
+  /** 字幕:外语插件的「显示日语」(全局一份,和调试台插件里的是同一个开关) */
+  showJa: boolean;
+  onChangeShowJa: (showJa: boolean) => void;
+  /** 打开时停在哪一栏(右上角语音面板点「完整设置」进来是「声音」) */
+  initialTab?: SettingsTab;
   /** 封面音乐:这张卡的场景包里启用的 BGM、包里设的那首(null = 默认);没选角色时为 null */
   titleMusic: {
     bgms: SceneAsset[];
@@ -87,7 +99,7 @@ function Row({
   );
 }
 
-function Seg<T extends string | number | boolean>({
+export function Seg<T extends string | number | boolean>({
   options,
   value,
   onPick,
@@ -128,9 +140,12 @@ export function VNSettingsPage({
   onChangeVoiceConfig,
   voiceCastName,
   onOpenVoice,
+  showJa,
+  onChangeShowJa,
+  initialTab,
   titleMusic,
 }: Props) {
-  const [tab, setTab] = useState<Tab>('text');
+  const [tab, setTab] = useState<SettingsTab>(initialTab ?? 'text');
   const bgm = useBgm();
   const voice = useVoice();
   const set = <K extends keyof VNSettings>(k: K, v: VNSettings[K]) => onChange({ ...settings, [k]: v });
@@ -158,6 +173,21 @@ export function VNSettingsPage({
           <Row label="文字速度">
             <Seg options={TEXT_SPEEDS} value={settings.textSpeed} onPick={(v) => set('textSpeed', v)} />
           </Row>
+          <Row label="字幕">
+            <div className="vn-set-stack">
+              <Seg
+                options={[
+                  { value: true, name: '日中双语' },
+                  { value: false, name: '只显示中文' },
+                ]}
+                value={showJa}
+                onPick={onChangeShowJa}
+              />
+              <span className="vn-set-note">
+                日语配音的卡在中文上面带一行日语原文;只显示中文就把它藏起来(历史页也是) · 和调试台外语插件里的开关是同一个
+              </span>
+            </div>
+          </Row>
           <Row label="自动播放间隔" value={`${(settings.autoDelay / 1000).toFixed(1)} 秒`}>
             <input
               type="range"
@@ -168,6 +198,17 @@ export function VNSettingsPage({
               aria-label="自动播放间隔"
               onChange={(e) => set('autoDelay', Number(e.target.value))}
             />
+          </Row>
+          <Row label="自动播放倍速">
+            <div className="vn-set-stack">
+              <Seg options={AUTO_SPEEDS} value={settings.autoSpeed} onPick={(v) => set('autoSpeed', v)} />
+              <span className="vn-set-note">
+                {settings.autoSpeed === 1
+                  ? '按上面的间隔和文字速度播'
+                  : `自动播放时停顿缩到 ${(settings.autoDelay / settings.autoSpeed / 1000).toFixed(1)} 秒,打字也快 ${settings.autoSpeed} 倍`}
+                {' · 语音照常速念;开着「等语音念完」时还是念完才翻 · 自动播放时快捷栏点倍数也能换'}
+              </span>
+            </div>
           </Row>
           <Row label="文本框透明度" value={`${Math.round(settings.boxOpacity * 100)}%`}>
             <input
@@ -226,6 +267,68 @@ export function VNSettingsPage({
             </div>
           </Row>
           {bgm.error && <p className="vn-set-error">{bgm.error}</p>}
+
+          <div className="vn-set-group">音效</div>
+          <Row label="立绘特效">
+            <div className="vn-set-stack">
+              <Seg
+                options={[
+                  { value: true, name: '开' },
+                  { value: false, name: '关' },
+                ]}
+                value={settings.spriteFx}
+                onPick={(v) => set('spriteFx', v)}
+              />
+              <span className="vn-set-note">
+                换表情时跳一下、头顶冒气泡、响一声 · 每张立绘放什么在插件页的立绘包里设 · 往回翻和跳过时不放
+              </span>
+            </div>
+          </Row>
+          {settings.spriteFx && (
+            <Row label="特效音量" value={`${Math.round(settings.spriteFxVolume * 100)}%`}>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={Math.round(settings.spriteFxVolume * 100)}
+                aria-label="特效音量"
+                onChange={(e) => set('spriteFxVolume', Number(e.target.value) / 100)}
+              />
+            </Row>
+          )}
+          <Row label="跳字音">
+            <div className="vn-set-stack">
+              <Seg
+                options={[
+                  { value: TYPE_SOUND_OFF, name: '关' },
+                  ...TYPE_SOUNDS.map((t) => ({ value: t.id, name: t.name, disabled: settings.textSpeed === 0 })),
+                ]}
+                value={settings.typeSound}
+                onPick={(v) => {
+                  set('typeSound', v);
+                  if (v !== TYPE_SOUND_OFF) playTypeSound(v, settings.typeSoundVolume);
+                }}
+              />
+              <span className="vn-set-note">
+                {settings.textSpeed === 0
+                  ? '文字速度是「瞬间」时整句直接出,没有跳字,先在「文字」里调个速度'
+                  : '旁白逐字出来时每隔一个字响一声;角色台词不响,留给配音'}
+              </span>
+            </div>
+          </Row>
+          {settings.typeSound !== TYPE_SOUND_OFF && settings.textSpeed > 0 && (
+            <Row label="跳字音量" value={`${Math.round(settings.typeSoundVolume * 100)}%`}>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={Math.round(settings.typeSoundVolume * 100)}
+                aria-label="跳字音量"
+                onChange={(e) => set('typeSoundVolume', Number(e.target.value) / 100)}
+                onPointerUp={() => playTypeSound(settings.typeSound, settings.typeSoundVolume)}
+              />
+            </Row>
+          )}
 
           <div className="vn-set-group">
             语音
@@ -383,10 +486,25 @@ export function VNSettingsPage({
       {tab === 'display' && (
         <div className="vn-set-list">
           <Row label="思考过程">
-            <Seg options={ON_OFF} value={settings.showThinking} onPick={(v) => set('showThinking', v)} />
+            <div className="vn-set-stack">
+              <Seg options={ON_OFF} value={settings.showThinking} onPick={(v) => set('showThinking', v)} />
+              <span className="vn-set-note">
+                {settings.showThinking
+                  ? '回复第一句上留「已思考 N 秒」,点开能看模型想了什么'
+                  : '对话框和历史页都不显示思考内容;模型照常思考,想让它不思考在「模型」页把思考深浅设成关'}
+              </span>
+            </div>
           </Row>
           <Row label="模型标签">
             <Seg options={ON_OFF} value={settings.showModel} onPick={(v) => set('showModel', v)} />
+          </Row>
+          <Row label="语音标签">
+            <div className="vn-set-stack">
+              <Seg options={ON_OFF} value={settings.showVoice} onPick={(v) => set('showVoice', v)} />
+              <span className="vn-set-note">
+                卡绑了声音时右上角显示语音连没连上,点开能快速开关语音、调音量;关掉之后语音断了照样会提示
+              </span>
+            </div>
           </Row>
           <Row label="标题画面" beta>
             <Seg
@@ -398,13 +516,22 @@ export function VNSettingsPage({
               onPick={(v) => set('titleScreen', v)}
             />
           </Row>
-          <Row label="封面样式" beta>
+        </div>
+      )}
+      {tab === 'look' && (
+        <div className="vn-set-list">
+          <Row label="封面">
             <div className="vn-set-stack">
               <Seg options={TITLE_STYLES} value={settings.titleStyle} onPick={(v) => set('titleStyle', v)} />
               <span className="vn-set-note">
-                {settings.titleStyle === 'poster'
-                  ? '斜切纸面排版,纸面跟着背景变色;左边的头像点一下换角色'
-                  : '场景轮流淡入的片头,最后回到上次的地方;点「继续」直接接着玩'}
+                {
+                  {
+                    paper: '左边一张斜切的纸放 logo 和菜单,右边是她和上次的场景;「角色」进选角色',
+                    bright: '整张明亮的场景,左边一层白纱放 logo 和菜单;「角色」进选角色',
+                    poster: '之前的海报版:斜切纸面排版,左边的头像点一下换角色',
+                    cinema: '之前的电影版:场景轮流淡入的片头,最后回到上次的地方',
+                  }[settings.titleStyle]
+                }
                 {' · 菜单「返回标题」看效果'}
               </span>
             </div>
@@ -444,18 +571,31 @@ export function VNSettingsPage({
               <span className="vn-set-note">{ACCENT_NOTE[settings.accent]}</span>
             </div>
           </Row>
-          <Row label="界面样式">
-            <Seg
-              options={[
-                { value: 'default', name: '默认' },
-                { value: 'more', name: '更多样式开发中', disabled: true },
-              ]}
-              value="default"
-              onPick={() => {}}
-            />
+          <Row label="对话框">
+            <div className="vn-set-stack">
+              <Seg options={BOX_SKINS} value={settings.boxSkin} onPick={(v) => set('boxSkin', v)} />
+              <span className="vn-set-note">
+                {
+                  {
+                    'glass-dark': '深色半透明玻璃:名字压在框上沿,输入和快捷按钮在框里最下面一行,轮到你说话时正中弹出输入条',
+                    'glass-light': '浅色半透明玻璃:和黑玻璃一样的排法,亮的场景里更清爽',
+                    classic: '原来的对话框:输入框在对话框下面单独一条',
+                  }[settings.boxSkin]
+                }
+              </span>
+            </div>
+          </Row>
+          <Row label="对话框文字">
+            <div className="vn-set-stack">
+              <Seg options={TEXT_FONTS} value={settings.textFont} onPick={(v) => set('textFont', v)} />
+              <span className="vn-set-font-preview" style={{ fontFamily: TEXT_FONT_STACKS[settings.textFont] }}>
+                「我心中的一等星,今天也依然是前辈。」
+              </span>
+            </div>
           </Row>
         </div>
       )}
     </div>
   );
 }
+

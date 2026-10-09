@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AnimaVN · galgame 式标题画面原型</title>
+<style>
+  /* galgame 的标题画面:一整张明亮的 CG(场景 + 她),logo 压在一侧的白纱上,下面一列竖排菜单,
+     右下角留着上次那句话的对话框。界面是浅色的、半透明的、细线的 —— 和 home/(深色、宣传站)正相反。 */
+  :root {
+    --ink: #2a2a33;
+    --ink-dim: rgba(42, 42, 51, 0.56);
+    --paper: #fbfaf8;
+    --line: rgba(42, 42, 51, 0.28);
+    --acc: #8d93b8;            /* 跟角色走:从立绘取色(原型里写死在 data 上) */
+    --serif: 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', 'STSong', 'SimSun', serif;
+    --latin: 'Cormorant Garamond', 'EB Garamond', Garamond, 'Palatino Linotype', Palatino, 'Times New Roman', serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: #15151a; color: var(--ink); font: 14px/1.6 'Noto Sans SC', 'Microsoft YaHei', sans-serif; overflow: hidden; }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
+  img { user-select: none; -webkit-user-drag: none; }
+  .star { display: inline-block; fill: currentColor; width: 1em; height: 1em; }
+
+  .stage { position: fixed; inset: 0; overflow: hidden; background: var(--paper); }
+
+  /* ---- CG:场景 + 立绘 ---- */
+  .bgs img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 1.1s ease; filter: saturate(1.05) brightness(1.04); }
+  .bgs img.cur { opacity: 1; animation: drift 20s ease-out forwards; }
+  @keyframes drift { from { transform: scale(1.08) translate(-0.8%, 0.4%); } to { transform: scale(1.02); } }
+  .sprite { position: absolute; inset: 0; pointer-events: none; }
+  .sprite-in { position: absolute; inset: 0; animation: breathe 5.5s ease-in-out infinite; transform-origin: 50% 100%; }
+  @keyframes breathe { 50% { transform: translateY(-0.35%) scale(1.004); } }
+  .sprite img { position: absolute; max-width: none; pointer-events: auto; cursor: pointer; filter: drop-shadow(0 1vh 2.6vh rgba(60, 50, 70, 0.28)); animation: fade-in 0.45s ease both; }
+  .sprite img.leaving { animation: fade-out 0.35s ease both; pointer-events: none; }
+  @keyframes fade-in { from { opacity: 0; } }
+  @keyframes fade-out { to { opacity: 0; } }
+
+  /* 左边一层白纱:logo 和菜单压在上面。边是斜的、虚的,不是一块板 */
+  .veil { position: absolute; inset: 0; background: linear-gradient(100deg, rgba(251, 250, 248, 0.94) 0%, rgba(251, 250, 248, 0.86) 24%, rgba(251, 250, 248, 0.42) 40%, rgba(251, 250, 248, 0) 54%); }
+  /* 整体一点暖光,像被日光冲过 */
+  .bloom { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(80vh 60vh at 88% 8%, rgba(255, 246, 225, 0.55), rgba(255, 246, 225, 0) 70%); mix-blend-mode: screen; }
+  .motes { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+
+  /* 画框:一圈细线,四个角各一颗四角星 —— galgame 标题画面常见的内框 */
+  .frame { position: absolute; inset: 2.4vh; border: 1px solid rgba(255, 255, 255, 0.85); outline: 1px solid rgba(42, 42, 51, 0.14); outline-offset: 0.5vh; pointer-events: none; }
+  .frame .star { position: absolute; width: 2vh; height: 2vh; color: #fff; filter: drop-shadow(0 0 0.3vh rgba(42, 42, 51, 0.45)); }
+  .frame .star:nth-child(1) { left: -1vh; top: -1vh; }
+  .frame .star:nth-child(2) { right: -1vh; top: -1vh; }
+  .frame .star:nth-child(3) { left: -1vh; bottom: -1vh; }
+  .frame .star:nth-child(4) { right: -1vh; bottom: -1vh; }
+
+  /* ---- logo ---- */
+  /* 正式 logo 是白 + 灰画在深色上的;浅色底上反相成墨色(原型的权宜做法,真做时出一份墨色的 SVG) */
+  .lockup { position: absolute; left: 7vw; top: 10vh; display: flex; align-items: center; filter: invert(1) hue-rotate(180deg) brightness(0.9); animation: rise 1s cubic-bezier(0.2, 0.7, 0.2, 1) 0.1s both; }
+  .lockup .mark { height: 20vh; }
+  .lockup .word { height: 18vh; margin-left: -2.6vh; }
+  @keyframes rise { from { opacity: 0; transform: translateY(1.6vh); } }
+  .tagline { position: absolute; left: 8.6vw; top: 30.4vh; display: flex; align-items: center; gap: 1.4vh; font: 500 max(2vh, 13px) / 1 var(--serif); letter-spacing: 0.34em; color: var(--ink-dim); animation: rise 1s ease 0.35s both; }
+  .tagline i { width: 6vh; border-top: 1px solid currentColor; }
+
+  /* ---- 菜单:一列竖排,中文衬线字 + 一行小的拉丁字 ---- */
+  .menu { position: absolute; left: 8.6vw; top: 39vh; display: flex; flex-direction: column; gap: 0.2vh; }
+  .menu button { position: relative; display: flex; align-items: baseline; gap: 1.8vh; padding: 1.15vh 3vh 1.15vh 4.2vh; animation: rise 0.7s ease both; animation-delay: calc(0.5s + var(--i) * 0.07s); transition: transform 0.3s cubic-bezier(0.2, 0.7, 0.2, 1); }
+  .menu .zh { font: 700 max(3.3vh, 19px) / 1.1 var(--serif); letter-spacing: 0.26em; }
+  .menu .en { font: italic 500 max(1.9vh, 12px) / 1 var(--latin); letter-spacing: 0.14em; color: var(--ink-dim); }
+  .menu .sub { font-size: max(1.5vh, 11px); letter-spacing: 0.06em; color: var(--ink-dim); }
+  /* 前面一颗星:平时是个小点,移上去转出来 */
+  .menu .star { position: absolute; left: 0.8vh; top: 50%; width: 2vh; height: 2vh; margin-top: -1vh; color: var(--acc); opacity: 0; transform: scale(0.2) rotate(-90deg); transition: opacity 0.2s, transform 0.4s cubic-bezier(0.2, 0.7, 0.2, 1); }
+  .menu button::before { content: ''; position: absolute; left: 1.55vh; top: 50%; width: 0.5vh; height: 0.5vh; margin-top: -0.25vh; border-radius: 50%; background: var(--line); transition: opacity 0.2s; }
+  /* 底下一条线从左划到右 */
+  .menu button::after { content: ''; position: absolute; left: 4.2vh; right: 0; bottom: 0.3vh; height: 1px; background: linear-gradient(90deg, var(--ink), rgba(42, 42, 51, 0)); transform: scaleX(0); transform-origin: left; transition: transform 0.4s cubic-bezier(0.2, 0.7, 0.2, 1); }
+  .menu button:hover, .menu button:focus-visible { transform: translateX(1.2vh); outline: none; }
+  .menu button:hover .star, .menu button:focus-visible .star { opacity: 1; transform: none; }
+  .menu button:hover::before, .menu button:focus-visible::before { opacity: 0; }
+  .menu button:hover::after, .menu button:focus-visible::after { transform: scaleX(1); }
+  .menu button.minor .zh { font-size: max(2.4vh, 15px); font-weight: 500; }
+  .menu hr { width: 22vh; margin: 1.2vh 0 1.2vh 4.2vh; border: 0; border-top: 1px dotted var(--line); }
+
+  /* ---- 右下:上次停在哪句 —— 游戏里的对话框缩小了摆在这儿 ---- */
+  .last { position: absolute; right: 6vw; bottom: 8vh; width: 58vh; padding: 3vh 3vh 2.2vh; border-radius: 0.8vh; background: rgba(251, 250, 248, 0.82); backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, 0.9); box-shadow: 0 1vh 3vh rgba(60, 50, 70, 0.18); animation: rise 0.9s ease 0.9s both; transition: transform 0.25s; }
+  .last:hover { transform: translateY(-0.4vh); }
+  .last-name { position: absolute; left: 2.4vh; top: -2vh; height: 4vh; padding: 0 2.2vh; display: flex; align-items: center; border-radius: 0.5vh; background: var(--acc); color: #fff; font: 700 max(2vh, 13px) / 1 var(--serif); letter-spacing: 0.22em; box-shadow: 0 0.4vh 1vh rgba(60, 50, 70, 0.2); transition: background 0.6s; }
+  .last-line { display: block; font: 500 max(2.2vh, 14px) / 1.7 var(--serif); letter-spacing: 0.06em; }
+  .last-meta { display: flex; justify-content: space-between; margin-top: 1vh; font-size: max(1.4vh, 10.5px); letter-spacing: 0.12em; color: var(--ink-dim); }
+  .last-meta b { font-weight: 500; color: var(--ink); }
+  .last-next { display: inline-block; margin-left: 0.6vh; animation: bob 1.4s ease-in-out infinite; }
+  @keyframes bob { 50% { transform: translateY(0.35vh); } }
+
+  /* ---- 左下:换人。头像圈一排,当前的套一圈 ---- */
+  .cast { position: absolute; left: 8.6vw; bottom: 7.4vh; display: flex; align-items: center; gap: 1.2vh; animation: rise 0.9s ease 1s both; }
+  .cast-label { margin-right: 0.8vh; font: italic 500 max(1.8vh, 12px) / 1 var(--latin); letter-spacing: 0.16em; color: var(--ink-dim); }
+  .cast button { position: relative; width: 6.2vh; height: 6.2vh; border-radius: 50%; overflow: hidden; background: #fff; border: 1.5px solid #fff; box-shadow: 0 0.3vh 1vh rgba(60, 50, 70, 0.22); opacity: 0.72; transition: opacity 0.2s, transform 0.25s, box-shadow 0.2s; }
+  .cast button img { position: absolute; max-width: none; }
+  .cast button:hover { opacity: 1; transform: translateY(-0.5vh); }
+  .cast button.cur { opacity: 1; box-shadow: 0 0 0 0.3vh var(--paper), 0 0 0 0.5vh var(--acc), 0 0.3vh 1vh rgba(60, 50, 70, 0.22); }
+
+  .foot { position: absolute; right: 6vw; bottom: 3.6vh; font: 500 max(1.4vh, 10px) / 1 var(--latin); letter-spacing: 0.3em; color: rgba(255, 255, 255, 0.9); text-shadow: 0 0 0.6vh rgba(42, 42, 51, 0.5); }
+
+  @media (max-aspect-ratio: 1/1) {
+    .veil { background: linear-gradient(0deg, rgba(251, 250, 248, 0.95) 0%, rgba(251, 250, 248, 0.88) 38%, rgba(251, 250, 248, 0) 58%); }
+    .lockup { left: 7vw; top: 6vh; } .lockup .mark { height: 9vh; } .lockup .word { height: 8vh; margin-left: -1.2vh; }
+    .tagline { display: none; }
+    .menu { left: 8vw; top: auto; bottom: 17vh; }
+    .last { display: none; }
+    .cast { left: 8vw; bottom: 6vh; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { animation-duration: 0.01s !important; transition-duration: 0.01s !important; } }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="star" viewBox="-10 -10 20 20"><path d="M0-10C1.1-2.6 2.6-1.1 10 0 2.6 1.1 1.1 2.6 0 10-1.1 2.6-2.6 1.1-10 0-2.6-1.1-1.1-2.6 0-10Z"/></symbol>
+</svg>
+
+<div class="stage">
+  <div class="bgs" id="bg"></div>
+  <div class="sprite"><div class="sprite-in" id="sprite"></div></div>
+  <div class="veil"></div>
+  <div class="bloom"></div>
+  <canvas class="motes" id="motes"></canvas>
+  <div class="frame"><svg class="star"><use href="#star"/></svg><svg class="star"><use href="#star"/></svg><svg class="star"><use href="#star"/></svg><svg class="star"><use href="#star"/></svg></div>
+
+  <div class="lockup"><img class="mark" src="../home/assets/logo.svg" alt=""><img class="word" src="../home/assets/wordmark.png" alt="AnimaVN"></div>
+  <div class="tagline"><i></i>和她的故事,从这里继续</div>
+
+  <nav class="menu" id="menu">
+    <button data-mood="continue" style="--i:0"><svg class="star"><use href="#star"/></svg><span class="zh">继续</span><span class="en">Continue</span></button>
+    <button data-mood="new" style="--i:1"><svg class="star"><use href="#star"/></svg><span class="zh">新的故事</span><span class="en">New Story</span></button>
+    <button data-mood="load" style="--i:2"><svg class="star"><use href="#star"/></svg><span class="zh">读档</span><span class="en">Load</span></button>
+    <button data-mood="config" style="--i:3"><svg class="star"><use href="#star"/></svg><span class="zh">设置</span><span class="en">Config</span></button>
+    <hr>
+    <button class="minor" data-mood="exit" style="--i:4"><svg class="star"><use href="#star"/></svg><span class="zh">调试台</span><span class="en">Console</span></button>
+  </nav>
+
+  <nav class="cast" id="cast" aria-label="角色"><span class="cast-label">Heroine</span></nav>
+
+  <button class="last" id="last" data-mood="continue">
+    <span class="last-name" id="lastName"></span>
+    <span class="last-line" id="lastLine"></span>
+    <span class="last-meta"><span id="lastMeta"></span><b>接着看<span class="last-next">▼</span></b></span>
+  </button>
+
+  <div class="foot">AnimaVN · Beta</div>
+</div>
+
+<script src="../home/data.js"></script>
+<script>
+// 演示逻辑。数据在 ../home/data.js(CAST、BLOBS)。改 React 时整个换掉 —— 表情反应、按脸摆立绘游戏里都有现成的(VNTitle / titleArt)。
+const $ = (s) => document.querySelector(s);
+const src = (blob) => BLOBS + blob;
+const cast = CAST.filter((c) => c.sprites[0] && c.sprites[0].face && c.scenes.length);
+// 演示用的「上次」和点缀色:真做时来自对话记录和 accentOf(立绘)
+const DEMO = [
+  { ago: '3 小时前', line: '……那、明天也要来哦?说好了。', acc: '#8d93b8' },
+  { ago: '昨天', line: '茶要凉了,先喝一口再说吧。', acc: '#c9907e' },
+  { ago: '2 天前', line: '欸嘿嘿,被你发现了。', acc: '#a8617b' },
+  { ago: '上周', line: '这份报告我已经看完了,老师。', acc: '#7f9cc4' },
+  { ago: '上周', line: '博士,今天也请多指教。', acc: '#5d86a8' },
+  { ago: '9 月 12 日', line: '雨停了,要不要出去走走?', acc: '#8a8f86' },
+];
+cast.forEach((c, i) => Object.assign(c, DEMO[i % DEMO.length]));
+// 标题画面要亮:挑场景包里第一张不是夜里的
+const dayScene = (c) => c.scenes.find((s) => !/夜/.test(s.label)) ?? c.scenes[0];
+// 鼠标移到菜单上她换表情(游戏里的封面已经有这个)
+const MOODS = { continue: /开心|大笑|兴奋/, new: /温柔|微笑/, load: /认真|观察|平静/, config: /平静|说话/, exit: /不好意思|害羞|担心|幽怨/ };
+let cur = 0, mood = null;
+
+function faceImg(sp, fill, top) {
+  const img = new Image();
+  img.src = src(sp.src);
+  const k = fill / sp.face.w;
+  img.style.width = `${k * 100}%`;
+  img.style.left = `${(0.5 - (sp.face.x + sp.face.w / 2) * k) * 100}%`;
+  img.style.top = `${(top - sp.face.y * k * (sp.h / sp.w)) * 100}%`;
+  return img;
+}
+
+let shownSprite = null;
+function renderSprite() {
+  const c = cast[cur];
+  const sp = (mood && c.sprites.find((s) => s.face && MOODS[mood].test(s.label))) || c.sprites[0];
+  if (sp === shownSprite) return;
+  shownSprite = sp;
+  const host = $('#sprite');
+  const H = host.clientHeight, W = host.clientWidth, portrait = W < H;
+  const pose = portrait ? { faceH: 0.13, faceTop: 0.2, cx: 0.5 } : { faceH: 0.235, faceTop: 0.15, cx: 0.69 };
+  const h = (pose.faceH * H) / sp.face.h, w = (h * sp.w) / sp.h;
+  const img = new Image();
+  img.src = src(sp.src);
+  img.style.height = `${h}px`;
+  img.style.left = `${pose.cx * W - (sp.face.x + sp.face.w / 2) * w}px`;
+  img.style.top = `${pose.faceTop * H - sp.face.y * h}px`;
+  // 点她一下:害羞(有的话)
+  img.onclick = () => { mood = 'exit'; renderSprite(); setTimeout(() => { mood = null; renderSprite(); }, 1800); };
+  [...host.children].forEach((old) => { old.classList.add('leaving'); setTimeout(() => old.remove(), 360); });
+  host.append(img);
+}
+
+function render() {
+  const c = cast[cur], scene = dayScene(c);
+  document.documentElement.style.setProperty('--acc', c.acc);
+  const bg = $('#bg'), next = new Image();
+  next.src = src(scene.src);
+  next.style.objectPosition = `${scene.focus}% 50%`;
+  bg.append(next);
+  requestAnimationFrame(() => {
+    [...bg.children].forEach((im) => im.classList.toggle('cur', im === next));
+    setTimeout(() => [...bg.children].forEach((im) => im !== next && im.remove()), 1200);
+  });
+  shownSprite = null;
+  renderSprite();
+  $('#lastName').textContent = c.name;
+  $('#lastLine').textContent = `「${c.line}」`;
+  $('#lastMeta').textContent = `${c.work} · ${scene.label} · ${c.ago}`;
+  [...$('#cast').querySelectorAll('button')].forEach((b, i) => b.classList.toggle('cur', i === cur));
+}
+
+cast.forEach((c, i) => {
+  const b = document.createElement('button');
+  b.title = c.name;
+  b.append(faceImg(c.sprites[0], 0.62, 0.2));
+  b.onclick = () => { cur = i; render(); };
+  $('#cast').append(b);
+});
+document.querySelectorAll('[data-mood]').forEach((b) => {
+  const on = () => { mood = b.dataset.mood; renderSprite(); };
+  const off = () => { mood = null; renderSprite(); };
+  b.addEventListener('pointerenter', on);
+  b.addEventListener('pointerleave', off);
+  b.addEventListener('focus', on);
+  b.addEventListener('blur', off);
+});
+addEventListener('resize', () => { shownSprite = null; renderSprite(); });
+
+// 光尘:慢慢往上飘的亮点,逆光的房间里常见的那种
+(() => {
+  const cv = $('#motes'), ctx = cv.getContext('2d');
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  let W = 0, H = 0;
+  const fit = () => { W = cv.width = cv.clientWidth; H = cv.height = cv.clientHeight; };
+  fit();
+  addEventListener('resize', fit);
+  const spawn = (any) => ({ x: Math.random() * W, y: any ? Math.random() * H : H + 10, r: (0.2 + Math.random() * 0.5) * (H / 100), v: (0.5 + Math.random() * 1.4) * (H / 100), ph: Math.random() * 6.28, a: 0.25 + Math.random() * 0.45 });
+  const ps = Array.from({ length: 30 }, () => spawn(true));
+  let last = performance.now();
+  const frame = (t) => {
+    const dt = Math.min(0.05, (t - last) / 1000);
+    last = t;
+    ctx.clearRect(0, 0, W, H);
+    ps.forEach((p, i) => {
+      p.y -= p.v * dt;
+      p.ph += dt * 0.7;
+      const x = p.x + Math.sin(p.ph) * (H / 100), a = p.a * (0.6 + 0.4 * Math.sin(p.ph * 2.1));
+      const g = ctx.createRadialGradient(x, p.y, 0, x, p.y, p.r * 3);
+      g.addColorStop(0, `rgba(255, 252, 240, ${a})`);
+      g.addColorStop(1, 'rgba(255, 252, 240, 0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(x, p.y, p.r * 3, 0, 6.28);
+      ctx.fill();
+      if (p.y < -20) ps[i] = spawn(false);
+    });
+    requestAnimationFrame(frame);
+  };
+  requestAnimationFrame(frame);
+})();
+
+render();
+</script>
+</body>
+</html>

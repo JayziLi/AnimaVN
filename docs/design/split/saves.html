@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AnimaVN · 存档页原型</title>
+<style>
+  /* 存档页:照 Astrae Oratio 官网新闻页的卡片(用户给的截图,2026-09-30)——
+     顶上一排胶囊筛选(选中的是深色、两边各一颗星);三列卡片,每张外面套一圈错位的细框、右上角一颗星;
+     卡图是一道斜线切开:深色一角写大字,另一边是图;图下面一个深色小标签 + 标题,再一行日期。
+     我们的换法:深色一角写角色名(星芒跟角色色),另一边是那一幕的场景 + 她的半身。 */
+  :root {
+    --bg: #1e1e24;
+    --bg-deep: #131317;
+    --white: #f6f6f8;
+    --grey: #c7c7cf;
+    --paper: #f3f2f0;
+    --ink: #1e1e24;
+    --ink-dim: rgba(30, 30, 36, 0.55);
+    --nav-h: max(7.4vh, 46px);
+    --sans: 'Noto Sans SC', 'Source Han Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--paper); color: var(--ink); font: 14px/1.6 var(--sans); }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
+  a { color: inherit; text-decoration: none; }
+  img { user-select: none; -webkit-user-drag: none; }
+  .star { display: inline-block; fill: currentColor; width: 1em; height: 1em; }
+
+  .nav { position: fixed; z-index: 10; left: 0; right: 0; top: 0; height: var(--nav-h); display: flex; align-items: center; gap: 3vh; padding: 0 3.4vw; background: #121215; color: var(--white); }
+  .nav-brand { display: flex; align-items: center; }
+  .nav-brand .mark { height: calc(var(--nav-h) * 0.7); }
+  .nav-brand .word { height: calc(var(--nav-h) * 0.64); margin-left: -0.4vh; }
+  .nav-tabs { display: flex; height: 100%; margin-left: 2vh; }
+  .nav-tabs a { display: flex; align-items: center; gap: 0.8vh; padding: 0 2.4vh; font-size: max(2.1vh, 13px); font-weight: 700; letter-spacing: 0.06em; color: rgba(246, 246, 248, 0.62); }
+  .nav-tabs a .star { width: 1.4vh; height: 1.4vh; display: none; }
+  .nav-tabs a.on { color: var(--white); }
+  .nav-tabs a.on .star { display: inline-block; }
+  .nav-tabs a:hover { color: var(--white); }
+  .nav-tools { margin-left: auto; display: flex; gap: 3vh; font-size: max(1.8vh, 12px); font-weight: 700; letter-spacing: 0.12em; color: rgba(246, 246, 248, 0.62); }
+
+  .tex { position: fixed; inset: 0; width: 100%; height: 100%; color: var(--ink); opacity: 0.11; pointer-events: none; }
+  .wrap { position: relative; max-width: 190vh; margin: 0 auto; padding: calc(var(--nav-h) + 5vh) 5vw 8vh; }
+
+  /* 筛选:一排胶囊,选中的深色、两边各一颗星,右下错开一圈细框 */
+  .pills { display: flex; flex-wrap: wrap; gap: 1.6vh; }
+  .pill { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 1.2vh; height: 5.6vh; min-width: 17vh; padding: 0 3vh; border-radius: 2.8vh; background: #fff; border: 1.5px solid rgba(30, 30, 36, 0.25); font-size: max(2.2vh, 14px); font-weight: 700; letter-spacing: 0.04em; transition: translate 0.18s; }
+  .pill::after { content: ''; position: absolute; inset: 0.35vh -0.35vh -0.45vh 0.35vh; border: 1px solid rgba(30, 30, 36, 0.22); border-radius: 2.8vh; z-index: -1; }
+  .pill .star { width: 1.5vh; height: 1.5vh; display: none; opacity: 0.7; }
+  .pill:hover { translate: 0 -0.2vh; }
+  .pill.on { background: var(--ink); color: var(--white); border-color: var(--ink); }
+  .pill.on .star { display: inline-block; }
+  .pill small { font-size: max(1.5vh, 10.5px); font-weight: 500; opacity: 0.55; }
+
+  /* 卡片 */
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7vh 4.4vw; margin-top: 8vh; }
+  .save { position: relative; display: block; --acc: #8f86d8; animation: rise 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both; animation-delay: calc(var(--i) * 0.05s); }
+  @keyframes rise { from { opacity: 0; translate: 0 2vh; } }
+  /* 错位的细框:往左上挪一点,右上角断开,放一颗星 */
+  .save-frame { position: absolute; left: -1.2vh; top: -1.2vh; right: 1.2vh; aspect-ratio: 16 / 9; border: 1px solid rgba(30, 30, 36, 0.28); pointer-events: none; transition: translate 0.25s; }
+  .save-frame2 { position: absolute; left: 0; top: 0; right: -0.9vh; aspect-ratio: 16 / 9; margin-top: 0.9vh; border: 1px solid rgba(30, 30, 36, 0.2); border-left: 0; border-top: 0; pointer-events: none; }
+  .save-corner { position: absolute; right: 0.2vh; top: -0.2vh; width: 2.6vh; height: 2.6vh; color: rgba(30, 30, 36, 0.35); transition: rotate 0.5s, color 0.2s; }
+  .save:hover .save-frame { translate: -0.4vh -0.4vh; }
+  .save:hover .save-corner { rotate: 90deg; color: var(--acc); }
+
+  .thumb { position: relative; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 0 0 2.6vh 0; background: var(--bg); transition: translate 0.25s; }
+  .save:hover .thumb { translate: 0.2vh 0.2vh; }
+  .thumb .scene { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .thumb .wash { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(243, 242, 240, 0.35), rgba(243, 242, 240, 0)); }
+  .thumb .dark { position: absolute; inset: 0; background: radial-gradient(120% 120% at 20% 30%, #2b2b38, var(--bg) 60%); clip-path: polygon(0 0, 64% 0, 24% 100%, 0 100%); }
+  .thumb .edge { position: absolute; inset: 0; background: var(--acc); clip-path: polygon(64% 0, 65.2% 0, 25.2% 100%, 24% 100%); }
+  .thumb .bust { position: absolute; max-width: none; filter: drop-shadow(0 0.6vh 1.4vh rgba(10, 10, 16, 0.4)); }
+  .thumb .brand { position: absolute; left: 3.2%; top: 5%; height: 9%; opacity: 0.55; }
+  .thumb .who { position: absolute; left: 7%; top: 24%; color: var(--white); font-size: clamp(22px, 5.6vh, 60px); font-weight: 900; line-height: 1.1; letter-spacing: 0.02em; white-space: nowrap; }
+  .thumb .where { position: absolute; left: 7.4%; top: 58%; color: rgba(246, 246, 248, 0.7); font-size: clamp(10px, 1.7vh, 16px); font-weight: 500; letter-spacing: 0.12em; }
+  .thumb .sp { position: absolute; color: var(--acc); filter: drop-shadow(0 0 0.5vh var(--acc)); }
+  .thumb .sp.w { color: var(--white); filter: none; }
+
+  .save-title { display: flex; align-items: center; gap: 1.4vh; margin-top: 2.2vh; }
+  .tag { flex: none; padding: 0.2vh 1.2vh; border-radius: 0.3vh; background: var(--ink); color: var(--white); font-size: max(1.6vh, 11px); font-weight: 700; letter-spacing: 0.06em; }
+  .save-title b { min-width: 0; font-size: max(2.5vh, 15px); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .save-date { margin-top: 0.4vh; font-size: max(1.8vh, 12px); color: var(--ink-dim); }
+
+  .empty { grid-column: 1 / -1; padding: 12vh 0; text-align: center; color: var(--ink-dim); font-size: max(2vh, 13px); }
+
+  @media (max-width: 900px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-aspect-ratio: 1/1) { .grid { grid-template-columns: 1fr; } .nav-tabs { display: none; } }
+  @media (prefers-reduced-motion: reduce) { * { animation-duration: 0.01s !important; transition-duration: 0.01s !important; } }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="star" viewBox="-10 -10 20 20"><path d="M0-10C1.1-2.6 2.6-1.1 10 0 2.6 1.1 1.1 2.6 0 10-1.1 2.6-2.6 1.1-10 0-2.6-1.1-1.1-2.6 0-10Z"/></symbol>
+</svg>
+<svg class="tex" id="tex" preserveAspectRatio="xMidYMid slice"></svg>
+
+<header class="nav">
+  <a class="nav-brand" href="index.html"><img class="mark" src="../home/assets/logo.svg" alt=""><img class="word" src="../home/assets/wordmark.png" alt="AnimaVN"></a>
+  <nav class="nav-tabs">
+    <a href="index.html"><svg class="star"><use href="#star"/></svg>主页</a>
+    <a href="saves.html" class="on"><svg class="star"><use href="#star"/></svg>存档</a>
+  </nav>
+  <div class="nav-tools"><span>设置</span><span>调试台</span></div>
+</header>
+
+<main class="wrap">
+  <div class="pills" id="pills"></div>
+  <div class="grid" id="grid"></div>
+</main>
+
+<script src="../home/data.js"></script>
+<script>
+// 演示逻辑。数据在 ../home/data.js(CAST、BLOBS)。存档是编出来的:真做时一张卡 = 一段对话 / 一个存档点。
+const $ = (s) => document.querySelector(s);
+const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
+const STAR = '<svg class="star"><use href="#star"/></svg>';
+const src = (blob) => BLOBS + blob;
+const cast = CAST.filter((c) => c.sprites[0] && c.sprites[0].face && c.scenes.length);
+const ACC = ['#8f86d8', '#e0a23c', '#c04f7c', '#6fa3e6', '#3f93c8', '#9aa38c'];
+cast.forEach((c, i) => { c.acc = ACC[i % ACC.length]; });
+
+const KINDS = ['自动', '手动', '分支'];
+const LINES = ['……那、明天也要来哦?说好了。', '茶要凉了,先喝一口再说吧。', '欸嘿嘿,被你发现了。', '这份报告我已经看完了,老师。', '博士,今天也请多指教。', '雨停了,要不要出去走走?', '今天就到这里吧,晚安。', '下次、还能一起来吗?', '你刚才说的,再说一遍。'];
+const DATES = ['2026.09.30', '2026.09.29', '2026.09.29', '2026.09.27', '2026.09.23', '2026.09.21', '2026.09.12', '2026.09.01', '2026.08.20'];
+// 9 张:角色轮着来,场景往后挪,种类轮着来
+const saves = DATES.map((date, i) => {
+  const c = cast[i % cast.length];
+  return { c, scene: c.scenes[(i * 2 + 1) % c.scenes.length], sprite: c.sprites[i % c.sprites.length].face ? c.sprites[i % c.sprites.length] : c.sprites[0], kind: KINDS[[0, 1, 0, 2, 1, 0, 1, 2, 0][i]], line: LINES[i], date };
+});
+
+let filter = null;
+function renderPills() {
+  const item = (label, value, n) => {
+    const b = el('button', `pill${filter === value ? ' on' : ''}`, `${STAR}<span>${label}</span>${STAR}`);
+    b.onclick = () => { filter = value; renderPills(); renderGrid(); };
+    return b;
+  };
+  $('#pills').replaceChildren(item('全部', null, saves.length), ...KINDS.map((k) => item(`${k}存档`.replace('分支存档', '分支'), k, saves.filter((s) => s.kind === k).length)));
+}
+
+/** 卡图里的半身:脸高占图高的 faceH,脸顶在 faceTop,脸的中线在 cx(都相对卡图,卡图是 16:9) */
+function bust(sp, faceH, faceTop, cx) {
+  const img = new Image();
+  img.className = 'bust';
+  img.src = src(sp.src);
+  const k = faceH / sp.face.h; // 图高 = k × 卡图高
+  img.style.height = `${k * 100}%`;
+  img.style.left = `${(cx - (sp.face.x + sp.face.w / 2) * k * (sp.w / sp.h) * (9 / 16)) * 100}%`;
+  img.style.top = `${(faceTop - sp.face.y * k) * 100}%`;
+  return img;
+}
+
+function renderGrid() {
+  const list = saves.filter((s) => !filter || s.kind === filter);
+  const grid = $('#grid');
+  if (list.length === 0) return grid.replaceChildren(el('div', 'empty', '这一类还没有存档'));
+  grid.replaceChildren(...list.map((s, i) => {
+    const a = el('a', 'save');
+    a.href = 'index.html';
+    a.style.setProperty('--i', i);
+    a.style.setProperty('--acc', s.c.acc);
+    const thumb = el('div', 'thumb');
+    const scene = new Image();
+    scene.className = 'scene';
+    scene.src = src(s.scene.src);
+    scene.style.objectPosition = `${s.scene.focus}% 50%`;
+    const brand = new Image();
+    brand.className = 'brand';
+    brand.src = '../home/assets/wordmark.png';
+    thumb.append(scene, el('div', 'wash'), el('div', 'dark'), el('div', 'edge'), bust(s.sprite, 0.46, 0.16, 0.7), brand,
+      el('div', 'who', s.c.name), el('div', 'where', s.scene.label));
+    // 名字周围几颗星芒(位置相对卡图)
+    [[5, 21, 3.2, ''], [7 + [...s.c.name].length * 9.2, 50, 2.6, 'w'], [4.5, 36, 1.4, 'w'], [30, 17, 1.6, '']].forEach(([x, y, size, cls]) => {
+      const sp = el('span', '', STAR).firstChild;
+      sp.setAttribute('class', `star sp ${cls}`);
+      sp.style.cssText = `left:${x}%;top:${y}%;width:${size}vh;height:${size}vh;margin:${-size / 2}vh`;
+      thumb.append(sp);
+    });
+    a.append(el('div', 'save-frame'), el('div', 'save-frame2'), thumb, el('span', '', STAR).firstChild,
+      el('div', 'save-title', `<span class="tag">${s.kind}</span><b>「${s.line}」</b>`), el('div', 'save-date', `${s.date} · ${s.c.work}`));
+    a.querySelector(':scope > .star').setAttribute('class', 'star save-corner');
+    return a;
+  }));
+}
+
+// 纸面底纹:和主页同一张淡淡的星图
+(() => {
+  let seed = 72;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const W = 1600, H = 900, pts = Array.from({ length: 90 }, () => [rnd() * W, rnd() * H, 0.8 + rnd() * rnd() * 3.2]);
+  let s = '';
+  for (let i = 0; i < pts.length; i++) {
+    const [x, y, r] = pts[i];
+    s += r > 2.6 ? `<use href="#star" x="${x - r * 3}" y="${y - r * 3}" width="${r * 6}" height="${r * 6}" fill="currentColor"/>` : `<circle cx="${x}" cy="${y}" r="${r}" fill="currentColor"/>`;
+    for (let j = i + 1; j < pts.length; j++) {
+      const d = Math.hypot(pts[j][0] - x, pts[j][1] - y);
+      if (d < 120 && rnd() < 0.5) s += `<line x1="${x}" y1="${y}" x2="${pts[j][0]}" y2="${pts[j][1]}" stroke="currentColor" stroke-width="0.8"/>`;
+    }
+  }
+  $('#tex').setAttribute('viewBox', `0 0 ${W} ${H}`);
+  $('#tex').innerHTML = s;
+})();
+
+renderPills();
+renderGrid();
+</script>
+</body>
+</html>

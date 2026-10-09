@@ -51,6 +51,7 @@ def test_complete_preserves_openai_message_roles_and_model(monkeypatch):
             return await provider.complete(
                 [
                     ChatMessage(role="system", content="系统提示"),
+                    ChatMessage(role="system", content="示例里的一句", name="example_assistant"),
                     ChatMessage(role="user", content="你好"),
                 ],
                 "model-a",
@@ -67,6 +68,7 @@ def test_complete_preserves_openai_message_roles_and_model(monkeypatch):
         "payload": {
             "messages": [
                 {"role": "system", "content": "系统提示"},
+                {"role": "system", "content": "示例里的一句", "name": "example_assistant"},
                 {"role": "user", "content": "你好"},
             ],
             "model": "model-a",
@@ -316,3 +318,42 @@ def test_http_errors_are_translated_to_actionable_messages(monkeypatch, status: 
 
     with pytest.raises(LLMError, match=expected):
         run(scenario())
+
+
+NGINX_301 = (
+    "<html>\n<head><title>301 Moved Permanently</title></head>\n<body>\n"
+    "<center><h1>301 Moved Permanently</h1></center>\n</body>\n</html>"
+)
+
+
+@pytest.mark.parametrize(
+    ("base_url", "status", "expected"),
+    [
+        ("https://llm.test", 301, "试试 https://llm.test/v1"),
+        ("https://llm.test/", 404, "试试 https://llm.test/v1"),
+        ("https://llm.test/v1", 301, "对照服务商文档检查地址"),
+    ],
+)
+def test_web_page_response_is_explained_as_wrong_base_url(monkeypatch, base_url, status, expected):
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            status,
+            headers={"content-type": "text/html", "location": "https://elsewhere.test/models"},
+            content=NGINX_301.encode(),
+        )
+
+    client = install_transport(monkeypatch, handler)
+
+    async def scenario():
+        try:
+            return await OpenAICompatibleProvider("secret", base_url).list_models()
+        finally:
+            await client.aclose()
+
+    with pytest.raises(LLMError) as err:
+        run(scenario())
+
+    assert err.value.explained
+    assert "返回的是网页" in err.value.message
+    assert expected in err.value.message
+    assert "<html>" not in err.value.message

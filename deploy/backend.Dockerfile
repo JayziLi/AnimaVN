@@ -18,6 +18,11 @@ COPY AnimaBackend/pyproject.toml ./
 COPY AnimaBackend/app ./app
 RUN pip install --no-cache-dir .
 
+# 迁移脚本(加列)和 userdata 导入导出也带上:旧库升级时启动日志会报「数据库缺列」并写明跑哪个,
+# 在服务器上 docker compose exec backend python scripts/migrate_xxx.py。脚本按 data/animabackend.db
+# 相对路径开库,WORKDIR 是 /app,正好对上数据卷
+COPY AnimaBackend/scripts ./scripts
+
 # SQLite 文件的家。compose 把 named volume 挂在这儿,所以别往里塞东西
 RUN mkdir -p /app/data
 

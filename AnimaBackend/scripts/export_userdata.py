@@ -26,6 +26,8 @@ from urllib.parse import quote
 
 SKIP_ROWS = {"tts_cache"}  # 表结构照导，行不导
 BLANK = {("api_connections", "api_key")}  # 密钥不进仓库，恢复后在「连接」里重填
+# app_settings 里 key 以 secret. 开头的是密钥（Jev 的 API key 存成 secret.jev_key），整行不导，恢复后重填
+SECRET_SETTING_PREFIX = "secret."
 # 单个文件别过 GitHub 的 50 MB 警告线：对话按会话拆，提示词快照一条一个文件
 SPLIT = {"debug_chat_messages": "chat_id", "debug_snapshots": "hash"}
 EXT = {
@@ -70,6 +72,8 @@ def export(db_path: Path, out: Path) -> None:
         files: dict[Path, list[str]] = {}
         for values in db.execute(f'SELECT * FROM "{table}" ORDER BY {order}'):
             row = dict(zip(cols, values))
+            if table == "app_settings" and str(row.get("key", "")).startswith(SECRET_SETTING_PREFIX):
+                continue
             for col in cols:
                 if (table, col) in BLANK and row[col]:
                     row[col] = ""

@@ -35,6 +35,8 @@ class VoiceSpec:
     speed: float
     spk_ref_path: str = ""
     emo_vector: tuple[float, ...] | None = None
+    # GSV 的辅助参考:音色和主参考一起取平均(v3 / v4 模型不认)
+    aux_ref_paths: tuple[str, ...] = ()
     params: dict[str, Any] = field(default_factory=dict)
 
 

@@ -2,10 +2,14 @@
  * 外语插件 —— 日语配音、中文字幕。
  *
  * 主模型按「一行日语,下一行是它的中文」交替写(旁白和台词都这样,不加标签)。这里做三件事:
- *   1. 认出日语行:带假名的行;兜底是「下一行和它一字不差」的那行(「……」「……」这种)
+ *   1. 认出日语行:假名占得够多的行(looksJapanese —— 中文里留的片假名名字、零星假名不算);
+ *      兜底是「下一行和它是同一句」的那行(「……」「……」这种)
  *   2. 把日语从正文里摘掉,挂到它下面那句中文上;剩下的中文照原来的 parseReply 切句,
  *      规则一条不改
  *   3. 念哪种:看声音的 text_lang(speechText)
+ *
+ * 模型不总守格式,能兜的都兜住:多空几行、日中之间隔空行、中文里夹假名、偶尔先中后日、
+ * 日语行里混进一句中文、「日语」写成了中文。兜不住的(漏了中文 / 漏了日语)照原样显示
  *
  * 插件本身只有提示词模板和「显示日语」开关,全局一份,存在后端 app_settings(键 plugin.lang)。
  * 提示词块写进预设,identifier 固定为 anima_lang,正文跟着插件模板同步(和立绘插件一样)。
@@ -29,6 +33,24 @@ export const DEFAULT_LANG_BLOCK_PROMPT = `[双语输出]
 
 示例：
 <sprite:微笑>
+「おかえり。今日も一日、お疲れさま。」
+「欢迎回来。今天也辛苦啦。」
+
+彼女はそう言って、ソファの端に寄って場所を空けた。
+她说着，往沙发边上挪了挪，给他让出位置。`;
+
+/**
+ * Jev 标注开着时发出去的版本:标签交给 Jev 标,提示词里一个标签都不提(提了模型就会照着写)。
+ * 用户改过模板时不用它,见 plugins/jev.ts 的 jevLangPrompt
+ */
+export const DEFAULT_LANG_BLOCK_PROMPT_JEV = `[双语输出]
+这是日语配音、中文字幕的视觉小说。整条回复（旁白和台词）都要日中对照着写：
+- 每一段先写一行日语，紧接着下一行写这段的中文。一行日语对应一行中文，先日后中。
+- 台词单独成行，日语和中文都用「」括起来。
+- 中文以日语为参考来写：保留一点翻译腔，同时通顺、自然、优美。
+- 中文里不要夹杂假名。
+
+示例：
 「おかえり。今日も一日、お疲れさま。」
 「欢迎回来。今天也辛苦啦。」
 
@@ -75,6 +97,69 @@ export const insertLangBlock = (preset: TavernPreset, groupIndex: number, conten
 /** 平假名、片假名(含长音「ー」;不含中文名字里也会用的间隔号「・」) */
 const KANA_RE = /[ぁ-ゖゝ-ゟァ-ヺー-ヿㇰ-ㇿ]/;
 export const hasKana = (text: string) => KANA_RE.test(text);
+const KANA_G = new RegExp(KANA_RE.source, 'g');
+const HAN_G = /\p{Script=Han}/gu;
+const countOf = (text: string, re: RegExp) => text.match(re)?.length ?? 0;
+
+/** 片假名写的名字,可以带平假名的称呼(リエちゃん、カナミさん) */
+const KANA_NAME_RE = /[ァ-ヺー-ヿㇰ-ㇿ]+(?:ちゃん|ちゃま|さん|くん|さま|たん|せんぱい|せんせい)?/g;
+/**
+ * 只有简体中文这么写的常用字:日语里要么写成别的字形(們、這、説、売……),要么根本不用
+ * (吗、呢、吧、你、啊)。有它就说明这段是中文
+ */
+const ZH_ONLY_RE =
+  /[她们这说还让给吗呢吧么啊哦嗯啦呀你个对为时话样边过见觉听头东车门问间开关进连实经书长无从卖买发气动现电脸讲认饭岁爱欢谢请应该马两哪轻响虽张场乐难题钱错远运选带总许读语课谁纸细红绿线结终练热]/;
+
+/**
+ * 这行是不是日语。模型常在中文行里留几个假名,光看有没有假名会把中文当成日语、日中配不上对:
+ *   - 没译的片假名名字:「真的吗？リエちゃん能……」
+ *   - 中文里的零星假名:句尾的「……っ」、「卖ほうじ茶的那家」
+ * afterJa:上一个非空行是还没配上中文的日语 —— 这时候这行按理该是中文
+ *
+ * 实测(191 条双语回复):五千多行日语里假名最少也占三成(「言い訳は却下。」),
+ * 夹了假名的中文行最多两成半
+ */
+function looksJapanese(text: string, afterJa: boolean): boolean {
+  if (!hasKana(text)) return false;
+  const core = text.replace(KANA_NAME_RE, '');
+  const kana = countOf(core, KANA_G);
+  // 假名只有片假名名字:跟在日语后面的、带简体字的,是留着名字没译的中文;
+  // 别的(「カナミ、参上！」)是只写了名字的日语
+  if (kana === 0) return !afterJa && !ZH_ONLY_RE.test(text);
+  // 假名不到三成的,跟在日语后面、或者带简体字,是夹了假名的中文。
+  // 汉字特别多的日语(「東京駅前、午後三時に集合。」)不带简体字,仍然算日语
+  const few = kana < (kana + countOf(core, HAN_G)) * 0.3;
+  return !(few && (afterJa || ZH_ONLY_RE.test(core)));
+}
+
+/** 比两行是不是同一句:引号、标点、空白不算。去掉以后什么都不剩的(「……」「——」)要一字不差 */
+const NOT_WORDS_G = /[\s「」『』“”"'‘’，,。.！!？?、…~～—-]/g;
+function sameLine(a: string, b: string): boolean {
+  const x = a.replace(NOT_WORDS_G, '');
+  return x ? x === b.replace(NOT_WORDS_G, '') : a === b;
+}
+
+/**
+ * 挂到中文上的日语:混进来的中文句子(没有假名、带简体字)去掉,只留日语念和显示。
+ * 模型偶尔把一句中文写进日语行(「今夜は、よく歩いたね。你的腿，一定也很累了吧。」);
+ * 「日语行」其实是中文写了两遍的,整行去掉,返回空串
+ */
+function cleanJa(ja: string): string {
+  // 整行没有假名(兜底认出来的):带简体字就是中文写了两遍,不带的(「……」、全汉字的日语)照留
+  if (!hasKana(ja)) return ZH_ONLY_RE.test(ja) ? '' : ja;
+  const parts = ja.match(/[^。！？!?…]*[。！？!?…]+[」』”]*|[^。！？!?…]+$/g) ?? [ja];
+  const kept = parts.filter((p) => hasKana(p) || !ZH_ONLY_RE.test(p));
+  if (kept.length === parts.length) return ja;
+  let out = kept.join('').trim();
+  // 句子切在引号里面的,补上跟着中文句子一起去掉的收尾引号
+  for (const [open, close] of ['「」', '『』', '“”']) {
+    if (out.startsWith(open) && !out.includes(close)) out += close;
+  }
+  return out;
+}
+
+/** 这一行是不是台词(引号开头) —— 先中后日的一对,两行要么都是台词、要么都是旁白 */
+const isQuoted = (text: string) => /^[「『“"]/.test(text);
 
 /** 声音的 text_lang 是不是日语(GSV 的 ja / all_ja) */
 export const isJaLang = (lang: string) => /(^|_)ja$/i.test(lang.trim());
@@ -105,22 +190,25 @@ function splitRows(raw: string, kinds: readonly TagKind[], streaming: boolean): 
       from = at + t.raw.length;
       return { raw: t.raw, at: start + at };
     });
-    rows.push({
-      start,
-      end: start + line.length,
-      content,
-      tags: found,
-      kind: !content ? 'blank' : hasKana(content) ? 'ja' : 'text',
-    });
+    rows.push({ start, end: start + line.length, content, tags: found, kind: content ? 'text' : 'blank' });
     start += line.length + 1;
   });
+  // 空行随便多空几行都不影响:认日语、配对都只看非空行
+  let afterJa = false;
+  for (const r of rows) {
+    if (r.kind === 'blank') continue;
+    r.kind = looksJapanese(r.content, afterJa) ? 'ja' : 'text';
+    afterJa = r.kind === 'ja';
+  }
   // 兜底:日语碰巧一个假名都没有(「……」、全是汉字的短句),模型会把同一行写两遍 ——
-  // 下一行和它一字不差,前一行就是日语。整条回复一行日语都没有时不这么认,免得误伤纯中文
+  // 下一行和它是同一句(只差引号、标点也算),前一行就是日语。模型把旁白的「日语」也写成
+  // 中文时也是这样,这种挂上去时会被 cleanJa 整行去掉,只显示一遍。
+  // 整条回复一行日语都没有时不这么认,免得误伤纯中文
   if (rows.some((r) => r.kind === 'ja')) {
     rows.forEach((r, i) => {
       if (r.kind !== 'text') return;
       const next = rows.find((x, k) => k > i && x.kind !== 'blank');
-      if (next && next.kind === 'text' && next.content === r.content) r.kind = 'ja';
+      if (next && next.kind === 'text' && sameLine(r.content, next.content)) r.kind = 'ja';
     });
   }
   return rows;
@@ -130,29 +218,52 @@ function splitRows(raw: string, kinds: readonly TagKind[], streaming: boolean): 
  * 切一条回复,同时把日语挂到句子上。没有日语的回复和 parseReply 完全一样。
  *
  * 日语行从正文里摘掉(行里的标签留在原位,仍然作用到下面那句中文),挂在它下面紧跟的
- * 那行中文切出来的第一句上。后面紧跟的还是日语、或者回复写完了也没有中文,这行日语
- * 就当正文显示(jaOnly)。流式时最后一行是正在写的日语,先追加一句空的中文带着它,
- * 中文开始写以后还是这一句(序号不变)。
+ * 那行中文切出来的第一句上。写反了的(先中后日)挂到上面那行中文上。前后都没有能配的
+ * 中文,这行日语就当正文显示(jaOnly)。流式时最后一行是正在写的日语,先追加一句空的
+ * 中文带着它,中文开始写以后还是这一句(序号不变)。
  *
  * ends 换算回原文里的位置,插话截断直接用;日中交替写,截到哪句,后面的日语一起截掉。
  */
 export function parseBilingual(
   raw: string,
-  opts: { charName: string; userName: string; tags: readonly TagKind[]; streaming: boolean },
+  opts: {
+    charName: string;
+    userName: string;
+    tags: readonly TagKind[];
+    streaming: boolean;
+    /** 见 parseReply:Jev 标过的回复 / Jev 没判过的句子 */
+    strict?: boolean;
+    loose?: ReadonlySet<number>;
+  },
 ): ParsedReply {
   const rows = splitRows(raw, opts.tags, opts.streaming);
   if (!rows.some((r) => r.kind === 'ja')) return parseReply(raw, opts);
 
   // 每行日语的去向
-  const jaOf = new Map<number, string>(); // 正文行 → 它上面的日语
+  const jaOf = new Map<number, string>(); // 正文行 → 挂在它上面的日语
   const orphan = new Set<number>(); // 没有中文的日语行:留在正文里
   let pending: string | null = null; // 流式:正在写、中文还没开始的日语
+  const nextRow = (i: number) => rows.findIndex((x, k) => k > i && x.kind !== 'blank');
+  const prevRow = (i: number) => rows.findLastIndex((x, k) => k < i && x.kind !== 'blank');
   rows.forEach((r, i) => {
     if (r.kind !== 'ja') return;
-    const next = rows.findIndex((x, k) => k > i && x.kind !== 'blank');
-    if (next !== -1 && rows[next].kind === 'text') jaOf.set(next, r.content);
-    else if (next === -1 && opts.streaming) pending = r.content;
-    else orphan.add(i);
+    const next = nextRow(i);
+    const prev = prevRow(i);
+    if (next !== -1 && rows[next].kind === 'text') {
+      jaOf.set(next, cleanJa(r.content));
+    } else if (next === -1 && opts.streaming) {
+      pending = r.content;
+    } else if (
+      // 先中后日写反了:上面那行中文还没配上日语,两行又都是台词或都是旁白
+      prev !== -1 &&
+      rows[prev].kind === 'text' &&
+      !jaOf.has(prev) &&
+      isQuoted(rows[prev].content) === isQuoted(r.content)
+    ) {
+      jaOf.set(prev, cleanJa(r.content));
+    } else {
+      orphan.add(i);
+    }
   });
 
   // 摘掉日语后的文本,逐字记下它在原文里的位置

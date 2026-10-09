@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { AssemblyResult } from '../lib/assembler';
 import type { DebugConnection } from '../lib/api';
 import { loadVisible } from '../lib/budget';
@@ -13,10 +13,15 @@ import { formatTokens } from '../lib/tokens';
 import { DEFAULT_AVATAR } from '../lib/avatar';
 import { avatarRadius, enterHint, enterShouldSend, type ChatSettings } from '../lib/chatSettings';
 import { substituteMacros, type MacroContext } from '../lib/macros';
-import { renderQuoted } from '../lib/richText';
+import { renderMarked } from '../lib/richText';
 import { useCoarsePointer, useIsMobile } from '../lib/useIsMobile';
 import { useSwipeGesture } from '../lib/useSwipeGesture';
+import type { JevKind } from '../plugins/jev';
+import { entryView } from '../plugins/jevNotes';
+import type { TagKind } from '../vn/script';
 import { AnimaIcon } from './AnimaIcon';
+
+const JEV_KIND_NAME: Record<JevKind, string> = { sprite: '立绘', bg: '背景', bgm: '音乐', cg: 'CG', player: '玩家台词' };
 
 interface Props {
   entries: ChatEntry[];
@@ -75,11 +80,18 @@ interface Props {
   displayText?: (raw: string, shown: string) => string;
   /** 给了就在角色消息上多一颗「跳到这里」 —— 视觉小说从这条回复的第一句接着播 */
   onJump?: (id: string) => void;
+  /** 不显示思考过程(视觉小说设置里关了「思考过程」) */
+  hideReasoning?: boolean;
   /**
    * 换掉整个正文的画法(视觉小说的历史:按句子列、带语音按钮)。返回 null 就照常画;
    * 编辑时不用它
    */
   renderBody?: (entry: ChatEntry) => ReactNode | null;
+  /**
+   * 视觉小说认的几类标签。给了就把 Jev 另外存的标注合并进正文显示(plugins/jevNotes.ts),
+   * Jev 标过的回复上多一颗按钮切「Jev 标注后的 / 模型写的原文」
+   */
+  tagKinds?: readonly TagKind[];
 }
 
 function Welcome({
@@ -98,7 +110,7 @@ function Welcome({
 }) {
   return (
     <div className="welcome">
-      <div className="welcome-mark">◆</div>
+      <img className="welcome-logo" src="/anima-logo.svg?v=72" alt="" draggable={false} />
       <div className="welcome-title">ANIMABACKEND</div>
       <div className="welcome-sub">提示词调试台 · PROMPT CONSOLE</div>
 
@@ -227,6 +239,8 @@ function MessageRow({
   displayText,
   onJump,
   renderBody,
+  tagKinds,
+  hideReasoning,
 }: {
   entry: ChatEntry;
   index: number;
@@ -249,9 +263,13 @@ function MessageRow({
   dimmed?: boolean;
   displayText?: (raw: string, shown: string) => string;
   onJump?: (id: string) => void;
+  hideReasoning?: boolean;
   renderBody?: (entry: ChatEntry) => ReactNode | null;
+  tagKinds?: readonly TagKind[];
 }) {
   const [editing, setEditing] = useState(false);
+  /** Jev 标过的回复:看模型写的原文,而不是合并了 Jev 标注的 */
+  const [showOriginal, setShowOriginal] = useState(false);
   const [draft, setDraft] = useState('');
   const [armed, setArmed] = useState(false);
   const editRef = useRef<HTMLTextAreaElement | null>(null);
@@ -271,9 +289,17 @@ function MessageRow({
 
   const info = currentInfo(entry);
   const text = currentText(entry);
-  // 只有画出来的这一份展开宏;text 仍是原文,编辑框、保存、导出走的都是它
-  const expanded = substituteMacros(text, macros, { seed: `${entry.id}:${entry.swipeIndex}` });
+  // Jev 另外存的标注合并进来显示;text 仍是模型写的原文,编辑框、保存、导出走的都是它
+  const view = useMemo(() => (tagKinds ? entryView(entry, tagKinds) : null), [entry, tagKinds]);
+  const jevKinds = view?.kinds ?? [];
+  const original = showOriginal && jevKinds.length > 0;
+  const body = view && !original ? view.text : (view?.original ?? text);
+  // 只有画出来的这一份展开宏
+  const expanded = substituteMacros(body, macros, { seed: `${entry.id}:${entry.swipeIndex}` });
   const shown = displayText ? displayText(text, expanded) : expanded;
+  // Jev 加的标签单独标出来;宏展开改了长度时位置对不上,就不标
+  const jevMarks = view && !displayText && !original && expanded === view.text ? view.marks : [];
+  const jevNames = jevKinds.map((k) => JEV_KIND_NAME[k]).join('、');
   const streaming = Boolean(entry.streaming);
   const behavior = overswipeOf(entry, index, total, tainted);
   const many = entry.swipes.length > 1;
@@ -348,6 +374,20 @@ function MessageRow({
             {info.totalMs !== undefined && ` · 共 ${seconds(info.totalMs)}`}
           </span>
         )}
+        {view && jevKinds.length > 0 && !displayText && !editing && (
+          <button
+            className={`chat-jev${original ? ' original' : ''}`}
+            onClick={() => setShowOriginal((v) => !v)}
+            title={
+              original
+                ? '现在显示的是模型写的原文。点一下看合并了 Jev 标注的'
+                : `${jevNames}标签是 Jev 标的(框起来的那些),另外存着,模型原文没动。点一下看原文`
+            }
+          >
+            {original ? '原文 · 点回 Jev 标注' : `Jev 标注 · ${jevNames} · 看原文`}
+            {view.dropped > 0 && ` · ${view.dropped} 句改过`}
+          </button>
+        )}
         <div className="chat-msg-actions">
           {onJump && entry.role === 'assistant' && !editing && (
             <button
@@ -384,7 +424,7 @@ function MessageRow({
         </div>
       </div>
 
-      {info?.reasoning && (
+      {info?.reasoning && !hideReasoning && (
         <ReasoningBlock text={info.reasoning} info={info} streaming={streaming} />
       )}
 
@@ -431,12 +471,15 @@ function MessageRow({
             >
               ✗ 取消
             </button>
-            <span className="chat-edit-hint">Esc 取消 · 改动只写进当前分支</span>
+            <span className="chat-edit-hint">
+              Esc 取消 · 改动只写进当前分支
+              {info?.jev?.notes && ' · 这里是模型原文,Jev 的标签另外存着;改过的句子对不上,它的标签就去掉'}
+            </span>
           </div>
         </>
       ) : (
         <div className="chat-text">
-          {renderBody?.(entry) ?? renderQuoted(shown, quotes)}
+          {renderBody?.(entry) ?? renderMarked(shown, jevMarks, quotes)}
           {streaming && <span className="stream-caret" />}
         </div>
       )}
@@ -525,6 +568,8 @@ export function ChatPanel({
   displayText,
   onJump,
   renderBody,
+  tagKinds,
+  hideReasoning,
 }: Props) {
   const backlog = variant === 'backlog';
   const [draft, setDraft] = useState('');
@@ -645,7 +690,8 @@ export function ChatPanel({
 
   const submit = () => {
     const text = draft.trim();
-    if (!text || sending || !ready) return;
+    // 对话还在读:这时发出去会接在旧对话后面、写进旧对话,读完又被换掉 —— 先不让发,草稿留着
+    if (!text || sending || !ready || loading) return;
     setDraft('');
     onSend(text);
     // 手动拉过:高度保留给用户;没拉过才收回单行
@@ -759,6 +805,8 @@ export function ChatPanel({
                 displayText={displayText}
                 onJump={onJump}
                 renderBody={renderBody}
+                tagKinds={tagKinds}
+                hideReasoning={hideReasoning}
               />
             </div>
           );
@@ -873,7 +921,7 @@ export function ChatPanel({
                 className="btn accent"
                 style={{ height: 40 }}
                 onClick={submit}
-                disabled={!draft.trim() || !ready}
+                disabled={!draft.trim() || !ready || loading}
               >
                 发送
               </button>

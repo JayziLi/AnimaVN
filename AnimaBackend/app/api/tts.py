@@ -236,6 +236,7 @@ def _gsv_spec(profile: VoiceProfile, row: VoiceEmotion | None) -> tuple[VoiceSpe
         text_lang=profile.text_lang or "zh",
         speed=profile.speed,
         params=dict(profile.params or {}),
+        aux_ref_paths=tuple(row.aux_refs or ()),
     )
     return spec, row.label, "ref"
 
@@ -363,7 +364,9 @@ async def reference_audio(profile_id: str, path: str, db: Session = Depends(get_
     profile = db.get(VoiceProfile, profile_id)
     if profile is None:
         raise HTTPException(404, "声音不存在")
-    known = {profile.ref_path, *(e.ref_path for e in list_emotions(profile.id, db))}
+    known = {profile.ref_path}
+    for e in list_emotions(profile.id, db):
+        known.update([e.ref_path, *(e.aux_refs or [])])
     if not path or path not in known:
         raise HTTPException(404, "这个声音没有配这段参考音频")
     conn = db.get(TtsConnection, profile.connection_id)

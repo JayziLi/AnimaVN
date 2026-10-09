@@ -46,3 +46,20 @@ Licensed under Creative Commons: By Attribution 4.0 License
 http://creativecommons.org/licenses/by/4.0/
 
 修改:从 incompetech.com 的原始 MP3 重新编码为 112kbps,去掉了元数据。
+
+
+sfx/   立绘切换特效和跳字音效(2026-10-04 用户挑的)
+------------------------------------------------
+
+emo-*.wav  appear-1/2/3.wav  cartoon-1/2.wav  face-shake.wav  shaking.wav
+    来源:《碧蓝档案》(Blue Archive,NEXON Games / Yostar)游戏内音效,
+    从 bluearchive.wiki 收录的原文件下载(SFX_Emoticon_Motion_*、SE_Appear_01a/01b/02a、
+    SE_Cartoon_01/02、SE_FaceShake_01、SE_Shaking_02)。版权归原作者,不是自由授权素材。
+    用户 2026-10-04 决定公网试玩版也照用,风险自担。
+
+deflate.mp3(stupid5)  type-cute.mp3(cursor7)  type-pa.mp3(cursor9)  type-ko.mp3(cursor12)
+    来源:効果音ラボ https://soundeffect-lab.info/  免费、可商用、不用署名
+
+字体 fonts/rhr-core.woff2、fonts/rhr-extra.woff2
+  资源圆体 Resource Han Rounded v1.910 — CyanoHao, https://github.com/CyanoHao/Resource-Han-Rounded
+  SIL Open Font License 1.1(基于 Adobe 思源黑体 Source Han Sans)。只取了常用字子集,未改字形。

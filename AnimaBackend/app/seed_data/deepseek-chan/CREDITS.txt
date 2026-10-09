@@ -1,0 +1,30 @@
+DeepSeek娘 —— AnimaVN 自带的示例角色
+====================================
+
+第一次启动时自动导入:角色卡(card.json + avatar.webp)和立绘包「DeepSeek娘 · 女仆」
+(sprites.json + sprites/*.webp,16 个表情)。
+
+形象与立绘
+----------
+
+授权:CC BY-NC-SA 4.0(署名 - 非商业性使用 - 相同方式共享)
+      https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh-hans
+
+  原型      上善(上善无形)的原创角色「溟月」
+            https://www.pixiv.net/users/62155430
+  女仆设计  ZipZipPipe 的 DeepSeek 女仆鲸鱼娘二创
+            https://www.pixiv.net/artworks/148186519
+            作者说明:方便所有人取用,需要标注作者,不可商用;形象基于上善的鲸鱼娘,
+            遵循原作者的 CC BY-NC-SA 4.0 协议
+  表情差分  AnimaVN,在 ZipZipPipe 的原图上改画出 16 个表情,
+            同样按 CC BY-NC-SA 4.0 发布
+
+这一目录里的图片不属于 AnimaVN 代码的 MIT 授权范围:可以自由使用、修改、再分发,
+但要署上面的名字、不能商用,改编后的作品也要用 CC BY-NC-SA 4.0。
+
+角色设定
+--------
+
+人设、开场白、示例对话和世界书由 AnimaVN 编写,梗来自网上流传的 DeepSeek 原话和
+ZipZipPipe 的 DeepSeek 表情包(https://www.pixiv.net/artworks/148349094)。
+社区资料:https://github.com/TreapGoGo/deepseek-whale-girl

@@ -20,6 +20,7 @@ router = APIRouter(prefix="/api/debug", tags=["debug"])
 class DebugMessage(BaseModel):
     role: str
     content: str
+    name: str | None = None
 
 
 class CompleteRequest(BaseModel):
@@ -55,7 +56,7 @@ def _resolve(
     if conn.api_type != "mock" and not model:
         raise HTTPException(400, f"连接「{conn.name}」还没有填写模型名")
 
-    history = [ChatMessage(role=m.role, content=m.content) for m in req.messages]
+    history = [ChatMessage(role=m.role, content=m.content, name=m.name) for m in req.messages]
     return conn, model, history
 
 

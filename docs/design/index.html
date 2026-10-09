@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AnimaVN · 界面原型对比</title>
+<style>
+  /* 所有原型摆在一页:每张卡是一个缩小的 1440×810 窗口(iframe 里跑的就是原型本身,能点),点标题全屏打开。
+     要用 http 打开(仓库根目录 python -m http.server 8765 → /docs/design/),双击打开时 iframe 读不到 userdata 里的图。 */
+  :root { --bg: #121216; --card: #1b1b21; --line: #2c2c34; --text: #ededf1; --dim: #9a9aa6; --ok: #9be0b4; --mid: #e6d28a; --no: #e6a0a8; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 28px 32px 60px; background: var(--bg); color: var(--text); font: 14px/1.6 'Microsoft YaHei', sans-serif; }
+  header { display: flex; align-items: center; gap: 14px; }
+  header img { height: 40px; }
+  h1 { margin: 0; font-size: 19px; font-weight: 600; }
+  .lead { margin: 4px 0 0; color: var(--dim); }
+  .bar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 8px; margin: 20px -32px 0; padding: 10px 32px; background: rgba(18, 18, 22, 0.92); backdrop-filter: blur(6px); border-bottom: 1px solid var(--line); }
+  .bar button { padding: 4px 14px; border: 1px solid var(--line); border-radius: 999px; background: none; color: var(--dim); font: inherit; font-size: 13px; cursor: pointer; }
+  .bar button.on, .bar button:hover { border-color: var(--text); color: var(--text); }
+  .bar .sep { flex: 1; }
+  h2 { margin: 34px 0 4px; font-size: 15px; font-weight: 600; }
+  h2 small { margin-left: 10px; font-weight: 400; color: var(--dim); font-size: 13px; }
+  .grid { display: grid; grid-template-columns: repeat(var(--cols, 2), 1fr); gap: 22px; margin-top: 12px; }
+  .item { background: var(--card); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .view { position: relative; aspect-ratio: 16 / 9; overflow: hidden; background: #000; }
+  .view iframe { position: absolute; left: 0; top: 0; width: 1440px; height: 810px; border: 0; transform-origin: 0 0; }
+  .view > img { display: block; width: 100%; height: 100%; object-fit: cover; }
+  .meta { display: flex; align-items: baseline; gap: 10px; padding: 10px 14px 12px; }
+  .meta a { color: var(--text); font-weight: 600; text-decoration: none; }
+  .meta a:hover { text-decoration: underline; }
+  .meta span { color: var(--dim); font-size: 12.5px; }
+  .tag { flex: none; padding: 0 8px; border-radius: 999px; font-size: 12px; }
+  .tag.ok { background: #24402f; color: var(--ok); }
+  .tag.mid { background: #40391f; color: var(--mid); }
+  .tag.no { background: #40262a; color: var(--no); }
+  .tag.cur { background: #2c2c34; color: var(--dim); }
+</style>
+</head>
+<body>
+<header>
+  <img src="home/assets/logo.svg" alt="">
+  <div>
+    <h1>界面原型对比</h1>
+    <p class="lead">每张卡里跑的就是原型本身,能直接点。点标题全屏打开。用户的评价写在标签上(2026-09-30)。</p>
+  </div>
+</header>
+
+<div class="bar" id="bar">
+  <button data-cols="1">一列(大)</button>
+  <button data-cols="2" class="on">两列</button>
+  <button data-cols="3">三列</button>
+  <span class="sep"></span>
+  <button id="reload">全部重放</button>
+</div>
+
+<h2>现状<small>游戏里现在的样子(截图)</small></h2>
+<div class="grid">
+  <div class="item"><div class="view"><img src="current/title.jpg" alt=""></div><div class="meta"><span class="tag cur">现状</span><a href="current/title.jpg" target="_blank">标题画面 · 海报</a><span>没选角色时的样子</span></div></div>
+  <div class="item"><div class="view"><img src="current/settings.jpg" alt=""></div><div class="meta"><span class="tag cur">现状</span><a href="current/settings.jpg" target="_blank">局内菜单 · 设置</a><span>左导航 + 右页面,游戏画面糊在后面</span></div></div>
+  <div class="item"><div class="view"><img src="current/menu-save.jpg" alt=""></div><div class="meta"><span class="tag cur">现状</span><a href="current/menu-save.jpg" target="_blank">局内菜单 · 存档</a><span>一个对话一格</span></div></div>
+  <div class="item"><div class="view"><img src="current/menu-plugin.jpg" alt=""></div><div class="meta"><span class="tag cur">现状</span><a href="current/menu-plugin.jpg" target="_blank">局内菜单 · 插件</a><span>调试台的组件直接嵌进来</span></div></div>
+</div>
+
+<h2>A · 斜切<small>照 Astrae Oratio 角色页 —— 目前最接近的方向</small></h2>
+<div class="grid">
+  <div class="item" data-src="split/index.html"><div class="view"></div><div class="meta"><span class="tag ok">感觉没问题,要微调</span><a href="split/index.html" target="_blank">主界面</a><span>深色侧是她,纸面侧是名字和按钮,最右一列选角色</span></div></div>
+  <div class="item" data-src="split/index.html#mirror"><div class="view"></div><div class="meta"><span class="tag ok">镜像</span><a href="split/index.html#mirror" target="_blank">主界面 · 镜像</a><span>角色选择在左</span></div></div>
+  <div class="item" data-src="split/saves.html"><div class="view"></div><div class="meta"><span class="tag ok">感觉没问题,要微调</span><a href="split/saves.html" target="_blank">存档页</a><span>照官网新闻卡片</span></div></div>
+</div>
+
+<h2>B · galgame 标题画面<small>用户:「这个风格是对的」—— v2 把角色选择挪走、加斜切(10-01)</small></h2>
+<div class="grid">
+  <div class="item" data-src="galgame/v2.html?cut=black"><div class="view"></div><div class="meta"><span class="tag ok">v2 · 10-02</span><a href="galgame/v2.html?cut=black" target="_blank">纯黑</a><span>斜线照参考比例(顶 62% → 底 36%),右边一整块深色</span></div></div>
+  <div class="item" data-src="galgame/v2.html?cut=closeup"><div class="view"></div><div class="meta"><span class="tag ok">v2 · 10-02</span><a href="galgame/v2.html?cut=closeup" target="_blank">纯黑 + 特写</a><span>照参考:同一张立绘放大只露脸、去色压暗,几颗星芒</span></div></div>
+  <div class="item" data-src="galgame/v2.html?cut=night"><div class="view"></div><div class="meta"><span class="tag ok">v2</span><a href="galgame/v2.html?cut=night" target="_blank">星夜</a><span>房间的夜色、流星、淡新月</span></div></div>
+  <div class="item" data-src="galgame/v2.html?cut=paper"><div class="view"></div><div class="meta"><span class="tag ok">「纸面没问题」</span><a href="galgame/v2.html?cut=paper" target="_blank">纸面</a><span>分界线改成 1px 发丝线(顶上还能切双线 / 只有阴影)</span></div></div>
+  <div class="item" data-src="galgame/v2.html#pick"><div class="view"></div><div class="meta"><span class="tag ok">v2</span><a href="galgame/v2.html#pick" target="_blank">角色选择(菜单「角色」进来)</a><span>左边夜空 + 她,右边斜切纸面放名单</span></div></div>
+  <div class="item" data-src="galgame/index.html"><div class="view"></div><div class="meta"><span class="tag mid">v1 · 「风格对,但角色选择不能放上去、太单调」</span><a href="galgame/index.html" target="_blank">标题画面 v1</a><span>头像列在左下</span></div></div>
+</div>
+
+<h2>B · 各种屏幕<small>同一个 v2 在手机竖 / 手机横 / 平板竖 / 笔记本上的样子;竖屏照 Astrae Oratio 手机版上下叠</small></h2>
+<div class="grid">
+  <div class="item" data-src="galgame/devices.html"><div class="view"></div><div class="meta"><span class="tag ok">10-02</span><a href="galgame/devices.html" target="_blank">响应式 · 四种屏幕</a><span>顶上切模式、分界、标题 / 角色选择,四个屏幕一起换</span></div></div>
+  <div class="item"><div class="view"><img src="refs/asora-char-phone.jpg" alt="" style="object-fit:contain;background:#111"></div><div class="meta"><span class="tag cur">参考</span><a href="refs/asora-char-phone-full.jpg" target="_blank">Astrae Oratio · 手机版角色页</a><span>上下叠:立绘块在上,斜线落在它下沿,文字在下面纸上</span></div></div>
+</div>
+
+<h2>参考<small>奇幻、星星(官网截图,10-01)</small></h2>
+<div class="grid">
+  <div class="item"><div class="view"><img src="refs/asora.jpg" alt=""></div><div class="meta"><span class="tag cur">参考</span><a href="https://astraeoratio.plaync.com/en-us/index" target="_blank">Astrae Oratio · 首屏</a><span>星空、流星、一道斜线穿过 logo</span></div></div>
+  <div class="item"><div class="view"><img src="refs/asora-loading.jpg" alt=""></div><div class="meta"><span class="tag cur">参考</span><a href="https://astraeoratio.plaync.com/en-us/index" target="_blank">Astrae Oratio · 加载</a><span>黑底星尘 + 一行 Loading</span></div></div>
+  <div class="item"><div class="view"><img src="refs/summer.jpg" alt=""></div><div class="meta"><span class="tag cur">参考</span><a href="https://key.visualarts.gr.jp/summer/" target="_blank">Summer Pockets · 首页</a><span>明亮、轻,logo 横在顶上</span></div></div>
+</div>
+
+<h2>C · 游戏内四屏<small>启动 / 进入 / 选角色 / 加载</small></h2>
+<div class="grid">
+  <div class="item" data-src="game/index.html"><div class="view"></div><div class="meta"><span class="tag mid">备选</span><a href="game/index.html" target="_blank">启动(自动往下放)</a><span>logo → 字标,流星进度</span></div></div>
+  <div class="item" data-src="game/index.html#title"><div class="view"></div><div class="meta"><span class="tag mid">备选</span><a href="game/index.html#title" target="_blank">进入</a><span>上下黑边的片头</span></div></div>
+  <div class="item" data-src="game/index.html#select"><div class="view"></div><div class="meta"><span class="tag mid">「不 galgame,像角色宣传」</span><a href="game/index.html#select" target="_blank">选角色</a><span>斜切长条,点了展开</span></div></div>
+  <div class="item" data-src="game/index.html#gate"><div class="view"></div><div class="meta"><span class="tag mid">备选</span><a href="game/index.html#gate" target="_blank">进游戏前的加载</a><span>拱形头像 + 最后一句</span></div></div>
+</div>
+
+<h2>D · 宣传站<small>顶栏 + 一屏一段</small></h2>
+<div class="grid">
+  <div class="item" data-src="home/index.html?skip"><div class="view"></div><div class="meta"><span class="tag mid">「适合作为宣传网站」</span><a href="home/index.html" target="_blank">主界面(往下滚有四屏)</a><span>主页 / 角色 / 场景 / 存档</span></div></div>
+</div>
+
+<h2>E · 登录页<small>公网试玩版</small></h2>
+<div class="grid">
+  <div class="item" data-src="login/index.html"><div class="view"></div><div class="meta"><span class="tag ok">已定:只用景色</span><a href="login/index.html" target="_blank">登录 / 注册</a><span>右上角「演示」切状态</span></div></div>
+</div>
+
+<script>
+// iframe 进了视口才加载(十几个原型一起跑太卡),缩放跟着卡片宽度走
+const items = [...document.querySelectorAll('.item[data-src]')];
+const fit = (view) => { const f = view.querySelector('iframe'); if (f) f.style.transform = `scale(${view.clientWidth / 1440})`; };
+const io = new IntersectionObserver((es) => {
+  for (const e of es) {
+    if (!e.isIntersecting) continue;
+    const view = e.target.querySelector('.view');
+    if (!view.querySelector('iframe')) {
+      const f = document.createElement('iframe');
+      f.src = e.target.dataset.src;
+      view.append(f);
+      fit(view);
+    }
+    io.unobserve(e.target);
+  }
+}, { rootMargin: '200px' });
+items.forEach((it) => io.observe(it));
+new ResizeObserver(() => document.querySelectorAll('.view').forEach(fit)).observe(document.body);
+
+document.querySelectorAll('#bar [data-cols]').forEach((b) => b.onclick = () => {
+  document.querySelectorAll('.grid').forEach((g) => g.style.setProperty('--cols', b.dataset.cols));
+  document.querySelectorAll('#bar [data-cols]').forEach((x) => x.classList.toggle('on', x === b));
+  requestAnimationFrame(() => document.querySelectorAll('.view').forEach(fit));
+});
+document.querySelector('#reload').onclick = () => document.querySelectorAll('.view iframe').forEach((f) => { f.src = f.src; });
+</script>
+</body>
+</html>

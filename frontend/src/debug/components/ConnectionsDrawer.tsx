@@ -69,6 +69,10 @@ export function ConnectionsDrawer({ connections: shared, notify, onClose, onChan
   const [deleteArmed, setDeleteArmed] = useState(false);
 
   const selected = connections?.find((c) => c.id === selectedId) ?? null;
+  // 表单和这条连接(新建时是空表单)不一样 = 有没保存的改动,包括刚填的 API key
+  const formDirty = JSON.stringify(form) !== JSON.stringify(formFrom(selected));
+  const confirmDiscard = () =>
+    !formDirty || window.confirm('连接的改动还没保存(填了的 API key 也会丢),放弃这些改动?');
   const active = connections?.find((c) => c.is_active) ?? null;
 
   const reload = useCallback(async (keepId?: string | null) => {
@@ -110,9 +114,13 @@ export function ConnectionsDrawer({ connections: shared, notify, onClose, onChan
   const selectConnection = async (id: string) => {
     const conn = connections?.find((c) => c.id === id);
     if (!conn) return;
-    setSelectedId(id);
-    setForm(formFrom(conn));
-    setCachedModels(conn.cached_models ?? []);
+    // 点的就是正在编辑的这条:表单不动(以前会重置,填了一半的 key 就没了)
+    if (id !== selectedId) {
+      if (!confirmDiscard()) return;
+      setSelectedId(id);
+      setForm(formFrom(conn));
+      setCachedModels(conn.cached_models ?? []);
+    }
     setDeleteArmed(false);
     // 和游戏版一致:在列表里选中一条非启用的连接 = 把它设为当前启用
     if (!conn.is_active) {
@@ -127,6 +135,7 @@ export function ConnectionsDrawer({ connections: shared, notify, onClose, onChan
   };
 
   const startNew = () => {
+    if (!confirmDiscard()) return;
     setSelectedId(null);
     setForm(formFrom(null));
     setCachedModels([]);
@@ -279,7 +288,7 @@ export function ConnectionsDrawer({ connections: shared, notify, onClose, onChan
             <span className="dot on" /> {active.name} · {active.model || '未设模型'}
           </span>
         )}
-        <button className="panel-collapse" onClick={onClose} title="收起">
+        <button className="panel-collapse" onClick={() => confirmDiscard() && onClose()} title="收起">
           ✕
         </button>
       </div>

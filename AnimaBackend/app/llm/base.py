@@ -7,6 +7,8 @@ from dataclasses import dataclass
 class ChatMessage:
     role: str  # "system" | "user" | "assistant"
     content: str
+    # OpenAI 的 name 字段。酒馆的示例对话用它标明这句是谁说的(example_user / example_assistant)
+    name: str | None = None
 
 
 @dataclass

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db import get_db
+from app.db import get_db, without_required_nulls
 from app.llm.base import ChatMessage
 from app.llm.errors import LLMError
 from app.llm.registry import provider_for
@@ -22,7 +22,9 @@ from app.schemas import (
 
 def _raw_detail(e: LLMError) -> str:
     """provider 原始异常(如果有)优先,没有的话才退回到我们自己写的校验文案。"""
-    return str(e.__cause__) if e.__cause__ is not None else e.message
+    if e.explained or e.__cause__ is None:
+        return e.message
+    return str(e.__cause__)
 
 
 router = APIRouter(prefix="/api/connections", tags=["connections"])
@@ -79,7 +81,7 @@ def create_connection(req: ConnectionCreate, db: Session = Depends(get_db)):
 @router.put("/{connection_id}", response_model=ConnectionOut)
 def update_connection(connection_id: str, req: ConnectionUpdate, db: Session = Depends(get_db)):
     conn = _load(connection_id, db)
-    updates = req.model_dump(exclude_unset=True)
+    updates = without_required_nulls(ApiConnection, req.model_dump(exclude_unset=True))
     if "api_key" in updates:
         updates["api_key"] = updates["api_key"] or None
     for field, value in updates.items():

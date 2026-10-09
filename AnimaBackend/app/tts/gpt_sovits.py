@@ -83,6 +83,9 @@ class GptSovitsEngine:
         }
         # 只发调过的:加参数之前缓存的那些,缓存键不变
         body.update({k: p[k] for k in TUNABLE if k in p})
+        # 辅助参考也是有才发,没配的声音请求体和缓存键都和原来一样
+        if voice.aux_ref_paths:
+            body["aux_ref_audio_paths"] = list(voice.aux_ref_paths)
         return body
 
     def cache_material(self, text: str, voice: VoiceSpec) -> dict[str, Any]:

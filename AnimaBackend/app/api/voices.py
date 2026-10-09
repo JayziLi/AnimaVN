@@ -13,9 +13,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from app.api.sprites import clean_aliases, clean_label
+from app.api.sprites import clean_aliases, clean_label, current_sprites
 from app.db import get_db
-from app.models import CardSprite, CardVoice, TavernCard, TtsConnection, VoiceEmotion, VoiceProfile
+from app.models import CardVoice, TavernCard, TtsConnection, VoiceEmotion, VoiceProfile
 from app.schemas import (
     CardVoicesIn,
     CardVoicesOut,
@@ -43,6 +43,22 @@ _REF_NAME = re.compile(r"^【([^】]+)】(.+)\.[A-Za-z0-9]+$")
 def clean_path(raw: str) -> str:
     """资源管理器的「复制文件地址」会带上双引号,顺手去掉。"""
     return raw.strip().strip('"').strip()
+
+
+# 辅助参考再多,音色也只是取平均,多了反而把主参考冲淡;GSV 每条都要现读、现算一遍
+MAX_AUX_REFS = 8
+
+
+def clean_aux_refs(raw: list[str], main: str) -> list[str]:
+    """去引号、去空行、去重,和主参考一样的那条不算。"""
+    out: list[str] = []
+    for p in raw:
+        path = clean_path(str(p))
+        if path and path != main and path not in out:
+            out.append(path)
+    if len(out) > MAX_AUX_REFS:
+        raise HTTPException(400, f"辅助参考最多 {MAX_AUX_REFS} 条")
+    return out
 
 
 def clean_vector(raw: list[float] | None) -> list[float] | None:
@@ -119,6 +135,7 @@ def _emotion_out(e: VoiceEmotion) -> VoiceEmotionOut:
         aliases=list(e.aliases or []),
         ref_path=e.ref_path,
         prompt_text=e.prompt_text,
+        aux_refs=list(e.aux_refs or []),
         emo_vector=list(e.emo_vector) if e.emo_vector else None,
         sort=e.sort,
     )
@@ -165,7 +182,7 @@ def import_refs(req: VoiceImportIn, db: Session = Depends(get_db)):
     if not isinstance(refs, list) or not refs:
         raise HTTPException(400, "refs.json 里没有 refs(参考音频列表)")
 
-    rows: list[tuple[str, str, str, bool, list[float] | None]] = []
+    rows: list[tuple[str, str, str, bool, list[float] | None, list[str] | None]] = []
     for i, r in enumerate(refs, start=1):
         if not isinstance(r, dict):
             raise HTTPException(400, f"refs 第 {i} 条格式不对")
@@ -186,7 +203,15 @@ def import_refs(req: VoiceImportIn, db: Session = Depends(get_db)):
             vector = clean_emo_vector(raw_vec)
         except (TypeError, ValueError) as e:
             raise HTTPException(400, f"refs 第 {i} 条:{e}") from e
-        rows.append((clean_label(label, "情绪名"), path, text, "emo_vector" in r, vector))
+        # 辅助参考:路径列表,或者带 file 的对象列表(和 refs 同一种写法);没写 aux 就不动原来的
+        raw_aux = r.get("aux")
+        aux: list[str] | None = None
+        if raw_aux is not None:
+            if not isinstance(raw_aux, list):
+                raise HTTPException(400, f"refs 第 {i} 条的 aux 要是路径列表")
+            items = [a.get("file") if isinstance(a, dict) else a for a in raw_aux]
+            aux = clean_aux_refs([str(a) for a in items if a], path)
+        rows.append((clean_label(label, "情绪名"), path, text, "emo_vector" in r, vector, aux))
 
     profile = _find_profile(name, db)
     if profile is None:
@@ -207,7 +232,7 @@ def import_refs(req: VoiceImportIn, db: Session = Depends(get_db)):
     existing = list_emotions(profile.id, db)
     by_name = {n.casefold(): e for e in existing for n in [e.label, *(e.aliases or [])]}
     next_sort = max((e.sort for e in existing), default=-1) + 1
-    for label, path, text, has_vector, vector in rows:
+    for label, path, text, has_vector, vector, aux in rows:
         row = by_name.get(label.casefold())
         if row is None:
             row = VoiceEmotion(profile_id=profile.id, label=label, aliases=[], sort=next_sort)
@@ -218,6 +243,10 @@ def import_refs(req: VoiceImportIn, db: Session = Depends(get_db)):
         row.prompt_text = text
         if has_vector:
             row.emo_vector = vector
+        if aux is not None:
+            row.aux_refs = aux
+        elif path in (row.aux_refs or []):
+            row.aux_refs = [p for p in row.aux_refs if p != path]
     db.commit()
     db.refresh(profile)
     return _profile_out(profile, db)
@@ -313,6 +342,7 @@ def create_emotion(profile_id: str, req: VoiceEmotionIn, db: Session = Depends(g
         aliases=aliases,
         ref_path=ref_path,
         prompt_text=prompt_text,
+        aux_refs=clean_aux_refs(req.aux_refs, ref_path),
         emo_vector=clean_vector(req.emo_vector),
         sort=(last + 1) if last is not None else 0,
     )
@@ -340,6 +370,11 @@ def update_emotion(
         emotion.ref_path = clean_path(u["ref_path"])
     if u.get("prompt_text") is not None:
         emotion.prompt_text = u["prompt_text"].strip()
+    if u.get("aux_refs") is not None:
+        emotion.aux_refs = clean_aux_refs(u["aux_refs"], emotion.ref_path)
+    elif u.get("ref_path") is not None and emotion.ref_path in (emotion.aux_refs or []):
+        # 主参考换成了原来的某条辅助参考:辅助里就不再留它
+        emotion.aux_refs = [p for p in emotion.aux_refs if p != emotion.ref_path]
     if "emo_vector" in u:
         emotion.emo_vector = clean_vector(u["emo_vector"])
     db.commit()
@@ -369,18 +404,14 @@ def reorder_emotions(profile_id: str, req: VoiceReorder, db: Session = Depends(g
     PROFILES + "/{profile_id}/emotions/from-sprites", response_model=list[VoiceEmotionOut]
 )
 def emotions_from_sprites(profile_id: str, req: VoiceFromSpritesIn, db: Session = Depends(get_db)):
-    """每个立绘表情一行,向量按常见表情名预填;已有的行(名字或别名对上)不动,只加缺的。
-    禁用的立绘不算;这张卡一张启用的立绘都没有时,按内置基础表情补(带上别名),和 {{sprites}} 的兜底是同一份"""
+    """这张卡当前立绘包的每个表情一行,向量按常见表情名预填;已有的行(名字或别名对上)不动,只加缺的。
+    禁用的立绘不算;当前包一张启用的立绘都没有时,按内置基础表情补(带上别名),和 {{sprites}} 的兜底是同一份"""
     profile = _load_profile(profile_id, db)
     conn = db.get(TtsConnection, profile.connection_id)
     if conn is None or conn.api_type != "indextts":
         raise HTTPException(400, "GSV 的情绪行要配参考音频,不能自动生成")
     _load_card(req.card_id, db)
-    sprites = db.scalars(
-        select(CardSprite)
-        .where(CardSprite.card_id == req.card_id, CardSprite.enabled.is_(True))
-        .order_by(CardSprite.sort, CardSprite.created_at)
-    ).all()
+    sprites = [s for s in current_sprites(req.card_id, db) if s.enabled]
     existing = list_emotions(profile_id, db)
     taken = {n.casefold() for e in existing for n in [e.label, *(e.aliases or [])]}
     next_sort = max((e.sort for e in existing), default=-1) + 1

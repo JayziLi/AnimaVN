@@ -146,6 +146,49 @@ def test_import_refs_json_creates_then_updates_by_name(client: TestClient):
         assert r.status_code == 400, refs
 
 
+def test_aux_refs_are_cleaned_and_follow_the_main_reference(client: TestClient):
+    v = make_voice(client, make_conn(client)["id"])
+    base = f"/api/voices/{v['id']}/emotions"
+    e = client.post(
+        base,
+        json={
+            "label": "开心",
+            "ref_path": "D:/a.wav",
+            "prompt_text": "原文",
+            # 带引号、空行、重复、和主参考同一条的都去掉
+            "aux_refs": [' "D:/b.wav" ', "", "D:/b.wav", "D:/a.wav", "D:/c.wav"],
+        },
+    ).json()
+    assert e["aux_refs"] == ["D:/b.wav", "D:/c.wav"]
+
+    # 主参考换成其中一条辅助:辅助里不再留它
+    e = client.put(f"{base}/{e['id']}", json={"ref_path": "D:/b.wav"}).json()
+    assert (e["ref_path"], e["aux_refs"]) == ("D:/b.wav", ["D:/c.wav"])
+    too_many = client.put(f"{base}/{e['id']}", json={"aux_refs": [f"D:/{i}.wav" for i in range(9)]})
+    assert too_many.status_code == 400
+    assert client.put(f"{base}/{e['id']}", json={"aux_refs": []}).json()["aux_refs"] == []
+
+    # refs.json 里每条可以带 aux(路径或带 file 的对象);没写 aux 的不动原来的
+    refs = {
+        "character": v["name"],
+        "refs": [
+            {"emotion": "开心", "file": "D:/b.wav", "text": "原文", "aux": ["D:/d.wav", {"file": "D:/e.wav"}]},
+            {"emotion": "平静", "file": "D:/p.wav", "text": "平静的原文"},
+        ],
+    }
+    conn_id = v["connection_id"]
+    out = client.post("/api/voices/import", json={"connection_id": conn_id, "refs": refs}).json()
+    assert [(x["label"], x["aux_refs"]) for x in out["emotions"]] == [
+        ("开心", ["D:/d.wav", "D:/e.wav"]),
+        ("平静", []),
+    ]
+    refs["refs"][0].pop("aux")
+    out = client.post("/api/voices/import", json={"connection_id": conn_id, "refs": refs}).json()
+    assert out["emotions"][0]["aux_refs"] == ["D:/d.wav", "D:/e.wav"]
+    refs["refs"][0]["aux"] = "D:/d.wav"
+    assert client.post("/api/voices/import", json={"connection_id": conn_id, "refs": refs}).status_code == 400
+
+
 def test_card_voice_binding_follows_card_and_profile_lifecycle(client: TestClient, make_card):
     conn = make_conn(client)
     amiya = make_voice(client, conn["id"], name="阿米娅")
@@ -210,16 +253,21 @@ def test_emotion_vector_is_validated(client: TestClient):
     assert client.get("/api/voices").json()[0]["emotions"] == []
 
 
-def test_emotions_from_sprites_adds_missing_rows_with_preset_vectors(client: TestClient, make_card):
+def test_emotions_from_sprites_adds_missing_rows_with_preset_vectors(
+    client: TestClient, make_card, make_sprite_pack
+):
     conn = client.post(
         "/api/tts/connections",
         json={"name": "IndexTTS", "api_type": "indextts", "base_url": "http://127.0.0.1:9890"},
     ).json()
     v = make_voice(client, conn["id"], name="阿米娅·Index")
     card = make_card(name="阿米娅")
-    sprites = f"/api/tavern/cards/{card['id']}/sprites"
+    sprites = f"/api/sprite-packs/{make_sprite_pack('阿米娅', card['id'])['id']}/sprites"
     for label, aliases in [("平静", ["normal"]), ("开心", ["happy"]), ("红瞳", ["angry"]), ("持旗", [])]:
         assert client.post(sprites, json={"label": label, "aliases": aliases}).status_code == 200
+    # 挂着但不是当前的包不算
+    other = make_sprite_pack("阿米娅·制服", card["id"])
+    client.post(f"/api/sprite-packs/{other['id']}/sprites", json={"label": "敬礼"})
     # 已经有的(按立绘别名也算对上)不动
     client.post(f"/api/voices/{v['id']}/emotions", json={"label": "happy", "ref_path": "D:/emo/笑.wav"})
 
@@ -312,14 +360,14 @@ def test_emotions_from_sprites_uses_builtin_list_when_card_has_no_sprites(client
     assert happy["emo_vector"] == [0.8, 0, 0, 0, 0, 0, 0, 0]
 
 
-def test_emotions_from_sprites_skips_disabled_sprites(client: TestClient, make_card):
+def test_emotions_from_sprites_skips_disabled_sprites(client: TestClient, make_card, make_sprite_pack):
     """规格:语音的情绪候选跟着立绘走,也不含禁用的;立绘全禁用 = 用内置基础表情"""
     conn = client.post(
         "/api/tts/connections",
         json={"name": "IndexTTS", "api_type": "indextts", "base_url": "http://127.0.0.1:9890"},
     ).json()
     card = make_card(name="有禁用立绘")
-    sprites = f"/api/tavern/cards/{card['id']}/sprites"
+    sprites = f"/api/sprite-packs/{make_sprite_pack('有禁用立绘', card['id'])['id']}/sprites"
     ids = {label: client.post(sprites, json={"label": label}).json()["id"] for label in ["平静", "哭泣"]}
     assert client.put(f"{sprites}/{ids['哭泣']}", json={"enabled": False}).status_code == 200
 

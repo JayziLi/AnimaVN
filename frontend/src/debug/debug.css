@@ -1,6 +1,7 @@
 :root {
   /* 中性灰阶主题:不用色相,靠明度拉开信息层级。
-     只有 --danger 是例外 —— 删除确认和请求失败保留暗红,否则这类状态完全看不出来。 */
+     只有 --danger 是例外 —— 删除确认和请求失败保留暗红,否则这类状态完全看不出来。
+     (2026-09-30 试过往 logo 的蓝紫底色带一点、强调色换淡紫,用户看完还是要黑白灰) */
   --bg: #0e0e0e;
   --bg-panel: #171717;
   --bg-raised: #212121;
@@ -160,6 +161,12 @@ body.dragging-columns {
   align-items: center;
 }
 
+.topbar-logo {
+  width: 26px;
+  height: 26px;
+  flex: none;
+}
+
 .topbar-title {
   font-family: var(--mono);
   font-size: 12px;
@@ -311,9 +318,10 @@ body.dragging-columns {
     opacity: 0;
   }
 }
-.boot-mark {
-  font-size: 26px;
-  color: var(--text-dim);
+.boot-logo {
+  width: 84px;
+  height: 84px;
+  margin-bottom: 4px;
 }
 .boot-title {
   font-family: var(--mono);
@@ -1133,6 +1141,31 @@ body.dragging-columns {
   color: var(--text-faint);
 }
 
+/* Jev 标过的回复:切「合并了 Jev 标注的 / 模型原文」 */
+.chat-jev {
+  padding: 0 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  background: none;
+  font-size: calc(10px * var(--chat-scale, 1));
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.chat-jev:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.chat-jev.original {
+  border-style: dashed;
+}
+/* 正文里 Jev 加的标签 */
+.chat-jev-tag {
+  padding: 0 2px;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  color: var(--text-dim);
+}
+
 .chat-msg-actions {
   margin-left: auto;
   display: flex;
@@ -1863,6 +1896,7 @@ body.dragging-columns {
   text-align: center;
 }
 .ce-nav-seq.disabled,
+.ce-nav-seq.silent,
 .ce-nav-seq.missing,
 .ce-nav-seq.forbidden,
 .ce-nav-seq.unknown {
@@ -1884,6 +1918,7 @@ body.dragging-columns {
   flex-shrink: 0;
 }
 .ce-nav-token.disabled,
+.ce-nav-token.silent,
 .ce-nav-token.missing,
 .ce-nav-token.forbidden {
   color: var(--danger, #e06c75);
@@ -1937,6 +1972,7 @@ body.dragging-columns {
   color: var(--text-faint);
 }
 .ce-seq.disabled,
+.ce-seq.silent,
 .ce-seq.missing,
 .ce-seq.forbidden,
 .ce-seq.unknown {
@@ -1997,6 +2033,7 @@ body.dragging-columns {
 }
 /* 不会发出去的字段,框子也标红 */
 .ce-section.disabled .ce-textarea,
+.ce-section.silent .ce-textarea,
 .ce-section.missing .ce-textarea,
 .ce-section.forbidden .ce-textarea {
   border-color: var(--danger, #e06c75);
@@ -2117,8 +2154,53 @@ body.dragging-columns {
 .ce-book-row:last-child {
   border-bottom: none;
 }
-.ce-book-row.off {
+.ce-book-entry.off {
   opacity: 0.45;
+}
+.ce-book-entry {
+  border-bottom: 1px solid var(--border);
+}
+.ce-book-entry:last-child {
+  border-bottom: none;
+}
+.ce-book-entry > .ce-book-row {
+  border-bottom: none;
+  cursor: pointer;
+  list-style: none;
+}
+.ce-book-entry > .ce-book-row::-webkit-details-marker {
+  display: none;
+}
+.ce-book-entry > .ce-book-row:hover,
+.ce-book-entry[open] > .ce-book-row {
+  color: var(--text);
+}
+
+.ce-book-body {
+  padding: 2px 10px 10px 42px;
+}
+
+.ce-book-meta {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  margin-bottom: 4px;
+}
+
+.ce-book-content {
+  margin: 0;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 块详情弹窗里的世界书:弹窗本身不滚,列表自己滚 */
+.bm-book {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .ce-book-order {
@@ -2142,6 +2224,180 @@ body.dragging-columns {
   font-size: 10px;
   color: var(--text-faint);
   flex-shrink: 0;
+}
+
+/* ══════════ 世界书编辑器 ══════════ */
+
+/* 关掉的条目只把那一行调暗,展开的表单照常看得清 */
+.wi-entry.off {
+  opacity: 1;
+}
+.wi-entry.off .wi-row-main {
+  opacity: 0.45;
+}
+.wi-entry.open {
+  background: var(--bg);
+}
+.wi-entry > .ce-book-row {
+  padding: 0;
+  gap: 0;
+  cursor: default;
+}
+
+.wi-toggle {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 8px 4px 8px 10px;
+}
+
+.wi-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px 7px 6px;
+  font-size: 11px;
+  color: var(--text-dim);
+  text-align: left;
+}
+.wi-row-main:hover,
+.wi-entry.open .wi-row-main {
+  color: var(--text);
+}
+
+.wi-tag {
+  flex-shrink: 0;
+  padding: 0 5px;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  font-size: 10px;
+  line-height: 16px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+/* 这条下一次请求的下场。触发的用强调色,没触发的压暗 —— 不引新色相 */
+.wi-state {
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+.wi-state.hit {
+  color: var(--accent);
+}
+
+.wi-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 12px 12px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.wi-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  align-items: flex-start;
+}
+
+.wi-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.wi-field.wide {
+  flex: 1;
+  min-width: 200px;
+}
+.wi-field > span {
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+.wi-input {
+  width: 100%;
+  max-width: none;
+  color: var(--text);
+}
+.wi-number-input {
+  width: 96px;
+}
+
+.wi-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+}
+
+.wi-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.wi-advanced {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.wi-advanced > summary {
+  font-size: 11px;
+  color: var(--text-faint);
+  cursor: pointer;
+  user-select: none;
+}
+.wi-advanced[open] > summary {
+  margin-bottom: 10px;
+  color: var(--text-dim);
+}
+.wi-advanced > *:not(summary) {
+  margin-bottom: 10px;
+}
+
+.wi-warn {
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--warn);
+}
+
+.wi-link {
+  margin-left: 6px;
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.wi-empty {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+/* 设置页里的数字框 */
+.wi-number {
+  width: 190px;
+}
+.wi-number .conn-input {
+  width: 96px;
+}
+
+/* 检查器「世界书」页里触发了的那几行 */
+.skip-row.wi-hit > span:first-child {
+  color: var(--text);
 }
 
 /* ══════════ 抽屉右缘:竖版 token 明细条 ══════════ */
@@ -2713,11 +2969,11 @@ body.dragging-columns {
   padding: 30px 20px;
 }
 
-.welcome-mark {
-  font-size: 26px;
-  color: var(--accent);
-  text-shadow: 0 0 18px rgba(255, 255, 255, 0.35);
-  margin-bottom: 8px;
+.welcome-logo {
+  width: 104px;
+  height: 104px;
+  margin-bottom: 10px;
+  filter: drop-shadow(0 0 22px rgba(255, 255, 255, 0.16));
 }
 
 .welcome-title {
@@ -4244,6 +4500,87 @@ textarea.persona-desc {
   font-style: italic;
 }
 
+/* ── 宏页:搜索、分类表头、变量 ── */
+
+.sp-macro-search {
+  align-self: flex-start;
+  width: min(100%, 320px);
+}
+
+/* 分类表头整行可点,收起 / 展开这一类 */
+.sp-macro-cat {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}
+.sp-macro-cat:hover {
+  color: var(--text-dim);
+}
+
+.sp-macro-example {
+  display: block;
+  margin-top: 2px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.sp-var-count {
+  margin-left: 6px;
+  padding: 0 5px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--text-faint);
+}
+
+.sp-var-list {
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.sp-var-row {
+  display: grid;
+  grid-template-columns: minmax(90px, 200px) minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: start;
+  padding: 6px 8px;
+  border-top: 1px solid var(--border);
+}
+.sp-var-row:first-child {
+  border-top: none;
+}
+
+.sp-var-name {
+  padding-top: 5px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sp-var-value {
+  width: 100%;
+  resize: vertical;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.sp-var-add {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.sp-var-add .conn-input {
+  width: min(100%, 220px);
+}
+
 .sp-empty {
   padding: 10px 12px;
   border: 1px dashed var(--border);
@@ -4540,6 +4877,30 @@ textarea.persona-desc {
   cursor: pointer;
 }
 
+/* 位置:按编排 / 绝对深度 二选一,选了绝对深度再露出深度和顺序两个小框 */
+.bm-depth-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+.bm-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.bm-field .bm-num {
+  width: 64px;
+  padding: 4px 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+/* 编排列表里的绝对深度标记:和其他徽章同一套,只换字 */
+.badge-depth {
+  font-family: var(--mono);
+}
+
 .bm-textarea {
   width: 100%;
   min-height: 240px;
@@ -4691,6 +5052,73 @@ textarea.persona-desc {
 .pl-status.off .pl-status-dot {
   border-style: solid;
   border-color: var(--text-dim);
+}
+
+/* Jev 标注:每个标签插件最上面的「AI 写标签 | Jev 标注」(components/JevSettings.tsx) */
+.pl-modebar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.pl-modebar-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.pl-modebar-name {
+  flex: 1;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+.pl-mode {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+.pl-mode button {
+  padding: 4px 12px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.pl-mode button.on {
+  background: var(--accent);
+  color: var(--bg);
+  font-weight: 600;
+}
+.pl-mode button:not(.on):hover {
+  color: var(--text);
+}
+.pl-sub {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+}
+.pl-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.pl-prompt-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+.pl-ph {
+  margin-right: 10px;
+  white-space: nowrap;
 }
 
 .pl-wide {
@@ -5001,6 +5429,28 @@ textarea.persona-desc {
 .pl-thumb-wide img {
   object-fit: cover;
   object-position: center;
+}
+/* CG 的差分:一排小缩略图,下面写表情名 */
+.pl-cg-variants {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.pl-cg-variant {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 120px;
+}
+.pl-cg-variant .pl-thumb-wide {
+  max-width: 120px;
+}
+.pl-cg-variant-name {
+  font-size: 12px;
+  color: var(--text-dim);
+  text-align: center;
+  word-break: break-all;
 }
 .pl-play {
   width: 52px;
@@ -5743,6 +6193,23 @@ textarea.persona-desc {
   height: 36px;
   font-size: 13px;
 }
+.vp-aux {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.vp-aux .pl-field-row {
+  align-items: center;
+}
+.vp-aux-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--text-dim);
+}
 .vp-import {
   display: flex;
   flex-direction: column;
@@ -5965,4 +6432,28 @@ textarea.persona-desc {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 立绘包里每张立绘的「切换特效」一行(components/SpriteFxFields.tsx) */
+.pl-fx {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 6px;
+}
+.pl-fx-title {
+  align-self: center;
+  font-size: 12px;
+  color: var(--text-dim);
+  cursor: help;
+}
+.pl-fx-field {
+  flex: 1 1 90px;
+  min-width: 90px;
+}
+.pl-thumb {
+  position: relative;
+}
+.pl-thumb .vn-bubble {
+  position: absolute;
 }

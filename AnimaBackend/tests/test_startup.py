@@ -28,6 +28,8 @@ def start_app(monkeypatch) -> Iterator[Callable[[], TestClient]]:
     monkeypatch.setattr(main_module.settings, "anthropic_api_key", None)
     monkeypatch.setattr(main_module.settings, "openai_api_key", None)
     monkeypatch.setattr(main_module.settings, "openai_base_url", None)
+    # 自带角色有立绘,预转 WebP 的后台线程会在测试拆掉内存库之后还在读它
+    monkeypatch.setattr(main_module, "prewarm", lambda session_factory: None)
     main_module.app.dependency_overrides.clear()
 
     yield lambda: TestClient(main_module.app)
@@ -59,8 +61,33 @@ def test_first_start_seeds_every_resource_needed_for_offline_use(start_app):
     assert [item["name"] for item in data["connections"]] == ["Mock（本地测试）"]
     assert data["connections"][0]["is_active"] is True
     assert data["connections"][0]["model"] == "mock"
-    assert [item["name"] for item in data["cards"]] == ["Anima"]
+    assert [item["name"] for item in data["cards"]] == ["DeepSeek娘"]
+    assert data["cards"][0]["has_avatar"] is True
     assert [item["name"] for item in data["presets"]] == ["默认预设"]
+
+
+def test_bundled_card_comes_with_its_sprite_pack(start_app):
+    with start_app() as client:
+        card = client.get("/api/tavern/cards").json()[0]
+        bound = client.get(f"/api/tavern/cards/{card['id']}/sprite-packs").json()
+        packs = client.get("/api/sprite-packs").json()
+        sprites = client.get(f"/api/tavern/cards/{card['id']}/sprites").json()
+        image = client.get(f"/api/sprite-packs/{bound['current']}/sprites/{sprites[0]['id']}/image")
+        preset = client.get("/api/tavern/presets").json()[0]
+
+    assert [(p["name"], p["sprite_count"], p["card_count"]) for p in packs] == [
+        ("DeepSeek娘 · 女仆", 16, 1)
+    ]
+    assert bound["pack_ids"] == [packs[0]["id"]]
+    assert bound["current"] == packs[0]["id"]
+    # 排第一的是默认表情;脸的位置随包带着,首启不用再找
+    assert sprites[0]["label"] == "微笑"
+    assert all(s["face_scan"] and s["face_scan"].get("face") for s in sprites)
+    assert image.status_code == 200
+    assert image.headers["content-type"] == "image/webp"
+    # 默认预设带着世界书和立绘指令,自带角色开箱就能换表情
+    enabled = [o["identifier"] for o in preset["prompt_order"][0]["order"] if o["enabled"]]
+    assert {"worldInfoBefore", "worldInfoAfter", "anima_sprite"} <= set(enabled)
 
 
 def test_restarting_app_is_idempotent_and_preserves_user_edits(start_app):
@@ -121,7 +148,22 @@ def test_deleted_bundled_card_is_recreated_without_overwriting_existing_preset(s
         presets = client.get("/api/tavern/presets").json()
 
     assert len(cards) == 1
-    assert cards[0]["name"] == "Anima"
+    assert cards[0]["name"] == "DeepSeek娘"
     assert cards[0]["id"] != card["id"]
     assert len(presets) == 1
     assert presets[0]["id"] == preset["id"]
+
+
+def test_recreated_bundled_card_reuses_the_existing_sprite_pack(start_app):
+    with start_app() as client:
+        card = client.get("/api/tavern/cards").json()[0]
+        pack = client.get("/api/sprite-packs").json()[0]
+        assert client.delete(f"/api/tavern/cards/{card['id']}").status_code == 204
+
+    with start_app() as client:
+        new_card = client.get("/api/tavern/cards").json()[0]
+        packs = client.get("/api/sprite-packs").json()
+        bound = client.get(f"/api/tavern/cards/{new_card['id']}/sprite-packs").json()
+
+    assert [p["id"] for p in packs] == [pack["id"]]
+    assert bound["current"] == pack["id"]

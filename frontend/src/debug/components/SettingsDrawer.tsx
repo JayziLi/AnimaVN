@@ -20,13 +20,12 @@ import {
 } from '../lib/chatSettings';
 import { renderQuoted } from '../lib/richText';
 import { DEFAULT_AVATAR } from '../lib/avatar';
-import {
-  BUILTIN_MACROS,
-  RESERVED_MACRO_NAMES,
-  substituteMacros,
-  type MacroContext,
-} from '../lib/macros';
-import { NAME_RE, type CustomMacro } from '../lib/customMacros';
+import type { MacroContext, MacroVars } from '../lib/macros';
+import type { CustomMacro } from '../lib/customMacros';
+import { MacroSection } from './MacroSection';
+import { DEFAULT_WORLD_INFO_SETTINGS, type WorldInfoSettings } from '../lib/worldInfo';
+import { isDefaultWorldInfoSettings } from '../lib/worldInfoSettings';
+import { WorldInfoSettingsSection } from './WorldInfoSettingsSection';
 
 interface Props {
   settings: ChatSettings;
@@ -36,6 +35,13 @@ interface Props {
   macros: MacroContext;
   custom: CustomMacro[];
   onChangeCustom: (next: CustomMacro[]) => void;
+  /** 这条对话的变量和全局变量 —— 宏页上能看能改 */
+  variables: MacroVars;
+  onChangeVariables: (next: MacroVars) => void;
+  /** 有没有打开着的对话 */
+  hasChat: boolean;
+  worldInfo: WorldInfoSettings;
+  onChangeWorldInfo: (next: WorldInfoSettings) => void;
   onClose: () => void;
 }
 
@@ -43,6 +49,7 @@ interface Props {
 const SECTIONS = [
   { key: 'chat', name: '聊天', icon: '💬' },
   { key: 'macro', name: '宏', icon: '{}' },
+  { key: 'world', name: '世界书', icon: '📖' },
 ] as const;
 type SectionKey = (typeof SECTIONS)[number]['key'];
 
@@ -142,193 +149,17 @@ function LayoutPreview({ kind }: { kind: ChatLayout }) {
 const SAMPLE =
   '他把伞收了收,侧过身让出半边路。「今天风大,你走里面。」\n她没接话,只是笑了笑:"那你呢?"';
 
-const TRY_SAMPLE = '{{char}} 看了 {{user}} 一眼:「又是你。」';
-
-/** 一行自定义宏的毛病。null = 没毛病 */
-function macroFault(
-  m: CustomMacro,
-  index: number,
-  list: readonly CustomMacro[],
-): string | null {
-  const name = m.name.trim();
-  if (!name) return '还没起名字 —— 这行不会生效';
-  if (!NAME_RE.test(name)) return '名字里不能有大括号、冒号或空格';
-  if (RESERVED_MACRO_NAMES.has(name.toLowerCase())) return '这个名字被内置宏占了,内置的优先';
-  const dup = list.findIndex(
-    (o, i) => i !== index && o.name.trim().toLowerCase() === name.toLowerCase(),
-  );
-  if (dup !== -1 && dup < index) return '和上面某一行重名了,只有最后一行生效';
-  return null;
-}
-
-/**
- * 「设置 › 宏」。两件事:把当前的宏映射摊开给人看,以及让人自己加几个。
- *
- * 表里的「当前值」读的是真实 ctx —— 所以它也是个诊断工具:{{persona}} 显示
- * 「(空)」就说明你还没激活人设,不用去猜为什么提示词里那块是空的。
- */
-function MacroSection({
-  macros,
-  custom,
-  onChangeCustom,
-}: {
-  macros: MacroContext;
-  custom: CustomMacro[];
-  onChangeCustom: (next: CustomMacro[]) => void;
-}) {
-  const [tryText, setTryText] = useState(TRY_SAMPLE);
-  const [copied, setCopied] = useState<string | null>(null);
-
-  const patchRow = (i: number, p: Partial<CustomMacro>) =>
-    onChangeCustom(custom.map((m, j) => (i === j ? { ...m, ...p } : m)));
-
-  const copy = (syntax: string) => {
-    void navigator.clipboard?.writeText(syntax).then(
-      () => {
-        setCopied(syntax);
-        window.setTimeout(() => setCopied((c) => (c === syntax ? null : c)), 1200);
-      },
-      () => {},
-    );
-  };
-
-  return (
-    <>
-      {/* ── 内置宏:当前映射到什么 ── */}
-      <div className="sp-group">
-        <div className="sp-group-head">
-          <span className="sp-group-title">内置宏</span>
-          <span className="sp-group-note">
-            当前这一刻的实际取值 · 点宏名可复制 · 组装提示词和聊天区显示用的是同一份
-          </span>
-        </div>
-
-        <div className="sp-macro-table">
-          <div className="sp-macro-row head">
-            <span>宏</span>
-            <span>说明</span>
-            <span>当前值</span>
-          </div>
-          {BUILTIN_MACROS.map((m) => {
-            const v = m.value(macros);
-            return (
-              <div className="sp-macro-row" key={m.key}>
-                <button
-                  className={`sp-macro-name${copied === m.syntax ? ' copied' : ''}`}
-                  onClick={() => copy(m.syntax)}
-                  title="点一下复制"
-                >
-                  {copied === m.syntax ? '已复制' : m.syntax}
-                </button>
-                <span className="sp-macro-note">
-                  {m.note}
-                  {m.alias?.length ? (
-                    <span className="sp-macro-alias">别名 {`{{${m.alias[0]}}}`}</span>
-                  ) : null}
-                </span>
-                {m.dynamic ? (
-                  <span className="sp-macro-value dyn" title="每次求值都可能不同">
-                    {m.key === 'time' || m.key === 'date' ? v : '每次求值都不同'}
-                  </span>
-                ) : v ? (
-                  <span className="sp-macro-value" title={v}>
-                    {v.length > 60 ? `${v.slice(0, 60)}…` : v}
-                  </span>
-                ) : (
-                  <span className="sp-macro-value empty">(空)</span>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* ── 自定义宏 ── */}
-      <div className="sp-group">
-        <div className="sp-group-head">
-          <span className="sp-group-title">自定义宏</span>
-          <span className="sp-group-note">
-            值里可以再套宏(比如 {'{{char}}'});内置宏优先,占不到上面那些名字
-          </span>
-        </div>
-
-        {custom.length === 0 && (
-          <div className="sp-empty">
-            还没有自定义宏。加一个之后,预设、角色卡、聊天输入里写 {'{{名字}}'} 都会展开。
-          </div>
-        )}
-
-        <div className="sp-custom-list">
-          {custom.map((m, i) => {
-            const fault = macroFault(m, i, custom);
-            return (
-              <div className={`sp-custom-row${fault ? ' bad' : ''}`} key={i}>
-                <div className="sp-custom-name">
-                  <span className="sp-brace">{'{{'}</span>
-                  <input
-                    className="conn-input"
-                    value={m.name}
-                    placeholder="名字"
-                    spellCheck={false}
-                    onChange={(e) => patchRow(i, { name: e.target.value })}
-                  />
-                  <span className="sp-brace">{'}}'}</span>
-                </div>
-                <textarea
-                  className="conn-input sp-custom-value"
-                  value={m.value}
-                  placeholder="展开成什么"
-                  rows={2}
-                  onChange={(e) => patchRow(i, { value: e.target.value })}
-                />
-                <button
-                  className="icon-btn tiny"
-                  onClick={() => onChangeCustom(custom.filter((_, j) => j !== i))}
-                  title="删掉这个宏"
-                >
-                  ✕
-                </button>
-                {fault && <span className="sp-custom-fault">{fault}</span>}
-              </div>
-            );
-          })}
-        </div>
-
-        <button
-          className="btn small"
-          onClick={() => onChangeCustom([...custom, { name: '', value: '' }])}
-        >
-          ＋ 新增宏
-        </button>
-      </div>
-
-      {/* ── 试一试:写对没有,当场就知道 ── */}
-      <div className="sp-group">
-        <div className="sp-group-head">
-          <span className="sp-group-title">试一试</span>
-          <span className="sp-group-note">左边随便写,右边是展开后的样子</span>
-        </div>
-        <div className="sp-try">
-          <textarea
-            className="conn-input sp-try-in"
-            value={tryText}
-            rows={4}
-            spellCheck={false}
-            onChange={(e) => setTryText(e.target.value)}
-          />
-          <div className="sp-try-out">{substituteMacros(tryText, macros) || '(空)'}</div>
-        </div>
-      </div>
-    </>
-  );
-}
-
 export function SettingsDrawer({
   settings,
   onChange,
   macros,
   custom,
   onChangeCustom,
+  variables,
+  onChangeVariables,
+  hasChat,
+  worldInfo,
+  onChangeWorldInfo,
   onClose,
 }: Props) {
   const [section, setSection] = useState<SectionKey>('chat');
@@ -342,16 +173,21 @@ export function SettingsDrawer({
   const percent = Math.round(settings.fontScale * 100);
 
   // 「恢复默认」只管当前分类 —— 在宏页上点它却把排版清了,没人会预料到
-  const pristine = section === 'chat' ? isDefaultChatSettings(settings) : custom.length === 0;
-  const restoreTitle =
+  const pristine =
     section === 'chat'
+      ? isDefaultChatSettings(settings)
+      : section === 'world'
+        ? isDefaultWorldInfoSettings(worldInfo)
+        : custom.length === 0;
+  const restoreTitle =
+    section === 'macro'
       ? pristine
-        ? '当前全是默认值'
-        : '把「聊天」这一页恢复成默认'
-      : pristine
         ? '还没有自定义宏'
-        : '清空所有自定义宏';
-  const restoreLabel = section === 'chat' ? '恢复默认' : '清空自定义宏';
+        : '清空所有自定义宏'
+      : pristine
+        ? '当前全是默认值'
+        : `把「${section === 'chat' ? '聊天' : '世界书'}」这一页恢复成默认`;
+  const restoreLabel = section === 'macro' ? '清空自定义宏' : '恢复默认';
 
   const restore = () => {
     if (!armed) {
@@ -360,6 +196,7 @@ export function SettingsDrawer({
     }
     setArmed(false);
     if (section === 'chat') onChange(DEFAULT_CHAT_SETTINGS);
+    else if (section === 'world') onChangeWorldInfo(DEFAULT_WORLD_INFO_SETTINGS);
     else onChangeCustom([]);
   };
 
@@ -370,7 +207,9 @@ export function SettingsDrawer({
         <span className="conn-drawer-sub">
           {section === 'chat'
             ? '只影响这台机器上的显示,不改提示词、不入库'
-            : '存在这台机器上,不入库 —— 但它会进提示词'}
+            : section === 'world'
+              ? '存在这台机器上,对所有角色生效 · 默认值和酒馆一样'
+              : '宏会进提示词 · 对话的变量跟对话存,其余存在这台机器上'}
         </span>
         <div style={{ flex: 1 }} />
         <button
@@ -409,7 +248,24 @@ export function SettingsDrawer({
 
         <div className="sp-body">
           {section === 'macro' && (
-            <MacroSection macros={macros} custom={custom} onChangeCustom={onChangeCustom} />
+            <MacroSection
+              macros={macros}
+              custom={custom}
+              onChangeCustom={onChangeCustom}
+              variables={variables}
+              onChangeVariables={onChangeVariables}
+              hasChat={hasChat}
+            />
+          )}
+
+          {section === 'world' && (
+            <WorldInfoSettingsSection
+              settings={worldInfo}
+              onChange={(next) => {
+                setArmed(false);
+                onChangeWorldInfo(next);
+              }}
+            />
           )}
 
           {section === 'chat' && (

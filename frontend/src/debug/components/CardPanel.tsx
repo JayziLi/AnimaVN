@@ -28,6 +28,8 @@ interface Props {
   view: CardView;
   /** 列表行的头像缓存:id → data URL */
   avatars: Map<string, string>;
+  /** 列表挂出来时要这些卡的头像(DebugApp 按需拉) */
+  onNeedAvatars: (ids: string[]) => void;
   saveState: SaveState;
   busy: boolean;
   onToggleCollapse: () => void;
@@ -59,6 +61,7 @@ export function CardPanel({
   selectedId,
   view,
   avatars,
+  onNeedAvatars,
   saveState,
   busy,
   onToggleCollapse,
@@ -186,6 +189,7 @@ export function CardPanel({
           cards={saved}
           selectedId={selectedId}
           avatars={avatars}
+          onNeedAvatars={onNeedAvatars}
           busy={busy}
           onSelect={onSelectCard}
         />

@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>登录页 · 所有状态</title>
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Noto+Serif+SC:wght@500;600&display=swap"
+    />
+    <style>
+      body {
+        margin: 0;
+        padding: 32px 36px 60px;
+        background: #e9e4dc;
+        color: #1c1820;
+        font: 14px/1.5 system-ui, 'Microsoft YaHei', sans-serif;
+      }
+      h1 {
+        margin: 0 0 4px;
+        font: 600 22px/1.3 'Noto Serif SC', serif;
+        letter-spacing: 0.12em;
+      }
+      h1 + p {
+        margin: 0 0 28px;
+        color: #6b6470;
+      }
+      h2 {
+        margin: 34px 0 14px;
+        font: 600 15px/1 'Noto Serif SC', serif;
+        letter-spacing: 0.16em;
+      }
+      h2 small {
+        margin-left: 10px;
+        font: 600 11px/1 'Cormorant Garamond', serif;
+        letter-spacing: 0.3em;
+        color: #8a8290;
+      }
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 22px;
+      }
+      figure {
+        margin: 0;
+      }
+      figcaption {
+        margin-top: 8px;
+        font-size: 12.5px;
+        color: #5e5764;
+      }
+      .frame {
+        position: relative;
+        overflow: hidden;
+        border-radius: 14px;
+        background: #17141b;
+        box-shadow: 0 10px 30px -12px rgba(28, 24, 32, 0.45);
+      }
+      .frame.desk {
+        border-radius: 6px;
+      }
+      .frame iframe {
+        position: absolute;
+        left: 0;
+        top: 0;
+        border: 0;
+        transform-origin: 0 0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>AnimaVN 登录 / 注册</h1>
+    <p>每一格都是 index.html 本身（带参数打开），点格子下面的字可以单独打开那一格。</p>
+    <div id="board"></div>
+    <script>
+      const PHONE = { w: 390, h: 844, s: 0.6 };
+      const THUMB = { w: 390, h: 844, s: 0.38 };
+      const DESK = { w: 1440, h: 900, s: 0.45 };
+      const PLACES = ['花田', '建实神社', '竹林小道', '图书馆', '河堤夜樱', '夏莱黄昏', '二十四桥', '西湖断桥'];
+      const STATES = [
+        ['login', '登录', 0],
+        ['register', '注册', 1],
+        ['error', '出错（登录，服务器回的错）', 2],
+        ['error-register', '出错（注册，两次密码不一样）', 3],
+        ['busy', '提交中', 6],
+      ];
+      const SECTIONS = [
+        {
+          title: '手机 · 各种状态',
+          en: 'PHONE · STATES',
+          size: PHONE,
+          frames: STATES.map(([state, label, pick]) => ({ state, pick, label: `${label} · ${PLACES[pick]}` })),
+        },
+        {
+          title: '手机 · 封面池',
+          en: 'PHONE · RANDOM COVERS',
+          size: THUMB,
+          frames: PLACES.map((label, pick) => ({ state: 'login', pick, label })),
+        },
+        {
+          title: '桌面',
+          en: 'DESKTOP 1440 × 900',
+          size: DESK,
+          frames: [
+            { state: 'login', pick: 0, label: '登录 · 花田' },
+            { state: 'register', pick: 4, label: '注册 · 河堤夜樱' },
+            { state: 'error-register', pick: 3, label: '出错（注册）· 图书馆' },
+            { state: 'busy', pick: 7, label: '提交中 · 西湖断桥' },
+          ],
+        },
+      ];
+      const board = document.getElementById('board');
+      for (const sec of SECTIONS) {
+        const h = document.createElement('h2');
+        h.innerHTML = `${sec.title}<small>${sec.en}</small>`;
+        const row = document.createElement('div');
+        row.className = 'row';
+        for (const f of sec.frames) {
+          const { w, h: hh, s } = sec.size;
+          const src = `index.html?ui=0&state=${f.state}&pick=${f.pick}`;
+          const fig = document.createElement('figure');
+          fig.innerHTML = `
+            <div class="frame ${sec.size === DESK ? 'desk' : ''}" style="width:${w * s}px;height:${hh * s}px">
+              <iframe src="${src}" width="${w}" height="${hh}" style="transform:scale(${s})" loading="lazy"></iframe>
+            </div>
+            <figcaption><a href="${src}" target="_blank" style="color:inherit">${f.label}</a></figcaption>`;
+          row.appendChild(fig);
+        }
+        board.append(h, row);
+      }
+    </script>
+  </body>
+</html>

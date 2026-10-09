@@ -72,7 +72,8 @@ def _st_extra(info: dict) -> dict:
 
 def _our_info(extra: dict | None, st_swipe: dict | None) -> dict:
     """ST extra(+分支时间戳) → 我们的 SwipeInfo。导入方向。"""
-    extra = extra or {}
+    # 手改过 / 别的工具导出的文件里 extra 可能不是对象:当成没有,别让整个导入 500
+    extra = extra if isinstance(extra, dict) else {}
     info: dict = {}
     if extra.get("model"):
         info["model"] = extra["model"]
@@ -100,6 +101,9 @@ def chat_to_jsonl(
     metadata: dict = {"tainted": bool(chat.tainted)}
     if parent_stem:
         metadata["main_chat"] = parent_stem
+    variables = getattr(chat, "variables", None)
+    if variables:
+        metadata["variables"] = variables
 
     lines = [
         json.dumps(
@@ -155,6 +159,7 @@ def parse_st_jsonl(name: str, text: str) -> dict:
         "user_name": "User",
         "character_name": "",
         "tainted": False,
+        "variables": {},
         "main_chat": None,
         "messages": [],
         "branch_links": [],
@@ -171,11 +176,17 @@ def parse_st_jsonl(name: str, text: str) -> dict:
             continue
 
         if lineno == 0 and "mes" not in obj:
-            parsed["user_name"] = obj.get("user_name") or "User"
-            parsed["character_name"] = obj.get("character_name") or ""
-            metadata = obj.get("chat_metadata") or {}
+            parsed["user_name"] = str(obj.get("user_name") or "User")
+            parsed["character_name"] = str(obj.get("character_name") or "")
+            # 头一行的字段类型不对(手改过的文件)按缺省处理,别让整个导入 500
+            metadata = obj.get("chat_metadata")
+            if not isinstance(metadata, dict):
+                metadata = {}
             parsed["tainted"] = bool(metadata.get("tainted"))
-            parsed["main_chat"] = metadata.get("main_chat")
+            main_chat = metadata.get("main_chat")
+            parsed["main_chat"] = main_chat if isinstance(main_chat, str) else None
+            variables = metadata.get("variables")
+            parsed["variables"] = variables if isinstance(variables, dict) else {}
             continue
 
         is_user = bool(obj.get("is_user"))

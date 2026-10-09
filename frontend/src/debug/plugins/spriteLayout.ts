@@ -5,7 +5,7 @@
  *
  * 三层叠起来:
  *   全局(所有角色共用,存在 app_settings 的 plugin.sprite_stage):脸多大、头多高
- *   自动:后端找到的脸(CardSprite.face_scan,见 AnimaBackend/app/sprite_faces.py)
+ *   自动:后端找到的脸(PackSprite.face_scan,见 AnimaBackend/app/sprite_faces.py)
  *   每张卡的微调(CardSpriteLayout):再放大缩小、挪一挪,或者关掉自动
  * 找不到脸或关了自动的,按老办法摆:撑满舞台高度、底边对齐、居中,微调照样生效。
  *
@@ -14,7 +14,7 @@
  */
 
 import type { CSSProperties } from 'react';
-import type { CardSprite, SpriteLayout } from '../lib/api';
+import type { PackSprite, SpriteLayout } from '../lib/api';
 
 export const SPRITE_STAGE_KEY = 'plugin.sprite_stage';
 
@@ -63,8 +63,8 @@ const median = (xs: number[]) => {
  * 每张立绘用哪个脸框。同一张画布(宽 × 高一样)的表情共用一个:各张的识别结果取中位数。
  * 每张用自己的框的话,识别差几个像素,换表情时人就会抖一下;个别没认出脸的表情也能跟着用。
  */
-export function facesByCanvas(sprites: readonly CardSprite[]): Map<string, FaceBox> {
-  const canvasOf = (s: CardSprite) =>
+export function facesByCanvas(sprites: readonly PackSprite[]): Map<string, FaceBox> {
+  const canvasOf = (s: PackSprite) =>
     s.face_scan?.width && s.face_scan.height ? `${s.face_scan.width}x${s.face_scan.height}` : null;
   const found = new Map<string, FaceBox[]>();
   for (const s of sprites) {
@@ -116,5 +116,30 @@ export function spriteStyle(
     left,
     bottom: `${-layout.dy * 100}cqh`,
     transform: 'translateX(-50%)',
+  };
+}
+
+/**
+ * 立绘切换特效的头顶气泡摆在哪:脸的右上方,大小跟着脸走。和 spriteStyle 同一套单位(cqh)。
+ * 没认出脸的立绘按「撑满高度的全身像、头在上面 12% 左右」估一个位置
+ */
+export function bubbleStyle(face: FaceBox | null, layout: SpriteLayout, stage: SpriteStage): CSSProperties {
+  const cx = 50; // 舞台中线(%),dx 另外按 cqh 加
+  if (face && layout.auto) {
+    const faceH = stage.faceSize * layout.zoom;
+    const size = faceH * 0.62;
+    return {
+      left: `calc(${cx}% + ${(layout.dx + faceH * 0.42) * 100}cqh)`,
+      top: `${(stage.faceTop + layout.dy - faceH * 0.38) * 100}cqh`,
+      width: `${size * 100}cqh`,
+      height: `${size * 100}cqh`,
+    };
+  }
+  const size = 0.13 * layout.zoom;
+  return {
+    left: `calc(${cx}% + ${(layout.dx + 0.08 * layout.zoom) * 100}cqh)`,
+    top: `${(1 - layout.zoom + layout.dy + 0.02) * 100}cqh`,
+    width: `${size * 100}cqh`,
+    height: `${size * 100}cqh`,
   };
 }

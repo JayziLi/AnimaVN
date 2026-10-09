@@ -93,7 +93,11 @@ export function PersonaDrawer({
 
   /** 点一行 = 启用它 + 把它装进表单。选身份和看详情是同一个动作 */
   const pick = async (p: DebugPersona) => {
-    loadForm(p);
+    // 点的就是正在编辑的这个:表单不动,只管启用
+    if (p.id !== editingId) {
+      if (!confirmDiscard()) return;
+      loadForm(p);
+    }
     if (p.is_active) return;
     setBusy(true);
     try {
@@ -195,6 +199,11 @@ export function PersonaDrawer({
   const formOpen = creating || editingId !== null;
   const dirty =
     editing !== null && (name.trim() !== editing.name || description !== editing.description);
+  /** 表单里有没保存的东西(改了一半、新建填了一半)时,换行 / 收起之前问一句 */
+  function confirmDiscard(): boolean {
+    const unsaved = dirty || (creating && (name.trim() !== '' || description.trim() !== ''));
+    return !unsaved || window.confirm('人设的改动还没保存,放弃这些改动?');
+  }
 
   return (
     <div className="conn-drawer">
@@ -214,7 +223,7 @@ export function PersonaDrawer({
             {active.name}
           </span>
         )}
-        <button className="panel-collapse" onClick={onClose} title="收起">
+        <button className="panel-collapse" onClick={() => confirmDiscard() && onClose()} title="收起">
           ✕
         </button>
       </div>

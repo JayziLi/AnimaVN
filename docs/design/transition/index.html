@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>封面 ↔ 选角色 · 动画衔接</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&family=Cormorant+Garamond:ital,wght@1,500&display=swap">
+<style>
+/* 封面(纸面 / v1)和选角色(纸面板 / 场景毛玻璃)之间的动画原型。
+   原则:封面上已经有的东西不消失,变成选角色里对应的东西 ——
+   纸面封面的那张纸 → 右边的纸面板;v1 封面右下的对话框 → 纸面板;她从右走到左。
+   所有动画都是 CSS transition,状态由 stage 上的 data-mode / data-cover / data-target 决定,改 React 时照搬。 */
+:root { --ink: #2a2a33; --dim: rgba(42, 42, 51, 0.56); --paper: #fbfaf8; --serif: 'Noto Serif SC', serif; --latin: 'Cormorant Garamond', serif; }
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: #0c0d14; font: 14px/1.6 'Noto Sans SC', 'Microsoft YaHei', sans-serif; color: var(--ink); overflow: hidden; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+svg.star { fill: currentColor; }
+
+#wrap { position: absolute; left: 50%; top: calc(50% - 26px); width: 1440px; height: 810px; transform-origin: 0 0; }
+.stage { position: absolute; inset: 0; overflow: hidden; background: #161a33; --slow: 1; --acc: #8d93b8; transition: --acc 0.6s; }
+
+/* ---------- 背景:她的场景(两张交叉淡入淡出)+ 夜空层 ---------- */
+.scene img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transform: scale(1.06); transition: opacity calc(0.8s * var(--slow)) ease, transform calc(1.4s * var(--slow)) cubic-bezier(0.2, 0.7, 0.2, 1); }
+.scene img.on { opacity: 1; }
+[data-mode="cover"] .scene img.on { transform: scale(1.04); }
+[data-mode="select"] .scene img.on { transform: scale(1) translateX(-1.5%); }
+.night { position: absolute; inset: 0; background: #161a33; opacity: 0; transition: opacity calc(0.7s * var(--slow)) ease calc(0.15s * var(--slow)); }
+.night img { position: absolute; inset: 0; width: 100%; height: 100%; }
+.night .glow { position: absolute; inset: 0; background: radial-gradient(560px 486px at 26% 40%, color-mix(in srgb, var(--acc) 34%, transparent), transparent 70%); transition: background 0.6s; }
+[data-target="night"][data-mode="select"] .night { opacity: 1; }
+[data-mode="cover"] .night { transition-delay: 0s; transition-duration: calc(0.5s * var(--slow)); }
+/* 入夜时星星一颗颗亮起来 */
+.twinkle { position: absolute; inset: 0; pointer-events: none; }
+.twinkle i { position: absolute; width: 3px; height: 3px; border-radius: 50%; background: #fff; box-shadow: 0 0 6px #fff; opacity: 0; transform: scale(0.2); transition: opacity 0.5s, transform 0.5s; }
+[data-target="night"][data-mode="select"] .twinkle i { opacity: 0.85; transform: none; transition-delay: calc((0.35s + var(--k) * 0.035s) * var(--slow)); }
+.zoom { position: absolute; inset: 0; clip-path: polygon(0 0, 900px 0, 900px 810px, 0 810px); opacity: 0; transition: opacity calc(0.6s * var(--slow)) ease calc(0.4s * var(--slow)); pointer-events: none; }
+.zoom img { position: absolute; opacity: 0.15; filter: saturate(0.6) brightness(1.2); }
+[data-target="night"][data-mode="select"] .zoom { opacity: 1; }
+[data-mode="cover"] .zoom { transition-delay: 0s; transition-duration: 0.2s; }
+
+/* v1 封面的白纱 */
+.veil { position: absolute; inset: 0; background: linear-gradient(100deg, rgba(251, 250, 248, 0.94) 0%, rgba(251, 250, 248, 0.86) 24%, rgba(251, 250, 248, 0.42) 40%, rgba(251, 250, 248, 0) 54%); opacity: 0; transition: opacity calc(0.5s * var(--slow)) ease; }
+[data-cover="v1"][data-mode="cover"] .veil { opacity: 1; transition-delay: calc(0.3s * var(--slow)); }
+
+/* ---------- 那张纸:封面的纸 / v1 的对话框底 → 选角色的纸面板(clip-path 多边形变形) ---------- */
+.paperwrap { position: absolute; inset: 0; filter: drop-shadow(-6px 0 16px rgba(5, 5, 20, 0.3)); pointer-events: none; }
+#paper { position: absolute; inset: 0; background-color: rgba(251, 250, 248, 1); transition: clip-path calc(0.8s * var(--slow)) cubic-bezier(0.72, 0, 0.18, 1) calc(0.1s * var(--slow)), background-color calc(0.6s * var(--slow)) ease, backdrop-filter calc(0.6s * var(--slow)) ease; }
+#paper .map { position: absolute; left: 0; top: 0; width: 1440px; height: 810px; opacity: 0.13; }
+[data-mode="cover"] #paper { transition-delay: calc(0.12s * var(--slow)); }
+
+/* ---------- 立绘:封面姿势(右侧)↔ 选角色姿势(左侧) ---------- */
+#spr { position: absolute; inset: 0; pointer-events: none; }
+#spr img { position: absolute; transition: left calc(0.85s * var(--slow)) cubic-bezier(0.65, 0, 0.2, 1) calc(0.14s * var(--slow)), top calc(0.85s * var(--slow)) cubic-bezier(0.65, 0, 0.2, 1) calc(0.14s * var(--slow)), height calc(0.85s * var(--slow)) cubic-bezier(0.65, 0, 0.2, 1) calc(0.14s * var(--slow)), opacity calc(0.4s * var(--slow)) ease; filter: drop-shadow(0 10px 24px rgba(5, 5, 20, 0.45)); }
+#spr img.out { opacity: 0; }
+#spr img.swap { transition: opacity calc(0.4s * var(--slow)) ease, transform calc(0.5s * var(--slow)) cubic-bezier(0.2, 0.7, 0.2, 1); }
+.shade { position: absolute; inset: 0; clip-path: polygon(0 0, 880px 0, 880px 810px, 0 810px); background: linear-gradient(to top, rgba(12, 14, 30, 0.9) 0%, rgba(12, 14, 30, 0.55) 30%, rgba(12, 14, 30, 0) 50%); opacity: 0; transition: opacity calc(0.5s * var(--slow)) ease; pointer-events: none; }
+[data-mode="select"] .shade { opacity: 1; transition-delay: calc(0.5s * var(--slow)); }
+
+/* ---------- 封面的东西:select 时先走(往左淡出),回封面时最后回来 ---------- */
+.cv { transition: opacity calc(0.35s * var(--slow)) ease, transform calc(0.45s * var(--slow)) cubic-bezier(0.2, 0.7, 0.2, 1); }
+[data-mode="select"] .cv { opacity: 0; transform: translateX(-26px); pointer-events: none; transition-delay: calc(var(--i, 0) * 0.04s * var(--slow)); }
+[data-mode="cover"] .cv { transition-delay: calc((0.62s + var(--i, 0) * 0.05s) * var(--slow)); }
+.frame { position: absolute; inset: 19px; border: 1px solid rgba(255, 255, 255, 0.85); outline: 1px solid rgba(42, 42, 51, 0.14); outline-offset: 4px; pointer-events: none; }
+.frame svg { position: absolute; width: 16px; height: 16px; color: #fff; }
+.lockup { position: absolute; left: 101px; top: 72px; display: flex; align-items: center; filter: invert(1) hue-rotate(180deg) brightness(0.9); }
+.lockup .mark { width: 150px; height: 150px; }
+.lockup .word { width: 446px; margin-left: -20px; }
+.menu { position: absolute; left: 124px; top: 268px; display: flex; flex-direction: column; gap: 2px; }
+.menu button { position: relative; display: flex; align-items: baseline; gap: 14px; padding: 8px 24px 8px 34px; text-align: left; }
+.menu .zh { font: 700 26px/1.1 var(--serif); letter-spacing: 0.26em; }
+.menu .en { font: italic 500 15px/1 var(--latin); letter-spacing: 0.14em; color: var(--dim); }
+.menu .sub { font-size: 12px; letter-spacing: 0.08em; color: var(--dim); }
+.menu .hot .zh { color: var(--acc); }
+.menu .hot::before { content: ''; position: absolute; left: 10px; top: 50%; width: 14px; height: 14px; margin-top: -7px; background: var(--acc); clip-path: path('M7 0C7.8 5.2 8.8 6.2 14 7 8.8 7.8 7.8 8.8 7 14 6.2 8.8 5.2 7.8 0 7 5.2 6.2 6.2 5.2 7 0Z'); animation: pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 50% { transform: scale(0.7) rotate(45deg); } }
+.menu hr { width: 178px; margin: 8px 0 8px 34px; border: 0; border-top: 1px dotted rgba(42, 42, 51, 0.28); }
+.castrow { position: absolute; left: 124px; bottom: 60px; display: none; align-items: center; gap: 10px; }
+[data-cover="v1"] .castrow { display: flex; }
+.castrow span { font: italic 500 14px/1 var(--latin); letter-spacing: 0.16em; color: var(--dim); margin-right: 6px; }
+.castrow img { width: 48px; height: 48px; border-radius: 50%; border: 1.5px solid #fff; box-shadow: 0 2px 8px rgba(60, 50, 70, 0.22); object-fit: cover; cursor: pointer; opacity: 0.75; }
+.castrow img.cur { opacity: 1; box-shadow: 0 0 0 2.5px var(--paper), 0 0 0 4.5px var(--acc); }
+/* 右下:上次那句。纸面封面里它是自己的一张小卡;v1 里它的底就是那张会展开的纸,自己只留文字 */
+.last { position: absolute; left: 900px; top: 612px; width: 454px; height: 132px; padding: 26px 24px 18px; border-radius: 6px; background: rgba(251, 250, 248, 0.86); border: 1px solid rgba(255, 255, 255, 0.9); box-shadow: 0 8px 24px rgba(60, 50, 70, 0.18); }
+[data-cover="v1"] .last { background: none; border-color: transparent; box-shadow: none; }
+.last .nm { position: absolute; left: 19px; top: -16px; height: 32px; padding: 0 18px; display: flex; align-items: center; border-radius: 4px; background: var(--acc); color: #fff; font: 700 16px/1 var(--serif); letter-spacing: 0.22em; box-shadow: 0 3px 8px rgba(10, 10, 30, 0.2); transition: background 0.6s; }
+.last .ln { font: 500 18px/1.7 var(--serif); letter-spacing: 0.06em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.last .mt { display: flex; justify-content: space-between; margin-top: 8px; font-size: 11px; letter-spacing: 0.12em; color: var(--dim); }
+
+/* ---------- 选角色的东西:回封面时先走,进来时最后到 ---------- */
+.se { transition: opacity calc(0.35s * var(--slow)) ease, transform calc(0.5s * var(--slow)) cubic-bezier(0.2, 0.7, 0.2, 1); }
+[data-mode="cover"] .se { opacity: 0; transform: translateY(14px); pointer-events: none; transition-delay: calc(var(--i, 0) * 0.02s * var(--slow)); }
+[data-mode="select"] .se { transition-delay: calc((0.62s + var(--i, 0) * 0.035s) * var(--slow)); }
+.head { position: absolute; left: 58px; top: 36px; display: flex; align-items: center; gap: 20px; color: #f6f6f8; text-shadow: 0 1px 8px rgba(10, 10, 30, 0.45); }
+.head button { padding: 6px 14px; border: 1px solid rgba(246, 246, 248, 0.4); border-radius: 999px; font-size: 13px; letter-spacing: 0.16em; }
+.head h2 { margin: 0; font: 700 27px/1 var(--serif); letter-spacing: 0.4em; }
+.head i { font: italic 500 15px/1 var(--latin); letter-spacing: 0.2em; opacity: 0.75; }
+.detail { position: absolute; left: 58px; bottom: 44px; width: 480px; color: #f6f6f8; }
+.detail .lb { display: flex; align-items: center; gap: 10px; font: 700 14px/1 var(--serif); letter-spacing: 0.22em; opacity: 0.85; }
+.detail .lb svg { width: 12px; height: 12px; color: var(--acc); }
+.detail .nm { margin-top: 10px; font: 700 46px/1.12 var(--serif); letter-spacing: 0.12em; text-shadow: 0 2px 12px rgba(0, 0, 0, 0.5); }
+.detail .ln { margin: 10px 0 0; font: 500 15px/1.7 var(--serif); letter-spacing: 0.04em; opacity: 0.9; }
+.detail .mt { margin-top: 8px; font-size: 12px; letter-spacing: 0.1em; opacity: 0.72; }
+.detail .chips { display: flex; gap: 6px; margin-top: 10px; }
+.detail .chips span { padding: 3px 11px; border-radius: 999px; background: rgba(255, 255, 255, 0.08); font-size: 11px; letter-spacing: 0.08em; white-space: nowrap; }
+.detail .chips b { font-weight: 400; opacity: 0.6; margin-right: 6px; }
+.detail .btns { display: flex; gap: 10px; margin-top: 14px; }
+.detail .btns button { height: 44px; padding: 0 18px; border: 1px solid rgba(246, 246, 248, 0.4); border-radius: 4px; color: #f6f6f8; font: 700 15px/1 var(--serif); letter-spacing: 0.2em; }
+.detail .btns .go { display: flex; align-items: center; gap: 10px; border: 0; background: var(--paper); color: var(--ink); box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3); }
+.detail .btns .go svg { width: 12px; height: 12px; color: var(--acc); }
+.fadeswap { transition: opacity 0.18s; }
+.fadeswap.hide { opacity: 0; }
+.tool { position: absolute; left: 914px; top: 32px; width: 494px; display: flex; align-items: center; gap: 12px; }
+.tool .search { flex-grow: 1; height: 36px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border: 1px solid rgba(42, 42, 51, 0.2); border-radius: 999px; background: rgba(255, 255, 255, 0.7); font-size: 13px; color: rgba(42, 42, 51, 0.45); }
+.tool .seg { display: flex; padding: 3px; border-radius: 999px; background: rgba(42, 42, 51, 0.07); font-size: 12px; letter-spacing: 0.14em; }
+.tool .seg span { padding: 5px 13px; border-radius: 999px; color: var(--dim); }
+.tool .seg span:first-child { background: #fff; color: var(--ink); box-shadow: 0 1px 4px rgba(30, 30, 50, 0.16); }
+.tool .imp { height: 36px; padding: 0 16px; border-radius: 999px; background: var(--ink); color: #fff; font-size: 13px; letter-spacing: 0.14em; }
+.grid { position: absolute; left: 914px; top: 92px; width: 508px; height: 694px; overflow: hidden; display: grid; grid-template-columns: repeat(4, 112px); gap: 18px 14px; align-content: start; padding: 8px 4px; mask-image: linear-gradient(#000 0, #000 calc(100% - 50px), transparent 100%); }
+.card { position: relative; width: 112px; cursor: pointer; }
+.card .im, .card .nm { transition: transform 0.25s, box-shadow 0.3s, color 0.3s; }
+.card:hover .im { transform: translateY(-5px); }
+.card .im { position: relative; width: 112px; height: 176px; border: 2px solid #fff; border-radius: 56px 56px 6px 6px; overflow: hidden; background: #161a33; box-shadow: 0 3px 10px rgba(30, 30, 50, 0.22); }
+.card .im img { position: absolute; }
+.card .im img.bgi { inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.card .nm { display: flex; justify-content: center; margin-top: 8px; font: 700 14px/1.2 var(--serif); letter-spacing: 0.06em; color: rgba(42, 42, 51, 0.62); white-space: nowrap; }
+.card svg { position: absolute; right: -5px; top: -5px; width: 9px; height: 9px; color: rgba(42, 42, 51, 0.26); transition: all 0.3s; }
+.card.cur .im { box-shadow: 0 0 0 2.5px var(--paper), 0 0 0 4.5px var(--acc), 0 10px 20px rgba(30, 30, 50, 0.28); }
+.card.cur .nm { color: var(--ink); }
+.card.cur svg { width: 15px; height: 15px; color: var(--acc); }
+
+/* ---------- 控制条(原型用) ---------- */
+.ctrl { position: fixed; left: 0; right: 0; bottom: 0; height: 52px; display: flex; align-items: center; justify-content: center; gap: 18px; background: #14151d; color: #c9c9d4; font-size: 13px; border-top: 1px solid #23242f; }
+.ctrl .grp { display: flex; align-items: center; gap: 4px; }
+.ctrl .grp > span { margin-right: 6px; color: #8a8a98; }
+.ctrl button { padding: 6px 12px; border-radius: 6px; background: #20222d; color: #c9c9d4; }
+.ctrl button.on { background: #e9e9f0; color: #14151d; }
+.ctrl .play { background: #8d93b8; color: #fff; font-weight: 700; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position: absolute"><symbol id="star" viewBox="-10 -10 20 20"><path d="M0-10C1.1-2.6 2.6-1.1 10 0 2.6 1.1 1.1 2.6 0 10-1.1 2.6-2.6 1.1-10 0-2.6-1.1-1.1-2.6 0-10Z"/></symbol></svg>
+<div id="wrap">
+<div class="stage" id="stage" data-mode="cover" data-cover="paper" data-target="night">
+  <div class="scene" id="scene"></div>
+  <div class="night"><img src="../canvas/assets/sky-pick.svg" alt=""><div class="glow"></div><div class="twinkle" id="twinkle"></div></div>
+  <div class="zoom"><img id="zoom" alt=""></div>
+  <div class="veil"></div>
+  <div class="paperwrap"><div id="paper"><img class="map" src="../canvas/assets/map-left.svg" alt=""></div></div>
+  <div id="spr"></div>
+  <div class="shade"></div>
+
+  <div class="cv frame" style="--i: 0"><svg class="star" style="left: -8px; top: -8px"><use href="#star"/></svg><svg class="star" style="right: -8px; top: -8px"><use href="#star"/></svg><svg class="star" style="left: -8px; bottom: -8px"><use href="#star"/></svg><svg class="star" style="right: -8px; bottom: -8px"><use href="#star"/></svg></div>
+  <div class="cv lockup" style="--i: 0"><img class="mark" src="../canvas/assets/logo.png" alt=""><img class="word" src="../canvas/assets/wordmark.png" alt="AnimaVN"></div>
+  <nav class="menu">
+    <button class="cv" style="--i: 1"><span class="zh">继续</span><span class="en">Continue</span></button>
+    <button class="cv" style="--i: 2"><span class="zh">新的故事</span><span class="en">New Story</span></button>
+    <button class="cv" style="--i: 3"><span class="zh">读档</span><span class="en">Load</span></button>
+    <button class="cv hot" style="--i: 4" id="toPick"><span class="zh">角色</span><span class="en">Heroine</span><span class="sub" id="menuName"></span></button>
+    <button class="cv" style="--i: 5"><span class="zh">设置</span><span class="en">Config</span></button>
+    <hr class="cv" style="--i: 6">
+    <button class="cv" style="--i: 6"><span class="zh" style="font-size: 19px; font-weight: 500">调试台</span><span class="en">Console</span></button>
+  </nav>
+  <div class="cv castrow" style="--i: 3" id="castrow"><span>Heroine</span></div>
+  <div class="cv last" style="--i: 2" id="last"><span class="nm" id="lastName"></span><div class="ln" id="lastLine"></div><div class="mt"><span id="lastMeta"></span><b style="font-weight: 500; color: var(--ink)">接着看 ▼</b></div></div>
+
+  <div class="se head" style="--i: 0"><button id="back">← Esc</button><h2>角色</h2><i>Heroine</i></div>
+  <div class="se detail" style="--i: 2" id="detail">
+    <div class="fadeswap" id="detailIn">
+      <div class="lb"><svg><use href="#star"/></svg><span id="dWork"></span></div>
+      <div class="nm" id="dName"></div>
+      <p class="ln" id="dLine"></p>
+      <div class="mt" id="dMeta"></div>
+      <div class="chips"><span><b>预设</b><span id="dPreset"></span></span><span><b>人设</b><span id="dPersona"></span></span></div>
+    </div>
+    <div class="btns"><button class="go"><svg><use href="#star"/></svg>继续</button><button>新的故事</button><button>资料</button></div>
+  </div>
+  <div class="se tool" style="--i: 1"><div class="search">⌕ 搜索名字、标签、作者</div><div class="seg"><span>最近</span><span>名字</span></div><button class="imp">＋ 导入</button></div>
+  <div class="grid" id="grid"></div>
+</div>
+</div>
+
+<div class="ctrl">
+  <div class="grp"><span>封面</span><button data-k="cover" data-v="paper">纸面</button><button data-k="cover" data-v="v1">v1</button></div>
+  <div class="grp"><span>选角色</span><button data-k="target" data-v="night">纸面板(夜空)</button><button data-k="target" data-v="scene">场景 + 毛玻璃</button></div>
+  <button class="play" id="go">▶ 进入选角色</button>
+  <div class="grp"><span>速度</span><button data-k="slow" data-v="1">正常</button><button data-k="slow" data-v="3">慢放 ×3</button></div>
+</div>
+
+<script src="data.js"></script>
+<script>
+const $ = (s) => document.querySelector(s);
+const stage = $('#stage');
+const W = 1440, H = 810;
+let cur = 0;
+
+// 舞台按窗口缩放
+function fit() {
+  const s = Math.min(innerWidth / W, (innerHeight - 52) / H);
+  $('#wrap').style.transform = `scale(${s}) translate(-50%, -50%)`;
+}
+fit();
+addEventListener('resize', fit);
+
+// 按脸摆立绘:脸框高 fh、脸的中心横坐标 cx、脸框上沿 top;floor = 太短的贴底
+function place(c, fh, cx, top, floor) {
+  const h = fh / c.box.h, w = h * c.size[0] / c.size[1];
+  let y = top - c.box.y * h;
+  if (floor) y = Math.max(y, floor - h);
+  return { left: cx - (c.box.x + c.box.w / 2) * w, top: y, height: h };
+}
+const POSE = { cover: [190, 994, 118, null], select: [160, 370, 128, 810] };
+const poseOf = (c) => place(c, ...POSE[stage.dataset.mode]);
+
+// 那张纸的形状:同样多的点,纸面封面是左边的斜切梯形,v1 封面是右下的对话框,选角色是右边的圆角纸面板
+function rrect(x, y, w, h, r) {
+  const pts = [];
+  const arc = (cx, cy, rr, a0) => { for (let k = 0; k <= 5; k++) { const a = (a0 + k * 18) * Math.PI / 180; pts.push([cx + rr * Math.cos(a), cy + rr * Math.sin(a)]); } };
+  arc(x + r[0], y + r[0], r[0], 180);
+  arc(x + w - r[1], y + r[1], r[1], 270);
+  arc(x + w - r[2], y + h - r[2], r[2], 0);
+  arc(x + r[3], y + h - r[3], r[3], 90);
+  return pts;
+}
+function quad(a, b, c, d) { return [a, b, c, d].flatMap((p) => Array(6).fill(p)); }
+const poly = (pts) => `polygon(${pts.map(([x, y]) => `${x.toFixed(1)}px ${y.toFixed(1)}px`).join(', ')})`;
+const SHAPES = {
+  paper: quad([-2, -2], [892.8, -2], [518.4, 812], [-2, 812]),
+  v1: rrect(900, 612, 454, 132, [6, 6, 6, 6]),
+  panel: rrect(884, 18, 538, 774, [8, 8, 46, 8]),
+};
+function paint() {
+  const sel = stage.dataset.mode === 'select', paper = $('#paper');
+  paper.style.clipPath = poly(sel ? SHAPES.panel : SHAPES[stage.dataset.cover]);
+  const glass = sel ? stage.dataset.target === 'scene' : stage.dataset.cover === 'v1';
+  paper.style.backgroundColor = glass ? 'rgba(251, 250, 248, 0.84)' : 'rgba(251, 250, 248, 1)';
+  paper.style.backdropFilter = glass ? 'blur(18px)' : 'blur(0px)';
+  $('.paperwrap').style.filter = sel || stage.dataset.cover === 'paper' ? 'drop-shadow(-6px 0 16px rgba(5, 5, 20, 0.3))' : 'drop-shadow(0 8px 16px rgba(60, 50, 70, 0.18))';
+  $('#paper .map').src = sel ? '../canvas/assets/map-right.svg' : '../canvas/assets/map-left.svg';
+  const sp = $('#spr img:not(.out)');
+  if (sp) Object.assign(sp.style, px(poseOf(CAST[cur])));
+}
+const px = (p) => ({ left: p.left + 'px', top: p.top + 'px', height: p.height + 'px' });
+
+// 换人:背景交叉淡入,立绘旧的往一边淡出、新的从另一边进来
+function setScene(c) {
+  const host = $('#scene'), img = new Image();
+  img.src = c.bg || '../canvas/assets/sky-pick.svg';
+  host.append(img);
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    [...host.children].forEach((im) => im.classList.toggle('on', im === img));
+    setTimeout(() => [...host.children].forEach((im) => im !== img && im.remove()), 1600);
+  }));
+}
+function setSprite(c, dir) {
+  const host = $('#spr'), img = new Image();
+  img.src = c.sprite;
+  Object.assign(img.style, px(poseOf(c)));
+  [...host.children].forEach((old) => {
+    old.classList.add('swap', 'out');
+    old.style.transform = `translateX(${dir * -40}px)`;
+    setTimeout(() => old.remove(), 600);
+  });
+  if (dir) { img.classList.add('swap', 'out'); img.style.transform = `translateX(${dir * 40}px)`; }
+  host.append(img);
+  if (dir) requestAnimationFrame(() => requestAnimationFrame(() => { img.classList.remove('out'); img.style.transform = 'none'; setTimeout(() => img.classList.remove('swap'), 600); }));
+  const z = place(c, 560, 250, 120);
+  Object.assign($('#zoom').style, { left: z.left + 'px', top: z.top + 'px', height: z.height + 'px' });
+  $('#zoom').src = c.sprite;
+}
+function setText(c) {
+  stage.style.setProperty('--acc', c.acc);
+  $('#menuName').textContent = c.name;
+  $('#lastName').textContent = c.name;
+  $('#lastLine').textContent = `「${c.line}」`;
+  $('#lastMeta').textContent = `${c.work} · ${c.bgLabel || '默认背景'} · ${c.last || '还没开始'}`;
+  const inner = $('#detailIn');
+  inner.classList.add('hide');
+  setTimeout(() => {
+    $('#dWork').textContent = c.work;
+    $('#dName').textContent = c.name;
+    $('#dLine').textContent = `「${c.line}」`;
+    $('#dMeta').textContent = `${c.voice} · ${c.chats ? c.chats + ' 段故事 · 上次 ' + c.last : '还没开始'}`;
+    $('#dPreset').textContent = c.preset;
+    $('#dPersona').textContent = c.persona || 'Lj(默认)';
+    inner.classList.remove('hide');
+  }, 180);
+  document.querySelectorAll('.card').forEach((el, i) => el.classList.toggle('cur', i === cur));
+  document.querySelectorAll('#castrow img').forEach((el, i) => el.classList.toggle('cur', i === cur));
+}
+function pick(i) {
+  if (i === cur) return;
+  const dir = i > cur ? 1 : -1;
+  cur = i;
+  const c = CAST[i];
+  setScene(c);
+  setSprite(c, dir);
+  setText(c);
+}
+
+// 卡片 + 星星
+CAST.forEach((c, i) => {
+  const el = document.createElement('div');
+  el.className = 'card se';
+  el.style.setProperty('--i', 3 + i);
+  const h = 112 * 0.56 / c.box.h, w = h * c.size[0] / c.size[1];
+  el.innerHTML = `<div class="im"><img class="bgi" src="${c.bg || '../canvas/assets/sky-pick.svg'}"><img src="${c.sprite}" style="left:${54 - (c.box.x + c.box.w / 2) * w}px;top:${176 * 0.2 - c.box.y * h}px;height:${h}px"></div><svg><use href="#star"/></svg><div class="nm">${c.name}</div>`;
+  el.onclick = () => pick(i);
+  $('#grid').append(el);
+  if (i < 6) {
+    const f = new Image();
+    f.src = c.face;
+    f.onclick = () => pick(i);
+    $('#castrow').append(f);
+  }
+});
+for (let k = 0; k < 26; k++) {
+  const s = document.createElement('i');
+  s.style.cssText = `left:${(k * 137) % 880}px;top:${(k * 89 + 40) % 760}px;--k:${k}`;
+  $('#twinkle').append(s);
+}
+
+function setMode(m) {
+  stage.dataset.mode = m;
+  paint();
+  $('#go').textContent = m === 'cover' ? '▶ 进入选角色' : '◀ 返回封面';
+}
+$('#toPick').onclick = () => setMode('select');
+$('#back').onclick = () => setMode('cover');
+$('#go').onclick = () => setMode(stage.dataset.mode === 'cover' ? 'select' : 'cover');
+document.querySelectorAll('.ctrl [data-k]').forEach((b) => {
+  b.onclick = () => {
+    const k = b.dataset.k, v = b.dataset.v;
+    if (k === 'slow') stage.style.setProperty('--slow', v); else stage.dataset[k] = v;
+    document.querySelectorAll(`.ctrl [data-k="${k}"]`).forEach((x) => x.classList.toggle('on', x === b));
+    paint();
+  };
+});
+document.querySelectorAll('.ctrl [data-v="paper"], .ctrl [data-v="night"], .ctrl [data-v="1"]').forEach((b) => b.classList.add('on'));
+addEventListener('keydown', (e) => { if (e.key === 'Escape') setMode('cover'); if (e.key === 'Enter' || e.key === ' ') $('#go').click(); });
+
+setScene(CAST[0]);
+setSprite(CAST[0], 0);
+setText(CAST[0]);
+paint();
+// 外部(截图脚本)用
+window.anim = { setMode, pick, set: (k, v) => { if (k === 'slow') stage.style.setProperty('--slow', v); else stage.dataset[k] = v; paint(); } };
+</script>
+</body>
+</html>

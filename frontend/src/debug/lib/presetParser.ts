@@ -21,9 +21,13 @@ export interface PresetPrompt {
   content: string;
   marker: boolean;
   systemPrompt: boolean;
-  /** 0 = 相对位置(按 order 排),1 = 绝对深度(插进历史里第 N 条前) */
+  /** 0 = 相对位置(按 order 排),1 = 绝对深度(插进聊天记录里倒数第 N 条前) */
   injectionPosition: number;
   injectionDepth: number;
+  /** 同一深度里的先后:数大的在前。酒馆默认 100 */
+  injectionOrder: number;
+  /** 只在这几种生成方式下生效(normal / continue / swipe / regenerate …)。空 = 都生效 */
+  injectionTrigger: string[];
   /** 卡自带的 system_prompt / post_history_instructions 能否覆盖这一块 */
   forbidOverrides: boolean;
 }
@@ -103,6 +107,8 @@ const SAMPLING_KEYS = [
   'openai_max_context',
   'openai_max_tokens',
   'seed',
+  // 我们自己的:上下文预算关掉(不截断)。酒馆不认这个键,导出过去会被忽略
+  'anima_context_off',
 ];
 
 function asString(v: unknown, fallback = ''): string {
@@ -122,7 +128,9 @@ export function parsePreset(json: string, fallbackName: string): TavernPreset {
     throw new Error('预设里没有 prompts 数组 —— 这可能是 Text Completion 预设,当前只支持 Chat Completion 预设');
   }
 
-  const prompts: PresetPrompt[] = root.prompts.map((p: Record<string, unknown>) => ({
+  // 数组里混进 null / 数字(手改坏的文件):跳过那一项,别让整个导入报一句看不懂的 TypeError
+  const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
+  const prompts: PresetPrompt[] = root.prompts.filter(isObj).map((p) => ({
     identifier: asString(p.identifier),
     name: asString(p.name, '(未命名)'),
     role: asRole(p.role),
@@ -131,14 +139,18 @@ export function parsePreset(json: string, fallbackName: string): TavernPreset {
     systemPrompt: p.system_prompt === true,
     injectionPosition: typeof p.injection_position === 'number' ? p.injection_position : 0,
     injectionDepth: typeof p.injection_depth === 'number' ? p.injection_depth : 4,
+    injectionOrder: typeof p.injection_order === 'number' ? p.injection_order : 100,
+    injectionTrigger: Array.isArray(p.injection_trigger)
+      ? p.injection_trigger.filter((t): t is string => typeof t === 'string')
+      : [],
     forbidOverrides: p.forbid_overrides === true,
   }));
 
   const orderGroups: PresetOrderGroup[] = Array.isArray(root.prompt_order)
-    ? root.prompt_order.map((g: Record<string, unknown>) => ({
+    ? root.prompt_order.filter(isObj).map((g) => ({
         characterId: typeof g.character_id === 'number' ? g.character_id : 0,
         order: Array.isArray(g.order)
-          ? g.order.map((o: Record<string, unknown>) => ({
+          ? g.order.filter(isObj).map((o) => ({
               identifier: asString(o.identifier),
               enabled: o.enabled !== false,
             }))
@@ -216,6 +228,8 @@ export function buildPresetSkeleton(name: string): TavernPreset {
     systemPrompt: true,
     injectionPosition: 0,
     injectionDepth: 4,
+    injectionOrder: 100,
+    injectionTrigger: [],
     forbidOverrides: false,
   });
   const marker = (identifier: string): PresetPrompt => ({

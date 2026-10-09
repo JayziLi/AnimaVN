@@ -144,3 +144,20 @@ def test_export_then_parse_preserves_public_chat_content():
     assert parsed["messages"][1]["swipes"] == ["回答一", "回答二"]
     assert parsed["messages"][1]["swipe_id"] == 1
     assert parsed["messages"][1]["swipe_info"][1]["reasoning"] == "思考"
+
+
+def test_wrong_field_types_in_a_hand_edited_file_fall_back_instead_of_crashing():
+    header = {"user_name": 3, "character_name": None, "chat_metadata": "oops"}
+    msg = {"mes": "hi", "is_user": False, "swipes": ["hi"], "swipe_id": 0,
+           "swipe_info": [{"extra": "not a dict"}]}
+    parsed = parse_st_jsonl("x", json.dumps(header) + "\n" + json.dumps(msg))
+
+    assert parsed["user_name"] == "3" and parsed["character_name"] == ""
+    assert parsed["main_chat"] is None and parsed["tainted"] is False
+    assert parsed["messages"][0]["swipes"] == ["hi"]
+
+
+def test_non_string_main_chat_is_ignored():
+    header = {"user_name": "U", "character_name": "C", "chat_metadata": {"main_chat": ["a"]}}
+    parsed = parse_st_jsonl("x", json.dumps(header))
+    assert parsed["main_chat"] is None

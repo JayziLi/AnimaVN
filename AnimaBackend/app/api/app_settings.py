@@ -16,11 +16,15 @@ from app.schemas import AppSettingIn, AppSettingOut
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
 _KEY_RE = re.compile(r"^[a-z0-9][a-z0-9_.-]{0,63}$")
+# secret.* 存的是 key 之类(比如 Jev 的),只由各自的接口写,这里读不到也写不了
+_SECRET_PREFIX = "secret."
 
 
 def _check_key(key: str) -> None:
     if not _KEY_RE.match(key):
         raise HTTPException(400, "设置名只能用小写字母、数字和 _ . -")
+    if key.startswith(_SECRET_PREFIX):
+        raise HTTPException(400, "这个设置不能从这里读写")
 
 
 @router.get("/{key}", response_model=AppSettingOut)

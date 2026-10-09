@@ -5,25 +5,12 @@
  *
  * 两者字段几乎一一对应,差别只在 character_book 的形状和 sourceChunk
  * (后者是「从哪个 PNG chunk 读出来的」,只在导入那一刻有意义,不入库)。
+ * 世界书入库的是卡里的原始写法,解析和写回都在 characterBook.ts。
  */
 
 import type { StoredCard, StoredCardPayload } from './api';
-import { EMPTY_CARD, type CharacterBookEntry, type TavernCard } from './cardParser';
-
-function normalizeBook(v: unknown): TavernCard['character_book'] {
-  if (!v || typeof v !== 'object') return null;
-  const entries = (v as { entries?: unknown }).entries;
-  if (!Array.isArray(entries)) return null;
-  return {
-    entries: entries.map((e: Record<string, unknown>): CharacterBookEntry => ({
-      keys: Array.isArray(e.keys) ? e.keys.filter((k): k is string => typeof k === 'string') : [],
-      content: typeof e.content === 'string' ? e.content : '',
-      enabled: e.enabled !== false,
-      insertion_order: typeof e.insertion_order === 'number' ? e.insertion_order : 0,
-      comment: typeof e.comment === 'string' ? e.comment : '',
-    })),
-  };
-}
+import { EMPTY_CARD, type TavernCard } from './cardParser';
+import { parseBook, serializeBook } from './characterBook';
 
 /** DB 行 → 组装器形态 */
 export function cardFromStored(row: StoredCard): TavernCard {
@@ -42,7 +29,7 @@ export function cardFromStored(row: StoredCard): TavernCard {
     tags: row.tags,
     creator: row.creator,
     character_version: row.character_version,
-    character_book: normalizeBook(row.character_book),
+    character_book: parseBook(row.character_book),
     extensions: row.extensions,
     spec: row.spec,
     sourceChunk: 'db',
@@ -70,7 +57,7 @@ export function cardToStored(
     tags: card.tags,
     creator: card.creator,
     character_version: card.character_version,
-    character_book: card.character_book as Record<string, unknown> | null,
+    character_book: serializeBook(card.character_book),
     extensions: card.extensions,
     spec: card.spec,
   };

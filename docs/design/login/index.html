@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>AnimaVN 登录</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Noto+Serif+SC:wght@500;600&display=swap"
+    />
+    <link rel="stylesheet" href="login.css" />
+    <style>
+      /* ---- 以下只是演示用的开关,不属于登录页 ---- */
+      html,
+      body {
+        margin: 0;
+        background: #17141b;
+      }
+      .demo {
+        position: fixed;
+        z-index: 50;
+        right: 12px;
+        top: calc(env(safe-area-inset-top) + 12px);
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 8px;
+        font: 12px/1.4 system-ui, 'Microsoft YaHei', sans-serif;
+        color: #eee;
+      }
+      .demo > summary {
+        list-style: none;
+        cursor: pointer;
+        padding: 6px 12px;
+        border-radius: 99px;
+        background: rgba(20, 17, 24, 0.72);
+        backdrop-filter: blur(6px);
+        user-select: none;
+      }
+      .demo > summary::-webkit-details-marker {
+        display: none;
+      }
+      .demo-body {
+        display: grid;
+        gap: 10px;
+        width: 252px;
+        margin-top: 8px;
+        padding: 12px;
+        border-radius: 10px;
+        background: rgba(20, 17, 24, 0.86);
+        backdrop-filter: blur(6px);
+      }
+      .demo-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+      }
+      .demo-row b {
+        width: 100%;
+        font-weight: 500;
+        opacity: 0.6;
+      }
+      .demo button {
+        padding: 4px 9px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 6px;
+        background: none;
+        color: inherit;
+        font: inherit;
+        cursor: pointer;
+      }
+      .demo button.on {
+        background: #eee;
+        color: #17141b;
+      }
+      .demo p {
+        margin: 0;
+        opacity: 0.55;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- ════════ 登录页组件 ════════ -->
+    <div class="au" id="au" data-mode="login">
+      <div class="au-stage" aria-hidden="true">
+        <img class="au-bg" alt="" />
+      </div>
+
+      <div class="au-top">
+        <div class="au-brand">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              fill="currentColor"
+              d="M20.6 3.2c-5.8.4-10.6 3.9-12.9 9.2l-1.2 2.9 2.1.1-1 2.3c5.1-.5 9.2-3.8 11.1-8.4l-2.4-.2 3-1.5c.7-1.4 1.1-2.9 1.3-4.4z"
+            />
+            <path d="M3.6 20.8 14.8 9.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none" />
+          </svg>
+          ANIMA
+        </div>
+      </div>
+
+      <section class="au-sheet">
+        <div class="au-paper">
+          <form class="au-form" novalidate>
+            <div class="au-tabs" role="tablist" aria-label="登录或注册">
+              <button class="au-tab" type="button" role="tab" data-tab="login" aria-selected="true">
+                登录<small>LOG IN</small>
+              </button>
+              <span class="au-tabs-slash" aria-hidden="true"></span>
+              <button class="au-tab" type="button" role="tab" data-tab="register" aria-selected="false">
+                注册<small>SIGN UP</small>
+              </button>
+            </div>
+
+            <div class="au-field" data-field="username">
+              <label class="au-label" for="au-username">用户名<small>USERNAME</small></label>
+              <div class="au-input">
+                <input
+                  id="au-username"
+                  name="username"
+                  autocomplete="username"
+                  autocapitalize="off"
+                  autocorrect="off"
+                  spellcheck="false"
+                  maxlength="20"
+                />
+              </div>
+            </div>
+
+            <div class="au-field" data-field="password">
+              <label class="au-label" for="au-password">密码<small>PASSWORD</small></label>
+              <div class="au-input">
+                <input id="au-password" name="password" type="password" autocomplete="current-password" />
+                <button class="au-eye" type="button" aria-label="显示密码" aria-pressed="false">
+                  <svg class="on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M2.5 12S6 5.8 12 5.8 21.5 12 21.5 12 18 18.2 12 18.2 2.5 12 2.5 12Z" />
+                    <circle cx="12" cy="12" r="2.8" />
+                  </svg>
+                  <svg class="off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M2.5 12S6 5.8 12 5.8 21.5 12 21.5 12 18 18.2 12 18.2 2.5 12 2.5 12Z" />
+                    <circle cx="12" cy="12" r="2.8" />
+                    <path d="M4 4l16 16" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div class="au-more">
+              <div>
+                <div class="au-field" data-field="again">
+                  <label class="au-label" for="au-again">再输一次密码<small>CONFIRM</small></label>
+                  <div class="au-input">
+                    <input id="au-again" name="again" type="password" autocomplete="new-password" />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <p class="au-msg" role="alert"></p>
+
+            <button class="au-submit" type="submit">
+              <span class="zh">
+                <svg class="au-feather" viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    fill="currentColor"
+                    d="M20.6 3.2c-5.8.4-10.6 3.9-12.9 9.2l-1.2 2.9 2.1.1-1 2.3c5.1-.5 9.2-3.8 11.1-8.4l-2.4-.2 3-1.5c.7-1.4 1.1-2.9 1.3-4.4z"
+                  />
+                  <path d="M3.6 20.8 14.8 9.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none" />
+                </svg>
+                <span class="au-submit-text">登录</span>
+              </span>
+              <span class="en">
+                <span class="au-submit-en">LOG IN</span>
+                <svg viewBox="0 0 18 10" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true">
+                  <path d="M0 5h16.5M12.5 1l4 4-4 4" />
+                </svg>
+              </span>
+            </button>
+          </form>
+
+          <footer class="au-notes">
+            <p>每天免费 100 轮，也可以在菜单『模型』里填自己的 API</p>
+            <p>内容由 AI 生成，仅供娱乐；角色为同人二创，与官方无关</p>
+          </footer>
+        </div>
+      </section>
+    </div>
+    <!-- ════════ 组件到此为止 ════════ -->
+
+    <details class="demo" id="demo">
+      <summary>演示</summary>
+      <div class="demo-body">
+        <div class="demo-row" data-group="state">
+          <b>状态</b>
+          <button data-v="login">登录</button>
+          <button data-v="register">注册</button>
+          <button data-v="error">出错</button>
+          <button data-v="busy">提交中</button>
+        </div>
+        <div class="demo-row" data-group="pick">
+          <b>场景（刷新页面随机换）</b>
+        </div>
+        <p>表单能直接点：校验和线上一样；提交后 1.5 秒回一个假的服务器错误。</p>
+        <p><a href="preview.html" style="color: inherit">所有状态并排看 →</a></p>
+      </div>
+    </details>
+
+    <script src="demo.js"></script>
+  </body>
+</html>

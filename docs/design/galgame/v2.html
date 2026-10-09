@@ -1,0 +1,567 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AnimaVN · galgame 标题画面 v2</title>
+<style>
+  /* v1(index.html)用户说「风格是对的」,但「角色选择不能放上去」「单纯这样太单调」(2026-10-01)。
+     v2:角色选择挪成菜单里的一项,点了进单独一页;画面加一道斜切 ——
+       星夜:右边切出一块夜空,同一个房间压成夜色,流星、星芒、一弯淡新月,她站在斜线上,一半在白天一半在夜里
+       纸面:左边切出一条纸,纸上是淡淡的星图,logo 和菜单压在纸上
+     参考(refs/):Astrae Oratio 首屏(星空 + 流星 + 斜线穿过 logo)、Summer Pockets 首页(明亮、轻)。 */
+  :root {
+    --ink: #2a2a33;
+    --ink-dim: rgba(42, 42, 51, 0.56);
+    --paper: #fbfaf8;
+    --line: rgba(42, 42, 51, 0.28);
+    --night: #161a33;
+    --acc: #8d93b8;            /* 跟角色走:从立绘取色(原型里写死在演示数据上) */
+    /* 斜线在顶边、底边的位置。照 Astrae Oratio 角色卡的比例(用户给的花盛百杏那张,10-02):
+       顶边 62% → 底边 36%,往左下斜的「/」。所有模式和角色选择页共用这一条 */
+    --cut-t: 62%;
+    --cut-b: 36%;
+    --serif: 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', 'STSong', 'SimSun', serif;
+    --latin: 'Cormorant Garamond', 'EB Garamond', Garamond, 'Palatino Linotype', Palatino, 'Times New Roman', serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: #15151a; color: var(--ink); font: 14px/1.6 'Noto Sans SC', 'Microsoft YaHei', sans-serif; overflow: hidden; }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
+  img { user-select: none; -webkit-user-drag: none; }
+  .star { display: inline-block; fill: currentColor; width: 1em; height: 1em; }
+
+  .stage { position: fixed; inset: 0; overflow: hidden; background: var(--paper); }
+
+  /* ---- CG ---- */
+  .bgs img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 1.1s ease; }
+  .bgs img.cur { opacity: 1; animation: drift 20s ease-out forwards; }
+  @keyframes drift { from { transform: scale(1.08) translate(-0.8%, 0.4%); } to { transform: scale(1.02); } }
+  .day img { filter: saturate(1.05) brightness(1.04); }
+
+  /* ---- 星夜:斜线右边 ---- */
+  .night { position: absolute; inset: 0; clip-path: polygon(var(--cut-t) 0, 100% 0, 100% 100%, var(--cut-b) 100%); transition: clip-path 0.8s cubic-bezier(0.7, 0, 0.2, 1); }
+  .night .bgs img { filter: brightness(0.42) saturate(0.55) hue-rotate(195deg); }
+  .night-tint { position: absolute; inset: 0; background: linear-gradient(200deg, rgba(14, 16, 40, 0.92) 0%, rgba(22, 26, 58, 0.62) 46%, rgba(30, 30, 60, 0.42) 100%); }
+  .night-glow { position: absolute; inset: 0; background: radial-gradient(60vh 50vh at 84% 18%, color-mix(in srgb, var(--acc) 30%, transparent), transparent 70%); transition: background 0.8s; }
+  .moon { position: absolute; right: 7vw; top: 7vh; width: 34vh; height: 34vh; color: #f6f6f8; opacity: 0.2; filter: drop-shadow(0 0 3vh rgba(246, 246, 248, 0.6)); }
+  .sky { position: absolute; inset: 0; width: 100%; height: 100%; }
+  /* 流星:从右上往左下,一道比一道晚 */
+  .meteor { position: absolute; width: 30vh; height: 1.5px; background: linear-gradient(90deg, rgba(246, 246, 248, 0.95), rgba(246, 246, 248, 0)); transform-origin: left center; rotate: 148deg; opacity: 0; animation: meteor 7s linear infinite; }
+  .meteor::before { content: ''; position: absolute; left: -0.5vh; top: -0.45vh; width: 1vh; height: 1vh; border-radius: 50%; background: #fff; box-shadow: 0 0 1vh 0.3vh rgba(255, 255, 255, 0.8); }
+  @keyframes meteor { 0% { opacity: 0; translate: 0 0; } 3% { opacity: 1; } 12% { opacity: 0; translate: -38vh 23vh; } 100% { opacity: 0; translate: -38vh 23vh; } }
+  /* 斜线本身:一道细白线,线上几颗星 */
+  /* 分界线(用户 10-02:「中间那个切的线能不能不做宽度」):SVG 画的 1px 发丝线,斜着、放大都还是一根细线。
+     三种:发丝线 / 双线(往图那边错开一根更淡的)/ 只有阴影(不画线,纸面往图上投一点影) */
+  .edge { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; color: rgba(255, 255, 255, 0.9); filter: drop-shadow(0 0 0.5vh rgba(255, 255, 255, 0.8)); transition: opacity 0.6s, color 0.8s; }
+  .edge line { stroke: currentColor; stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .edge .l2 { opacity: 0; transition: opacity 0.4s; }
+  .stage[data-edge="double"] .edge .l2 { opacity: 0.45; }
+  .stage[data-edge="shadow"] .edge { opacity: 0; }
+  .cut-stars .star { position: absolute; color: #fff; filter: drop-shadow(0 0 0.6vh rgba(255, 255, 255, 0.9)); animation: twinkle 3.4s ease-in-out infinite; }
+  @keyframes twinkle { 50% { transform: scale(0.55) rotate(15deg); opacity: 0.55; } }
+
+  /* 纯黑 / 纯黑 + 特写:夜空那块换成一整块深色;特写 = 同一张立绘放得很大、只露出脸,去色压暗(参考图里的做法) */
+  .black { position: absolute; inset: 0; background: radial-gradient(90vh 80vh at 80% 30%, #24242c, #141418 70%); opacity: 0; transition: opacity 0.6s; }
+  .closeup { position: absolute; inset: 0; opacity: 0; transition: opacity 0.6s; }
+  .closeup img { position: absolute; max-width: none; filter: grayscale(1) brightness(0.55) contrast(1.1); }
+  .closeup::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, rgba(20, 20, 24, 0.85), rgba(20, 20, 24, 0.15) 45%, rgba(20, 20, 24, 0.5)); }
+  .sparks .star { position: absolute; color: #fff; opacity: 0; transition: opacity 0.6s; filter: drop-shadow(0 0 0.6vh rgba(255, 255, 255, 0.8)); animation: twinkle 3.2s ease-in-out infinite; }
+
+  /* ---- 纸面:斜线左边(另一种斜切) ---- */
+  .paper-wrap { position: absolute; inset: 0; opacity: 0; transition: opacity 0.6s; filter: drop-shadow(0.6vh 0 1.4vh rgba(30, 30, 50, 0.22)); }
+  .paper { position: absolute; inset: 0; background: var(--paper); clip-path: polygon(0 0, var(--cut-t) 0, var(--cut-b) 100%, 0 100%); }
+  .paper svg { position: absolute; inset: 0; width: 100%; height: 100%; color: var(--ink); opacity: 0.14; }
+
+
+  /* ---- 立绘:压在斜线上 ---- */
+  .sprite { position: absolute; inset: 0; pointer-events: none; }
+  .sprite-in { position: absolute; inset: 0; animation: breathe 5.5s ease-in-out infinite; transform-origin: 50% 100%; }
+  @keyframes breathe { 50% { transform: translateY(-0.35%) scale(1.004); } }
+  .sprite img { position: absolute; max-width: none; pointer-events: auto; cursor: pointer; filter: drop-shadow(0 1vh 2.6vh rgba(30, 30, 60, 0.35)); animation: fade-in 0.45s ease both; }
+  .sprite img.leaving { animation: fade-out 0.35s ease both; pointer-events: none; }
+  @keyframes fade-in { from { opacity: 0; } }
+  @keyframes fade-out { to { opacity: 0; } }
+
+  /* 白纱(星夜模式):logo 和菜单压在上面 */
+  .veil { position: absolute; inset: 0; background: linear-gradient(100deg, rgba(251, 250, 248, 0.94) 0%, rgba(251, 250, 248, 0.84) 24%, rgba(251, 250, 248, 0.38) 40%, rgba(251, 250, 248, 0) 54%); transition: opacity 0.6s; }
+  .bloom { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(80vh 60vh at 30% 0%, rgba(255, 246, 225, 0.5), rgba(255, 246, 225, 0) 70%); mix-blend-mode: screen; }
+  .motes { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+
+  .frame { position: absolute; inset: 2.4vh; border: 1px solid rgba(255, 255, 255, 0.85); outline: 1px solid rgba(42, 42, 51, 0.14); outline-offset: 0.5vh; pointer-events: none; }
+  .frame .star { position: absolute; width: 2vh; height: 2vh; color: #fff; filter: drop-shadow(0 0 0.3vh rgba(42, 42, 51, 0.45)); }
+  .frame .star:nth-child(1) { left: -1vh; top: -1vh; }
+  .frame .star:nth-child(2) { right: -1vh; top: -1vh; }
+  .frame .star:nth-child(3) { left: -1vh; bottom: -1vh; }
+  .frame .star:nth-child(4) { right: -1vh; bottom: -1vh; }
+
+  /* ---- logo + 菜单(和 v1 一样) ---- */
+  .lockup { position: absolute; left: 7vw; top: 10vh; display: flex; align-items: center; filter: invert(1) hue-rotate(180deg) brightness(0.9); animation: rise 1s cubic-bezier(0.2, 0.7, 0.2, 1) 0.1s both; }
+  .lockup .mark { height: 20vh; }
+  .lockup .word { height: 18vh; margin-left: -2.6vh; }
+  @keyframes rise { from { opacity: 0; transform: translateY(1.6vh); } }
+  .menu { position: absolute; left: 8.6vw; top: 35vh; display: flex; flex-direction: column; gap: 0.2vh; }
+  .menu button { position: relative; display: flex; align-items: baseline; gap: 1.8vh; padding: 1.1vh 3vh 1.1vh 4.2vh; animation: rise 0.7s ease both; animation-delay: calc(0.5s + var(--i) * 0.07s); transition: transform 0.3s cubic-bezier(0.2, 0.7, 0.2, 1); }
+  .menu .zh { font: 700 max(3.3vh, 19px) / 1.1 var(--serif); letter-spacing: 0.26em; }
+  .menu .en { font: italic 500 max(1.9vh, 12px) / 1 var(--latin); letter-spacing: 0.14em; color: var(--ink-dim); }
+  .menu .who { font-size: max(1.5vh, 11px); letter-spacing: 0.08em; color: var(--ink-dim); }
+  .menu .star { position: absolute; left: 0.8vh; top: 50%; width: 2vh; height: 2vh; margin-top: -1vh; color: var(--acc); opacity: 0; transform: scale(0.2) rotate(-90deg); transition: opacity 0.2s, transform 0.4s cubic-bezier(0.2, 0.7, 0.2, 1), color 0.8s; }
+  .menu button::before { content: ''; position: absolute; left: 1.55vh; top: 50%; width: 0.5vh; height: 0.5vh; margin-top: -0.25vh; border-radius: 50%; background: var(--line); transition: opacity 0.2s; }
+  .menu button::after { content: ''; position: absolute; left: 4.2vh; right: 0; bottom: 0.3vh; height: 1px; background: linear-gradient(90deg, var(--ink), rgba(42, 42, 51, 0)); transform: scaleX(0); transform-origin: left; transition: transform 0.4s cubic-bezier(0.2, 0.7, 0.2, 1); }
+  .menu button:hover, .menu button:focus-visible { transform: translateX(1.2vh); outline: none; }
+  .menu button:hover .star, .menu button:focus-visible .star { opacity: 1; transform: none; }
+  .menu button:hover::before, .menu button:focus-visible::before { opacity: 0; }
+  .menu button:hover::after, .menu button:focus-visible::after { transform: scaleX(1); }
+  .menu button.minor .zh { font-size: max(2.4vh, 15px); font-weight: 500; }
+  .menu hr { width: 22vh; margin: 1.1vh 0 1.1vh 4.2vh; border: 0; border-top: 1px dotted var(--line); }
+
+  /* ---- 右下:上次停在哪句(夜里换成深色玻璃) ---- */
+  .last { position: absolute; right: 6vw; bottom: 8vh; width: 56vh; padding: 3vh 3vh 2.2vh; border-radius: 0.8vh; background: rgba(20, 22, 44, 0.62); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.28); color: #f3f3f8; box-shadow: 0 1vh 3vh rgba(10, 10, 30, 0.35); animation: rise 0.9s ease 0.9s both; transition: transform 0.25s; }
+  .last:hover { transform: translateY(-0.4vh); }
+  .last-name { position: absolute; left: 2.4vh; top: -2vh; height: 4vh; padding: 0 2.2vh; display: flex; align-items: center; border-radius: 0.5vh; background: var(--acc); color: #fff; font: 700 max(2vh, 13px) / 1 var(--serif); letter-spacing: 0.22em; box-shadow: 0 0.4vh 1vh rgba(10, 10, 30, 0.3); transition: background 0.8s; }
+  .last-line { display: block; font: 500 max(2.2vh, 14px) / 1.7 var(--serif); letter-spacing: 0.06em; }
+  .last-meta { display: flex; justify-content: space-between; margin-top: 1vh; font-size: max(1.4vh, 10.5px); letter-spacing: 0.12em; color: rgba(243, 243, 248, 0.62); }
+  .last-meta b { font-weight: 500; color: #fff; }
+  .last-next { display: inline-block; margin-left: 0.6vh; animation: bob 1.4s ease-in-out infinite; }
+  @keyframes bob { 50% { transform: translateY(0.35vh); } }
+  .foot { position: absolute; right: 6vw; bottom: 3.6vh; font: 500 max(1.4vh, 10px) / 1 var(--latin); letter-spacing: 0.3em; color: rgba(255, 255, 255, 0.8); }
+
+  /* ---- 纸面模式:纸代替白纱,夜空收起,对话框换回浅色 ---- */
+  .stage[data-cut="paper"] .night { clip-path: polygon(100% 0, 100% 0, 100% 100%, 100% 100%); }
+  .stage[data-cut="paper"] .cut-stars { opacity: 0; }
+  .stage[data-cut="paper"] .edge { color: var(--acc); filter: none; }
+  .stage[data-cut="paper"] .paper-wrap { opacity: 1; }
+  .stage[data-cut="paper"] .veil { opacity: 0; }
+  .stage[data-cut="paper"] .last { background: rgba(251, 250, 248, 0.86); color: var(--ink); border-color: rgba(255, 255, 255, 0.9); }
+  .stage[data-cut="paper"] .last-meta { color: var(--ink-dim); }
+  .stage[data-cut="paper"] .last-meta b { color: var(--ink); }
+  /* 纯黑:夜空的房间、星星、新月、流星都收起来,只剩一整块深色,斜线和线上几颗星留着 */
+  .stage[data-cut="black"] .black, .stage[data-cut="closeup"] .black { opacity: 1; }
+  .stage[data-cut="closeup"] .closeup { opacity: 1; }
+  .stage[data-cut="black"] .night > :not(.black):not(.closeup),
+  .stage[data-cut="closeup"] .night > :not(.black):not(.closeup) { display: none; }
+  .stage[data-cut="closeup"] .sparks .star { opacity: 1; }
+  .stage[data-cut="black"] .edge, .stage[data-cut="closeup"] .edge { color: rgba(255, 255, 255, 0.6); filter: none; }
+  .stage[data-cut="none"] .night { clip-path: polygon(100% 0, 100% 0, 100% 100%, 100% 100%); }
+  .stage[data-cut="none"] .edge, .stage[data-cut="none"] .cut-stars { opacity: 0; }
+  .stage[data-cut="none"] .last { background: rgba(251, 250, 248, 0.82); color: var(--ink); }
+  .stage[data-cut="none"] .last-meta { color: var(--ink-dim); }
+  .stage[data-cut="none"] .last-meta b { color: var(--ink); }
+
+  /* ================= 角色选择(单独一页) ================= */
+  .pick { position: fixed; inset: 0; z-index: 20; overflow: hidden; background: var(--night); opacity: 0; visibility: hidden; transition: opacity 0.5s, visibility 0s 0.5s; }
+  .pick.on { opacity: 1; visibility: visible; transition: opacity 0.5s; }
+  .pick .sky { opacity: 0.9; }
+  .pick-glow { position: absolute; inset: 0; background: radial-gradient(70vh 60vh at 26% 40%, color-mix(in srgb, var(--acc) 34%, transparent), transparent 70%); transition: background 0.6s; }
+  .pick-moon { position: absolute; left: 6vw; top: 8vh; width: 70vh; height: 70vh; color: #f6f6f8; opacity: 0.08; }
+  /* 立绘压在纸面前面(参考图里人物跨过斜线);名单、标题、返回再往上一层 */
+  .pick-sprite { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
+  .pick-head, .pick-list, .pick-back { z-index: 3; }
+  .pick-sprite img { position: absolute; max-width: none; filter: drop-shadow(0 1.2vh 3vh rgba(5, 5, 20, 0.5)); animation: slide 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+  @keyframes slide { from { opacity: 0; translate: -3vh 0; } }
+  /* 右边一条纸:名单 */
+  .pick-paper { position: absolute; inset: 0; background: var(--paper); clip-path: polygon(var(--cut-t) 0, 100% 0, 100% 100%, var(--cut-b) 100%); translate: 30vw 0; transition: translate 0.6s cubic-bezier(0.2, 0.7, 0.2, 1); }
+  .pick.on .pick-paper { translate: 0 0; }
+  .pick-paper svg { position: absolute; inset: 0; width: 100%; height: 100%; color: var(--ink); opacity: 0.12; }
+  .pick .edge { z-index: 1; color: var(--acc); filter: none; }
+  .pick-head { position: absolute; left: 4vw; top: 5vh; display: flex; align-items: center; gap: 3vh; color: #f6f6f8; }
+  .pick-head h2 { margin: 0; font: 700 max(3.6vh, 20px) / 1 var(--serif); letter-spacing: 0.4em; }
+  .pick-head small { font: italic 500 max(2vh, 13px) / 1 var(--latin); letter-spacing: 0.2em; opacity: 0.7; }
+  .pick-back { position: absolute; left: 4vw; bottom: 5vh; display: flex; align-items: center; gap: 1vh; padding: 0.8vh 2.4vh; border: 1px solid rgba(246, 246, 248, 0.4); border-radius: 999px; color: #f6f6f8; font-size: max(1.7vh, 12px); letter-spacing: 0.2em; }
+  .pick-back:hover { border-color: #fff; }
+  .pick-list { position: absolute; right: 7vw; top: 50%; translate: 0 -50%; width: 42vh; display: flex; flex-direction: column; gap: 0.4vh; }
+  .pick-item { position: relative; display: flex; align-items: center; gap: 2vh; padding: 1.2vh 2vh 1.2vh 1.2vh; border-radius: 1vh; transition: background 0.2s, translate 0.25s; }
+  .pick-item .face { position: relative; flex: none; width: 6.4vh; height: 6.4vh; border-radius: 50%; overflow: hidden; background: #fff; border: 1.5px solid #fff; box-shadow: 0 0.3vh 1vh rgba(30, 30, 50, 0.25); }
+  .pick-item .face img { position: absolute; max-width: none; }
+  .pick-item b { display: block; font: 700 max(2.8vh, 16px) / 1.2 var(--serif); letter-spacing: 0.16em; }
+  .pick-item small { display: block; margin-top: 0.3vh; font-size: max(1.4vh, 10.5px); letter-spacing: 0.1em; color: var(--ink-dim); }
+  .pick-item .star { position: absolute; right: 2vh; top: 50%; width: 2vh; height: 2vh; margin-top: -1vh; color: var(--acc); opacity: 0; transition: opacity 0.2s; }
+  .pick-item:hover, .pick-item.hot { background: rgba(42, 42, 51, 0.06); translate: -1vh 0; }
+  .pick-item.cur .star { opacity: 1; }
+  .pick-item.cur b::after { content: '当前'; margin-left: 1.2vh; padding: 0.1vh 0.8vh; border-radius: 0.4vh; background: var(--ink); color: #fff; font: 500 max(1.3vh, 10px) / 1.6 'Noto Sans SC', sans-serif; letter-spacing: 0.1em; vertical-align: 0.4vh; }
+  .pick-add { margin-top: 1.4vh; padding: 1.2vh 2vh; border: 1px dashed var(--line); border-radius: 1vh; color: var(--ink-dim); font-size: max(1.6vh, 11px); letter-spacing: 0.14em; text-align: center; }
+
+  /* 演示开关 */
+  .demo { position: fixed; left: 50%; top: 8px; translate: -50% 0; z-index: 50; display: flex; gap: 4px; padding: 4px; border-radius: 999px; background: rgba(10, 10, 14, 0.78); font-size: 12px; color: rgba(255, 255, 255, 0.6); }
+  .demo span { padding: 3px 4px 3px 10px; }
+  .demo button { padding: 3px 12px; border-radius: 999px; white-space: nowrap; }
+  .demo span { white-space: nowrap; }
+  .demo button.on, .demo button:hover { background: rgba(255, 255, 255, 0.18); color: #fff; }
+
+  /* 竖屏(手机、平板竖着拿):照 Astrae Oratio 手机版(refs/asora-char-phone*.jpg,10-02)—— 上下叠起来。
+     上面一块是她(场景 / 夜空 / 纯黑),斜线还是同一个「/」方向,横着落在这块的下沿:右边高(--cut-r)、左边低(--cut-l);
+     下面一块放 logo、两列菜单。官网把右边那列选择收成按钮,我们的角色选择本来就在菜单里,不用另收。
+     她只画在斜线上面,不往菜单那块伸(官网上人物会压过纸面,但我们下面紧接着就是按钮) */
+  @media (max-aspect-ratio: 1/1) {
+    :root { --cut-r: 50%; --cut-l: 63%; }
+    .night { clip-path: polygon(0 0, 100% 0, 100% var(--cut-r), 0 var(--cut-l)); }
+    .paper { clip-path: polygon(0 var(--cut-l), 100% var(--cut-r), 100% 100%, 0 100%); }
+    .paper-wrap { filter: drop-shadow(0 -0.4vh 1vh rgba(30, 30, 50, 0.2)); }
+    .sprite { clip-path: polygon(0 0, 100% 0, 100% var(--cut-r), 0 var(--cut-l)); }
+    .veil { background: linear-gradient(0deg, rgba(251, 250, 248, 0.96) 0%, rgba(251, 250, 248, 0.9) 36%, rgba(251, 250, 248, 0) 52%); }
+    .frame { inset: 1.6vh; outline-offset: 0.4vh; }
+    .lockup { left: 7vw; top: calc(var(--cut-l) + 1.6vh); } .lockup .mark { height: 7vh; } .lockup .word { height: 6.2vh; margin-left: -1vh; }
+    .menu { left: 6vw; right: 6vw; top: calc(var(--cut-l) + 10vh); display: grid; grid-template-columns: 1fr 1fr; gap: 0.2vh 2vw; }
+    .menu hr, .menu .who { display: none; }
+    .menu button { padding: 0.9vh 1vh 0.9vh 3.4vh; gap: 1.2vh; }
+    .menu .zh { font-size: max(2.5vh, 15px); letter-spacing: 0.18em; }
+    .menu .en { display: none; }  /* 两列放不下「新的故事 New Story」,竖屏只留中文 */
+    .menu button.minor .zh { font-size: max(2.5vh, 15px); }
+    .menu .star { left: 0.6vh; }
+    .menu button::before { left: 1.3vh; }
+    .menu button::after { left: 3.4vh; }
+    /* 上次那句:压在她身上、斜线上方,像官网手机版压在人物腿上的那排头像 */
+    .last { left: 6vw; right: 6vw; width: auto; top: calc(var(--cut-r) - 13vh); bottom: auto; padding: 2.4vh 2.4vh 1.6vh; }
+    .last-line { font-size: max(1.9vh, 13px); }
+    .foot { display: none; }
+    .moon { right: 4vw; top: 9vh; width: 22vh; height: 22vh; }
+    /* 角色选择:同一条斜线,上面夜空 + 她,下面纸面放三列头像 */
+    .pick-paper { clip-path: polygon(0 var(--cut-l), 100% var(--cut-r), 100% 100%, 0 100%); }
+    .pick-sprite { clip-path: polygon(0 0, 100% 0, 100% var(--cut-r), 0 var(--cut-l)); }
+    .pick-moon { left: auto; right: -10vh; top: 6vh; width: 44vh; height: 44vh; }
+    .pick-head { top: 4vh; left: 6vw; }
+    .pick-back { top: 3.6vh; bottom: auto; left: auto; right: 6vw; }
+    .pick-list { left: 6vw; right: 6vw; width: auto; top: calc(var(--cut-l) + 2.4vh); translate: none; display: grid; grid-template-columns: repeat(3, 1fr); gap: 1vh 2vw; }
+    .pick-item { flex-direction: column; gap: 0.6vh; padding: 1vh 0.4vh; text-align: center; }
+    .pick-item .face { width: 7.4vh; height: 7.4vh; }
+    .pick-item.cur .face { box-shadow: 0 0 0 0.3vh var(--paper), 0 0 0 0.55vh var(--acc); }
+    .pick-item b { font-size: max(2vh, 13px); letter-spacing: 0.1em; }
+    .pick-item small, .pick-item > .star, .pick-item.cur b::after { display: none; }
+    .pick-item:hover, .pick-item.hot { translate: none; }
+    .pick-add { grid-column: 1 / -1; margin-top: 0.6vh; padding: 1vh; }
+    .demo { flex-wrap: wrap; justify-content: center; width: max-content; max-width: 94vw; font-size: 11px; }
+    .sparks { position: absolute; inset: 0; pointer-events: none; clip-path: polygon(0 0, 100% 0, 100% var(--cut-r), 0 var(--cut-l)); }
+    .cut-stars { display: none; }
+  }
+  /* 手机横屏(高度 ≤ 500):整体按高度缩,只有对话框按最小字号会显得挤,单独收一下 */
+  @media (min-aspect-ratio: 1/1) and (max-height: 500px) {
+    .last { width: 40vw; right: 4vw; bottom: 6vh; padding: 2.6vh 2.4vh 1.6vh; }
+    .last-line { font-size: 13px; line-height: 1.5; }
+    .last-meta { font-size: 10px; }
+    .frame { inset: 1.6vh; }
+    .demo { font-size: 10px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { animation-duration: 0.01s !important; transition-duration: 0.01s !important; } }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="star" viewBox="-10 -10 20 20"><path d="M0-10C1.1-2.6 2.6-1.1 10 0 2.6 1.1 1.1 2.6 0 10-1.1 2.6-2.6 1.1-10 0-2.6-1.1-1.1-2.6 0-10Z"/></symbol>
+  <symbol id="crescent" viewBox="0 0 200 200"><path fill="currentColor" d="M100 4a96 96 0 1 0 92 123A80 80 0 1 1 100 4Z"/></symbol>
+</svg>
+
+<div class="stage" id="stage" data-cut="paper" data-edge="hair">
+  <div class="day bgs" id="bgDay"></div>
+  <div class="paper-wrap"><div class="paper"><svg id="paperTex" preserveAspectRatio="xMidYMid slice"></svg></div></div>
+  <div class="veil"></div>
+  <div class="bloom"></div>
+
+  <div class="night">
+    <div class="bgs" id="bgNight"></div>
+    <div class="night-tint"></div>
+    <div class="night-glow"></div>
+    <svg class="sky" id="sky" preserveAspectRatio="none"></svg>
+    <svg class="moon"><use href="#crescent"/></svg>
+    <i class="meteor" style="left:96%;top:6%;animation-delay:0.6s"></i>
+    <i class="meteor" style="left:88%;top:-2%;animation-delay:3.1s"></i>
+    <i class="meteor" style="left:102%;top:22%;animation-delay:5.2s"></i>
+    <div class="black"></div>
+    <div class="closeup" id="closeup"></div>
+  </div>
+  <div class="sparks" id="sparks"></div>
+  <svg class="edge" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><line class="l1"/><line class="l2"/></svg>
+  <div class="cut-stars" id="cutStars"></div>
+
+  <div class="sprite"><div class="sprite-in" id="sprite"></div></div>
+  <canvas class="motes" id="motes"></canvas>
+  <div class="frame"><svg class="star"><use href="#star"/></svg><svg class="star"><use href="#star"/></svg><svg class="star"><use href="#star"/></svg><svg class="star"><use href="#star"/></svg></div>
+
+  <div class="lockup"><img class="mark" src="../home/assets/logo.svg" alt=""><img class="word" src="../home/assets/wordmark.png" alt="AnimaVN"></div>
+
+  <nav class="menu" id="menu">
+    <button data-mood="continue" style="--i:0"><svg class="star"><use href="#star"/></svg><span class="zh">继续</span><span class="en">Continue</span></button>
+    <button data-mood="new" style="--i:1"><svg class="star"><use href="#star"/></svg><span class="zh">新的故事</span><span class="en">New Story</span></button>
+    <button data-mood="load" style="--i:2"><svg class="star"><use href="#star"/></svg><span class="zh">读档</span><span class="en">Load</span></button>
+    <button data-mood="pick" id="openPick" style="--i:3"><svg class="star"><use href="#star"/></svg><span class="zh">角色</span><span class="en">Heroine</span><span class="who" id="who"></span></button>
+    <button data-mood="config" style="--i:4"><svg class="star"><use href="#star"/></svg><span class="zh">设置</span><span class="en">Config</span></button>
+    <hr>
+    <button class="minor" data-mood="exit" style="--i:5"><svg class="star"><use href="#star"/></svg><span class="zh">调试台</span><span class="en">Console</span></button>
+  </nav>
+
+  <button class="last" data-mood="continue">
+    <span class="last-name" id="lastName"></span>
+    <span class="last-line" id="lastLine"></span>
+    <span class="last-meta"><span id="lastMeta"></span><b>接着看<span class="last-next">▼</span></b></span>
+  </button>
+  <div class="foot">AnimaVN · Beta</div>
+</div>
+
+<!-- 角色选择:左边夜空 + 她的立绘,右边斜切一条纸放名单 -->
+<section class="pick" id="pick" aria-label="选择角色">
+  <svg class="sky" id="pickSky" preserveAspectRatio="none"></svg>
+  <div class="pick-glow"></div>
+  <svg class="pick-moon"><use href="#crescent"/></svg>
+  <div class="pick-sprite" id="pickSprite"></div>
+  <div class="pick-paper"><svg id="pickTex" preserveAspectRatio="xMidYMid slice"></svg></div>
+  <svg class="edge" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><line class="l1"/><line class="l2"/></svg>
+  <header class="pick-head"><h2>角色</h2><small>Heroine</small></header>
+  <div class="pick-list" id="pickList"></div>
+  <button class="pick-back" id="pickBack">← 返回 <small style="opacity:.6">Esc</small></button>
+</section>
+
+<div class="demo" id="demo"><span>斜切</span><button data-cut="black">纯黑</button><button data-cut="closeup">纯黑 + 特写</button><button data-cut="night">星夜</button><button data-cut="paper" class="on">纸面</button><button data-cut="none">没有(v1)</button><span>分界</span><button data-edge="hair" class="on">发丝线</button><button data-edge="double">双线</button><button data-edge="shadow">只有阴影</button></div>
+
+<script src="../home/data.js"></script>
+<script>
+// 演示逻辑。数据在 ../home/data.js(CAST、BLOBS)。改 React 时整个换掉 —— 表情反应、按脸摆立绘游戏里都有现成的(VNTitle / titleArt)。
+const $ = (s) => document.querySelector(s);
+const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
+const STAR = '<svg class="star"><use href="#star"/></svg>';
+const src = (blob) => BLOBS + blob;
+const cast = CAST.filter((c) => c.sprites[0] && c.sprites[0].face && c.scenes.length);
+const DEMO = [
+  { ago: '3 小时前', line: '……那、明天也要来哦?说好了。', acc: '#8d93b8' },
+  { ago: '昨天', line: '茶要凉了,先喝一口再说吧。', acc: '#c9907e' },
+  { ago: '2 天前', line: '欸嘿嘿,被你发现了。', acc: '#a8617b' },
+  { ago: '上周', line: '这份报告我已经看完了,老师。', acc: '#7f9cc4' },
+  { ago: '上周', line: '博士,今天也请多指教。', acc: '#5d86a8' },
+  { ago: '9 月 12 日', line: '雨停了,要不要出去走走?', acc: '#8a8f86' },
+];
+cast.forEach((c, i) => Object.assign(c, DEMO[i % DEMO.length]));
+const dayScene = (c) => c.scenes.find((s) => !/夜/.test(s.label)) ?? c.scenes[0];
+const MOODS = { continue: /开心|大笑|兴奋/, new: /温柔|微笑/, load: /认真|观察|平静/, pick: /说话|微笑/, config: /平静|说话/, exit: /不好意思|害羞|担心|幽怨/ };
+let cur = 0, mood = null, shownSprite = null;
+
+function faceImg(sp, fill, top) {
+  const img = new Image();
+  img.src = src(sp.src);
+  const k = fill / sp.face.w;
+  img.style.width = `${k * 100}%`;
+  img.style.left = `${(0.5 - (sp.face.x + sp.face.w / 2) * k) * 100}%`;
+  img.style.top = `${(top - sp.face.y * k * (sp.h / sp.w)) * 100}%`;
+  return img;
+}
+function placeSprite(img, sp, host, pose) {
+  const H = host.clientHeight, W = host.clientWidth;
+  let h = (pose.faceH * H) / sp.face.h;
+  if (pose.floor) h = Math.max(h, (H * (1.02 - pose.faceTop)) / (1 - sp.face.y)); // 只画到大腿的立绘别悬在半空
+  const w = (h * sp.w) / sp.h;
+  img.style.height = `${h}px`;
+  img.style.left = `${pose.cx * W - (sp.face.x + sp.face.w / 2) * w}px`;
+  img.style.top = `${pose.faceTop * H - sp.face.y * h}px`;
+}
+
+function renderSprite() {
+  const c = cast[cur];
+  const sp = (mood && c.sprites.find((s) => s.face && MOODS[mood].test(s.label))) || c.sprites[0];
+  if (sp === shownSprite) return;
+  shownSprite = sp;
+  const host = $('#sprite');
+  const portrait = host.clientWidth < host.clientHeight;
+  const img = new Image();
+  img.src = src(sp.src);
+  placeSprite(img, sp, host, portrait ? { faceH: 0.12, faceTop: 0.07, cx: 0.5 } : { faceH: 0.235, faceTop: 0.15, cx: 0.69, floor: true });
+  img.onclick = () => { mood = 'exit'; renderSprite(); setTimeout(() => { mood = null; renderSprite(); }, 1800); };
+  [...host.children].forEach((old) => { old.classList.add('leaving'); setTimeout(() => old.remove(), 360); });
+  host.append(img);
+}
+
+function swapBg(host, scene) {
+  const next = new Image();
+  next.src = src(scene.src);
+  next.style.objectPosition = `${scene.focus}% 50%`;
+  host.append(next);
+  requestAnimationFrame(() => {
+    [...host.children].forEach((im) => im.classList.toggle('cur', im === next));
+    setTimeout(() => [...host.children].forEach((im) => im !== next && im.remove()), 1200);
+  });
+}
+
+function render() {
+  const c = cast[cur], scene = dayScene(c);
+  document.documentElement.style.setProperty('--acc', c.acc);
+  // 夜里那一块:同一个房间压成夜色(场景包里有对应的夜景就用夜景)
+  const night = c.scenes.find((s) => s.label === `${scene.label}夜` || s.label === `深夜${scene.label}`) ?? scene;
+  swapBg($('#bgDay'), scene);
+  swapBg($('#bgNight'), night);
+  const big = new Image();
+  big.src = src(c.sprites[0].src);
+  const tall = innerWidth < innerHeight;
+  placeSprite(big, c.sprites[0], $('#closeup'), tall ? { faceH: 0.42, faceTop: 0.02, cx: 0.66 } : { faceH: 0.8, faceTop: 0.04, cx: 0.84 });
+  $('#closeup').replaceChildren(big);
+  shownSprite = null;
+  renderSprite();
+  $('#lastName').textContent = c.name;
+  $('#lastLine').textContent = `「${c.line}」`;
+  $('#lastMeta').textContent = `${c.work} · ${scene.label} · ${c.ago}`;
+  $('#who').textContent = c.name;
+}
+
+// ---------- 星空:点 + 四角星 + 几条星座连线,种子固定 ----------
+function starfield(svg, n, seed, lines) {
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const W = 1600, H = 900;
+  let s = '';
+  const pts = Array.from({ length: n }, () => [rnd() * W, rnd() * H, 0.6 + rnd() * rnd() * 2.6]);
+  if (lines) {
+    for (let k = 0; k < lines; k++) {
+      const a = pts[Math.floor(rnd() * n)];
+      let p = a;
+      for (let j = 0; j < 4; j++) {
+        const q = [p[0] + (rnd() - 0.5) * 220, p[1] + (rnd() - 0.5) * 160];
+        s += `<line x1="${p[0]}" y1="${p[1]}" x2="${q[0]}" y2="${q[1]}" stroke="rgba(246,246,248,.22)" stroke-width="1"/><circle cx="${q[0]}" cy="${q[1]}" r="2" fill="rgba(246,246,248,.7)"/>`;
+        p = q;
+      }
+    }
+  }
+  for (const [x, y, r] of pts) {
+    const o = (0.35 + rnd() * 0.6).toFixed(2), d = (rnd() * 4).toFixed(2);
+    s += r > 2.2
+      ? `<use href="#star" x="${x - r * 3}" y="${y - r * 3}" width="${r * 6}" height="${r * 6}" fill="#fff" opacity="${o}"><animate attributeName="opacity" values="${o};0.15;${o}" dur="${3 + rnd() * 3}s" begin="-${d}s" repeatCount="indefinite"/></use>`
+      : `<circle cx="${x}" cy="${y}" r="${r * 0.8}" fill="#fff" opacity="${o}"/>`;
+  }
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.innerHTML = s;
+}
+starfield($('#sky'), 120, 72, 3);
+starfield($('#pickSky'), 160, 19, 4);
+
+// 纸面上的淡星图
+function starmap(svg, seed) {
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const W = 1600, H = 900, pts = Array.from({ length: 90 }, () => [rnd() * W, rnd() * H, 0.8 + rnd() * rnd() * 3.2]);
+  let s = '';
+  for (let i = 0; i < pts.length; i++) {
+    const [x, y, r] = pts[i];
+    s += r > 2.6 ? `<use href="#star" x="${x - r * 3}" y="${y - r * 3}" width="${r * 6}" height="${r * 6}" fill="currentColor"/>` : `<circle cx="${x}" cy="${y}" r="${r}" fill="currentColor"/>`;
+    for (let j = i + 1; j < pts.length; j++) if (Math.hypot(pts[j][0] - x, pts[j][1] - y) < 120 && rnd() < 0.5) s += `<line x1="${x}" y1="${y}" x2="${pts[j][0]}" y2="${pts[j][1]}" stroke="currentColor" stroke-width="0.8"/>`;
+  }
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.innerHTML = s;
+}
+starmap($('#paperTex'), 72);
+starmap($('#pickTex'), 31);
+[[64, 9, 3.6], [91, 27, 2.4], [58, 44, 4.2], [50, 71, 2.6], [95, 60, 3.2], [79, 6, 2], [44, 90, 3]].forEach(([x, y, size], i) => {
+  const s = el('span', '', STAR).firstChild;
+  s.style.cssText = `left:${x}%;top:${y}%;width:${size}vh;height:${size}vh;margin:${-size / 2}vh;animation-delay:${-i * 0.45}s`;
+  $('#sparks').append(s);
+});
+
+// 斜线上的几颗星(位置按 --cut-t → --cut-b 插值)
+[[0.08, 2.6], [0.31, 1.4], [0.52, 3.4], [0.74, 1.8], [0.9, 2.2]].forEach(([t, size], i) => {
+  const s = el('span', '', STAR).firstChild;
+  s.style.cssText = `left:calc(var(--cut-t) + (var(--cut-b) - var(--cut-t)) * ${t});top:${t * 100}%;width:${size}vh;height:${size}vh;margin:${-size / 2}vh;animation-delay:${-i * 0.7}s`;
+  $('#cutStars').append(s);
+});
+
+// ---------- 角色选择 ----------
+let hot = cur;
+function renderPickSprite() {
+  const c = cast[hot], sp = c.sprites[0], host = $('#pickSprite');
+  const img = new Image();
+  img.src = src(sp.src);
+  placeSprite(img, sp, host, host.clientWidth < host.clientHeight ? { faceH: 0.11, faceTop: 0.1, cx: 0.5 } : { faceH: 0.22, faceTop: 0.13, cx: 0.27, floor: true });
+  host.replaceChildren(img);
+  document.querySelector('.pick-glow').style.background = `radial-gradient(70vh 60vh at 26% 40%, color-mix(in srgb, ${c.acc} 34%, transparent), transparent 70%)`;
+}
+function renderPick() {
+  $('#pickList').replaceChildren(...cast.map((c, i) => {
+    const b = el('button', `pick-item${i === cur ? ' cur' : ''}${i === hot ? ' hot' : ''}`);
+    const f = el('span', 'face');
+    f.append(faceImg(c.sprites[0], 0.62, 0.2));
+    b.append(f, el('span', '', `<b>${c.name}</b><small>${c.work} · 上次 ${c.ago}</small>`), el('span', '', STAR).firstChild);
+    b.style.setProperty('--acc', c.acc);
+    b.onpointerenter = b.onfocus = () => { if (hot !== i) { hot = i; renderPickSprite(); document.querySelectorAll('.pick-item').forEach((x, k) => x.classList.toggle('hot', k === i)); } };
+    b.onclick = () => { cur = i; closePick(); render(); };
+    return b;
+  }), el('button', 'pick-add', '+ 导入角色卡'));
+  renderPickSprite();
+}
+function openPick() { hot = cur; $('#pick').classList.add('on'); renderPick(); }
+function closePick() { $('#pick').classList.remove('on'); }
+$('#openPick').onclick = openPick;
+$('#pickBack').onclick = closePick;
+addEventListener('keydown', (e) => { if (e.key === 'Escape') closePick(); });
+
+document.querySelectorAll('[data-mood]').forEach((b) => {
+  const on = () => { mood = b.dataset.mood; renderSprite(); };
+  const off = () => { mood = null; renderSprite(); };
+  b.addEventListener('pointerenter', on);
+  b.addEventListener('pointerleave', off);
+  b.addEventListener('focus', on);
+  b.addEventListener('blur', off);
+});
+$('#demo').addEventListener('click', (e) => {
+  for (const key of ['cut', 'edge']) {
+    const v = e.target.dataset[key];
+    if (!v) continue;
+    $('#stage').dataset[key] = v;
+    document.querySelectorAll(`#demo [data-${key}]`).forEach((b) => b.classList.toggle('on', b === e.target));
+  }
+});
+addEventListener('resize', () => { shownSprite = null; render(); if ($('#pick').classList.contains('on')) renderPickSprite(); });
+
+// 光尘
+(() => {
+  const cv = $('#motes'), ctx = cv.getContext('2d');
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  let W = 0, H = 0;
+  const fit = () => { W = cv.width = cv.clientWidth; H = cv.height = cv.clientHeight; };
+  fit();
+  addEventListener('resize', fit);
+  const spawn = (any) => ({ x: Math.random() * W * 0.62, y: any ? Math.random() * H : H + 10, r: (0.2 + Math.random() * 0.5) * (H / 100), v: (0.5 + Math.random() * 1.4) * (H / 100), ph: Math.random() * 6.28, a: 0.25 + Math.random() * 0.45 });
+  const ps = Array.from({ length: 24 }, () => spawn(true));
+  let last = performance.now();
+  const frame = (t) => {
+    const dt = Math.min(0.05, (t - last) / 1000);
+    last = t;
+    ctx.clearRect(0, 0, W, H);
+    ps.forEach((p, i) => {
+      p.y -= p.v * dt;
+      p.ph += dt * 0.7;
+      const x = p.x + Math.sin(p.ph) * (H / 100), a = p.a * (0.6 + 0.4 * Math.sin(p.ph * 2.1));
+      const g = ctx.createRadialGradient(x, p.y, 0, x, p.y, p.r * 3);
+      g.addColorStop(0, `rgba(255, 252, 240, ${a})`);
+      g.addColorStop(1, 'rgba(255, 252, 240, 0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(x, p.y, p.r * 3, 0, 6.28);
+      ctx.fill();
+      if (p.y < -20) ps[i] = spawn(false);
+    });
+    requestAnimationFrame(frame);
+  };
+  requestAnimationFrame(frame);
+})();
+
+const q = new URLSearchParams(location.search);
+for (const key of ['cut', 'edge']) {
+  const v = q.get(key);
+  if (!v) continue;
+  $('#stage').dataset[key] = v;
+  document.querySelectorAll(`#demo [data-${key}]`).forEach((b) => b.classList.toggle('on', b.dataset[key] === v));
+}
+// 分界线的两端跟着 --cut-t / --cut-b 走(竖屏时这两个数会变);双线的第二根往图那边错开一点
+function drawEdges() {
+  const cs = getComputedStyle(document.documentElement);
+  const v = (name) => parseFloat(cs.getPropertyValue(name));
+  const tall = matchMedia('(max-aspect-ratio: 1/1)').matches;
+  // [x1, y1, x2, y2],viewBox 是 0–100;双线的第二根往她那边错开一点
+  const line = tall ? [100, v('--cut-r'), 0, v('--cut-l')] : [v('--cut-t'), 0, v('--cut-b'), 100];
+  const off = tall ? [0, -0.6] : [0.7, 0];
+  document.querySelectorAll('.edge').forEach((svg) => {
+    const [l1, l2] = svg.querySelectorAll('line');
+    for (const [l, k] of [[l1, 0], [l2, 1]]) {
+      l.setAttribute('x1', line[0] + off[0] * k); l.setAttribute('y1', line[1] + off[1] * k);
+      l.setAttribute('x2', line[2] + off[0] * k); l.setAttribute('y2', line[3] + off[1] * k);
+    }
+  });
+}
+drawEdges();
+addEventListener('resize', drawEdges);
+render();
+if (location.hash === '#pick') openPick();
+addEventListener('hashchange', () => (location.hash === '#pick' ? openPick() : closePick()));
+</script>
+</body>
+</html>

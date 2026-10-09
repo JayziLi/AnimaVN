@@ -2,9 +2,9 @@
  * 立绘插件的「位置」一组:一块和游戏里一样的舞台,看立绘摆在哪、拖动微调。
  *
  * 所有角色都按脸对齐(plugins/spriteLayout.ts),这里调两样:
- *   这张卡:拖动挪位置、滑条放大缩小、关掉自动对齐
+ *   当前立绘包:拖动挪位置、滑条放大缩小、关掉自动对齐(跟着包走,包挂到别的卡上也带着)
  *   所有角色共用的构图:人物大小(镜头远近)、头的高度
- * 可以把另一个角色半透明地叠上来对照,看两人是不是一样大、一样高。
+ * 可以把另一个角色(它正在用的包)半透明地叠上来对照,看两人是不是一样大、一样高。
  */
 
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
@@ -12,7 +12,7 @@ import {
   debugApi,
   sceneFileUrl,
   spriteImageUrl,
-  type CardSprite,
+  type PackSprite,
   type SceneAsset,
   type SpriteLayout,
 } from '../lib/api';
@@ -44,24 +44,26 @@ const pct = (v: number) => `${Math.round(v * 100)}%`;
 
 interface Reference {
   cardId: string;
-  sprite: CardSprite;
+  sprite: PackSprite;
   face: FaceBox | null;
   layout: SpriteLayout;
 }
 
-/** 对照的那个角色:它的默认立绘(排最前、没禁用、有图的那张)和它自己的摆法 */
+/** 对照的那个角色:它当前立绘包的默认立绘(排最前、没禁用、有图的那张)和那个包的摆法 */
 function useReference(cardId: string): Reference | null {
   const [ref, setRef] = useState<Reference | null>(null);
   useEffect(() => {
     if (!cardId) return;
     let alive = true;
-    Promise.all([debugApi.listSprites(cardId), debugApi.getSpriteLayout(cardId)])
-      .then(([list, layout]) => {
+    debugApi
+      .listCardSprites(cardId)
+      .then(async (list) => {
         const usable = enabledOnly(list).filter((s) => s.has_image);
         const first = usable[0];
+        const layout = first ? await debugApi.getSpriteLayout(first.pack_id) : null;
         if (!alive) return;
         setRef(
-          first
+          first && layout
             ? { cardId, sprite: first, face: facesByCanvas(usable).get(first.id) ?? null, layout }
             : null,
         );
@@ -78,14 +80,17 @@ function useReference(cardId: string): Reference | null {
 
 export function SpritePosition({
   card,
+  packName,
   sprites,
   sceneAssets,
   cards,
   state,
 }: {
   card: { id: string; name: string };
-  /** 这张卡的全部立绘;禁用的、没图的不参与 */
-  sprites: CardSprite[];
+  /** 当前立绘包的名字:微调记在包上 */
+  packName: string;
+  /** 当前立绘包的全部立绘;禁用的、没图的不参与 */
+  sprites: PackSprite[];
   /** 这张卡绑的场景包里的素材,拿默认背景当预览底图 */
   sceneAssets: SceneAsset[];
   /** 可以拿来对照的角色 */
@@ -231,7 +236,7 @@ export function SpritePosition({
       </div>
 
       <div className="spp-controls">
-        <div className="spp-head">这个角色 · {card.name || '(未命名)'}</div>
+        <div className="spp-head">这套立绘 · {packName}</div>
         <label className="spp-check">
           <input
             type="checkbox"

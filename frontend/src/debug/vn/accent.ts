@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { spriteImageUrl, type CardSprite } from '../lib/api';
+import { spriteImageUrl, type PackSprite } from '../lib/api';
 import { accentOf, spriteForMood, type Accent } from './titleArt';
 
 export type VNAccent = 'mono' | 'character' | 'pink';
@@ -33,7 +33,7 @@ const PINK: AccentVars = { accent: '#f4a9c4', ink: '#2b1420', rgb: '244, 169, 19
 const fromAccent = (a: Accent): AccentVars => ({ accent: a.acc, ink: a.ink, rgb: a.rgb });
 
 /** 选的主题色 → 这一刻要用的颜色。跟角色时还没取到(或者立绘读不出像素)先用灰白 */
-export function useVNAccent(mode: VNAccent, sprites: readonly CardSprite[]): AccentVars {
+export function useVNAccent(mode: VNAccent, sprites: readonly PackSprite[]): AccentVars {
   const idle = mode === 'character' ? spriteForMood(sprites, 'idle') : null;
   const src = idle ? spriteImageUrl(idle) : null;
   // 换卡时先留着上一张的颜色,取到新的再换,免得闪一下灰白

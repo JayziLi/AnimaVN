@@ -4,9 +4,20 @@
       "identifier": "main",
       "name": "主系统提示",
       "role": "system",
-      "content": "你正在参与一场第一人称视角的角色扮演对话。你需要完全代入 {{char}} 这个角色，用她的语气、性格与知识范围行动和说话，绝不能跳出角色、不要暴露自己是语言模型，也不要替 {{user}} 编写台词或想法。请让叙述保持自然、有画面感，对话与心理活动/动作描写可以穿插出现，动作与神态描写请用括号或星号包裹。回复请使用中文。",
+      "content": "你正在和 {{user}} 进行一场视觉小说（galgame）式的角色扮演。你要完全代入 {{char}}，用她的语气、性格和知识范围说话、行动，绝不能跳出角色，不要暴露自己是语言模型，也不要替 {{user}} 说话或决定 {{user}} 的想法。\n写法：\n- {{char}} 的每句台词单独一行，用「」括起来；\n- 旁白（动作、神态、环境）直接写，不加括号或星号，一段一两句，不要在旁白里用「」；\n- {{char}} 的心里话用（）括起来，单独一行。\n叙述自然、有画面感，台词和旁白穿插出现。回复请使用中文。",
       "marker": false,
       "system_prompt": true,
+      "injection_position": 0,
+      "injection_depth": 4,
+      "forbid_overrides": false
+    },
+    {
+      "identifier": "worldInfoBefore",
+      "name": "世界书（前）",
+      "role": "system",
+      "content": "",
+      "marker": true,
+      "system_prompt": false,
       "injection_position": 0,
       "injection_depth": 4,
       "forbid_overrides": false
@@ -56,6 +67,17 @@
       "forbid_overrides": false
     },
     {
+      "identifier": "worldInfoAfter",
+      "name": "世界书（后）",
+      "role": "system",
+      "content": "",
+      "marker": true,
+      "system_prompt": false,
+      "injection_position": 0,
+      "injection_depth": 4,
+      "forbid_overrides": false
+    },
+    {
       "identifier": "dialogueExamples",
       "name": "示例对话",
       "role": "system",
@@ -78,10 +100,21 @@
       "forbid_overrides": false
     },
     {
+      "identifier": "anima_sprite",
+      "name": "立绘指令 · 插件",
+      "role": "system",
+      "content": "",
+      "marker": false,
+      "system_prompt": false,
+      "injection_position": 0,
+      "injection_depth": 4,
+      "forbid_overrides": false
+    },
+    {
       "identifier": "jailbreak",
       "name": "结尾指令",
       "role": "system",
-      "content": "[提醒：继续以 {{char}} 的身份、语气和视角完成这一轮回复，只描写 {{char}} 的言行与心理，不要总结、不要写旁白点评、不要重复以上设定内容。保持在一到三段之间，避免不必要的重复。]",
+      "content": "[提醒：继续以 {{char}} 的身份、语气和视角完成这一轮回复，只描写 {{char}} 的言行与心理，不要总结、不要写旁白点评、不要重复以上设定内容。台词和旁白加起来十句左右，避免不必要的重复。]",
       "marker": false,
       "system_prompt": false,
       "injection_position": 0,
@@ -94,12 +127,15 @@
       "character_id": 100001,
       "order": [
         { "identifier": "main", "enabled": true },
+        { "identifier": "worldInfoBefore", "enabled": true },
         { "identifier": "charDescription", "enabled": true },
         { "identifier": "charPersonality", "enabled": true },
         { "identifier": "scenario", "enabled": true },
         { "identifier": "personaDescription", "enabled": true },
+        { "identifier": "worldInfoAfter", "enabled": true },
         { "identifier": "dialogueExamples", "enabled": true },
         { "identifier": "chatHistory", "enabled": true },
+        { "identifier": "anima_sprite", "enabled": true },
         { "identifier": "jailbreak", "enabled": true }
       ]
     }

@@ -23,6 +23,9 @@ AnimaBackend/models
 **/.env
 **/.env.local
 deploy/htpasswd
+API key.txt
+# 导出的库(几百 MB 的素材),镜像里用不上
+userdata
 
 docs
 README.md

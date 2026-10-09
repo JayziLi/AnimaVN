@@ -32,6 +32,26 @@ def test_card_list_reports_avatar_without_embedding_it(client: TestClient, make_
     assert fetched_avatar.headers["content-type"].startswith("text/plain")
 
 
+def test_card_avatar_revalidates_with_etag_and_changes_with_the_image(
+    client: TestClient, make_card
+):
+    card = make_card(avatar="data:image/png;base64,iVBORw0KGgo=")
+    url = f"/api/tavern/cards/{card['id']}/avatar"
+
+    first = client.get(url)
+    etag = first.headers["etag"]
+    again = client.get(url, headers={"If-None-Match": etag})
+    client.put(f"/api/tavern/cards/{card['id']}", json={"avatar": "data:image/png;base64,AA=="})
+    stale = client.get(url, headers={"If-None-Match": etag})
+
+    assert "no-cache" in first.headers["cache-control"]
+    assert again.status_code == 304
+    assert again.content == b""
+    assert stale.status_code == 200
+    assert stale.text == "data:image/png;base64,AA=="
+    assert stale.headers["etag"] != etag
+
+
 def test_card_without_avatar_returns_not_found_for_avatar_endpoint(
     client: TestClient, make_card
 ):

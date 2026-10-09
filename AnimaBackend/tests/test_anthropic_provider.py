@@ -75,7 +75,7 @@ def test_complete_moves_system_messages_out_of_turn_history(monkeypatch):
     assert captured["api_key"] == "anthropic-secret"
     # cache breakpoints on the system prompt and the newest turn
     assert captured["payload"] == {
-        "max_tokens": 1024,
+        "max_tokens": 16000,
         "messages": [
             {"role": "user", "content": "你好"},
             {
@@ -417,6 +417,55 @@ def test_stream_logs_cache_usage(monkeypatch, caplog):
     run(stream_scenario(client, [ChatMessage(role="user", content="你好")]))
 
     assert "缓存读 900 · 缓存写 100 · 未缓存 50 · 输出 30 · 命中 86%" in caplog.text
+    assert "截断" not in caplog.text
+
+
+def test_stream_warns_when_reply_hits_max_tokens(monkeypatch, caplog):
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return sse_response(
+            [
+                {"type": "message_start", "message": message_response([])},
+                {
+                    "type": "content_block_delta",
+                    "index": 0,
+                    "delta": {"type": "text_delta", "text": "自分の"},
+                },
+                {
+                    "type": "message_delta",
+                    "delta": {"stop_reason": "max_tokens", "stop_sequence": None},
+                    "usage": {"output_tokens": 16000},
+                },
+                {"type": "message_stop"},
+            ]
+        )
+
+    client = install_transport(monkeypatch, handler)
+    caplog.set_level(logging.INFO, logger="app.llm.anthropic_provider")
+    run(stream_scenario(client, [ChatMessage(role="user", content="你好")]))
+
+    assert "回复被截断" in caplog.text
+
+
+def test_complete_warns_when_reply_hits_max_tokens(monkeypatch, caplog):
+    truncated = message_response(["自分の"])
+    truncated["stop_reason"] = "max_tokens"
+
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=truncated)
+
+    client = install_transport(monkeypatch, handler)
+
+    async def scenario():
+        try:
+            provider = AnthropicProvider("secret", "https://anthropic.test")
+            return await provider.complete([ChatMessage(role="user", content="你好")], "claude-test")
+        finally:
+            await client.aclose()
+
+    caplog.set_level(logging.INFO, logger="app.llm.anthropic_provider")
+    run(scenario())
+
+    assert "回复被截断" in caplog.text
 
 
 @pytest.mark.parametrize(

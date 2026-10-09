@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db import get_db
+from app.db import get_db, without_required_nulls
 from app.models import Persona
 from app.schemas import PersonaCreate, PersonaOut, PersonaUpdate
 
@@ -47,7 +47,7 @@ def create_persona(req: PersonaCreate, db: Session = Depends(get_db)):
 @router.patch("/{persona_id}", response_model=PersonaOut)
 def update_persona(persona_id: str, req: PersonaUpdate, db: Session = Depends(get_db)):
     persona = _load(persona_id, db)
-    updates = req.model_dump(exclude_unset=True)
+    updates = without_required_nulls(Persona, req.model_dump(exclude_unset=True))
     if "name" in updates:
         name = updates["name"].strip()
         if not name:

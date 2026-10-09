@@ -1,3 +1,4 @@
+import base64
 import json
 from pathlib import Path
 
@@ -5,9 +6,20 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.models import ApiConnection, Persona, PromptPreset, TavernCard
+from app.models import (
+    ApiConnection,
+    CardSpritePack,
+    PackSprite,
+    Persona,
+    PromptPreset,
+    SpritePack,
+    TavernCard,
+)
 
 _SEED_DATA = Path(__file__).resolve().parent / "seed_data"
+# 自带的角色:卡 + 头像 + 一个立绘包,素材授权见目录里的 CREDITS.txt
+_DEFAULT_CHAR = _SEED_DATA / "deepseek-chan"
+_DEFAULT_PACK_NAME = "DeepSeek娘 · 女仆"
 
 
 def seed_default_persona(db: Session) -> None:
@@ -54,33 +66,67 @@ def seed_default_connections(db: Session) -> None:
     db.commit()
 
 
-def seed_default_tavern_data(db: Session) -> None:
-    """First run only: the bundled Anima card + default Chat Completion preset,
-    so the prompt console has something selectable before any import."""
-    if db.scalars(select(TavernCard)).first() is None:
-        raw = json.loads((_SEED_DATA / "anima-character.json").read_text(encoding="utf-8"))
-        # V2/V3 keep the real fields under `data`; V1 is flat
-        d = raw.get("data", raw)
-        db.add(
-            TavernCard(
-                name=d.get("name", ""),
-                description=d.get("description", ""),
-                personality=d.get("personality", ""),
-                scenario=d.get("scenario", ""),
-                first_mes=d.get("first_mes", ""),
-                mes_example=d.get("mes_example", ""),
-                system_prompt=d.get("system_prompt", ""),
-                post_history_instructions=d.get("post_history_instructions", ""),
-                creator_notes=d.get("creator_notes", ""),
-                alternate_greetings=d.get("alternate_greetings", []),
-                tags=d.get("tags", []),
-                creator=d.get("creator", ""),
-                character_version=d.get("character_version", ""),
-                character_book=d.get("character_book"),
-                extensions=d.get("extensions", {}),
-                spec=raw.get("spec", "chara_card_v2"),
+def _seed_default_card(db: Session) -> TavernCard:
+    raw = json.loads((_DEFAULT_CHAR / "card.json").read_text(encoding="utf-8"))
+    # V2/V3 keep the real fields under `data`; V1 is flat
+    d = raw.get("data", raw)
+    avatar = base64.b64encode((_DEFAULT_CHAR / "avatar.webp").read_bytes()).decode("ascii")
+    card = TavernCard(
+        name=d.get("name", ""),
+        description=d.get("description", ""),
+        personality=d.get("personality", ""),
+        scenario=d.get("scenario", ""),
+        first_mes=d.get("first_mes", ""),
+        mes_example=d.get("mes_example", ""),
+        system_prompt=d.get("system_prompt", ""),
+        post_history_instructions=d.get("post_history_instructions", ""),
+        creator_notes=d.get("creator_notes", ""),
+        alternate_greetings=d.get("alternate_greetings", []),
+        tags=d.get("tags", []),
+        creator=d.get("creator", ""),
+        character_version=d.get("character_version", ""),
+        character_book=d.get("character_book"),
+        extensions=d.get("extensions", {}),
+        spec=raw.get("spec", "chara_card_v2"),
+        avatar=f"data:image/webp;base64,{avatar}",
+    )
+    db.add(card)
+    db.flush()
+    return card
+
+
+def _seed_default_sprites(db: Session, card: TavernCard) -> None:
+    """自带角色的立绘包。删了卡又重新种的时候,同名的包还在就直接挂回去,不再建一个。
+    脸的位置是导出时就算好的(sprites.json 的 face_scan),首启不用再跑一遍找脸。"""
+    pack = db.scalars(select(SpritePack).where(SpritePack.name == _DEFAULT_PACK_NAME)).first()
+    if pack is None:
+        pack = SpritePack(name=_DEFAULT_PACK_NAME, description="AnimaVN 自带角色 DeepSeek娘的女仆装立绘")
+        db.add(pack)
+        db.flush()
+        rows = json.loads((_DEFAULT_CHAR / "sprites.json").read_text(encoding="utf-8"))
+        for i, row in enumerate(rows):
+            db.add(
+                PackSprite(
+                    pack_id=pack.id,
+                    label=row["label"],
+                    aliases=row.get("aliases", []),
+                    description=row.get("description", ""),
+                    image=(_DEFAULT_CHAR / "sprites" / row["file"]).read_bytes(),
+                    mime="image/webp",
+                    sort=i,
+                    face_scan=row.get("face_scan"),
+                    effect=row.get("effect"),
+                )
             )
-        )
+    db.add(CardSpritePack(card_id=card.id, pack_id=pack.id, sort=0, is_current=True))
+
+
+def seed_default_tavern_data(db: Session) -> None:
+    """First run only: the bundled DeepSeek娘 card (with her sprite pack) + default
+    Chat Completion preset, so a fresh install has someone to talk to before any import."""
+    if db.scalars(select(TavernCard)).first() is None:
+        card = _seed_default_card(db)
+        _seed_default_sprites(db, card)
 
     if db.scalars(select(PromptPreset)).first() is None:
         raw = json.loads((_SEED_DATA / "default-preset.json").read_text(encoding="utf-8"))

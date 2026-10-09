@@ -8,13 +8,9 @@
  * 我们统一读 data(没有就退回根),这样三代都能吃。
  */
 
-export interface CharacterBookEntry {
-  keys: string[];
-  content: string;
-  enabled: boolean;
-  insertion_order: number;
-  comment: string;
-}
+import { parseBook, type CharacterBook } from './characterBook';
+
+export type { CharacterBook, CharacterBookEntry } from './characterBook';
 
 export interface TavernCard {
   name: string;
@@ -32,7 +28,7 @@ export interface TavernCard {
   tags: string[];
   creator: string;
   character_version: string;
-  character_book: { entries: CharacterBookEntry[] } | null;
+  character_book: CharacterBook | null;
   extensions: Record<string, unknown>;
   /** 原始 spec 字符串,UI 上标注用 */
   spec: string;
@@ -121,22 +117,6 @@ function asStringArray(v: unknown): string[] {
   return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
 }
 
-function normalizeBook(v: unknown): TavernCard['character_book'] {
-  if (!v || typeof v !== 'object') return null;
-  const entries = (v as { entries?: unknown }).entries;
-  if (!Array.isArray(entries)) return null;
-  return {
-    entries: entries.map((e: Record<string, unknown>) => ({
-      keys: asStringArray(e.keys),
-      content: asString(e.content),
-      // 世界书条目默认生效,只有显式 false 才关掉
-      enabled: e.enabled !== false,
-      insertion_order: typeof e.insertion_order === 'number' ? e.insertion_order : 0,
-      comment: asString(e.comment),
-    })),
-  };
-}
-
 function normalizeCard(raw: unknown, sourceChunk: string): TavernCard {
   if (!raw || typeof raw !== 'object') throw new Error('角色卡内容不是一个对象');
   const root = raw as Record<string, unknown>;
@@ -157,7 +137,7 @@ function normalizeCard(raw: unknown, sourceChunk: string): TavernCard {
     tags: asStringArray(d.tags),
     creator: asString(d.creator),
     character_version: asString(d.character_version),
-    character_book: normalizeBook(d.character_book),
+    character_book: parseBook(d.character_book),
     extensions:
       d.extensions && typeof d.extensions === 'object'
         ? (d.extensions as Record<string, unknown>)

@@ -19,7 +19,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import Response
 from sqlalchemy import func, select, update
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
 from app.api.st_chat_codec import (
     chat_to_jsonl,
@@ -27,7 +27,7 @@ from app.api.st_chat_codec import (
     sanitize_st_filename,
     strip_branch_suffix,
 )
-from app.db import get_db
+from app.db import get_db, without_required_nulls
 from app.models import DebugChat, DebugChatMessage, DebugSnapshot, PromptPreset, TavernCard
 from app.schemas import (
     DebugBranchRequest,
@@ -117,6 +117,7 @@ def _chat_out(
         tainted=chat.tainted,
         parent_chat_id=chat.parent_chat_id,
         parent_message_id=chat.parent_message_id,
+        variables=chat.variables or {},
         created_at=chat.created_at,
         updated_at=chat.updated_at,
         message_count=message_count,
@@ -143,30 +144,43 @@ def _chat_out(
 def list_chats(card_id: str | None = None, db: Session = Depends(get_db)):
     """最近更新在前。card_id 过滤是顶栏下拉的视角(当前卡的对话)。"""
     query = select(DebugChat)
+    # 计数和预览只算要返回的这几条:切卡时走的都是按卡过滤,不必把全库的消息翻一遍
+    in_scope = []
     if card_id:
         query = query.where(DebugChat.card_id == card_id)
+        in_scope.append(
+            DebugChatMessage.chat_id.in_(select(DebugChat.id).where(DebugChat.card_id == card_id))
+        )
     chats = db.scalars(query.order_by(DebugChat.updated_at.desc())).all()
 
     counts = dict(
         db.execute(
-            select(DebugChatMessage.chat_id, func.count()).group_by(DebugChatMessage.chat_id)
+            select(DebugChatMessage.chat_id, func.count())
+            .where(*in_scope)
+            .group_by(DebugChatMessage.chat_id)
         ).all()
     )
 
     # 每条对话的最后一条消息 —— 卡片上的预览行。先用 (chat_id, max(idx)) 子查询
-    # 定位行,再回连取正文,免得为了一行预览把所有历史读进内存
+    # 定位行,再回连取正文,免得为了一行预览把所有历史读进内存;
+    # 也只取正文那两列,swipe_info 一条能有几十 KB,预览用不上
     last_idx = (
         select(
             DebugChatMessage.chat_id.label("chat_id"),
             func.max(DebugChatMessage.idx).label("idx"),
         )
+        .where(*in_scope)
         .group_by(DebugChatMessage.chat_id)
         .subquery()
     )
     previews = {
         m.chat_id: _preview(m)
         for m in db.scalars(
-            select(DebugChatMessage).join(
+            select(DebugChatMessage)
+            .options(
+                load_only(DebugChatMessage.chat_id, DebugChatMessage.swipes, DebugChatMessage.swipe_id)
+            )
+            .join(
                 last_idx,
                 (DebugChatMessage.chat_id == last_idx.c.chat_id)
                 & (DebugChatMessage.idx == last_idx.c.idx),
@@ -221,7 +235,10 @@ def get_chat(chat_id: str, db: Session = Depends(get_db)):
 @router.put("/chats/{chat_id}", response_model=DebugChatOut)
 def update_chat(chat_id: str, req: DebugChatUpdate, db: Session = Depends(get_db)):
     chat = _load_chat(chat_id, db)
-    updates = req.model_dump(exclude_unset=True)
+    raw = req.model_dump(exclude_unset=True)
+    updates = without_required_nulls(DebugChat, raw)
+    if "variables" in raw:
+        updates["variables"] = raw["variables"]  # null 在这里一直是「清空变量」,照旧
 
     if "card_id" in updates:
         if updates["card_id"]:
@@ -242,6 +259,8 @@ def update_chat(chat_id: str, req: DebugChatUpdate, db: Session = Depends(get_db
     for field in ("name", "card_id", "preset_id", "user_name", "tainted"):
         if field in updates:
             setattr(chat, field, updates[field])
+    if "variables" in updates:
+        chat.variables = updates["variables"] or {}
     chat.updated_at = _now()
     db.commit()
     db.refresh(chat)
@@ -280,12 +299,16 @@ def upsert_message(chat_id: str, message_id: str, req: DebugChatMessageIn, db: S
     elif row.chat_id != chat_id:
         raise HTTPException(409, "这条消息属于另一个对话")
 
-    # 把快照抽出来按哈希入库,消息里只留 snapshotHash
+    # 把快照抽出来按哈希入库,消息里只留 snapshotHash。
+    # 同一次请求里几个分支的提示词一模一样很常见(重来时提示词没变):db.get 看不见本次刚 add
+    # 还没 flush 的,不记一下会 add 两个同主键的 → IntegrityError
+    added: set[str] = set()
     for info in req.swipe_info:
         snapshot = info.pop("snapshot", None)
         hash_ = info.get("snapshotHash")
-        if snapshot is not None and hash_ and db.get(DebugSnapshot, hash_) is None:
+        if snapshot is not None and hash_ and hash_ not in added and db.get(DebugSnapshot, hash_) is None:
             db.add(DebugSnapshot(hash=hash_, payload=snapshot))
+            added.add(hash_)
 
     row.idx = req.idx
     row.role = req.role
@@ -389,6 +412,8 @@ def branch_chat(chat_id: str, req: DebugBranchRequest, db: Session = Depends(get
         tainted=chat.tainted,
         parent_chat_id=chat.id,
         parent_message_id=req.message_id,
+        # 分支带着分出来那一刻的变量走,和 ST 复制整份 chat_metadata 一样
+        variables=dict(chat.variables or {}),
     )
     db.add(branch)
     db.flush()  # 拿到 branch.id 才能给子消息挂外键
@@ -481,6 +506,7 @@ def import_chats(files: list[UploadFile] = File(...), db: Session = Depends(get_
             preset_name="",
             user_name=parsed["user_name"],
             tainted=parsed["tainted"],
+            variables=parsed["variables"],
         )
         db.add(chat)
         db.flush()

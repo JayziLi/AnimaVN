@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useRef, type ReactNode } from 'react';
-import { Feather } from './Feather';
+import { AnimaLogo } from './AnimaLogo';
 
 export type MenuPage = 'log' | 'save' | 'card' | 'plugin' | 'preset' | 'model' | 'config' | 'dev';
 
@@ -57,7 +57,7 @@ export function VNMenu({ page, onPage, charName, chatName, headExtra, children, 
     <div className="vn-menu" role="dialog" aria-label="菜单">
       <nav className="vn-menu-nav" ref={navRef}>
         <div className="vn-menu-brand">
-          <Feather size={22} />
+          <AnimaLogo size={32} />
           <div>
             <strong>{charName || '还没选角色'}</strong>
             <span>{chatName}</span>

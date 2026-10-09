@@ -2,8 +2,19 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- 图标：AnimaVN logo（源文件和做法在桌面「logo设计」）。PNG 是给不认 SVG 图标的浏览器兜底，
+         sizes 要写上，不然 Chrome 会挑 PNG 不挑 SVG；?v= 是为了让浏览器换掉缓存的旧图标 -->
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=72" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=72" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=72" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- iPhone 的 Safari 不让网页全屏:「添加到主屏幕」后从图标打开就没有地址栏和工具栏了。
+         状态栏用黑底不用透明 —— 调试台没给刘海留位置;横屏时 iPhone 本来就不显示状态栏 -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <meta name="apple-mobile-web-app-title" content="AnimaVN" />
+    <meta name="theme-color" content="#0e0e0e" />
     <title>AnimaVN · Prompt Console</title>
   </head>
   <body>

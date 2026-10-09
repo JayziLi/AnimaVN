@@ -4,7 +4,7 @@
  */
 
 import type { CSSProperties } from 'react';
-import type { CardSprite } from '../lib/api';
+import type { PackSprite } from '../lib/api';
 import type { FaceBox } from '../plugins/spriteLayout';
 
 // ---- 表情 ----
@@ -27,11 +27,11 @@ const MOODS: Record<TitleMood, string[]> = {
 /** 电影片头里每个镜头换一个,按顺序挑她有的 */
 const MONTAGE: string[] = ['开心', '温柔', '害羞', '说话', '调皮', '俏皮', '眨眼', '兴奋', '好奇', '平静'];
 
-const named = (sprites: readonly CardSprite[], name: string) =>
+const named = (sprites: readonly PackSprite[], name: string) =>
   sprites.find((s) => s.has_image && (s.label === name || s.aliases.includes(name))) ?? null;
 
 /** sprites 是启用的立绘,排第一的是默认表情(和游戏里一样) */
-export function spriteForMood(sprites: readonly CardSprite[], mood: TitleMood): CardSprite | null {
+export function spriteForMood(sprites: readonly PackSprite[], mood: TitleMood): PackSprite | null {
   for (const name of MOODS[mood]) {
     const hit = named(sprites, name);
     if (hit) return hit;
@@ -39,8 +39,8 @@ export function spriteForMood(sprites: readonly CardSprite[], mood: TitleMood): 
   return sprites.find((s) => s.has_image) ?? null;
 }
 
-export function montageSprites(sprites: readonly CardSprite[]): CardSprite[] {
-  return MONTAGE.map((n) => named(sprites, n)).filter((s): s is CardSprite => s !== null);
+export function montageSprites(sprites: readonly PackSprite[]): PackSprite[] {
+  return MONTAGE.map((n) => named(sprites, n)).filter((s): s is PackSprite => s !== null);
 }
 
 // ---- 按脸摆立绘 ----
@@ -139,15 +139,27 @@ function readPixels(src: string, maxSide: number): Promise<Uint8ClampedArray | n
  * 不只是省流量 —— 原图地址早被游戏里的普通 <img> 缓存过(响应里没有 CORS 头),
  * 同一个地址再以 CORS 方式请求会被浏览器拦下,换个地址才读得到像素(见 AnimaBackend/app/images.py)
  */
-const shrunk = (src: string, w: number) => `${src}${src.includes('?') ? '&' : '?'}w=${w}`;
+const shrunk = (src: string, w: number) => {
+  // 手机上立绘地址本身就带 ?w=1024(lib/api.ts 的 spriteImageUrl):换掉它,别带两个 w
+  const base = src.replace(/([?&])w=\d+(&|$)/, (_m, lead: string, tail: string) => (tail ? lead : ''));
+  return `${base}${base.includes('?') ? '&' : '?'}w=${w}`;
+};
 
 function cached<T>(fn: (src: string) => Promise<T>): (src: string) => Promise<T> {
   const cache = new Map<string, Promise<T>>();
   return (src) => {
     let hit = cache.get(src);
     if (!hit) {
-      hit = fn(src);
-      cache.set(src, hit);
+      const p = fn(src);
+      hit = p;
+      cache.set(src, p);
+      // 读失败(跨域被拦、网络抖了一下)的不记:不然这次打开页面里再也不会重试,标题一直是默认色
+      const forget = () => {
+        if (cache.get(src) === p) cache.delete(src);
+      };
+      p.then((v) => {
+        if (v === null || v === undefined) forget();
+      }, forget);
     }
     return hit;
   };

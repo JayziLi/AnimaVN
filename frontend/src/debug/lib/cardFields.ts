@@ -13,7 +13,8 @@
  * 预设正文要展示,两份字塞进一个框会分不清在改哪个。
  */
 
-import type { TavernCard } from './cardParser';
+import type { CharacterBookEntry, TavernCard } from './cardParser';
+import { WI_POSITION } from './characterBook';
 import type { TavernPreset } from './presetParser';
 
 export type PromptFieldKey =
@@ -122,7 +123,9 @@ export type MarkerSource =
       /** 发出去之前会被套进的模板原文,没有就是 null */
       wrapTemplate: string | null;
     }
-  | { kind: 'elsewhere'; label: string; hint: string };
+  | { kind: 'elsewhere'; label: string; hint: string }
+  /** 世界书:内容在卡里,但是一组条目 —— 弹窗里列出来看,不在这儿改 */
+  | { kind: 'book'; label: string; entries: CharacterBookEntry[] };
 
 /** 内容不在角色卡里的那几个 marker —— 指路文案 */
 const ELSEWHERE: Record<string, { label: string; hint: string }> = {
@@ -136,12 +139,18 @@ const ELSEWHERE: Record<string, { label: string; hint: string }> = {
   },
   worldInfoBefore: {
     label: '世界书(前) · World Info',
-    hint: '内容来自角色卡的世界书条目,是一组条目而不是一段文本,单个输入框装不下。',
+    hint: '这里放世界书里位置是「角色描述前」的条目。当前这张卡没有这样的条目,这一块什么都不会填。',
   },
   worldInfoAfter: {
     label: '世界书(后) · World Info',
-    hint: '内容来自角色卡的世界书条目,是一组条目而不是一段文本,单个输入框装不下。',
+    hint: '这里放世界书里位置是「角色描述后」的条目。当前这张卡没有这样的条目,这一块什么都不会填。',
   },
+};
+
+/** 这两个块各收哪个位置的条目 */
+const BOOK_MARKERS: Record<string, number> = {
+  worldInfoBefore: WI_POSITION.before,
+  worldInfoAfter: WI_POSITION.after,
 };
 
 /**
@@ -163,5 +172,11 @@ export function resolveMarkerSource(
     };
   }
   const elsewhere = ELSEWHERE[identifier];
+  if (elsewhere && identifier in BOOK_MARKERS) {
+    const entries = (card?.character_book?.entries ?? []).filter(
+      (e) => e.position === BOOK_MARKERS[identifier],
+    );
+    if (entries.length > 0) return { kind: 'book', label: elsewhere.label, entries };
+  }
   return elsewhere ? { kind: 'elsewhere', ...elsewhere } : null;
 }

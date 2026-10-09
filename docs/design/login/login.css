@@ -1,0 +1,688 @@
+/* ══════════ AnimaVN 登录 / 注册 ══════════
+   和标题画面的海报(frontend/src/debug/vn/vnTitle.css)同一套:斜切两块,上面是场景,下面纸面,
+   中间一条强调色细线。手机竖着切成上下两块;桌面横过来切成左右,和海报横屏一样。
+   只放景色、不放立绘:两版对比过,用户选了单纯景色(2026-09-28)。
+
+   状态全写在根元素 .au 上:
+     data-mode   login | register        注册时「再输一次密码」展开,纸面变高,斜线跟着往上走
+     .is-busy                            提交中:输入框锁住,按钮上羽毛摆动、底边走进度条
+   出错:.au-msg 里写字;哪一栏有问题就给那一栏的 .au-field 加 .is-invalid。
+
+   颜色:--au-acc(亮的,照片上的斜线)、--au-acc-deep(深的,纸面上的按钮、焦点、选中)从背景取,
+   写在根元素的行内样式上;--au-focus 是背景横向对准哪儿。 */
+
+.au {
+  --au-paper: #f4efe7;
+  --au-ink: #1c1820;
+  --au-acc: #b9aecb;
+  --au-acc-deep: hsl(265 26% 38%);
+  --au-err: hsl(356 60% 42%);
+  --au-cut: min(15vw, 64px);
+  --au-line: 3px;
+  --au-serif: 'Noto Serif SC', 'Source Han Serif SC', 'Source Han Serif CN', 'Songti SC', 'STSong', 'SimSun', serif;
+  --au-latin: 'Cormorant Garamond', 'EB Garamond', Garamond, 'Palatino Linotype', 'Book Antiqua', Palatino, serif;
+  --au-sans: system-ui, -apple-system, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans CJK SC',
+    sans-serif;
+
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow: hidden;
+  background: #17141b;
+  color: var(--au-ink);
+  font: 400 15px / 1.5 var(--au-sans);
+  -webkit-tap-highlight-color: transparent;
+}
+.au *,
+.au *::before,
+.au *::after {
+  box-sizing: border-box;
+}
+.au :where(button) {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.au :where(p) {
+  margin: 0;
+}
+.au img {
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.au svg {
+  flex: none;
+}
+
+/* ---- 上半:场景。铺满一屏高,下半截被纸面盖住 ---- */
+
+.au-stage {
+  position: absolute;
+  z-index: 0;
+  inset: 0 0 auto;
+  height: 100vh;
+  height: 100svh;
+  min-height: 560px;
+  overflow: hidden;
+  animation: au-wipe-down 1s cubic-bezier(0.7, 0, 0.2, 1) both;
+}
+.au-bg {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  /* 只铺到纸面最低能到的地方(纸面至少 40% 高):横图不用为了盖住整屏放得太大 */
+  height: calc(60% + var(--au-cut) + 12px);
+  object-fit: cover;
+  object-position: var(--au-focus, 50%) 50%;
+  animation: au-kenburns 36s ease-in-out infinite alternate;
+}
+/* 顶上压暗一点,给字标 */
+.au-stage::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(12, 9, 16, 0.5), transparent 20%);
+}
+
+/* ---- 照片上只放左上角的字标 ---- */
+
+.au-top {
+  position: relative;
+  z-index: 2;
+  flex: 1 0 auto;
+  min-height: 250px;
+  padding: calc(env(safe-area-inset-top) + 22px) 22px 0;
+  color: #fff;
+  pointer-events: none;
+}
+.au-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 11px;
+  font: 600 21px / 1 var(--au-latin);
+  letter-spacing: 0.4em;
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.45);
+  animation: au-fade 0.8s ease 0.6s both;
+}
+.au-brand svg {
+  width: 26px;
+  height: 26px;
+  filter: drop-shadow(0 1px 5px rgba(0, 0, 0, 0.4));
+}
+
+/* ---- 下半:纸面。外层是强调色,里层纸面往下错开 --au-line,露出来的就是那条斜线 ---- */
+
+.au-sheet {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: calc(40svh + var(--au-cut));
+  margin-top: calc(-1 * var(--au-cut));
+  padding-top: var(--au-line);
+  background: var(--au-acc);
+  clip-path: polygon(0 var(--au-cut), 100% 0, 100% 100%, 0 100%);
+  animation: au-rise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) 0.15s both;
+}
+.au-paper {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: calc(var(--au-cut) + 12px) 28px calc(env(safe-area-inset-bottom) + 18px);
+  background:
+    radial-gradient(90% 60% at 100% 100%, color-mix(in srgb, var(--au-acc) 16%, transparent), transparent 70%),
+    var(--au-paper);
+  clip-path: polygon(0 var(--au-cut), 100% 0, 100% 100%, 0 100%);
+}
+/* 纸纹:淡一点,纸面还是 #f4efe7 的颜色 */
+.au-paper::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.16;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .5  0 0 0 0 .5  0 0 0 0 .5  0 0 0 1.2 -.1'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+.au-form,
+.au-notes {
+  position: relative;
+}
+.au-form {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- 登录 / 注册 ---- */
+
+.au-tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid color-mix(in srgb, var(--au-ink) 12%, transparent);
+  animation: au-rise-sm 0.6s cubic-bezier(0.2, 0.7, 0.2, 1) 0.35s both;
+}
+.au-tab {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 4px 0 11px;
+  font: 600 21px / 1 var(--au-serif);
+  letter-spacing: 0.24em;
+  color: color-mix(in srgb, var(--au-ink) 34%, transparent);
+  transition: color 0.2s;
+}
+.au-tab small {
+  font: 600 10px / 1 var(--au-latin);
+  letter-spacing: 0.32em;
+}
+.au-tab::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  width: 1.6em;
+  height: 2px;
+  background: var(--au-acc-deep);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.35s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.au-tab[aria-selected='true'] {
+  color: var(--au-ink);
+}
+.au-tab[aria-selected='true']::after {
+  transform: scaleX(1);
+}
+.au-tab:not([aria-selected='true']):hover {
+  color: color-mix(in srgb, var(--au-ink) 62%, transparent);
+}
+/* 两个字中间的斜杠,和画面的斜切一个方向 */
+.au-tabs-slash {
+  width: 1.5px;
+  height: 30px;
+  margin: 0 2px 12px;
+  background: color-mix(in srgb, var(--au-ink) 24%, transparent);
+  transform: rotate(20deg);
+}
+
+/* ---- 输入框:纸面上只画一条底线,聚焦时强调色从左边画过去 ---- */
+
+.au-field {
+  display: block;
+  margin-bottom: 12px;
+  animation: au-rise-sm 0.6s cubic-bezier(0.2, 0.7, 0.2, 1) 0.42s both;
+}
+.au-field + .au-field {
+  animation-delay: 0.48s;
+}
+.au-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font: 500 13px / 1 var(--au-serif);
+  letter-spacing: 0.16em;
+  color: color-mix(in srgb, var(--au-ink) 70%, transparent);
+  transition: color 0.2s;
+}
+.au-label small {
+  font: 600 10px / 1 var(--au-latin);
+  letter-spacing: 0.3em;
+  opacity: 0.55;
+}
+.au-input {
+  position: relative;
+}
+.au-input input {
+  display: block;
+  width: 100%;
+  height: 44px;
+  padding: 0 2px;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--au-ink) 24%, transparent);
+  border-radius: 0;
+  background: transparent;
+  color: var(--au-ink);
+  /* 16px 是 iOS 不自动放大页面的下限 */
+  font: 400 16px / 1 var(--au-sans);
+  letter-spacing: 0.02em;
+  outline: none;
+  transition: opacity 0.2s;
+}
+.au-input input[type='password'] {
+  letter-spacing: 0.14em;
+}
+.au-input input::placeholder {
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  color: color-mix(in srgb, var(--au-ink) 32%, transparent);
+}
+.au-input:has(.au-eye) input {
+  padding-right: 40px;
+}
+.au-input input:-webkit-autofill {
+  -webkit-text-fill-color: var(--au-ink);
+  box-shadow: 0 0 0 1000px var(--au-paper) inset;
+  caret-color: var(--au-ink);
+}
+.au-input::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--au-acc-deep);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition:
+    transform 0.35s cubic-bezier(0.2, 0.7, 0.2, 1),
+    background-color 0.2s;
+}
+.au-input:focus-within::after {
+  transform: scaleX(1);
+}
+.au-field:focus-within .au-label {
+  color: var(--au-acc-deep);
+}
+.au-field.is-invalid .au-label {
+  color: var(--au-err);
+}
+.au-field.is-invalid .au-input::after {
+  background: var(--au-err);
+  transform: scaleX(1);
+}
+.au-eye {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  transform: translateY(-50%);
+  color: color-mix(in srgb, var(--au-ink) 42%, transparent);
+  transition: color 0.2s;
+}
+.au-eye:hover,
+.au-eye[aria-pressed='true'] {
+  color: var(--au-ink);
+}
+.au-eye svg {
+  width: 19px;
+  height: 19px;
+}
+.au-eye .off,
+.au-eye[aria-pressed='true'] .on {
+  display: none;
+}
+.au-eye[aria-pressed='true'] .off {
+  display: block;
+}
+
+/* 「再输一次密码」:注册时从 0 高展开,纸面和斜线跟着平滑地往上长 */
+.au-more {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 0.42s cubic-bezier(0.2, 0.7, 0.2, 1),
+    opacity 0.25s;
+}
+.au-more > div {
+  min-height: 0;
+  overflow: hidden;
+}
+.au[data-mode='register'] .au-more {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+/* ---- 错误提示:按钮上方固定留一行,有没有字按钮都不跳 ---- */
+
+.au-msg {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  min-height: 21px;
+  margin: 4px 0 12px;
+  font: 500 13px / 1.55 var(--au-sans);
+  color: var(--au-err);
+}
+.au-msg:not(:empty)::before {
+  content: '!';
+  flex: none;
+  width: 15px;
+  height: 15px;
+  margin-top: 2px;
+  border-radius: 50%;
+  background: var(--au-err);
+  color: var(--au-paper);
+  font: 700 11px / 15px var(--au-sans);
+  text-align: center;
+}
+.au-msg.is-shake {
+  animation: au-shake 0.42s cubic-bezier(0.36, 0.07, 0.19, 0.97);
+}
+
+/* ---- 主按钮:汉字在左、英文在右,移上去从左边刷一层墨色(和海报菜单一样) ---- */
+
+.au-submit {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 52px;
+  padding: 0 18px 0 22px;
+  border-radius: 2px;
+  background: var(--au-acc-deep);
+  color: #fbf8f3;
+  box-shadow: 0 8px 20px -10px color-mix(in srgb, var(--au-acc-deep) 80%, transparent);
+  transition:
+    transform 0.15s,
+    box-shadow 0.2s;
+  animation: au-rise-sm 0.6s cubic-bezier(0.2, 0.7, 0.2, 1) 0.56s both;
+}
+.au-submit::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--au-ink);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.4s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.au-submit:hover::before,
+.au-submit:focus-visible::before {
+  transform: scaleX(1);
+}
+.au-submit:active {
+  transform: translateY(1px);
+}
+.au-submit .zh {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font: 600 16px / 1 var(--au-serif);
+  letter-spacing: 0.5em;
+}
+.au-submit .en {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font: 600 11px / 1 var(--au-latin);
+  letter-spacing: 0.32em;
+  opacity: 0.72;
+}
+.au-submit .en svg {
+  width: 18px;
+  height: 10px;
+  transition: transform 0.3s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.au-submit:hover .en svg {
+  transform: translateX(4px);
+}
+.au-submit .au-feather {
+  display: none;
+  width: 17px;
+  height: 17px;
+}
+/* 进度条:按钮底边一截亮色来回走 */
+.au-submit::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 38%;
+  height: 2px;
+  background: var(--au-acc);
+  opacity: 0;
+}
+
+.au-tab:focus-visible,
+.au-eye:focus-visible,
+.au-submit:focus-visible {
+  outline: 2px solid var(--au-acc-deep);
+  outline-offset: 3px;
+}
+
+/* ---- 提交中 ---- */
+
+.au.is-busy .au-submit {
+  cursor: progress;
+}
+.au.is-busy .au-submit::before {
+  transform: scaleX(0);
+}
+.au.is-busy .au-submit::after {
+  opacity: 1;
+  animation: au-progress 1.2s ease-in-out infinite;
+}
+.au.is-busy .au-submit .au-feather {
+  display: block;
+  animation: au-sway 1.6s ease-in-out infinite;
+}
+.au.is-busy .au-submit .en {
+  opacity: 0.45;
+}
+.au.is-busy .au-submit .en svg {
+  display: none;
+}
+.au.is-busy .au-input input {
+  opacity: 0.5;
+}
+.au.is-busy .au-tab,
+.au.is-busy .au-eye {
+  pointer-events: none;
+}
+
+/* ---- 底部两行小字 ---- */
+
+.au-notes {
+  margin-top: auto;
+  padding-top: 18px;
+  font: 400 11.5px / 1.7 var(--au-sans);
+  letter-spacing: 0.02em;
+  text-align: center;
+  text-wrap: balance;
+  color: color-mix(in srgb, var(--au-ink) 50%, transparent);
+  animation: au-fade 0.8s ease 0.7s both;
+}
+
+/* 矮手机(老款 360×640 这类):照片让出一点,行距收紧,登录一屏放得下;注册多一栏时整页可以滚 */
+@media (max-height: 720px) and (max-aspect-ratio: 1/1) {
+  .au-top {
+    min-height: 210px;
+  }
+  .au-tabs {
+    margin-bottom: 14px;
+  }
+  .au-field {
+    margin-bottom: 8px;
+  }
+  .au-msg {
+    margin: 2px 0 8px;
+  }
+  .au-notes {
+    padding-top: 12px;
+  }
+}
+
+/* ══════════ 桌面:横过来,照片在左、纸面在右 ══════════ */
+
+@media (min-width: 820px) and (min-aspect-ratio: 1/1) {
+  .au {
+    --au-cut: 7vw;
+    --au-panel: clamp(400px, 31vw, 500px);
+    flex-direction: row;
+    height: 100vh;
+    height: 100dvh;
+    min-height: 560px;
+  }
+  .au-stage {
+    inset: 0;
+    height: auto;
+    min-height: 0;
+    animation-name: au-wipe-right;
+  }
+  .au-bg {
+    width: calc(100% - var(--au-panel) + 12px);
+    height: 100%;
+  }
+  .au-stage::after {
+    background:
+      linear-gradient(180deg, rgba(12, 9, 16, 0.42), transparent 18%),
+      linear-gradient(0deg, rgba(12, 9, 16, 0.22), transparent 28%);
+  }
+  .au-top {
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 36px 44px;
+  }
+  .au-brand {
+    gap: 14px;
+    font-size: 30px;
+  }
+  .au-brand svg {
+    width: 36px;
+    height: 36px;
+  }
+  .au-sheet {
+    flex: none;
+    width: calc(var(--au-panel) + var(--au-cut));
+    min-height: 0;
+    margin: 0 0 0 calc(-1 * var(--au-cut));
+    padding: 0 0 0 var(--au-line);
+    clip-path: polygon(var(--au-cut) 0, 100% 0, 100% 100%, 0 100%);
+    animation-name: au-slide-in;
+  }
+  .au-paper {
+    overflow-y: auto;
+    padding: 44px 56px 26px calc(var(--au-cut) * 0.7 + 40px);
+    background:
+      radial-gradient(80% 50% at 100% 100%, color-mix(in srgb, var(--au-acc) 18%, transparent), transparent 70%),
+      var(--au-paper);
+    clip-path: polygon(var(--au-cut) 0, 100% 0, 100% 100%, 0 100%);
+  }
+  .au-form {
+    width: 100%;
+    max-width: 360px;
+    margin-top: auto;
+  }
+  .au-tab {
+    font-size: 24px;
+  }
+  .au-field {
+    margin-bottom: 16px;
+  }
+  .au-notes {
+    max-width: 360px;
+    padding-top: 28px;
+    text-align: left;
+  }
+}
+
+/* ══════════ 动画 ══════════ */
+
+@keyframes au-wipe-down {
+  from {
+    clip-path: inset(0 0 100% 0);
+  }
+  to {
+    clip-path: inset(0);
+  }
+}
+@keyframes au-wipe-right {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0);
+  }
+}
+@keyframes au-kenburns {
+  from {
+    transform: scale(1.1) translate(1.5%, 0.5%);
+  }
+  to {
+    transform: scale(1.02) translate(-0.5%, 0);
+  }
+}
+@keyframes au-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes au-rise {
+  from {
+    transform: translateY(28px);
+  }
+}
+@keyframes au-slide-in {
+  from {
+    transform: translateX(40px);
+  }
+}
+@keyframes au-rise-sm {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+@keyframes au-shake {
+  15%,
+  85% {
+    transform: translateX(-2px);
+  }
+  30%,
+  70% {
+    transform: translateX(4px);
+  }
+  45%,
+  55% {
+    transform: translateX(-5px);
+  }
+}
+@keyframes au-progress {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(270%);
+  }
+}
+@keyframes au-sway {
+  0%,
+  100% {
+    transform: rotate(-14deg) translateY(1px);
+  }
+  50% {
+    transform: rotate(10deg) translateY(-1px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .au *,
+  .au *::before,
+  .au *::after {
+    animation-duration: 0.01s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01s !important;
+  }
+}

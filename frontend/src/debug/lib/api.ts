@@ -1,5 +1,22 @@
+import type { AnnotateRequest, AnnotateResponse } from '../plugins/jevRun';
 import type { AssemblyResult } from './assembler';
 import type { StoredChatMessage } from './chatEntry';
+
+/** Jev 的 key 设了没有、从哪来(环境变量 / 插件页) */
+export interface JevKeyStatus {
+  has_key: boolean;
+  source: 'env' | 'settings' | null;
+}
+
+/** 后端存的 Jev 默认问法和门槛(插件页显示、「恢复默认」用) */
+export interface JevDefaults {
+  prompts: Record<string, string>;
+  /** 「不换」选项的名字 */
+  keep: string;
+  /** CG 题里「收起 CG」那个选项的名字;后端是旧版时没有 */
+  cg_off?: string;
+  thresholds: { speaker: number; bg: number; bgm: number; cg?: number };
+}
 
 // 没配置时跟着地址栏走:本机开就连 localhost,手机用局域网 IP 开就连那个 IP,
 // 换网络不用改配置。部署时配成空串 = 同源,走 nginx 反代
@@ -26,8 +43,10 @@ async function failure(res: Response): Promise<Error> {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  // 只有带 JSON 请求体的才标 Content-Type:后端在另一个端口(跨源),GET 带上它就不算「简单请求」,
+  // 浏览器每次都要先发一个 OPTIONS 预检,手机走 Tailscale 时每个 GET 平白多一个来回
   const res = await fetch(`${BASE_URL}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
+    ...(typeof init?.body === 'string' ? { headers: { 'Content-Type': 'application/json' } } : {}),
     ...init,
   });
   if (!res.ok) throw await failure(res);
@@ -35,14 +54,30 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+/**
+ * Content-Disposition 里的文件名。后端两个都给:filename*=UTF-8''… 是完整的(带中文),
+ * filename="…" 是把非 ASCII 字符剥掉的兜底 —— 先认前者,不然中文名的对话全导出成 chat.jsonl
+ */
+export function filenameFromDisposition(disposition: string): string | null {
+  const star = /filename\*\s*=\s*(?:UTF-8|utf-8)''([^;]+)/.exec(disposition);
+  if (star) {
+    try {
+      const decoded = decodeURIComponent(star[1].trim());
+      if (decoded) return decoded;
+    } catch {
+      // 编码坏了就退回普通的 filename
+    }
+  }
+  const plain = /filename\s*=\s*"?([^";]+)"?/.exec(disposition);
+  return plain?.[1].trim() || null;
+}
+
 /** 后端返回 attachment 的下载:拉成 blob,再从 Content-Disposition 取文件名存盘 */
 async function downloadAttachment(url: string, fallbackName: string): Promise<void> {
   const res = await fetch(url);
   if (!res.ok) throw await failure(res);
   const blob = await res.blob();
-  const disposition = res.headers.get('Content-Disposition') ?? '';
-  const match = /filename="?([^";]+)"?/.exec(disposition);
-  const name = match?.[1] ?? fallbackName;
+  const name = filenameFromDisposition(res.headers.get('Content-Disposition') ?? '') ?? fallbackName;
   const objectUrl = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = objectUrl;
@@ -127,7 +162,7 @@ function parseFrame(frame: string): { event: string; data: string } {
  * 好处是 AbortSignal 照常起作用,「停止生成」白送。
  */
 async function streamComplete(
-  messages: { role: string; content: string }[],
+  messages: { role: string; content: string; name?: string }[],
   connectionId: string | undefined,
   model: string | undefined,
   signal: AbortSignal | undefined,
@@ -148,25 +183,34 @@ async function streamComplete(
   let buffer = '';
   let done: StreamDone | null = null;
 
-  for (;;) {
-    const { value, done: finished } = await reader.read();
-    if (finished) break;
-    buffer += decoder.decode(value, { stream: true });
+  // 中途抛错(error 帧、解析失败)时把连接关掉,别让它挂着等后端自己断
+  let ended = false;
+  try {
+    for (;;) {
+      const { value, done: finished } = await reader.read();
+      if (finished) {
+        ended = true;
+        break;
+      }
+      buffer += decoder.decode(value, { stream: true });
 
-    let split = buffer.indexOf('\n\n');
-    while (split !== -1) {
-      const { event, data } = parseFrame(buffer.slice(0, split));
-      buffer = buffer.slice(split + 2);
-      const payload: unknown = data ? JSON.parse(data) : {};
+      let split = buffer.indexOf('\n\n');
+      while (split !== -1) {
+        const { event, data } = parseFrame(buffer.slice(0, split));
+        buffer = buffer.slice(split + 2);
+        const payload: unknown = data ? JSON.parse(data) : {};
 
-      if (event === 'meta') handlers.onMeta?.(payload as StreamMeta);
-      else if (event === 'reasoning') handlers.onReasoning?.((payload as { text: string }).text);
-      else if (event === 'delta') handlers.onDelta?.((payload as { text: string }).text);
-      else if (event === 'done') done = payload as StreamDone;
-      else if (event === 'error') throw new Error((payload as { message: string }).message);
+        if (event === 'meta') handlers.onMeta?.(payload as StreamMeta);
+        else if (event === 'reasoning') handlers.onReasoning?.((payload as { text: string }).text);
+        else if (event === 'delta') handlers.onDelta?.((payload as { text: string }).text);
+        else if (event === 'done') done = payload as StreamDone;
+        else if (event === 'error') throw new Error((payload as { message: string }).message);
 
-      split = buffer.indexOf('\n\n');
+        split = buffer.indexOf('\n\n');
+      }
     }
+  } finally {
+    if (!ended) void reader.cancel().catch(() => undefined);
   }
 
   if (!done) throw new Error('流意外中断——没有收到结束帧');
@@ -208,6 +252,8 @@ export interface ChatSummary {
   tainted: boolean;
   parent_chat_id: string | null;
   parent_message_id: string | null;
+  /** {{setvar}} 一类的宏写下的变量。老后端没有这个字段 */
+  variables?: Record<string, string | number>;
   message_count: number;
   /** 最后一条消息的正文(后端已压平空白并截断)—— 历史列表的预览行 */
   last_message: string;
@@ -227,6 +273,8 @@ export interface ChatPayload {
   preset_id?: string | null;
   user_name?: string;
   tainted?: boolean;
+  /** 宏变量,整份替换 */
+  variables?: Record<string, string | number>;
 }
 
 /** 后端存的角色卡 —— 字段名照搬 chara_card_v2/v3 spec */
@@ -350,7 +398,7 @@ export const debugApi = {
 
   /** 把已经组装好的 messages 原样发出去,后端不再做任何加工 */
   complete: (
-    messages: { role: string; content: string }[],
+    messages: { role: string; content: string; name?: string }[],
     connectionId: string | undefined,
     model: string | undefined,
     signal?: AbortSignal,
@@ -500,57 +548,119 @@ export const debugApi = {
 
   emotionStatus: () => request<EmotionStatus>('/api/emotion/status'),
 
-  // ---- 立绘插件:卡的表情映射 ----
+  // ---- Jev 标注(plugins/jev.ts) ----
 
-  listSprites: (cardId: string) => request<CardSprite[]>(`/api/tavern/cards/${cardId}/sprites`),
-
-  createSprite: (cardId: string, payload: SpritePayload & { label: string }) =>
-    request<CardSprite>(`/api/tavern/cards/${cardId}/sprites`, {
+  annotateLines: (req: AnnotateRequest, signal?: AbortSignal) =>
+    request<AnnotateResponse>('/api/annotate/lines', {
       method: 'POST',
-      body: JSON.stringify(payload),
+      body: JSON.stringify(req),
+      signal,
     }),
 
-  updateSprite: (cardId: string, spriteId: string, patch: SpritePayload) =>
-    request<CardSprite>(`/api/tavern/cards/${cardId}/sprites/${spriteId}`, {
+  /** 玩家发消息时叫一声:LLM 还在想的时候先把到 Jev 的连接连好 */
+  annotateWarmup: () => request<void>('/api/annotate/warmup', { method: 'POST' }),
+
+  annotateStatus: () => request<JevKeyStatus>('/api/annotate/status'),
+
+  annotateDefaults: () => request<JevDefaults>('/api/annotate/defaults'),
+
+  /** 用现在的 key 问 Jev 一道小题:通了回耗时,不通抛出原因 */
+  annotateTest: () => request<{ ms: number }>('/api/annotate/test', { method: 'POST' }),
+
+  /** 只能写、不能读;空串 = 删掉 */
+  setJevKey: (key: string) =>
+    request<void>('/api/annotate/key', { method: 'PUT', body: JSON.stringify({ key }) }),
+
+  // ---- 立绘插件:立绘包、包里的表情映射、卡挂哪些包 ----
+
+  listSpritePacks: () => request<SpritePack[]>('/api/sprite-packs'),
+
+  createSpritePack: (name: string, description = '') =>
+    request<SpritePack>('/api/sprite-packs', {
+      method: 'POST',
+      body: JSON.stringify({ name, description }),
+    }),
+
+  updateSpritePack: (packId: string, patch: { name?: string; description?: string }) =>
+    request<SpritePack>(`/api/sprite-packs/${packId}`, {
       method: 'PUT',
       body: JSON.stringify(patch),
     }),
 
-  deleteSprite: (cardId: string, spriteId: string) =>
-    request<void>(`/api/tavern/cards/${cardId}/sprites/${spriteId}`, { method: 'DELETE' }),
+  deleteSpritePack: (packId: string) =>
+    request<void>(`/api/sprite-packs/${packId}`, { method: 'DELETE' }),
 
-  reorderSprites: (cardId: string, ids: string[]) =>
-    request<CardSprite[]>(`/api/tavern/cards/${cardId}/sprites/reorder`, {
+  listSprites: (packId: string) => request<PackSprite[]>(`/api/sprite-packs/${packId}/sprites`),
+
+  createSprite: (packId: string, payload: SpritePayload & { label: string }) =>
+    request<PackSprite>(`/api/sprite-packs/${packId}/sprites`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  updateSprite: (packId: string, spriteId: string, patch: SpritePayload) =>
+    request<PackSprite>(`/api/sprite-packs/${packId}/sprites/${spriteId}`, {
+      method: 'PUT',
+      body: JSON.stringify(patch),
+    }),
+
+  deleteSprite: (packId: string, spriteId: string) =>
+    request<void>(`/api/sprite-packs/${packId}/sprites/${spriteId}`, { method: 'DELETE' }),
+
+  reorderSprites: (packId: string, ids: string[]) =>
+    request<PackSprite[]>(`/api/sprite-packs/${packId}/sprites/reorder`, {
       method: 'POST',
       body: JSON.stringify({ ids }),
     }),
 
-  /** 给还没找过脸的立绘补上;rescan = 整套重找。返回这张卡的全部立绘 */
-  scanSpriteFaces: (cardId: string, rescan = false) =>
-    request<CardSprite[]>(
-      `/api/tavern/cards/${cardId}/sprites/scan-faces${rescan ? '?rescan=true' : ''}`,
+  /** 给还没找过脸的立绘补上;rescan = 整套重找。返回这个包的全部立绘 */
+  scanSpriteFaces: (packId: string, rescan = false) =>
+    request<PackSprite[]>(
+      `/api/sprite-packs/${packId}/sprites/scan-faces${rescan ? '?rescan=true' : ''}`,
       { method: 'POST' },
     ),
 
-  getSpriteLayout: (cardId: string) =>
-    request<SpriteLayout>(`/api/tavern/cards/${cardId}/sprites/layout`),
+  getSpriteLayout: (packId: string) =>
+    request<SpriteLayout>(`/api/sprite-packs/${packId}/sprites/layout`),
 
-  putSpriteLayout: (cardId: string, layout: SpriteLayout) =>
-    request<SpriteLayout>(`/api/tavern/cards/${cardId}/sprites/layout`, {
+  putSpriteLayout: (packId: string, layout: SpriteLayout) =>
+    request<SpriteLayout>(`/api/sprite-packs/${packId}/sprites/layout`, {
       method: 'PUT',
       body: JSON.stringify(layout),
     }),
 
-  uploadSpriteImage: async (cardId: string, spriteId: string, file: Blob): Promise<CardSprite> => {
+  uploadSpriteImage: async (packId: string, spriteId: string, file: Blob): Promise<PackSprite> => {
     const form = new FormData();
     form.append('file', file);
-    const res = await fetch(`${BASE_URL}/api/tavern/cards/${cardId}/sprites/${spriteId}/image`, {
+    const res = await fetch(`${BASE_URL}/api/sprite-packs/${packId}/sprites/${spriteId}/image`, {
       method: 'PUT',
       body: form,
     });
     if (!res.ok) throw await failure(res);
-    return res.json() as Promise<CardSprite>;
+    return res.json() as Promise<PackSprite>;
   },
+
+  /** 这张卡挂着哪些包(按顺序)、哪个是当前 */
+  getCardSpritePacks: (cardId: string) =>
+    request<CardSpritePacks>(`/api/tavern/cards/${cardId}/sprite-packs`),
+
+  /** 整组替换;current 不传 = 原来的当前包还在就留着,不在了换成它后面的下一个 */
+  setCardSpritePacks: (cardId: string, packIds: string[], current?: string) =>
+    request<CardSpritePacks>(`/api/tavern/cards/${cardId}/sprite-packs`, {
+      method: 'PUT',
+      body: JSON.stringify({ pack_ids: packIds, current: current ?? null }),
+    }),
+
+  /** 游戏里换一套立绘:只换当前包 */
+  setCardCurrentSpritePack: (cardId: string, packId: string) =>
+    request<CardSpritePacks>(`/api/tavern/cards/${cardId}/sprite-packs/current`, {
+      method: 'PUT',
+      body: JSON.stringify({ pack_id: packId }),
+    }),
+
+  /** 这张卡当前包的立绘;没挂包时是空列表 */
+  listCardSprites: (cardId: string) =>
+    request<PackSprite[]>(`/api/tavern/cards/${cardId}/sprites`),
 
   // ---- 场景包(背景 + BGM 插件) ----
 
@@ -579,7 +689,14 @@ export const debugApi = {
 
   createSceneAsset: (
     packId: string,
-    payload: { kind: SceneKind; label: string; aliases?: string[]; description?: string },
+    payload: {
+      kind: SceneKind;
+      label: string;
+      aliases?: string[];
+      description?: string;
+      /** 只有 CG 差分带:挂在哪张 CG 下面 */
+      parent_id?: string;
+    },
   ) =>
     request<SceneAsset>(`/api/scene-packs/${packId}/assets`, {
       method: 'POST',
@@ -712,7 +829,7 @@ export const debugApi = {
   deleteVoiceEmotion: (profileId: string, emotionId: string) =>
     request<void>(`/api/voices/${profileId}/emotions/${emotionId}`, { method: 'DELETE' }),
 
-  /** 按这张卡的立绘表情补齐情绪行(只对 IndexTTS 的声音);返回这个声音全部的情绪行 */
+  /** 按这张卡当前立绘包的表情补齐情绪行(只对 IndexTTS 的声音);返回这个声音全部的情绪行 */
   fillVoiceEmotionsFromSprites: (profileId: string, cardId: string) =>
     request<VoiceEmotion[]>(`/api/voices/${profileId}/emotions/from-sprites`, {
       method: 'POST',
@@ -767,9 +884,27 @@ export const debugApi = {
   },
 };
 
-export interface CardSprite {
+/** 立绘包:一整套表情立绘,卡挂一个或几个,游戏里随时换 */
+export interface SpritePack {
   id: string;
+  name: string;
+  description: string;
+  sprite_count: number;
+  /** 挂着这个包的卡有几张 */
+  card_count: number;
+}
+
+export interface CardSpritePacks {
   card_id: string;
+  /** 挂着的包,按顺序 */
+  pack_ids: string[];
+  /** 游戏里正在用的包;一个都没挂时是 null */
+  current: string | null;
+}
+
+export interface PackSprite {
+  id: string;
+  pack_id: string;
   /** AI 写在标签里的表情名 */
   label: string;
   /** 同样指向这张图的其他叫法 */
@@ -785,6 +920,15 @@ export interface CardSprite {
   enabled: boolean;
   /** 图里的脸在哪;null = 还没找过 */
   face_scan: SpriteFaceScan | null;
+  /** 换到这张立绘时的特效(plugins/spriteFx.ts);null = 没设。旧后端没有这个字段 */
+  effect?: SpriteEffect | null;
+}
+
+/** 立绘切换特效,三样都是 plugins/spriteFx.ts 清单里的 id;null = 这一样不要 */
+export interface SpriteEffect {
+  motion: string | null;
+  bubble: string | null;
+  sound: string | null;
 }
 
 /** 后端 app/sprite_faces.py 的结果。位置都是占整张图的比例 */
@@ -794,7 +938,7 @@ export interface SpriteFaceScan {
   face: { x: number; y: number; w: number; h: number } | null;
 }
 
-/** 一张卡的立绘怎么摆:按脸自动对齐之后再挪、再放大缩小。dx / dy 以舞台高度为单位 */
+/** 一个立绘包怎么摆:按脸自动对齐之后再挪、再放大缩小。dx / dy 以舞台高度为单位 */
 export interface SpriteLayout {
   /** 关掉 = 不按脸对齐,撑满舞台高度、居中 */
   auto: boolean;
@@ -825,25 +969,40 @@ export interface SpritePayload {
   aliases?: string[];
   description?: string;
   enabled?: boolean;
-}
-
-/** <img src> 直接用的地址。带版本号:换图后 URL 变,浏览器就不会继续显示缓存里的旧图 */
-export function spriteImageUrl(s: CardSprite): string | null {
-  if (!s.has_image) return null;
-  return `${BASE_URL}/api/tavern/cards/${s.card_id}/sprites/${s.id}/image?v=${s.image_version}`;
+  /** null = 去掉特效 */
+  effect?: SpriteEffect | null;
 }
 
 /**
- * 封面上的角色头像圈:后端把这张卡的默认立绘按脸裁成的小图。没有带图的立绘时 404,
- * <img> 的 onError 里退回卡面头像。后端带 ETag,换了立绘自己会更新
+ * 立绘请求后端转好的 WebP:原图 PNG 一张动辄近 1 MB(星绘一张 1058 KB → 126 KB),一个角色十几张,
+ * 进游戏要等很久。立绘原图大多就 800–1000 宽,比这窄的后端不放大、只换格式,分辨率不丢。
+ * 手机、平板(触屏)最宽 1024;电脑最宽 1280(10-04 起电脑也压,之前电脑用原图)。见 AnimaBackend/app/images.py
  */
-export function cardFaceUrl(cardId: string, size = 96): string {
-  return `${BASE_URL}/api/tavern/cards/${cardId}/sprites/face?size=${size}`;
+const COARSE = typeof window !== 'undefined' && Boolean(window.matchMedia?.('(pointer: coarse)').matches);
+const SPRITE_WIDTH = COARSE ? 1024 : 1280;
+/** 背景 / CG:游戏里铺满屏幕,电脑 1920、手机 1280 宽就够 */
+const SCENE_WIDTH = COARSE ? 1280 : 1920;
+
+/** <img src> 直接用的地址。带版本号:换图后 URL 变,浏览器就不会继续显示缓存里的旧图 */
+export function spriteImageUrl(s: PackSprite): string | null {
+  if (!s.has_image) return null;
+  return `${BASE_URL}/api/sprite-packs/${s.pack_id}/sprites/${s.id}/image?v=${s.image_version}&w=${SPRITE_WIDTH}`;
+}
+
+/**
+ * 封面上的角色头像圈:后端把这张卡当前包的默认立绘按脸裁成的小图。没有带图的立绘时 404,
+ * <img> 的 onError 里退回卡面头像。后端带 ETag,换了立绘自己会更新;
+ * 同一页里换了包时传 version(比如当前包 id),换个地址,免得浏览器直接用内存里的旧图
+ */
+export function cardFaceUrl(cardId: string, size = 96, version?: string): string {
+  const v = version ? `&v=${encodeURIComponent(version)}` : '';
+  return `${BASE_URL}/api/tavern/cards/${cardId}/sprites/face?size=${size}${v}`;
 }
 
 // ---- 场景包 ----
 
-export type SceneKind = 'bg' | 'bgm';
+/** cg:CG 插件的事件插图(构图);构图下面挂的差分也是 cg,parent_id 指向构图 */
+export type SceneKind = 'bg' | 'bgm' | 'cg';
 
 export interface ScenePack {
   id: string;
@@ -851,6 +1010,8 @@ export interface ScenePack {
   description: string;
   bg_count: number;
   bgm_count: number;
+  /** CG 构图的张数(不算差分);后端是旧版时没有 */
+  cg_count?: number;
   /** 绑了这个包的卡有几张 */
   card_count: number;
   /** 标题画面(封面)放的那首 BGM;null = 放排第一的 */
@@ -874,12 +1035,14 @@ export interface SceneAsset {
   file_version: number;
   /** 仅背景:竖屏时对准横图的哪儿,0 最左 100 最右 */
   focus_x: number;
-  /** 仅背景:换到这个场景时自动换上的 BGM */
+  /** 仅背景:换到这个场景时自动换上的 BGM(CG 不带曲子) */
   bgm_id: string | null;
   /** 同类里排第一的是默认 */
   sort: number;
   /** 关掉 = 游戏里当它不存在,文件留在包里 */
   enabled: boolean;
+  /** CG 差分:它属于哪张 CG(名字是立绘的表情名);其余素材是 null。后端是旧版时没有 */
+  parent_id?: string | null;
 }
 
 export interface SceneAssetPatch {
@@ -896,6 +1059,17 @@ export interface SceneAssetPatch {
 export function sceneFileUrl(a: SceneAsset): string | null {
   if (!a.has_file) return null;
   return `${BASE_URL}/api/scene-packs/${a.pack_id}/assets/${a.id}/file?v=${a.file_version}`;
+}
+
+/** 游戏里显示的背景 / CG:压成 WebP(见 SCENE_WIDTH);BGM 原样 */
+export function sceneImageUrl(a: SceneAsset): string | null {
+  return a.kind === 'bgm' ? sceneFileUrl(a) : sceneThumbUrl(a, SCENE_WIDTH);
+}
+
+/** 背景 / CG 缩到 w 宽的 WebP(插件页缩略图用;后端 16–1024) */
+export function sceneThumbUrl(a: SceneAsset, w: number): string | null {
+  const url = sceneFileUrl(a);
+  return url && `${url}&w=${w}`;
 }
 
 // ---- 语音插件 ----
@@ -929,6 +1103,8 @@ export interface VoiceEmotion {
   /** 语音服务那台机器上的路径 */
   ref_path: string;
   prompt_text: string;
+  /** GSV 的辅助参考路径:音色和主参考一起取平均,语气还跟主参考走(v3 / v4 模型不认) */
+  aux_refs: string[];
   /** IndexTTS 的 8 维情绪向量(顺序见 plugins/voice.ts 的 EMO_DIMS);null = 不用向量 */
   emo_vector: number[] | null;
   sort: number;
@@ -994,7 +1170,7 @@ export type VoiceProfilePatch = Partial<
 >;
 
 export type VoiceEmotionPatch = Partial<
-  Pick<VoiceEmotion, 'label' | 'aliases' | 'ref_path' | 'prompt_text' | 'emo_vector'>
+  Pick<VoiceEmotion, 'label' | 'aliases' | 'ref_path' | 'prompt_text' | 'aux_refs' | 'emo_vector'>
 >;
 
 /** 一张卡用哪些声音(id):主声音念角色自己的台词,其他的按说话人名字对上才念 */

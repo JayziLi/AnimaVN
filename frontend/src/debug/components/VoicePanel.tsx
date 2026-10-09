@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   debugApi,
-  type CardSprite,
+  type PackSprite,
   type TtsApiType,
   type TtsConnection,
   type TtsConnectionPatch,
@@ -63,7 +63,7 @@ type CardRef = { id: string; name: string } | null;
 interface Props {
   voice: VoicePluginState;
   card: CardRef;
-  sprites: CardSprite[];
+  sprites: PackSprite[];
   notify: Notify;
 }
 
@@ -538,6 +538,68 @@ function ProfileCard({
   );
 }
 
+/** 和后端 voices.MAX_AUX_REFS 一致 */
+const MAX_AUX_REFS = 8;
+
+/**
+ * GSV 的辅助参考:同一种情绪再挂几段原声,音色和主参考一起取平均(更稳、更像本人),
+ * 语气和节奏还是跟主参考走,所以不用填原文。v3 / v4 模型只认主参考。
+ */
+function AuxRefs({
+  value,
+  busy,
+  onCommit,
+}: {
+  value: string[];
+  busy: boolean;
+  onCommit: (v: string[]) => Promise<boolean>;
+}) {
+  const [adding, setAdding] = useState('');
+  const add = async () => {
+    const path = adding.trim().replace(/^"|"$/g, '');
+    if (!path) return;
+    if (await onCommit([...value, path])) setAdding('');
+  };
+  const name = (p: string) => p.split(/[\\/]/).pop() || p;
+
+  return (
+    <div className="pl-field">
+      <span className="conn-label">辅助参考</span>
+      <div className="vp-aux">
+        {value.map((p) => (
+          <div key={p} className="pl-field-row" title={p}>
+            <span className="vp-aux-name">{name(p)}</span>
+            <button
+              className="btn small"
+              disabled={busy}
+              onClick={() => void onCommit(value.filter((x) => x !== p))}
+              title="去掉这条"
+            >
+              ×
+            </button>
+          </div>
+        ))}
+        {value.length < MAX_AUX_REFS && (
+          <input
+            className="text-input"
+            value={adding}
+            placeholder={
+              value.length
+                ? '再贴一段路径,回车添加'
+                : '可选。同一情绪的其他原声路径,音色取平均更稳;语气还跟主参考走(只对 v2 / v2Pro 模型有效)'
+            }
+            onChange={(ev) => setAdding(ev.target.value)}
+            onKeyDown={(ev) => {
+              if (ev.key === 'Enter' && !ev.nativeEvent.isComposing) void add();
+            }}
+            onBlur={() => void add()}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
 function EmotionTable({
   p,
   isIndex,
@@ -689,6 +751,7 @@ function EmotionTable({
                   value={e.prompt_text}
                   onCommit={(v) => save(e, { prompt_text: v })}
                 />
+                <AuxRefs value={e.aux_refs} busy={!!busy} onCommit={(v) => save(e, { aux_refs: v })} />
               </>
             )}
             {preview[e.id] && <div className="sp-group-note">{preview[e.id]}</div>}
@@ -735,7 +798,7 @@ function CardGroup({
 }: {
   voice: VoicePluginState;
   card: { id: string; name: string } | null;
-  sprites: CardSprite[];
+  sprites: PackSprite[];
 }) {
   const { binding, profiles, bind, cast, connections, config } = voice;
   if (!card) {

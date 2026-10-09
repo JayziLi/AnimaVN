@@ -1,7 +1,7 @@
 """立绘里找脸:视觉小说按脸对齐立绘(每个角色的脸一样大、头在同一高度)。
 
 用的是 nagadomi 的 lbpcascade_animeface(MIT,模型文件在 app/assets/,不到 250KB),
-OpenCV 的级联分类器跑一张图几十毫秒。只在上传立绘时跑一次,结果存进 card_sprites.face_scan,
+OpenCV 的级联分类器跑一张图几十毫秒。只在上传立绘时跑一次,结果存进 pack_sprites.face_scan,
 怎么摆由前端按结果算(plugins/spriteLayout.ts)。
 
 OpenCV 5 把级联分类器挪出了主包,所以依赖钉在 4.x。

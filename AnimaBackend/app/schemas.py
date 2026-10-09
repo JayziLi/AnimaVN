@@ -218,6 +218,8 @@ class DebugChatUpdate(BaseModel):
     preset_id: str | None = None
     user_name: str | None = None
     tainted: bool | None = None
+    # 整份替换。宏变量:名字 → 字符串或数字
+    variables: dict | None = None
 
 
 class DebugChatMessageIn(BaseModel):
@@ -249,6 +251,7 @@ class DebugChatOut(BaseModel):
     tainted: bool
     parent_chat_id: str | None = None
     parent_message_id: str | None = None
+    variables: dict = {}
     created_at: datetime
     updated_at: datetime
     # 列表视图给个数,详情视图给全量消息 —— 二者互斥
@@ -267,24 +270,54 @@ class DebugBranchRequest(BaseModel):
 # ── 立绘插件 ──────────────────────────────────────────────
 
 
-class CardSpriteCreate(BaseModel):
+class SpritePackIn(BaseModel):
+    name: str
+    description: str = ""
+
+
+class SpritePackUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+
+
+class SpritePackOut(BaseModel):
+    id: str
+    name: str
+    description: str
+    sprite_count: int
+    # 挂着这个包的卡有几张 —— 改它、删它之前让人心里有数
+    card_count: int
+
+
+class SpriteCreate(BaseModel):
     label: str
     aliases: list[str] = []
     description: str = ""
 
 
-class CardSpriteUpdate(BaseModel):
+class SpriteEffect(BaseModel):
+    """换到这张立绘时放的特效。三样都是前端内置清单里的 id(frontend/src/debug/plugins/spriteFx.ts),
+    后端不认识它们,只管存;前端遇到不认识的 id 当作没设。null = 这一样不要"""
+
+    motion: str | None = Field(default=None, max_length=40)
+    bubble: str | None = Field(default=None, max_length=40)
+    sound: str | None = Field(default=None, max_length=40)
+
+
+class SpriteUpdate(BaseModel):
     """全部可选 —— 映射表是逐格编辑的,一次只改一个字段。"""
 
     label: str | None = None
     aliases: list[str] | None = None
     description: str | None = None
     enabled: bool | None = None
+    # 显式传 null = 去掉特效;不传 = 不改
+    effect: SpriteEffect | None = None
 
 
-class CardSpriteOut(BaseModel):
+class SpriteOut(BaseModel):
     id: str
-    card_id: str
+    pack_id: str
     label: str
     aliases: list[str]
     description: str
@@ -297,12 +330,33 @@ class CardSpriteOut(BaseModel):
     enabled: bool
     # {"width", "height", "face": {"x","y","w","h"} | null},位置是占整张图的比例;null = 还没找过脸
     face_scan: dict[str, Any] | None
+    # 换到这张立绘时的特效;null = 没设
+    effect: SpriteEffect | None = None
 
 
 class SpriteReorderRequest(BaseModel):
-    """这张卡全部立绘的 id,按新顺序排。必须一个不多一个不少。"""
+    """这个包全部立绘的 id,按新顺序排。必须一个不多一个不少。"""
 
     ids: list[str]
+
+
+class CardSpritePacksIn(BaseModel):
+    """这张卡挂哪些包(整组替换,按顺序)。current 不传 = 原来的当前包还在就留着它,
+    不在了换成它后面的下一个"""
+
+    pack_ids: list[str]
+    current: str | None = None
+
+
+class CardSpritePackCurrentIn(BaseModel):
+    pack_id: str
+
+
+class CardSpritePacksOut(BaseModel):
+    card_id: str
+    pack_ids: list[str]
+    # 游戏里正在用的包;一个包都没挂时是 null
+    current: str | None
 
 
 class SpriteLayoutOut(BaseModel):
@@ -342,13 +396,17 @@ class ScenePackOut(BaseModel):
     description: str
     bg_count: int
     bgm_count: int
+    # CG 构图的张数(不算差分)
+    cg_count: int = 0
     # 绑了这个包的卡有几张 —— 删包前让人心里有数
     card_count: int
     # 标题画面放的那首;null = 放排第一的
     title_bgm_id: str | None = None
 
 
-SceneKind = Literal["bg", "bgm"]
+# cg:CG 插件的事件插图。一张 CG(构图)下面可以挂几张差分(parent_id 指向它),
+# 差分的名字是立绘的表情名,视觉小说里按当前表情换
+SceneKind = Literal["bg", "bgm", "cg"]
 
 
 class SceneAssetCreate(BaseModel):
@@ -356,6 +414,8 @@ class SceneAssetCreate(BaseModel):
     label: str
     aliases: list[str] = []
     description: str = ""
+    # 只有 CG 差分带:它属于哪张 CG
+    parent_id: str | None = None
 
 
 class SceneAssetUpdate(BaseModel):
@@ -386,10 +446,12 @@ class SceneAssetOut(BaseModel):
     sort: int
     # 禁用的素材游戏里不用,但留在包里;禁用的曲子仍可以是某个背景的默认曲(游戏里不放)
     enabled: bool
+    # CG 差分:它属于哪张 CG;其余素材是 null
+    parent_id: str | None = None
 
 
 class SceneAssetReorder(BaseModel):
-    """某一类素材(背景或 BGM)的全部 id,按新顺序排。"""
+    """某一类素材(背景、BGM 或 CG)的全部 id,按新顺序排。CG 只排构图,差分不在里面。"""
 
     kind: SceneKind
     ids: list[str]
@@ -457,6 +519,8 @@ class VoiceEmotionIn(BaseModel):
     ref_path: str = ""
     # 空着且文件名是「【情绪】原文.wav」时,从文件名取
     prompt_text: str = ""
+    # GSV 的辅助参考路径(音色取平均,不用原文);最多 MAX_AUX_REFS 条
+    aux_refs: list[str] = []
     # IndexTTS 的 8 维情绪向量;顺序和范围见 app/tts/emotion_presets.py
     emo_vector: list[float] | None = None
 
@@ -466,6 +530,7 @@ class VoiceEmotionUpdate(BaseModel):
     aliases: list[str] | None = None
     ref_path: str | None = None
     prompt_text: str | None = None
+    aux_refs: list[str] | None = None
     # 传 null 是清空向量;不传是不动(靠 exclude_unset 区分)
     emo_vector: list[float] | None = None
 
@@ -477,6 +542,7 @@ class VoiceEmotionOut(BaseModel):
     aliases: list[str]
     ref_path: str
     prompt_text: str
+    aux_refs: list[str]
     emo_vector: list[float] | None
     sort: int
 
@@ -559,7 +625,7 @@ class VoiceImportIn(BaseModel):
 
 
 class VoiceFromSpritesIn(BaseModel):
-    """按这张卡的立绘表情补齐情绪行(只对 IndexTTS 的声音)。"""
+    """按这张卡当前立绘包的表情补齐情绪行(只对 IndexTTS 的声音)。"""
 
     card_id: str
 

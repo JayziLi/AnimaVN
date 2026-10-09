@@ -1,0 +1,217 @@
+/* 存档 / 读档(10-04 定稿,画布「存档 / 读档」)。盖在 vn.css 原来的 .vn-slot 样式上。
+   页面底:存档那一刻的场景虚化(跟着鼠标换),压一层暗;格子上半场景、下半白纸,圆头像压在接缝上。 */
+
+/* 虚化底图铺满整个菜单页(标题栏也算),不跟着列表滚 */
+.vn-menu-page:has(> .vn-menu-body > .vn-saves) {
+  position: relative;
+  z-index: 0;
+  overflow: hidden;
+}
+.vn-saves-blur {
+  position: absolute;
+  inset: -40px;
+  z-index: -2;
+  width: calc(100% + 80px);
+  height: calc(100% + 80px);
+  object-fit: cover;
+  filter: blur(22px) saturate(1.1);
+  animation: vn-saves-in 0.35s ease both;
+  pointer-events: none;
+}
+.vn-saves-veil {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(180deg, rgba(12, 14, 30, 0.55), rgba(12, 14, 30, 0.35) 40%, rgba(12, 14, 30, 0.55));
+  pointer-events: none;
+}
+@keyframes vn-saves-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.vn-saves.with-side {
+  display: grid;
+  grid-template-columns: minmax(180px, 26%) 1fr;
+  gap: 8px;
+}
+/* 左边的她:贴着页面底,列表滚的时候不动 */
+.vn-saves-side {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: calc(100dvh - 120px);
+  container-type: size;
+  pointer-events: none;
+}
+.vn-saves-spr {
+  position: absolute;
+  max-width: none;
+  width: auto;
+  filter: drop-shadow(0 10px 24px rgba(5, 5, 20, 0.45));
+  animation: vn-saves-in 0.25s ease both;
+}
+.vn-saves-main {
+  min-width: 0;
+}
+
+.vn-saves .vn-slots {
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 18px;
+  padding-bottom: 12px;
+}
+.vn-saves .vn-slot {
+  position: relative;
+  overflow: visible;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  background: #fbfaf8;
+  color: #2a2a33;
+  box-shadow: 0 8px 22px rgba(10, 10, 30, 0.28);
+  transition:
+    transform 0.2s,
+    box-shadow 0.2s;
+}
+.vn-saves .vn-slot:hover {
+  border-color: #fff;
+  transform: translateY(-3px);
+  box-shadow: 0 12px 28px rgba(10, 10, 30, 0.36);
+}
+.vn-saves .vn-slot.current {
+  border-color: var(--vn-accent);
+  box-shadow:
+    0 0 0 1px var(--vn-accent),
+    0 8px 22px rgba(10, 10, 30, 0.28);
+}
+.vn-saves .vn-slot-open {
+  color: inherit;
+}
+.vn-saves .vn-slot-thumb {
+  overflow: hidden;
+  border-radius: 7px 7px 0 0;
+  aspect-ratio: 16 / 8;
+}
+.vn-saves .vn-slot-place {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  padding: 2px 9px;
+  border-radius: 4px;
+  background: rgba(14, 16, 34, 0.6);
+  color: #f6f6f8;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+}
+.vn-saves .vn-slot-badge {
+  border-radius: 4px;
+}
+
+/* 下半:圆头像压在接缝上,名字 · 时间,最后一句 */
+.vn-saves .vn-slot-body {
+  position: relative;
+  padding: 10px 14px 10px 72px;
+  min-height: 68px;
+}
+.vn-slot-face {
+  position: absolute;
+  left: 14px;
+  top: -22px;
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  background: var(--vn-accent);
+  color: var(--vn-accent-ink);
+  font: 700 18px / 1 'Noto Serif SC', serif;
+  box-shadow: 0 2px 8px rgba(30, 30, 50, 0.3);
+}
+.vn-slot-face img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.vn-saves .vn-slot-name {
+  font-family: 'Noto Serif SC', 'Source Han Serif SC', serif;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #2a2a33;
+}
+.vn-saves .vn-slot-time {
+  color: rgba(42, 42, 51, 0.5);
+}
+.vn-saves .vn-slot-line {
+  margin-top: 4px;
+  font-family: 'Noto Serif SC', 'Source Han Serif SC', serif;
+  color: rgba(42, 42, 51, 0.82);
+}
+.vn-saves .vn-slot-actions {
+  border-top: 1px dotted rgba(42, 42, 51, 0.2);
+  color: rgba(42, 42, 51, 0.5);
+}
+.vn-saves .vn-slot-actions button {
+  color: rgba(42, 42, 51, 0.6);
+}
+.vn-saves .vn-slot-actions button:hover {
+  color: #2a2a33;
+  background: rgba(42, 42, 51, 0.07);
+}
+.vn-saves .vn-slot-rename {
+  color: #2a2a33;
+  background: #fff;
+  border-color: rgba(42, 42, 51, 0.25);
+}
+
+/* 第一格:在这里存档 */
+.vn-saves .vn-slot-new {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 200px;
+  border: 1px dashed rgba(255, 255, 255, 0.6);
+  background: rgba(251, 250, 248, 0.14);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: #f6f6f8;
+  font: inherit;
+  cursor: pointer;
+  box-shadow: none;
+}
+.vn-saves .vn-slot-new:hover:not(:disabled) {
+  background: rgba(251, 250, 248, 0.24);
+  border-color: #fff;
+}
+.vn-saves .vn-slot-new:disabled {
+  opacity: 0.5;
+  cursor: default;
+  transform: none;
+}
+.vn-slot-new .plus {
+  font-size: 30px;
+  line-height: 1;
+  font-weight: 300;
+}
+.vn-slot-new .t {
+  font: 700 16px / 1.2 'Noto Serif SC', serif;
+  letter-spacing: 0.24em;
+}
+.vn-slot-new .s {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  opacity: 0.7;
+}
+
+/* 窄屏:不放左边的她 */
+@media (max-width: 860px) {
+  .vn-saves.with-side {
+    display: block;
+  }
+  .vn-saves-side {
+    display: none;
+  }
+}

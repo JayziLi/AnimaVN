@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AnimaVN · 启动画面与主界面原型</title>
+<link rel="stylesheet" href="home.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="star" viewBox="-10 -10 20 20"><path d="M0-10C1.1-2.6 2.6-1.1 10 0 2.6 1.1 1.1 2.6 0 10-1.1 2.6-2.6 1.1-10 0-2.6-1.1-1.1-2.6 0-10Z"/></symbol>
+  <symbol id="chev" viewBox="0 0 24 24"><path d="M15 4 7 12l8 8" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</svg>
+
+<!-- ============ 启动:厂标 + 流星进度 ============ -->
+<section class="boot" id="boot">
+  <div class="boot-in">
+    <img class="boot-mark" src="assets/logo.svg" alt="">
+    <img class="boot-word" src="assets/wordmark.png" alt="AnimaVN">
+    <div class="boot-load"><div class="boot-track"></div><div class="boot-bar" id="bar"><svg class="star"><use href="#star"/></svg></div></div>
+    <div class="boot-hint">正在准备</div>
+  </div>
+</section>
+
+<!-- ============ 主界面:官网首页式,一屏一段,顶栏常驻 ============ -->
+<div class="home" id="home">
+  <header class="nav">
+    <a class="nav-brand" href="#main"><img class="mark" src="assets/logo.svg" alt=""><img class="word" src="assets/wordmark.png" alt="AnimaVN"></a>
+    <nav class="nav-tabs" id="tabs">
+      <a href="#main" class="on"><svg class="star"><use href="#star"/></svg>主页</a>
+      <a href="#cast"><svg class="star"><use href="#star"/></svg>角色</a>
+      <a href="#world"><svg class="star"><use href="#star"/></svg>场景</a>
+      <a href="#saves"><svg class="star"><use href="#star"/></svg>存档</a>
+    </nav>
+    <div class="nav-tools">
+      <button title="音乐">♪</button>
+      <button>设置</button>
+      <button class="ghost">调试台</button>
+    </div>
+  </header>
+
+  <main class="pages" id="pages">
+    <!-- 1. 主页:上次停下的地方 + 她 -->
+    <section class="page hero" id="main">
+      <div class="hero-bg" id="heroBg"></div>
+      <div class="hero-grade"></div>
+      <div class="hero-sprite" id="heroSprite"></div>
+
+      <div class="hero-copy">
+        <div class="hero-lockup"><img class="mark" src="assets/logo.svg" alt=""><img class="word" src="assets/wordmark.png" alt="AnimaVN"></div>
+        <p class="hero-tag"><span class="rule"></span>和她的故事,从这里继续。</p>
+      </div>
+
+      <div class="hero-cta">
+        <button class="cta-main" id="ctaMain">
+          <span class="cta-thumb" id="ctaThumb"></span>
+          <span class="cta-text"><b>继续</b><small id="ctaSub"></small></span>
+          <svg class="star"><use href="#star"/></svg>
+        </button>
+        <div class="cta-row"><button class="cta-sub">新的故事</button><button class="cta-sub">读档</button></div>
+      </div>
+
+      <aside class="hero-recent" id="recent"></aside>
+      <a class="scroll-hint" href="#cast">SCROLL<span></span></a>
+    </section>
+
+    <!-- 2. 角色:斜切两半,左边立绘,右边资料 + 拱形头像 -->
+    <section class="page cast" id="cast">
+      <div class="cast-dark"></div>
+      <div class="cast-sprite" id="castSprite"></div>
+      <div class="cast-info">
+        <h2 class="sec-title">角色<span class="orn"><i></i><svg class="star"><use href="#star"/></svg><i></i></span></h2>
+        <div class="cast-work" id="castWork"></div>
+        <div class="cast-name" id="castName"></div>
+        <ul class="cast-tags" id="castTags"></ul>
+        <p class="cast-last" id="castLast"></p>
+        <div class="cast-acts"><button class="pill solid"><svg class="star"><use href="#star"/></svg>接着上次<svg class="star"><use href="#star"/></svg></button><button class="pill">新的故事</button></div>
+        <div class="arches-wrap">
+          <button class="arrow prev" id="castPrev" aria-label="上一个"><svg><use href="#chev"/></svg></button>
+          <div class="arches" id="arches"></div>
+          <button class="arrow next" id="castNext" aria-label="下一个"><svg><use href="#chev"/></svg></button>
+        </div>
+        <div class="dots" id="dots"></div>
+      </div>
+    </section>
+
+    <!-- 3. 场景:斜切卡片轮播 -->
+    <section class="page world" id="world">
+      <h2 class="sec-title center">场景<span class="orn"><i></i><svg class="star"><use href="#star"/></svg><i></i></span></h2>
+      <div class="cards-wrap">
+        <button class="arrow prev" id="worldPrev" aria-label="上一张"><svg><use href="#chev"/></svg></button>
+        <div class="cards" id="cards"></div>
+        <button class="arrow next" id="worldNext" aria-label="下一张"><svg><use href="#chev"/></svg></button>
+      </div>
+      <p class="world-note" id="worldNote"></p>
+    </section>
+
+    <!-- 4. 存档:最近的几段 -->
+    <section class="page saves" id="saves">
+      <h2 class="sec-title center">存档<span class="orn"><i></i><svg class="star"><use href="#star"/></svg><i></i></span></h2>
+      <div class="save-grid" id="saveGrid"></div>
+      <footer class="foot"><img src="assets/logo.svg" alt=""><span>AnimaVN · BETA</span></footer>
+    </section>
+  </main>
+</div>
+
+<div class="demo" id="demo"><button data-go="boot">重放启动</button><button data-go="home">跳过启动</button></div>
+
+<script src="data.js"></script>
+<script src="home.js"></script>
+</body>
+</html>

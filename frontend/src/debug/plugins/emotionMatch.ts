@@ -4,7 +4,7 @@
  * 规则见 docs/superpowers/specs/2026-09-25-sprite-emotion-matching-design.md
  */
 
-import type { CardSprite } from '../lib/api';
+import type { PackSprite } from '../lib/api';
 import type { TagHit } from '../vn/script';
 import { resolveByLabel } from './common';
 import { BUILTIN_EMOTIONS } from './emotions';
@@ -16,7 +16,7 @@ export interface EmotionCandidate {
   aliases: string[];
 }
 
-export function emotionCandidates(sprites: readonly CardSprite[]): EmotionCandidate[] {
+export function emotionCandidates(sprites: readonly PackSprite[]): EmotionCandidate[] {
   if (sprites.length > 0) return sprites.map((s) => ({ key: s.id, label: s.label, aliases: s.aliases }));
   return BUILTIN_EMOTIONS.map((e) => ({ key: e.label, label: e.label, aliases: [...e.aliases] }));
 }

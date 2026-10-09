@@ -3,14 +3,59 @@ from fastapi.testclient import TestClient
 # 最小的合法 PNG 文件头就够了:后端只认文件头判断格式,不解码图片
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
 
+PACKS = "/api/sprite-packs"
 
-def _sprites(card_id: str) -> str:
+
+def _sprites(pack_id: str) -> str:
+    return f"{PACKS}/{pack_id}/sprites"
+
+
+def _bound(card_id: str) -> str:
+    return f"/api/tavern/cards/{card_id}/sprite-packs"
+
+
+def _card_sprites(card_id: str) -> str:
     return f"/api/tavern/cards/{card_id}/sprites"
 
 
-def test_sprite_crud_keeps_mapping_ordered_and_list_light(client: TestClient, make_card):
+# ── 立绘包 ──
+
+
+def test_sprite_pack_crud_counts_sprites_and_cards(client: TestClient, make_card, make_sprite_pack):
     card = make_card()
-    base = _sprites(card["id"])
+    other = make_card(name="别的卡")
+    pack = make_sprite_pack("夜莺", card["id"])
+    make_sprite_pack("花的私语")
+    client.put(_bound(other["id"]), json={"pack_ids": [pack["id"]]})
+    client.post(_sprites(pack["id"]), json={"label": "平静"})
+
+    listed = {p["name"]: p for p in client.get(PACKS).json()}
+    assert (listed["夜莺"]["sprite_count"], listed["夜莺"]["card_count"]) == (1, 2)
+    assert (listed["花的私语"]["sprite_count"], listed["花的私语"]["card_count"]) == (0, 0)
+
+    renamed = client.put(f"{PACKS}/{pack['id']}", json={"name": " 舞台装 ", "description": "演唱会"})
+    assert renamed.status_code == 200
+    assert (renamed.json()["name"], renamed.json()["description"]) == ("舞台装", "演唱会")
+
+
+def test_sprite_pack_names_are_unique_and_not_blank(client: TestClient, make_sprite_pack):
+    pack = make_sprite_pack("夜莺")
+    make_sprite_pack("Stage")
+
+    assert client.post(PACKS, json={"name": "  "}).status_code == 400
+    assert client.post(PACKS, json={"name": "夜莺"}).status_code == 409
+    assert client.post(PACKS, json={"name": "stage"}).status_code == 409
+    assert client.put(f"{PACKS}/{pack['id']}", json={"name": "STAGE"}).status_code == 409
+    # 改成自己原来的名字不算撞
+    assert client.put(f"{PACKS}/{pack['id']}", json={"name": "夜莺"}).status_code == 200
+    assert client.put(f"{PACKS}/nope", json={"name": "x"}).status_code == 404
+
+
+# ── 包里的立绘 ──
+
+
+def test_sprite_crud_keeps_mapping_ordered_and_list_light(client: TestClient, make_sprite_pack):
+    base = _sprites(make_sprite_pack()["id"])
 
     a = client.post(base, json={"label": "平静", "description": "默认"}).json()
     b = client.post(base, json={"label": "微笑", "aliases": ["笑", "  ", "微笑"]}).json()
@@ -30,11 +75,11 @@ def test_sprite_crud_keeps_mapping_ordered_and_list_light(client: TestClient, ma
 
     assert client.delete(f"{base}/{a['id']}").status_code == 204
     assert [s["label"] for s in client.get(base).json()] == ["微笑"]
+    assert client.get(_sprites("nope")).status_code == 404
 
 
-def test_sprite_names_must_be_unique_across_labels_and_aliases(client: TestClient, make_card):
-    card = make_card()
-    base = _sprites(card["id"])
+def test_sprite_names_are_unique_within_a_pack_only(client: TestClient, make_sprite_pack):
+    base = _sprites(make_sprite_pack("夜莺")["id"])
     client.post(base, json={"label": "微笑", "aliases": ["笑"]})
 
     assert client.post(base, json={"label": "笑"}).status_code == 409
@@ -42,19 +87,21 @@ def test_sprite_names_must_be_unique_across_labels_and_aliases(client: TestClien
     client.post(base, json={"label": "Happy"})
     assert client.post(base, json={"label": "平静", "aliases": ["happy"]}).status_code == 409
 
+    # 别的包可以用同一套表情名 —— 换包时就是按名字对上的
+    other = _sprites(make_sprite_pack("花的私语")["id"])
+    assert client.post(other, json={"label": "微笑", "aliases": ["笑"]}).status_code == 200
 
-def test_sprite_names_reject_template_breaking_characters(client: TestClient, make_card):
-    card = make_card()
-    base = _sprites(card["id"])
+
+def test_sprite_names_reject_template_breaking_characters(client: TestClient, make_sprite_pack):
+    base = _sprites(make_sprite_pack()["id"])
 
     assert client.post(base, json={"label": "  "}).status_code == 400
     assert client.post(base, json={"label": "开<心"}).status_code == 400
     assert client.post(base, json={"label": "开心】"}).status_code == 400
 
 
-def test_image_upload_sniffs_format_and_serves_cacheable_bytes(client: TestClient, make_card):
-    card = make_card()
-    base = _sprites(card["id"])
+def test_image_upload_sniffs_format_and_serves_cacheable_bytes(client: TestClient, make_sprite_pack):
+    base = _sprites(make_sprite_pack()["id"])
     sprite = client.post(base, json={"label": "平静"}).json()
 
     # 声明成 png 的 HTML 会被拒:格式看文件头,不看客户端声明
@@ -81,23 +128,22 @@ def test_image_upload_sniffs_format_and_serves_cacheable_bytes(client: TestClien
     assert "AAAA" not in client.get(base).text
 
 
-def test_image_endpoint_404s_without_image_or_for_other_cards(client: TestClient, make_card):
-    card = make_card()
-    other = make_card(name="别的卡")
-    sprite = client.post(_sprites(card["id"]), json={"label": "平静"}).json()
+def test_image_endpoint_404s_without_image_or_for_other_packs(client: TestClient, make_sprite_pack):
+    pack = make_sprite_pack("夜莺")
+    other = make_sprite_pack("花的私语")
+    sprite = client.post(_sprites(pack["id"]), json={"label": "平静"}).json()
 
-    assert client.get(f"{_sprites(card['id'])}/{sprite['id']}/image").status_code == 404
+    assert client.get(f"{_sprites(pack['id'])}/{sprite['id']}/image").status_code == 404
     client.put(
-        f"{_sprites(card['id'])}/{sprite['id']}/image", files={"file": ("a.png", PNG, "image/png")}
+        f"{_sprites(pack['id'])}/{sprite['id']}/image", files={"file": ("a.png", PNG, "image/png")}
     )
-    # 换一张卡的路径去取同一个 id,不能取到
+    # 换一个包的路径去取同一个 id,不能取到
     assert client.get(f"{_sprites(other['id'])}/{sprite['id']}/image").status_code == 404
     assert client.put(f"{_sprites(other['id'])}/{sprite['id']}", json={}).status_code == 404
 
 
-def test_reorder_requires_exact_id_set(client: TestClient, make_card):
-    card = make_card()
-    base = _sprites(card["id"])
+def test_reorder_requires_exact_id_set(client: TestClient, make_sprite_pack):
+    base = _sprites(make_sprite_pack()["id"])
     a = client.post(base, json={"label": "a"}).json()
     b = client.post(base, json={"label": "b"}).json()
 
@@ -108,9 +154,8 @@ def test_reorder_requires_exact_id_set(client: TestClient, make_card):
     assert [s["label"] for s in client.get(base).json()] == ["b", "a"]
 
 
-def test_disabling_a_sprite_keeps_the_row_and_its_names(client: TestClient, make_card):
-    card = make_card()
-    base = _sprites(card["id"])
+def test_disabling_a_sprite_keeps_the_row_and_its_names(client: TestClient, make_sprite_pack):
+    base = _sprites(make_sprite_pack()["id"])
     sprite = client.post(base, json={"label": "平静", "aliases": ["normal"]}).json()
     assert sprite["enabled"] is True
 
@@ -123,30 +168,38 @@ def test_disabling_a_sprite_keeps_the_row_and_its_names(client: TestClient, make
     assert [(s["label"], s["enabled"]) for s in client.get(base).json()] == [("平静", False)]
     assert client.post(base, json={"label": "Normal"}).status_code == 409
 
-    # 复制卡时禁用状态跟着走
-    copy = client.post(f"/api/tavern/cards/{card['id']}/duplicate", json={}).json()
-    assert [s["enabled"] for s in client.get(_sprites(copy["id"])).json()] == [False]
-
     assert client.put(f"{base}/{sprite['id']}", json={"enabled": True}).json()["enabled"] is True
 
 
-def test_card_delete_removes_sprites_and_duplicate_copies_them(client: TestClient, make_card):
-    card = make_card()
-    base = _sprites(card["id"])
-    sprite = client.post(base, json={"label": "平静", "aliases": ["normal"]}).json()
-    client.put(f"{base}/{sprite['id']}/image", files={"file": ("a.png", PNG, "image/png")})
+def test_sprite_effect_round_trips_without_changing_the_image_version(
+    client: TestClient, make_sprite_pack
+):
+    base = _sprites(make_sprite_pack()["id"])
+    sprite = client.post(base, json={"label": "惊讶"}).json()
+    assert sprite["effect"] is None
+    png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
+    uploaded = client.put(f"{base}/{sprite['id']}/image", files={"file": ("a.png", png, "image/png")}).json()
 
-    copy = client.post(f"/api/tavern/cards/{card['id']}/duplicate", json={}).json()
-    copied = client.get(_sprites(copy["id"])).json()
-    assert [(s["label"], s["aliases"], s["has_image"]) for s in copied] == [
-        ("平静", ["normal"], True)
-    ]
-    assert client.get(f"{_sprites(copy['id'])}/{copied[0]['id']}/image").content == PNG
+    fx = {"motion": "hop", "bubble": "exclaim", "sound": "emo-exclaim"}
+    put = client.put(f"{base}/{sprite['id']}", json={"effect": fx})
+    assert put.status_code == 200
+    assert put.json()["effect"] == fx
+    # 只改特效:图没变,版本号不能变,不然浏览器要重新下载整张图
+    assert put.json()["image_version"] == uploaded["image_version"]
+    assert client.get(base).json()[0]["effect"] == fx
 
-    assert client.delete(f"/api/tavern/cards/{card['id']}").status_code == 204
-    assert client.get(base).status_code == 404
-    # 副本的立绘不受影响
-    assert len(client.get(_sprites(copy["id"])).json()) == 1
+    # 改别的字段不会把特效冲掉
+    assert client.put(f"{base}/{sprite['id']}", json={"description": "吃惊"}).json()["effect"] == fx
+
+    # 只要气泡;三样都空 = 没设;显式 null 也是去掉
+    half = client.put(f"{base}/{sprite['id']}", json={"effect": {"bubble": "heart"}}).json()["effect"]
+    assert half == {"motion": None, "bubble": "heart", "sound": None}
+    empty = {"motion": None, "bubble": None, "sound": None}
+    assert client.put(f"{base}/{sprite['id']}", json={"effect": empty}).json()["effect"] is None
+    client.put(f"{base}/{sprite['id']}", json={"effect": fx})
+    assert client.put(f"{base}/{sprite['id']}", json={"effect": None}).json()["effect"] is None
+
+    assert client.put(f"{base}/{sprite['id']}", json={"effect": {"motion": "x" * 41}}).status_code == 422
 
 
 def test_settings_round_trip_and_key_validation(client: TestClient):
@@ -170,13 +223,12 @@ def test_settings_round_trip_and_key_validation(client: TestClient):
 
 
 def test_upload_records_the_face_and_scan_fills_sprites_that_missed_it(
-    client: TestClient, make_card, monkeypatch
+    client: TestClient, make_sprite_pack, monkeypatch
 ):
     from app.api import sprites as sprites_api
     from tests.test_sprite_faces import SYLVIE
 
-    card = make_card()
-    base = _sprites(card["id"])
+    base = _sprites(make_sprite_pack()["id"])
     image = SYLVIE.read_bytes()
 
     first = client.post(base, json={"label": "平静"}).json()
@@ -202,12 +254,11 @@ def test_upload_records_the_face_and_scan_fills_sprites_that_missed_it(
     assert by_label["微笑"]["image_version"] == missed.json()["image_version"]
 
 
-def test_scan_faces_reports_when_opencv_is_missing(client: TestClient, make_card, monkeypatch):
+def test_scan_faces_reports_when_opencv_is_missing(client: TestClient, make_sprite_pack, monkeypatch):
     from app.api import sprites as sprites_api
 
-    card = make_card()
     monkeypatch.setattr(sprites_api, "scan", lambda data: None)
-    base = _sprites(card["id"])
+    base = _sprites(make_sprite_pack()["id"])
     sprite = client.post(base, json={"label": "平静"}).json()
     client.put(f"{base}/{sprite['id']}/image", files={"file": ("a.png", PNG, "image/png")})
 
@@ -216,9 +267,12 @@ def test_scan_faces_reports_when_opencv_is_missing(client: TestClient, make_card
     assert "OpenCV" in res.json()["detail"]
 
 
-def test_sprite_layout_defaults_saves_and_follows_the_card(client: TestClient, make_card):
+def test_sprite_layout_defaults_saves_and_follows_the_pack(
+    client: TestClient, make_card, make_sprite_pack
+):
     card = make_card()
-    base = _sprites(card["id"])
+    pack = make_sprite_pack("夜莺", card["id"])
+    base = _sprites(pack["id"])
     default = {"auto": True, "zoom": 1.0, "dx": 0.0, "dy": 0.0}
     assert client.get(f"{base}/layout").json() == default
 
@@ -233,59 +287,15 @@ def test_sprite_layout_defaults_saves_and_follows_the_card(client: TestClient, m
     assert client.put(f"{base}/layout", json={"dx": 5}).status_code == 422
     assert client.get(f"{_sprites('nope')}/layout").status_code == 404
 
-    copy = client.post(f"/api/tavern/cards/{card['id']}/duplicate", json={}).json()
-    assert client.get(f"{_sprites(copy['id'])}/layout").json()["zoom"] == 1.25
-
-    assert client.delete(f"/api/tavern/cards/{card['id']}").status_code == 204
-    assert client.get(f"{_sprites(copy['id'])}/layout").json()["dy"] == 0.05
+    # 别的包有自己的摆法
+    other = make_sprite_pack("花的私语", card["id"])
+    assert client.get(f"{_sprites(other['id'])}/layout").json() == default
 
 
-def test_card_face_crops_the_default_sprite_and_revalidates(
-    client: TestClient, make_card, monkeypatch
-):
-    from app.api import sprites as sprites_api
+def test_image_endpoint_serves_a_shrunk_copy_on_request(client: TestClient, make_sprite_pack):
     from tests.test_sprite_faces import SYLVIE
 
-    card = make_card()
-    base = _sprites(card["id"])
-    # 还没有带图的立绘:404,前端退回卡面头像
-    assert client.get(f"{base}/face").status_code == 404
-    assert client.get(f"{_sprites('nope')}/face").status_code == 404
-
-    first = client.post(base, json={"label": "平静"}).json()
-    second = client.post(base, json={"label": "微笑"}).json()
-    for s in (first, second):
-        client.put(f"{base}/{s['id']}/image", files={"file": ("a.png", SYLVIE.read_bytes(), "image/png")})
-
-    res = client.get(f"{base}/face?size=64")
-    assert res.status_code == 200
-    assert res.headers["content-type"] == "image/webp"
-    assert res.headers["cache-control"] == "private, no-cache"
-    etag = res.headers["etag"]
-    assert first["id"] in etag
-
-    # 没变就回 304,不重新裁
-    again = client.get(f"{base}/face?size=64", headers={"If-None-Match": etag})
-    assert again.status_code == 304
-    # 默认表情关掉了:换成下一张,ETag 跟着变
-    client.put(f"{base}/{first['id']}", json={"enabled": False})
-    switched = client.get(f"{base}/face?size=64", headers={"If-None-Match": etag})
-    assert switched.status_code == 200
-    assert second["id"] in switched.headers["etag"]
-
-    assert client.get(f"{base}/face?size=8").status_code == 422
-    assert client.get(f"{base}/face?size=4096").status_code == 422
-
-    monkeypatch.setattr(sprites_api, "face_thumbnail", lambda data, face, size: None)
-    missing = client.get(f"{base}/face?size=65")
-    assert missing.status_code == 503
-
-
-def test_image_endpoint_serves_a_shrunk_copy_on_request(client: TestClient, make_card):
-    from tests.test_sprite_faces import SYLVIE
-
-    card = make_card()
-    base = _sprites(card["id"])
+    base = _sprites(make_sprite_pack()["id"])
     sprite = client.post(base, json={"label": "平静"}).json()
     client.put(f"{base}/{sprite['id']}/image", files={"file": ("a.png", SYLVIE.read_bytes(), "image/png")})
 
@@ -295,6 +305,197 @@ def test_image_endpoint_serves_a_shrunk_copy_on_request(client: TestClient, make
     assert small.headers["content-type"] == "image/webp"
     assert "immutable" in small.headers["cache-control"]
     assert len(small.content) < len(SYLVIE.read_bytes())
-    # 原图没那么宽:发原图
-    assert client.get(f"{base}/{sprite['id']}/image?w=1000").content == SYLVIE.read_bytes()
+    # 原图没那么宽(手机上显示立绘请求 ?w=1024):不放大,只换成更小的 WebP
+    same = client.get(f"{base}/{sprite['id']}/image?w=1000")
+    assert same.headers["content-type"] == "image/webp"
+    assert len(small.content) < len(same.content) < len(SYLVIE.read_bytes())
     assert client.get(f"{base}/{sprite['id']}/image?w=4").status_code == 422
+
+
+# ── 卡挂哪些包 ──
+
+
+def test_card_packs_keep_order_and_the_first_one_becomes_current(
+    client: TestClient, make_card, make_sprite_pack
+):
+    card = make_card()
+    assert client.get(_bound(card["id"])).json() == {"card_id": card["id"], "pack_ids": [], "current": None}
+    assert client.get(_card_sprites(card["id"])).json() == []
+
+    stage = make_sprite_pack("夜莺", card["id"])
+    casual = make_sprite_pack("花的私语", card["id"])
+    client.post(_sprites(stage["id"]), json={"label": "微笑"})
+    client.post(_sprites(casual["id"]), json={"label": "害羞"})
+
+    assert client.get(_bound(card["id"])).json() == {
+        "card_id": card["id"],
+        "pack_ids": [stage["id"], casual["id"]],
+        "current": stage["id"],
+    }
+    # 按卡读立绘 = 读当前包的
+    assert [s["label"] for s in client.get(_card_sprites(card["id"])).json()] == ["微笑"]
+
+    switched = client.put(f"{_bound(card['id'])}/current", json={"pack_id": casual["id"]})
+    assert switched.status_code == 200
+    assert switched.json()["current"] == casual["id"]
+    listed = client.get(_card_sprites(card["id"])).json()
+    assert [(s["label"], s["pack_id"]) for s in listed] == [("害羞", casual["id"])]
+
+    # 调个顺序,当前包不变
+    reordered = client.put(_bound(card["id"]), json={"pack_ids": [casual["id"], stage["id"]]})
+    assert reordered.json() == {
+        "card_id": card["id"],
+        "pack_ids": [casual["id"], stage["id"]],
+        "current": casual["id"],
+    }
+    # 整组替换时也能直接指定当前包
+    picked = client.put(
+        _bound(card["id"]), json={"pack_ids": [casual["id"], stage["id"]], "current": stage["id"]}
+    )
+    assert picked.json()["current"] == stage["id"]
+
+
+def test_card_pack_binding_rejects_unknown_cards_packs_and_unattached_current(
+    client: TestClient, make_card, make_sprite_pack
+):
+    card = make_card()
+    pack = make_sprite_pack("夜莺", card["id"])
+    loose = make_sprite_pack("花的私语")
+
+    assert client.get(_bound("nope")).status_code == 404
+    assert client.get(_card_sprites("nope")).status_code == 404
+    assert client.put(_bound(card["id"]), json={"pack_ids": ["nope"]}).status_code == 404
+    assert (
+        client.put(_bound(card["id"]), json={"pack_ids": [pack["id"]], "current": loose["id"]}).status_code
+        == 400
+    )
+    assert client.put(f"{_bound(card['id'])}/current", json={"pack_id": loose["id"]}).status_code == 400
+    # 重复的 id 只算一次
+    assert client.put(_bound(card["id"]), json={"pack_ids": [pack["id"], pack["id"]]}).json()["pack_ids"] == [
+        pack["id"]
+    ]
+
+
+def test_detaching_the_current_pack_moves_on_to_the_next_one(
+    client: TestClient, make_card, make_sprite_pack
+):
+    card = make_card()
+    a = make_sprite_pack("a", card["id"])
+    b = make_sprite_pack("b", card["id"])
+    c = make_sprite_pack("c", card["id"])
+    client.put(f"{_bound(card['id'])}/current", json={"pack_id": b["id"]})
+
+    after = client.put(_bound(card["id"]), json={"pack_ids": [a["id"], c["id"]]}).json()
+    assert after["current"] == c["id"]
+    # 最后一个被拿掉时绕回第一个
+    after = client.put(_bound(card["id"]), json={"pack_ids": [a["id"]]}).json()
+    assert after["current"] == a["id"]
+    after = client.put(_bound(card["id"]), json={"pack_ids": []}).json()
+    assert after == {"card_id": card["id"], "pack_ids": [], "current": None}
+    # 包本身还在
+    assert len(client.get(PACKS).json()) == 3
+
+
+def test_deleting_a_pack_removes_its_sprites_and_moves_cards_to_their_next_pack(
+    client: TestClient, make_card, make_sprite_pack
+):
+    kanami = make_card(name="香奈美")
+    lonely = make_card(name="只有一个包")
+    stage = make_sprite_pack("夜莺", kanami["id"])
+    casual = make_sprite_pack("花的私语", kanami["id"])
+    client.put(_bound(lonely["id"]), json={"pack_ids": [stage["id"]]})
+    sprite = client.post(_sprites(stage["id"]), json={"label": "微笑"}).json()
+    client.put(f"{_sprites(stage['id'])}/{sprite['id']}/image", files={"file": ("a.png", PNG, "image/png")})
+    client.put(f"{_sprites(stage['id'])}/layout", json={"zoom": 1.5})
+
+    assert client.delete(f"{PACKS}/{stage['id']}").status_code == 204
+
+    assert client.get(_bound(kanami["id"])).json()["pack_ids"] == [casual["id"]]
+    assert client.get(_bound(kanami["id"])).json()["current"] == casual["id"]
+    assert client.get(_bound(lonely["id"])).json() == {
+        "card_id": lonely["id"],
+        "pack_ids": [],
+        "current": None,
+    }
+    assert client.get(_card_sprites(lonely["id"])).json() == []
+    assert client.get(_sprites(stage["id"])).status_code == 404
+    assert client.get(f"{_sprites(stage['id'])}/{sprite['id']}/image").status_code == 404
+    assert client.delete(f"{PACKS}/{stage['id']}").status_code == 404
+
+
+def test_duplicating_a_card_shares_its_packs_and_deleting_a_card_keeps_them(
+    client: TestClient, make_card, make_sprite_pack
+):
+    card = make_card()
+    stage = make_sprite_pack("夜莺", card["id"])
+    casual = make_sprite_pack("花的私语", card["id"])
+    client.put(f"{_bound(card['id'])}/current", json={"pack_id": casual["id"]})
+    client.post(_sprites(casual["id"]), json={"label": "害羞"})
+
+    copy = client.post(f"/api/tavern/cards/{card['id']}/duplicate", json={}).json()
+    assert client.get(_bound(copy["id"])).json() == {
+        "card_id": copy["id"],
+        "pack_ids": [stage["id"], casual["id"]],
+        "current": casual["id"],
+    }
+    # 指向同一个包,不是复制了一份
+    assert len(client.get(PACKS).json()) == 2
+    assert client.get(_card_sprites(copy["id"])).json() == client.get(_card_sprites(card["id"])).json()
+
+    assert client.delete(f"/api/tavern/cards/{card['id']}").status_code == 204
+    counts = {p["name"]: p["card_count"] for p in client.get(PACKS).json()}
+    assert counts == {"夜莺": 1, "花的私语": 1}
+    assert [s["label"] for s in client.get(_card_sprites(copy["id"])).json()] == ["害羞"]
+
+
+def test_card_face_crops_the_current_packs_default_sprite_and_revalidates(
+    client: TestClient, make_card, make_sprite_pack, monkeypatch
+):
+    from app.api import sprites as sprites_api
+    from tests.test_sprite_faces import SYLVIE
+
+    card = make_card()
+    face = f"{_card_sprites(card['id'])}/face"
+    # 没挂包、包里还没有带图的立绘:404,前端退回卡面头像
+    assert client.get(face).status_code == 404
+    assert client.get(f"{_card_sprites('nope')}/face").status_code == 404
+
+    stage = make_sprite_pack("夜莺", card["id"])
+    casual = make_sprite_pack("花的私语", card["id"])
+    assert client.get(face).status_code == 404
+
+    base = _sprites(stage["id"])
+    first = client.post(base, json={"label": "平静"}).json()
+    second = client.post(base, json={"label": "微笑"}).json()
+    other = client.post(_sprites(casual["id"]), json={"label": "平静"}).json()
+    for pack_id, s in ((stage["id"], first), (stage["id"], second), (casual["id"], other)):
+        client.put(
+            f"{_sprites(pack_id)}/{s['id']}/image",
+            files={"file": ("a.png", SYLVIE.read_bytes(), "image/png")},
+        )
+
+    res = client.get(f"{face}?size=64")
+    assert res.status_code == 200
+    assert res.headers["content-type"] == "image/webp"
+    assert res.headers["cache-control"] == "private, no-cache"
+    etag = res.headers["etag"]
+    assert first["id"] in etag
+
+    # 没变就回 304,不重新裁
+    again = client.get(f"{face}?size=64", headers={"If-None-Match": etag})
+    assert again.status_code == 304
+    # 默认表情关掉了:换成下一张,ETag 跟着变
+    client.put(f"{base}/{first['id']}", json={"enabled": False})
+    switched = client.get(f"{face}?size=64", headers={"If-None-Match": etag})
+    assert switched.status_code == 200
+    assert second["id"] in switched.headers["etag"]
+    # 换了当前包:头像跟着换
+    client.put(f"{_bound(card['id'])}/current", json={"pack_id": casual["id"]})
+    assert other["id"] in client.get(f"{face}?size=64").headers["etag"]
+
+    assert client.get(f"{face}?size=8").status_code == 422
+    assert client.get(f"{face}?size=4096").status_code == 422
+
+    monkeypatch.setattr(sprites_api, "face_thumbnail", lambda data, face, size: None)
+    missing = client.get(f"{face}?size=65")
+    assert missing.status_code == 503

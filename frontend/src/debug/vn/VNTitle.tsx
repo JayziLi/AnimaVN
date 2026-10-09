@@ -8,15 +8,18 @@
  *        转一圈回到上次停下的地方,打出最后一句。「继续」时黑边收起、立绘挪到游戏里的位置,
  *        封面淡出,底下就是游戏本身。
  *
- * 两种都按脸摆立绘(titleArt.ts),鼠标移到菜单上她会换表情,点她一下会害羞。
+ *   纸面 / 明亮(10-04 定稿,画布「定稿方向」):纸面 = 左边一张斜切的纸放 logo 和菜单,右边是上次的场景和她;
+ *        明亮 = 整张场景,左边一层白纱放 logo 和菜单。菜单多一项「角色」进选角色界面,封面上不放头像圈。
+ *
+ * 几种都按脸摆立绘(titleArt.ts),鼠标移到菜单上她会换表情,点她一下会害羞。
  * 素材全从卡和场景包里来,不用给封面单独配什么。
  */
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { cardFaceUrl, spriteImageUrl, type CardSprite, type SpriteLayout } from '../lib/api';
+import { cardFaceUrl, spriteImageUrl, type PackSprite, type SpriteLayout } from '../lib/api';
 import { relTime } from '../lib/time';
 import { spriteStyle, type FaceBox, type SpriteStage } from '../plugins/spriteLayout';
-import { Feather } from './Feather';
+import { AnimaLogo } from './AnimaLogo';
 import {
   accentOf,
   montageSprites,
@@ -29,6 +32,7 @@ import {
   type TitlePose,
 } from './titleArt';
 import type { TitleStyle } from './vnSettings';
+import { useSettledView } from './assetGate';
 import './vnTitle.css';
 
 export interface TitleCard {
@@ -50,16 +54,18 @@ export interface TitleScene {
 
 interface Props {
   variant: TitleStyle;
+  /** 从黑场进来(刚打开、刚换角色),不是从游戏里回标题:入场不能透出底下的游戏画面 */
+  cold: boolean;
   cardId: string | null;
   charName: string;
-  /** 作品名:卡片的第一个标签 */
-  tag: string | null;
+  /** 卡片的标签:第一个当作品名印在名字上头,其余的排在名字下面 —— 同名、同作品的卡靠它们认 */
+  tags: string[];
   /** 当前对话最后一次改动的时间(后端的 updated_at) */
   lastPlayed: string | null;
-  /** 最新一条回复里她说的最后一句 */
+  /** 最新一条回复里她说的最后一句(电影片头的字幕) */
   lastLine: string | null;
   /** 启用的立绘,排第一的是默认表情 */
-  sprites: CardSprite[];
+  sprites: PackSprite[];
   faces: Map<string, FaceBox>;
   /** 游戏里的构图 —— 电影「继续」时立绘挪到和游戏一模一样的位置 */
   spriteStage: SpriteStage;
@@ -69,6 +75,8 @@ interface Props {
   /** 场景包里的背景,电影片头轮播 */
   scenes: TitleScene[];
   cards: TitleCard[];
+  /** 这张卡按脸裁的小图读不到,要它的卡面头像(TitleCard.avatar 拉到后会填上) */
+  onWantAvatar: (cardId: string) => void;
   onContinue: () => void;
   /** 给当前角色开一段新对话 */
   onNewStory: () => void;
@@ -77,6 +85,8 @@ interface Props {
   onLoad: () => void;
   onSettings: () => void;
   onExit: () => void;
+  /** 纸面 / 明亮封面的「角色」:进选角色界面 */
+  onPick?: () => void;
 }
 
 const DEFAULT_ACCENT: Accent = { acc: '#f4a9c4', deep: 'hsl(335 40% 38%)', ink: '#2b1420', rgb: '244, 169, 196' };
@@ -90,6 +100,14 @@ const MENU: { mood: TitleMood; zh: string; en: string }[] = [
 
 /** 立绘摆法:海报的脸在左半边;电影的比游戏里低一点,给上面的黑边让位,「继续」时再升上去 */
 const POSES: Record<TitleStyle, { land: TitlePose; port: TitlePose }> = {
+  paper: {
+    land: { faceSize: 0.22, faceTop: 0.12, cx: 0.69 },
+    port: { faceSize: 0.13, faceTop: 0.1, cx: 0.5, floor: 0.66 },
+  },
+  bright: {
+    land: { faceSize: 0.235, faceTop: 0.15, cx: 0.69 },
+    port: { faceSize: 0.13, faceTop: 0.1, cx: 0.5, floor: 0.66 },
+  },
   poster: {
     land: { faceSize: 0.23, faceTop: 0.16, cx: 0.36 },
     port: { faceSize: 0.13, faceTop: 0.12, cx: 0.5, floor: 0.62 },
@@ -143,8 +161,13 @@ interface Layer {
   style: CSSProperties;
 }
 
+const NO_LAYER: Layer = { key: '', src: '', style: {} };
+
 /** 换表情:新图叠上去淡入,旧图淡出后摘掉(和游戏里的 SpriteLayer 同一个做法) */
-function SpriteStack({ layer, onPoke }: { layer: Layer | null; onPoke: () => void }) {
+function SpriteStack({ layer: next, onPoke }: { layer: Layer | null; onPoke: () => void }) {
+  // 悬停菜单、点一下换的表情不在等待页必须等的那几张里:新图整张下载完了才换上,没好先留着旧的
+  const shown = useSettledView(next ?? NO_LAYER);
+  const layer = shown.key ? shown : null;
   const [layers, setLayers] = useState<{ cur: Layer | null; prev: Layer | null }>({ cur: layer, prev: null });
   useEffect(() => {
     if (layer?.key !== layers.cur?.key) setLayers({ cur: layer, prev: layers.cur });
@@ -177,9 +200,34 @@ function SpriteStack({ layer, onPoke }: { layer: Layer | null; onPoke: () => voi
   );
 }
 
-/** 角色头像:后端按脸裁的小图 → 卡面头像 → 名字首字 */
-function Face({ card, current, onPick }: { card: TitleCard; current: boolean; onPick: () => void }) {
-  const [src, setSrc] = useState<string | null>(() => cardFaceUrl(card.id, 128));
+/**
+ * 角色头像:后端按脸裁的小图(这张卡当前立绘包的) → 卡面头像 → 名字首字。
+ * 卡面头像不预先拉(一张能有近 1 MB):小图读不到了才开口要,拉到之前先写首字。
+ * pack 是当前角色正在用的包:换了包地址跟着变,不然同一页里浏览器会直接拿内存里的旧脸
+ */
+function Face({
+  card,
+  current,
+  pack,
+  onPick,
+  onWantAvatar,
+}: {
+  card: TitleCard;
+  current: boolean;
+  pack?: string;
+  onPick: () => void;
+  onWantAvatar: (cardId: string) => void;
+}) {
+  const [stage, setStage] = useState<'face' | 'avatar' | 'none'>('face');
+  const src = stage === 'face' ? cardFaceUrl(card.id, 128, pack) : stage === 'avatar' ? card.avatar : null;
+  const fail = () => {
+    if (stage === 'face') {
+      setStage('avatar');
+      onWantAvatar(card.id);
+    } else {
+      setStage('none');
+    }
+  };
   return (
     <button
       className={`vn-tt-face${current ? ' current' : ''}`}
@@ -193,8 +241,8 @@ function Face({ card, current, onPick }: { card: TitleCard; current: boolean; on
           src={src}
           alt=""
           draggable={false}
-          className={src === card.avatar ? 'avatar' : ''}
-          onError={() => setSrc((s) => (s !== card.avatar ? card.avatar : null))}
+          className={stage === 'avatar' ? 'avatar' : ''}
+          onError={fail}
         />
       ) : (
         <span className="vn-tt-face-ph">{card.name.slice(0, 1) || '?'}</span>
@@ -293,7 +341,7 @@ function useTyped(text: string, active: boolean, delay: number): string {
 
 const Brand = () => (
   <span className="vn-tt-brand">
-    <Feather size={16} />
+    <AnimaLogo size={20} variant="badge" />
     ANIMA
     <span className="vn-beta">BETA</span>
   </span>
@@ -301,9 +349,10 @@ const Brand = () => (
 
 export function VNTitle({
   variant,
+  cold,
   cardId,
   charName,
-  tag,
+  tags,
   lastPlayed,
   lastLine,
   sprites,
@@ -313,12 +362,14 @@ export function VNTitle({
   home,
   scenes,
   cards,
+  onWantAvatar,
   onContinue,
   onNewStory,
   onSwitchCard,
   onLoad,
   onSettings,
   onExit,
+  onPick,
 }: Props) {
   const hasCard = Boolean(cardId);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -405,7 +456,14 @@ export function VNTitle({
     }
     moodTimer.current = window.setTimeout(() => setMood('idle'), 2200);
   };
-  useEffect(() => () => window.clearTimeout(moodTimer.current), []);
+  const leaveTimer = useRef<number | undefined>(undefined);
+  useEffect(
+    () => () => {
+      window.clearTimeout(moodTimer.current);
+      window.clearTimeout(leaveTimer.current);
+    },
+    [],
+  );
 
   const cont = () => {
     if (leaving) return;
@@ -415,7 +473,7 @@ export function VNTitle({
     setShot(0);
     setLeaving(true);
     // 电影:先回到上次的地方、黑边收起、立绘挪到游戏里的位置,再淡出;海报直接淡出
-    window.setTimeout(onContinue, reduceMotion ? 0 : cinema ? 1300 : 380);
+    leaveTimer.current = window.setTimeout(onContinue, reduceMotion ? 0 : cinema ? 1300 : 380);
   };
   const act: Record<TitleMood, () => void> = {
     continue: cont,
@@ -428,11 +486,16 @@ export function VNTitle({
     ghost: () => {},
   };
   const disabled = (m: TitleMood) => !hasCard && (m === 'continue' || m === 'load' || m === 'new');
+  // 点了「继续」正在退场:别的按钮点了不算,不然动画放到一半又开了新故事 / 读档。
+  // 不用 disabled —— 那样菜单会在退场动画里突然变灰
+  const unlessLeaving = (fn: () => void) => () => {
+    if (!leaving) fn();
+  };
 
   const menuButton = (m: (typeof MENU)[number], extra: ReactNode = null) => (
     <button
       key={m.mood}
-      onClick={act[m.mood]}
+      onClick={unlessLeaving(act[m.mood])}
       onPointerEnter={hover(m.mood)}
       onPointerLeave={unhover}
       onFocus={hover(m.mood)}
@@ -444,23 +507,28 @@ export function VNTitle({
     </button>
   );
   const exitButton = (cls: string, label: string) => (
-    <button className={cls} onClick={onExit} onPointerEnter={hover('exit')} onPointerLeave={unhover}>
+    <button className={cls} onClick={unlessLeaving(onExit)} onPointerEnter={hover('exit')} onPointerLeave={unhover}>
       {label}
     </button>
   );
 
   const played = lastPlayed ? relTime(lastPlayed) : '';
+  const [tag = null, ...moreTags] = [...new Set(tags)];
+  // 当前角色正在用的立绘包(换了包,头像圈跟着换)
+  const facePack = sprites[0]?.pack_id;
   const castFaces = (
     <>
       {cards.map((c) => (
         <Face
-          key={c.id}
+          key={c.id === cardId ? `${c.id}:${facePack ?? ''}` : c.id}
           card={c}
           current={c.id === cardId}
+          pack={c.id === cardId ? facePack : undefined}
           onPick={() => {
             setPicking(false);
             if (c.id !== cardId) onSwitchCard(c.id);
           }}
+          onWantAvatar={onWantAvatar}
         />
       ))}
     </>
@@ -483,10 +551,106 @@ export function VNTitle({
   return (
     <div
       ref={rootRef}
-      className={`vn-title ${variant}${paper?.dark ? ' dark' : ''}${leaving ? ' leaving' : ''}${portrait ? ' portrait' : ''}`}
+      className={`vn-title ${variant}${hasCard ? ' has-card' : ''}${cold ? ' cold' : ''}${paper?.dark ? ' dark' : ''}${leaving ? ' leaving' : ''}${portrait ? ' portrait' : ''}`}
       style={vars}
     >
-      {variant === 'poster' ? (
+      {variant === 'paper' || variant === 'bright' ? (
+        <>
+          <img
+            key={home.key}
+            className="vn-tt-bg vn-tt2-bg"
+            src={home.src}
+            style={{ objectPosition: `${home.focus}% 50%` }}
+            alt=""
+            draggable={false}
+          />
+          {variant === 'bright' ? (
+            <>
+              <div className="vn-tt2-veil" />
+              <div className="vn-tt2-bloom" />
+            </>
+          ) : (
+            <>
+              <div className="vn-tt2-paperwrap">
+                <div className="vn-tt2-paper">
+                  <img src="/vn/ui/map-left.svg" alt="" draggable={false} />
+                </div>
+              </div>
+              <div className="vn-tt2-cut" />
+            </>
+          )}
+          {sprite}
+          <div className="vn-tt2-frame" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+            <i />
+          </div>
+          <div className="vn-tt2-ui">
+            <div className="vn-tt2-lockup">
+              <img className="mark" src="/anima-logo.svg" alt="" draggable={false} />
+              <img className="word" src="/vn/ui/wordmark.png" alt="AnimaVN" draggable={false} />
+            </div>
+            <nav className="vn-tt2-menu">
+              {[
+                { mood: 'continue' as TitleMood, zh: '继续', en: 'Continue', run: cont },
+                { mood: 'new' as TitleMood, zh: '新的故事', en: 'New Story', run: onNewStory },
+                { mood: 'load' as TitleMood, zh: '读档', en: 'Load', run: onLoad },
+                { mood: 'continue' as TitleMood, zh: '角色', en: 'Heroine', run: onPick ?? (() => {}), sub: hasCard ? charName : '' },
+                { mood: 'config' as TitleMood, zh: '设置', en: 'Config', run: onSettings },
+              ].map((m) => (
+                <button
+                  key={m.zh}
+                  onClick={unlessLeaving(m.run)}
+                  onPointerEnter={hover(m.mood)}
+                  onPointerLeave={unhover}
+                  onFocus={hover(m.mood)}
+                  onBlur={unhover}
+                  disabled={m.zh !== '角色' && m.zh !== '设置' && disabled(m.mood)}
+                >
+                  <svg className="star" viewBox="-10 -10 20 20" aria-hidden="true">
+                    <path d="M0-10C1.1-2.6 2.6-1.1 10 0 2.6 1.1 1.1 2.6 0 10-1.1 2.6-2.6 1.1-10 0-2.6-1.1-1.1-2.6 0-10Z" />
+                  </svg>
+                  <span className="in">
+                    <span className="zh">{m.zh}</span>
+                    <span className="en">{m.en}</span>
+                    {m.sub && <span className="sub">{m.sub}</span>}
+                  </span>
+                </button>
+              ))}
+              <hr />
+              <button className="minor" onClick={unlessLeaving(onExit)} onPointerEnter={hover('exit')} onPointerLeave={unhover}>
+                <svg className="star" viewBox="-10 -10 20 20" aria-hidden="true">
+                  <path d="M0-10C1.1-2.6 2.6-1.1 10 0 2.6 1.1 1.1 2.6 0 10-1.1 2.6-2.6 1.1-10 0-2.6-1.1-1.1-2.6 0-10Z" />
+                </svg>
+                <span className="in">
+                  <span className="zh">调试台</span>
+                  <span className="en">Console</span>
+                </span>
+              </button>
+            </nav>
+            {hasCard ? (
+              <button className="vn-tt2-last" onClick={cont} onPointerEnter={hover('continue')} onPointerLeave={unhover}>
+                <span className="nm">{charName}</span>
+                <span className="ln">{lastLine ? `「${lastLine}」` : '还没开始 —— 点这里开始你们的故事'}</span>
+                <span className="mt">
+                  <span>{[tag, home.label, played].filter(Boolean).join(' · ')}</span>
+                  <b>接着看 ▼</b>
+                </span>
+              </button>
+            ) : (
+              <button className="vn-tt2-last" onClick={onPick}>
+                <span className="ln">{cards.length > 0 ? '先选一个角色,开始你们的故事' : '库里还没有角色卡,先回调试台导入一张'}</span>
+                <span className="mt">
+                  <span />
+                  <b>选角色 ▶</b>
+                </span>
+              </button>
+            )}
+            <div className="vn-tt2-foot">AnimaVN · Beta</div>
+          </div>
+        </>
+      ) : variant === 'poster' ? (
         <>
           <div className="vn-tt-photo">
             <img
@@ -537,7 +701,13 @@ export function VNTitle({
                     {charName}
                   </div>
                   {played && <div className="vn-tt-meta">上次 · {played}</div>}
-                  {lastLine && <p className="vn-tt-quote">{lastLine}</p>}
+                  {moreTags.length > 0 && (
+                    <ul className="vn-tt-tags" aria-label="标签">
+                      {moreTags.map((t) => (
+                        <li key={t}>{t}</li>
+                      ))}
+                    </ul>
+                  )}
                 </>
               ) : (
                 <>
@@ -581,7 +751,7 @@ export function VNTitle({
               {hasCard ? (
                 <>
                   <b>{charName}</b>
-                  {tag && `　${tag}`}
+                  {tag && `　${[tag, ...moreTags].join(' / ')}`}
                   {played && `　·　${played}`}
                 </>
               ) : (

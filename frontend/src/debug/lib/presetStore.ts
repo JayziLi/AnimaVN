@@ -65,6 +65,8 @@ export function presetToStored(
       system_prompt: p.systemPrompt,
       injection_position: p.injectionPosition,
       injection_depth: p.injectionDepth,
+      injection_order: p.injectionOrder,
+      injection_trigger: p.injectionTrigger,
       forbid_overrides: p.forbidOverrides,
     })),
     prompt_order,

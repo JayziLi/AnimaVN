@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
 import type { MarkerSource } from '../lib/cardFields';
@@ -7,6 +7,7 @@ import { countCommentLines, stripComments } from '../lib/comments';
 import { findUnresolvedMacros, substituteMacros, type MacroContext } from '../lib/macros';
 import type { PresetPrompt, PromptRole } from '../lib/presetParser';
 import { estimateTokens, formatTokens } from '../lib/tokens';
+import { BookEntryList } from './BookEntryList';
 import { CommentTextarea } from './CommentTextarea';
 
 /**
@@ -20,11 +21,11 @@ import { CommentTextarea } from './CommentTextarea';
  *             内容在卡里的那几个(角色描述、性格、场景、示例对话)直接在这儿改,
  *             确定后写回角色卡;不在卡里的只指路,不给改。
  *
- * 刻意不做的两件事:
- *   1. injection_position / injection_depth —— 组装器没实现绝对深度注入,
- *      给个能改的框就是假 UI。字段照旧透传,不在这里露面。
- *   2. 注释行语法高亮 —— 原生 textarea 无法给部分行上色,要做得换掉整个
- *      编辑器。底下那行「N 行注释已排除」已经把信息说清楚了。
+ * 位置那一栏对应酒馆的 injection_position / depth / order:「绝对深度」的块不按编排
+ * 排,而是插进聊天记录里倒数第 N 条(2026-09-30 起,为了社区预设能直接导入)。
+ *
+ * 刻意不做的一件事:注释行语法高亮 —— 原生 textarea 无法给部分行上色,要做得换掉
+ * 整个编辑器。底下那行「N 行注释已排除」已经把信息说清楚了。
  */
 
 /** 只有这两块有对应的角色卡字段;别的块显示「禁止覆盖」纯属误导 */
@@ -93,6 +94,9 @@ export function BlockEditorModal({
   const [role, setRole] = useState<PromptRole>(prompt.role);
   const [content, setContent] = useState(prompt.content);
   const [forbidOverrides, setForbidOverrides] = useState(prompt.forbidOverrides);
+  const [absolute, setAbsolute] = useState(prompt.injectionPosition === 1);
+  const [depth, setDepth] = useState(String(prompt.injectionDepth));
+  const [order, setOrder] = useState(String(prompt.injectionOrder));
   /** 卡填的 marker 才用得上 —— 它编辑的是卡的字段,不是块 */
   const [cardValue, setCardValue] = useState(
     markerSource?.kind === 'card' ? markerSource.value : '',
@@ -111,12 +115,22 @@ export function BlockEditorModal({
   const netTokens = estimateTokens(stripComments(content));
 
   const cardDirty = markerSource?.kind === 'card' && cardValue !== markerSource.value;
+  // 数字框里打到一半是空串 / 非数字,按原值算,别让「确定」在半路亮起来
+  const num = (text: string, fallback: number) => {
+    const n = Math.floor(Number(text));
+    return text.trim() && Number.isFinite(n) && n >= 0 ? n : fallback;
+  };
+  const depthValue = num(depth, prompt.injectionDepth);
+  const orderValue = num(order, prompt.injectionOrder);
   const dirty = prompt.marker
     ? name !== prompt.name || cardDirty
     : name !== prompt.name ||
       role !== prompt.role ||
       content !== prompt.content ||
-      forbidOverrides !== prompt.forbidOverrides;
+      forbidOverrides !== prompt.forbidOverrides ||
+      absolute !== (prompt.injectionPosition === 1) ||
+      depthValue !== prompt.injectionDepth ||
+      orderValue !== prompt.injectionOrder;
 
   const commit = () => {
     if (prompt.marker) {
@@ -127,20 +141,39 @@ export function BlockEditorModal({
       }
       return;
     }
-    onSave({ name, role, content, forbidOverrides });
+    onSave({
+      name,
+      role,
+      content,
+      forbidOverrides,
+      injectionPosition: absolute ? 1 : 0,
+      injectionDepth: depthValue,
+      injectionOrder: orderValue,
+    });
   };
+
+  // Esc / ✕ / 点背景:改过东西就先问一句 —— 顺手按的 Esc、在正文里拖选文字拖到弹窗外松手,
+  // 都会把整块草稿丢掉。「取消」按钮是明说要丢的,不问
+  const dirtyRef = useRef(dirty);
+  dirtyRef.current = dirty;
+  const requestClose = useRef(() => {});
+  requestClose.current = () => {
+    if (!dirtyRef.current || window.confirm('这个块改过了还没确定,放弃这些改动?')) onCancel();
+  };
+  // 点背景要按下和松开都在背景上才算:从正文里拖选出来松手也会在背景上触发 click
+  const downOnBackdrop = useRef(false);
 
   // Esc 挂在 window 上:容器的 onKeyDown 只在焦点还在弹窗内时才收得到,
   // 而页脚是白纸黑字承诺了 Esc 能关的
   useEffect(() => {
     const onEsc = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
+      if (e.key !== 'Escape' || e.isComposing) return;
       e.stopPropagation();
-      onCancel();
+      requestClose.current();
     };
     window.addEventListener('keydown', onEsc, true);
     return () => window.removeEventListener('keydown', onEsc, true);
-  }, [onCancel]);
+  }, []);
 
   // Ctrl+Enter 留在容器上就够 —— 它只在正文里敲才有意义,那时焦点必然在弹窗内
   const onKeyDown = (e: ReactKeyboardEvent) => {
@@ -153,7 +186,14 @@ export function BlockEditorModal({
   // 挂到 body 上:手机端左栏会给 fixed 元素另起包含块,留在栏里弹窗就被
   // 困在栏内、底部的确定按钮被挤出屏幕
   return createPortal(
-    <div className="inspector-backdrop block-modal-backdrop" onClick={onCancel}>
+    <div
+      className="inspector-backdrop block-modal-backdrop"
+      onMouseDown={(e) => (downOnBackdrop.current = e.target === e.currentTarget)}
+      onClick={(e) => {
+        if (downOnBackdrop.current && e.target === e.currentTarget) requestClose.current();
+        downOnBackdrop.current = false;
+      }}
+    >
       <div
         className="inspector block-modal"
         onClick={(e) => e.stopPropagation()}
@@ -162,7 +202,7 @@ export function BlockEditorModal({
         <div className="inspector-head">
           <span className="inspector-title">编辑块 · {prompt.name || prompt.identifier}</span>
           <div style={{ flex: 1 }} />
-          <button className="btn small" onClick={onCancel} title="关闭">
+          <button className="btn small" onClick={() => requestClose.current()} title="关闭">
             ✕
           </button>
         </div>
@@ -192,6 +232,59 @@ export function BlockEditorModal({
                     </button>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {!prompt.marker && (
+              <div className="bm-field">
+                <span className="bm-label">位置</span>
+                <div className="bm-depth-row">
+                  <div className="bm-roles">
+                    <button
+                      className={`bm-role${absolute ? '' : ' on'}`}
+                      onClick={() => setAbsolute(false)}
+                      title="按左栏的顺序排"
+                    >
+                      按编排
+                    </button>
+                    <button
+                      className={`bm-role${absolute ? ' on' : ''}`}
+                      onClick={() => setAbsolute(true)}
+                      title="插进聊天记录里,倒数第 N 条消息之前"
+                    >
+                      绝对深度
+                    </button>
+                  </div>
+                  {absolute && (
+                    <>
+                      <label className="bm-inline">
+                        <span className="bm-label">深度</span>
+                        <input
+                          className="text-input bm-num"
+                          inputMode="numeric"
+                          value={depth}
+                          onChange={(e) => setDepth(e.target.value)}
+                          title="0 = 最后一条消息之后,1 = 它之前,依此类推"
+                        />
+                      </label>
+                      <label className="bm-inline">
+                        <span className="bm-label">顺序</span>
+                        <input
+                          className="text-input bm-num"
+                          inputMode="numeric"
+                          value={order}
+                          onChange={(e) => setOrder(e.target.value)}
+                          title="同一深度里数大的更靠近对话末尾。酒馆默认 100"
+                        />
+                      </label>
+                    </>
+                  )}
+                </div>
+                {absolute && (
+                  <span className="bm-hint">
+                    深度 0 = 最后一条之后;1 = 它之前。聊天记录不够长就垫在最前面。同深度同身份的块合成一条
+                  </span>
+                )}
               </div>
             )}
 
@@ -317,6 +410,23 @@ function MarkerBody({
         <br />
         {source.hint}
       </div>
+    );
+  }
+
+  // 世界书:列出卡上的条目,点开看正文
+  if (source.kind === 'book') {
+    const constant = source.entries.filter((e) => e.enabled && e.constant);
+    return (
+      <>
+        <div className="bm-note">
+          <b>{source.label}</b> —— 角色卡的世界书里有 {source.entries.length}{' '}
+          条放在这个位置,其中 {constant.length} 条常驻,其余的要聊天里提到关键词才进提示词。
+          要改去角色卡编辑里的「世界书」。
+        </div>
+        <div className="bm-book">
+          <BookEntryList entries={source.entries} />
+        </div>
+      </>
     );
   }
 

@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>AnimaVN · 标题画面 v2 · 各种屏幕</title>
+<style>
+  /* 同一个原型按真实尺寸放进几个 iframe(手机竖 / 手机横 / 平板竖 / 笔记本),缩小摆一排,看响应式。
+     顶上切模式和分界线,所有屏幕一起换 */
+  body { margin: 0; padding: 22px 28px 40px; background: #121216; color: #ededf1; font: 14px/1.6 'Microsoft YaHei', sans-serif; }
+  h1 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
+  p { margin: 0 0 14px; color: #9a9aa6; }
+  .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 18px; }
+  .bar span { margin: 0 4px 0 10px; color: #9a9aa6; font-size: 13px; }
+  .bar button { padding: 3px 12px; border: 1px solid #2c2c34; border-radius: 999px; background: none; color: #9a9aa6; font: inherit; font-size: 13px; cursor: pointer; }
+  .bar button.on, .bar button:hover { border-color: #ededf1; color: #ededf1; }
+  .row { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 26px; }
+  figure { margin: 0; }
+  .dev { position: relative; overflow: hidden; border-radius: 14px; border: 2px solid #33333d; background: #000; }
+  .dev iframe { position: absolute; left: 0; top: 0; border: 0; transform-origin: 0 0; }
+  figcaption { margin-top: 6px; font-size: 12.5px; color: #9a9aa6; }
+  figcaption b { color: #ededf1; font-weight: 600; margin-right: 6px; }
+</style>
+</head>
+<body>
+<h1>标题画面 v2 · 各种屏幕</h1>
+<p>每个框里是按真实尺寸跑的原型(能点),只是缩小了显示。竖屏照 Astrae Oratio 手机版:上下叠起来,斜线落在立绘那块的下沿。</p>
+<div class="bar" id="bar">
+  <span>斜切</span><button data-cut="paper" class="on">纸面</button><button data-cut="black">纯黑</button><button data-cut="closeup">纯黑 + 特写</button><button data-cut="night">星夜</button>
+  <span>分界</span><button data-edge="hair" class="on">发丝线</button><button data-edge="double">双线</button><button data-edge="shadow">只有阴影</button>
+  <span>页面</span><button data-page="" class="on">标题</button><button data-page="#pick">角色选择</button>
+</div>
+<div class="row" id="row"></div>
+<script>
+const DEVICES = [
+  ['手机 · 竖', 390, 844, 300],
+  ['手机 · 横', 844, 390, 300],
+  ['平板 · 竖', 820, 1180, 420],
+  ['笔记本', 1440, 810, 300],
+];
+const state = { cut: 'paper', edge: 'hair', page: '' };
+const url = () => `v2.html?cut=${state.cut}&edge=${state.edge}${state.page}`;
+const row = document.querySelector('#row');
+for (const [name, w, h, showH] of DEVICES) {
+  const k = showH / h;
+  const fig = document.createElement('figure');
+  fig.innerHTML = `<div class="dev" style="width:${w * k}px;height:${h * k}px"><iframe width="${w}" height="${h}" style="transform:scale(${k})"></iframe></div><figcaption><b>${name}</b>${w} × ${h}</figcaption>`;
+  row.append(fig);
+}
+const load = () => document.querySelectorAll('iframe').forEach((f) => { f.src = url(); });
+document.querySelector('#bar').addEventListener('click', (e) => {
+  for (const key of ['cut', 'edge', 'page']) {
+    if (!(key in e.target.dataset)) continue;
+    state[key] = e.target.dataset[key];
+    document.querySelectorAll(`#bar [data-${key}]`).forEach((b) => b.classList.toggle('on', b === e.target));
+    load();
+  }
+});
+load();
+</script>
+</body>
+</html>

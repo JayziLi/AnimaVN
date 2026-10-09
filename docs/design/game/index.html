@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AnimaVN · 加载 / 进入 / 选角色 原型</title>
+<link rel="stylesheet" href="game.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="star" viewBox="-10 -10 20 20"><path d="M0-10C1.1-2.6 2.6-1.1 10 0 2.6 1.1 1.1 2.6 0 10-1.1 2.6-2.6 1.1-10 0-2.6-1.1-1.1-2.6 0-10Z"/></symbol>
+  <symbol id="chev" viewBox="0 0 24 24"><path d="M15 4 7 12l8 8" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</svg>
+
+<div class="stage">
+
+  <!-- ① 启动:厂标 -->
+  <section class="screen boot" id="boot">
+    <div class="boot-in">
+      <img class="boot-mark" src="../home/assets/logo.svg" alt="">
+      <img class="boot-word" src="../home/assets/wordmark.png" alt="AnimaVN">
+    </div>
+    <div class="load-line"><div class="load-bar" data-bar><svg class="star"><use href="#star"/></svg></div></div>
+    <div class="load-foot"><span>正在准备</span></div>
+  </section>
+
+  <!-- ② 进入:标题画面 -->
+  <section class="screen title" id="title">
+    <div class="bgs" id="titleBg"></div>
+    <div class="title-grade"></div>
+    <div class="sprite-host" id="titleSprite"></div>
+    <div class="band top"><span>BETA</span></div>
+    <div class="title-copy">
+      <div class="lockup"><img class="mark" src="../home/assets/logo.svg" alt=""><img class="word" src="../home/assets/wordmark.png" alt="AnimaVN"></div>
+      <div class="tap"><i></i><svg class="star"><use href="#star"/></svg><span>点击任意位置进入</span><svg class="star"><use href="#star"/></svg><i></i></div>
+    </div>
+    <div class="band bottom">
+      <button class="who" id="who" title="换角色">
+        <span class="who-face face" id="whoFace"></span>
+        <span class="who-text"><b id="whoName"></b><small id="whoLast"></small></span>
+        <span class="who-swap">换角色<svg><use href="#chev"/></svg></span>
+      </button>
+      <nav class="title-tools"><button>读档</button><button>设置</button><button>调试台</button></nav>
+    </div>
+  </section>
+
+  <!-- ③ 选角色:左边作品栏,右边一排斜切的长条,选中的展开 -->
+  <section class="screen select" id="select">
+    <header class="sel-head">
+      <button class="back" id="selBack"><svg><use href="#chev"/></svg>返回</button>
+      <h1>选择角色<span class="orn"><i></i><svg class="star"><use href="#star"/></svg><i></i></span></h1>
+      <img class="sel-mark" src="../home/assets/logo.svg" alt="">
+    </header>
+    <nav class="works" id="works" aria-label="作品"></nav>
+    <div class="strips" id="strips"></div>
+    <footer class="sel-foot"><span id="selCount"></span><span>← → 换人 · Enter 进入 · Esc 返回</span></footer>
+  </section>
+
+  <!-- ④ 进游戏前的加载:等这个角色的素材 -->
+  <section class="screen gate" id="gate">
+    <div class="bgs" id="gateBg"></div>
+    <div class="gate-grade"></div>
+    <div class="gate-card">
+      <div class="gate-arch face" id="gateFace"></div>
+      <div class="gate-text">
+        <small id="gateWork"></small>
+        <b id="gateName"></b>
+        <p id="gateLine"></p>
+      </div>
+    </div>
+    <div class="load-line"><div class="load-bar" data-bar><svg class="star"><use href="#star"/></svg></div></div>
+    <div class="load-foot"><span id="gateDetail"></span><span class="tip" id="gateTip"></span></div>
+  </section>
+
+  <!-- ⑤ 到游戏了(原型到这儿为止) -->
+  <section class="screen ingame" id="ingame">
+    <div class="bgs" id="gameBg"></div>
+    <div class="sprite-host" id="gameSprite"></div>
+    <div class="game-box"><b id="gameName"></b><p id="gameLine"></p><span>原型到这里为止 —— 后面就是现在的游戏界面</span></div>
+  </section>
+</div>
+
+<div class="demo" id="demo">
+  <button data-go="boot">① 启动</button>
+  <button data-go="title">② 进入</button>
+  <button data-go="select">③ 选角色</button>
+  <button data-go="gate">④ 加载</button>
+</div>
+
+<script src="../home/data.js"></script>
+<script src="game.js"></script>
+</body>
+</html>

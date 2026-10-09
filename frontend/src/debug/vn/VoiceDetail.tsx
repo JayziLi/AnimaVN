@@ -39,6 +39,9 @@ interface Props {
   fixedEmotion: boolean;
   /** 流式时这条回复的最后一句(还在写) */
   streamingLast: boolean;
+  /** 这条回复的标签是 Jev 标的;这句 Jev 还在判 */
+  jev?: boolean;
+  jevPending?: boolean;
   /** 从这句接着看 */
   onJump: () => void;
 }
@@ -96,6 +99,7 @@ const REQ_SHOWN = new Set([
   'ref_audio_path',
   'prompt_text',
   'prompt_lang',
+  'aux_ref_audio_paths',
   'spk_audio_path',
   'emo_audio_path',
   'emo_vector',
@@ -188,6 +192,8 @@ export function VoiceDetail({
   voiceEnabled,
   fixedEmotion,
   streamingLast,
+  jev,
+  jevPending,
   onJump,
 }: Props) {
   const snap = useVoice();
@@ -230,9 +236,12 @@ export function VoiceDetail({
     line.player
       ? `${line.speaker}(玩家台词)`
       : line.untagged
-        ? '(没写立绘标签,不算角色的)'
+        ? jev
+          ? '(Jev 判成不是角色说的)'
+          : '(没写立绘标签,不算角色的)'
         : (line.speaker ?? '旁白'),
   ]);
+  if (jev) rows.push(['标签来源', jevPending ? 'Jev 标注(这句还在判)' : 'Jev 标注']);
   if (profile) rows.push(['声音', `${profile.name} · 念${langName(profile.text_lang)}`]);
   rows.push([
     '这句的标签',
@@ -254,6 +263,8 @@ export function VoiceDetail({
       voiceSkipReason(line, profile, {
         streamingLast,
         pendingTag: !fixedEmotion && tags.some((h) => ctx.resolve(h.label).state === 'pending'),
+        jev,
+        jevPending,
       }),
     ]);
   } else {
@@ -287,6 +298,9 @@ export function VoiceDetail({
         const ref = str(req.ref_audio_path);
         rows.push(['参考音频', baseName(ref), ref, ref || undefined]);
         rows.push(['参考原文', `${str(req.prompt_text)}(${langName(str(req.prompt_lang))})`]);
+        // 辅助参考只混音色,语气还跟上面那段走
+        const aux = Array.isArray(req.aux_ref_audio_paths) ? req.aux_ref_audio_paths.map(str) : [];
+        aux.forEach((p, i) => rows.push([`辅助参考 ${i + 1}`, baseName(p), p, p]));
         rows.push(['念的文字', `${str(req.text)}(${langName(str(req.text_lang))})`]);
         rows.push(['模型', `${baseName(x.gpt_weights)} / ${baseName(x.sovits_weights)}`, `${x.gpt_weights}\n${x.sovits_weights}`]);
       }
