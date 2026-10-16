@@ -17,6 +17,7 @@ import {
   type VoiceCast,
   type VoicePluginConfig,
 } from './voice';
+import { usePluginConfig } from './usePluginConfig';
 
 type Notify = (kind: 'ok' | 'error', message: string) => void;
 
@@ -33,36 +34,19 @@ export interface VoicePluginState {
   refresh: () => Promise<void>;
   /** 当前卡用哪些声音(id) */
   binding: CardVoices;
-  /** 改当前卡的绑定 */
-  bind: (next: CardVoices) => Promise<void>;
+  /** 改当前卡的绑定;失败时已经弹过提示,返回 false */
+  bind: (next: CardVoices) => Promise<boolean>;
   /** 当前卡的声音,已经对上声音档案 */
   cast: VoiceCast;
 }
 
 export function useVoicePlugin(cardId: string | null, notify: Notify): VoicePluginState {
-  const [config, setConfig] = useState<VoicePluginConfig>(DEFAULT_VOICE_CONFIG);
-  const saveTimer = useRef<number | undefined>(undefined);
-
-  const changeConfig = (next: VoicePluginConfig) => {
-    setConfig(next);
-    window.clearTimeout(saveTimer.current);
-    saveTimer.current = window.setTimeout(() => {
-      debugApi
-        .putSetting(VOICE_SETTING_KEY, next)
-        .catch((e: unknown) => notify('error', `插件配置保存失败: ${errText(e)}`));
-    }, 500);
-  };
-
-  useEffect(() => {
-    debugApi
-      .getSetting<unknown>(VOICE_SETTING_KEY)
-      .then((v) => {
-        if (v !== null) setConfig(normalizeVoiceConfig(v));
-      })
-      .catch((e: unknown) => notify('error', `插件配置读取失败: ${errText(e)}`));
-    const timer = saveTimer;
-    return () => window.clearTimeout(timer.current);
-  }, [notify]);
+  const { config, change: changeConfig } = usePluginConfig<VoicePluginConfig>(
+    VOICE_SETTING_KEY,
+    normalizeVoiceConfig,
+    DEFAULT_VOICE_CONFIG,
+    notify,
+  );
 
   const [connections, setConnections] = useState<TtsConnection[]>([]);
   const [profiles, setProfiles] = useState<VoiceProfile[]>([]);
@@ -105,14 +89,17 @@ export function useVoicePlugin(cardId: string | null, notify: Notify): VoicePlug
   }, [cardId, notify]);
 
   const bind = async (next: CardVoices) => {
-    if (!cardId) return;
+    if (!cardId) return false;
+    let ok = true;
     try {
       const saved = await debugApi.setCardVoices(cardId, next);
       if (cardRef.current === cardId) setBinding(saved);
     } catch (e) {
+      ok = false;
       notify('error', `绑定声音失败: ${errText(e)}`);
     }
     await refresh();
+    return ok;
   };
 
   const cast = useMemo(() => castOf(profiles, binding.main, binding.extras), [profiles, binding]);

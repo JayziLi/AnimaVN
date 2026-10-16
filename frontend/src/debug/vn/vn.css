@@ -231,6 +231,32 @@
   background: #000;
   pointer-events: none;
 }
+/* 生成的插图:整张都看得到(竖屏手机上横图不裁),空出来的上下(或左右)垫一层模糊放大的同一张 */
+.vn-cg.whole {
+  object-fit: contain;
+  background: none;
+}
+.vn-cg.vn-cg-backdrop {
+  filter: blur(24px) brightness(0.55);
+  transform: scale(1.15);
+}
+/* 竖屏:横图放在偏上的地方,别被下面的对话框压住 */
+@media (orientation: portrait) {
+  .vn-cg.whole {
+    object-position: 50% 30%;
+  }
+}
+/* 「放在对话框上面」:只占对话框上面那一块,整张居中(上面留出右上角标签的一行) */
+.vn-cg.whole.above {
+  top: calc(env(safe-area-inset-top) + 8px);
+  height: calc(100% - var(--vn-window-h, 0px) - env(safe-area-inset-top) - 16px);
+  object-position: 50% 50%;
+}
+/* 隐藏界面(对话框收起)时图就铺回整个屏幕 */
+.vn-root.ui-hidden .vn-cg.whole.above {
+  top: 0;
+  height: 100%;
+}
 /* 同一张 CG 换差分(表情):快速交叉淡入,看起来像同一张图在变脸 */
 .vn-cg.entering {
   animation: vn-fade-in 0.28s ease both;
@@ -368,6 +394,30 @@
   transition: opacity 0.25s;
   pointer-events: none;
 }
+/* 顶栏的状态按钮(StateToggle):写着点了以后切到的那个状态 */
+.vn-chip.vn-state {
+  pointer-events: auto;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  transition: color 0.2s, background 0.2s, border-color 0.2s;
+}
+.vn-chip.vn-state:hover {
+  color: var(--vn-text);
+  border-color: var(--vn-accent);
+}
+.vn-state-menu {
+  position: relative;
+  pointer-events: auto;
+}
+.vn-state-list {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
 .vn-chip {
   max-width: 50vw;
   overflow: hidden;
@@ -415,6 +465,15 @@
 .vn-pill:focus-visible {
   outline: 2px solid var(--vn-accent);
   outline-offset: 2px;
+}
+
+/* 生成的插图(生图卡带)放东西的那一层:本身不接点击、不挡舞台,里面的按钮和面板自己接 */
+.vn-illus {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  transition: opacity 0.25s;
 }
 
 /* ---- 对话框 + 输入框 ---- */
@@ -552,6 +611,12 @@
   background: var(--vn-glass-strong);
   font-size: 12px;
   color: var(--vn-text-dim);
+}
+/* 插图卡带的小按钮放进去的位置(发送右边;按钮本身的样子卡带自己画) */
+.vn-illus-btn {
+  flex: none;
+  display: flex;
+  align-items: center;
 }
 
 .vn-text {
@@ -777,6 +842,7 @@
 
 /* 「隐藏」:只留背景和立绘,点任意处恢复 */
 .vn-root.ui-hidden .vn-window,
+.vn-root.ui-hidden .vn-illus,
 .vn-root.ui-hidden .vn-topbar,
 .vn-root.ui-hidden .vn-choice-layer,
 .vn-root.ui-hidden .vn-choice {
@@ -1122,6 +1188,11 @@
   background: var(--vn-accent);
   color: var(--vn-accent-ink);
 }
+/* 卡带加的分页(生图)名字后面的 BETA:选中时底色反过来,不和分页本身混成一块 */
+.vn-tab.active .vn-beta {
+  background: var(--vn-accent-ink);
+  color: var(--vn-accent);
+}
 
 /* ---- 存档 ---- */
 
@@ -1364,6 +1435,12 @@
 .vn-set-note {
   font-size: 12px;
   color: var(--vn-text-dim);
+}
+/* 一行几个按钮(设置 → 数据 → 素材文件) */
+.vn-set-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 /* 设置页里一栏分几组(比如「声音」分音乐 / 语音) */
 .vn-set-group {
@@ -2144,7 +2221,7 @@
 .vn-log-line.picked {
   background: rgba(255, 255, 255, 0.06);
 }
-/* 这句的操作(回到这里 / 语音详情):鼠标移上去、手机上点一下这句、用键盘移到这句时露出来。
+/* 这句的操作(回到这里 / 详情):鼠标移上去、手机上点一下这句、用键盘移到这句时露出来。
    浮在右上角,不挤正文 */
 .vn-log-acts {
   position: absolute;
@@ -2204,7 +2281,7 @@
   background: rgba(255, 255, 255, 0.08);
 }
 
-/* 历史里一句的语音详情(开着「语音详情」时点一句展开):排查语音用,字可以选中复制 */
+/* 句检查器(历史里点一句的「详情」展开,对话框上右键 / 长按也能打开):这句为什么这样,字可以选中复制 */
 .vn-vd {
   margin: 2px 0 10px;
   padding: 10px 14px 12px;
@@ -2286,6 +2363,55 @@
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 10px;
+}
+/* 分节的小标题:判定 / 语音 */
+.vn-vd-sec {
+  margin: 12px 0 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--vn-text-dim);
+}
+.vn-vd-sec:first-child {
+  margin-top: 0;
+}
+/* 一行下面的小字:表情是怎么来的、改好了 */
+.vn-vd-note {
+  display: block;
+  font-size: 12px;
+  color: var(--vn-text-dim);
+}
+.vn-vd-row dd .vn-set-select {
+  font-size: 12px;
+  padding: 2px 10px;
+}
+/* 对话框上打开的检查器:整层接住点击(点外面只关掉,不翻下一句);检查器浮在对话框上方,太长就在里面滚 */
+.vn-insp-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+}
+.vn-insp {
+  position: absolute;
+  left: 50%;
+  bottom: var(--vn-insp-bottom, 40%);
+  transform: translateX(-50%);
+  width: min(
+    760px,
+    calc(100% - 2 * var(--vn-gutter) - env(safe-area-inset-left) - env(safe-area-inset-right))
+  );
+  max-height: calc(100% - var(--vn-insp-bottom, 40%) - 12px - env(safe-area-inset-top));
+  overflow: auto;
+  overscroll-behavior: contain;
+  border-radius: var(--vn-radius);
+  border: 1px solid var(--vn-border);
+  background: var(--vn-glass-strong);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+  animation: vn-fade-in 0.18s ease;
+}
+.vn-insp .vn-vd {
+  margin: 0;
+  border: none;
+  background: none;
 }
 /* 手机上两栏太挤:名字一行、内容一行 */
 @media (max-width: 480px) {

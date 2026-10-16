@@ -6,12 +6,11 @@
 - 第一次推理要初始化 CUDA,可能还要下载依赖模型:没合成成功过时超时放宽到 90 秒
 """
 
-import asyncio
 from typing import Any, Literal
 
 import httpx
 
-from app.tts.base import TTSError, VoiceSpec
+from app.tts.base import ServerState, SharedServer, TTSError, VoiceSpec
 from app.tts.http import REF_TIMEOUT, make_tts_client, read_reference, transport_error
 
 COLD_TIMEOUT = 90.0
@@ -48,13 +47,12 @@ def _detail(res: httpx.Response) -> str:
     return f"HTTP {res.status_code}"
 
 
-class IndexTtsEngine:
-    def __init__(self, base_url: str, emo_alpha: float):
+class IndexTtsEngine(SharedServer):
+    def __init__(self, base_url: str, emo_alpha: float, state: ServerState | None = None):
         self.base_url = base_url.rstrip("/")
         self.emo_alpha = emo_alpha
-        self.lock = asyncio.Lock()
-        # 合成成功过一次 = CUDA 已经初始化好了,之后按正常超时等
-        self.warm = False
+        # 锁、热没热(合成成功过一次 = CUDA 已经初始化好了,之后按正常超时等)按服务地址共用,见 registry
+        self.state = state or ServerState()
 
     def request_body(self, text: str, voice: VoiceSpec) -> dict[str, Any]:
         mode = emo_mode(voice)

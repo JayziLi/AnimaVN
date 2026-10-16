@@ -8,7 +8,7 @@
  *      引号紧跟在汉字、字母、数字后面的不算(「眼神里写满了「我就知道」」「印着「RHODES
  *      ISLAND」的肩带」),那是旁白里的强调或专有名词 —— 台词前面总有标点、空白或者就在段首
  *   3. 台词前紧挨着「名字：」的,说话人用这个名字(一张卡里有多个角色时有用);名字加粗也认。
- *      不带引号的剧本式「角色名：台词」也当台词,只认角色和玩家的名字
+ *      不带引号的剧本式「角色名：台词」也当台词,只认角色和玩家的名字。这样认出说话人的句子带 named
  *   4. 太长的一段按句号再切,免得一句塞满整个对话框
  *
  * 标签对哪一句生效:位置落在某句结束之前的标签,从那一句开始生效。
@@ -34,6 +34,11 @@ export interface VNLine {
   player?: boolean;
   /** 回复里有立绘标签、这句台词却没带,不算角色的台词:speaker 是 null,不念、不切立绘 */
   untagged?: boolean;
+  /**
+   * 切句时说话人是从台词前的「名字：」认出来的(剧本式「名字：台词」也算);太长切成几句的,每句都带。
+   * 按引号默认成角色的、旁白不带这个字段。只给句检查器写「台词前没写名字」用,回放不比它
+   */
+  named?: boolean;
 }
 
 /** 一类标签:立绘 / 背景 / 音乐,各有各的模板 */
@@ -96,6 +101,8 @@ interface Span {
   speaker: string | null;
   /** 同一次 splitLong 切出来的几块同一个号 —— 按标签认说话人时整句一起算 */
   group: number;
+  /** 说话人是台词前的「名字：」给的(VNLine.named);同一次 splitLong 切出来的几块都带 */
+  named?: boolean;
 }
 
 /** 把一段过长的文本按句读切开,每块不超过 MAX_LINE(实在没有句读就硬切) */
@@ -143,7 +150,9 @@ function splitParagraph(
     // 「**星绘：**」单独一行(台词在下一段):剩下的是空的,别出一句空台词让人白点一下
     if (!text) return spans;
     const group = nextGroup();
-    for (const c of splitLong(text, offset + script[1].length)) spans.push({ ...c, speaker: script[2], group });
+    for (const c of splitLong(text, offset + script[1].length)) {
+      spans.push({ ...c, speaker: script[2], group, named: true });
+    }
     return spans;
   }
 
@@ -166,9 +175,10 @@ function splitParagraph(
       pushNarration(cursor, at);
     }
     const speaker = pendingSpeaker ?? charName;
+    const byName = pendingSpeaker !== null;
     pendingSpeaker = null;
     const group = nextGroup();
-    for (const c of splitLong(m[0], offset + at)) spans.push({ ...c, speaker, group });
+    for (const c of splitLong(m[0], offset + at)) spans.push({ ...c, speaker, group, named: byName });
     cursor = at + m[0].length;
   }
   pushNarration(cursor, para.length);
@@ -314,6 +324,7 @@ export function parseReply(
     speaker: s.speaker,
     // markdown 的强调星号在对话框里没有意义,酒馆式 *动作描写* 去掉星号留文字
     text: text.slice(s.start, s.end).replace(/\*+/g, '').trim(),
+    ...(s.named && { named: true }),
     ...marks[i],
   }));
 

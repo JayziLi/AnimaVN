@@ -1,21 +1,14 @@
-"""One-off dev migration: card_sprites.face_scan (where the face is, for aligning sprites).
+"""(留一期)这一步现在由迁移器做:core.2026_09_sprite_face —— 立绘:记下脸在哪。
 
-NULL means "not scanned yet"; the sprite page fills it in through
-POST /api/tavern/cards/{id}/sprites/scan-faces the first time it opens a card.
-The per-card layout table (card_sprite_layouts) is new, so create_all builds it.
-Safe to run twice.
+后端启动时会自动检查(设置 MIGRATIONS_MODE=apply 时自动升级),一般不用手动跑。手动跑:在 AnimaBackend 目录下
+python scripts/migrate_sprite_face_column.py,改的是 data/animabackend.db,只做这一步(连同它依赖的步骤),可以重复跑。
 """
 
-import sqlite3
+import sys
+from pathlib import Path
 
-db = sqlite3.connect("data/animabackend.db")
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-cols = {r[1] for r in db.execute("PRAGMA table_info(card_sprites)")}
-if not cols:
-    print("card_sprites missing, skipped (create_all will build it)")
-elif "face_scan" in cols:
-    print("card_sprites.face_scan already present")
-else:
-    db.execute("ALTER TABLE card_sprites ADD COLUMN face_scan JSON")
-    print("added card_sprites.face_scan")
-db.commit()
+from app.migrations.legacy_script import run_step  # noqa: E402
+
+run_step("core.2026_09_sprite_face")

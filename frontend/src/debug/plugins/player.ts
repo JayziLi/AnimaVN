@@ -22,9 +22,10 @@ import {
   type BlockState,
   type TagMode,
 } from './common';
+import { PLUGIN } from './registry';
 
-export const PLAYER_SETTING_KEY = 'plugin.player';
-export const PLAYER_BLOCK_ID = 'anima_player';
+export const PLAYER_SETTING_KEY = PLUGIN.player.settingKey;
+export const PLAYER_BLOCK_ID = PLUGIN.player.blockId;
 
 export const DEFAULT_PLAYER_BLOCK_PROMPT = `[玩家台词]
 {{user}} 说的每一句话，都必须以 <我> 开头。

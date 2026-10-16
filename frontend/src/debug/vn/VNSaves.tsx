@@ -1,7 +1,7 @@
 /**
  * 菜单里的「存档」页 —— 存档就是调试台「对话历史」里的对话,一个对话一格。
  *
- * 每格的缩略图是那个对话结尾时的背景 + 立绘,再配上角色最后一句,帮人想起是哪一段。
+ * 每格的缩略图是那个对话停在最后一句时游戏里的画面(背景、立绘、CG,和视觉小说读同一份时间线,core/timeline.ts),再配上角色最后一句,帮人想起是哪一段。
  * 算缩略图要读整段对话:当前这个直接用内存里的,别的按需拉一次,按「id + 更新时间」缓存。
  *
  * 10-04 定稿样式(画布「存档 / 读档」):页面底是存档那一刻的场景虚化,鼠标移到哪格换哪格的;
@@ -10,6 +10,8 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { newBeatCache, parseBeats, type Beat } from '../core/beats';
+import { buildTimeline, stateAtEnd, type TimelineCtx } from '../core/timeline';
 import {
   debugApi,
   sceneImageUrl,
@@ -23,13 +25,19 @@ import {
 import { fromStored, type ChatEntry } from '../lib/chatEntry';
 import { substituteMacros, type MacroContext } from '../lib/macros';
 import { relTime } from '../lib/time';
+import { emotionCandidates, emotionListRef, isNpcHit, type EmotionContext } from '../plugins/emotionMatch';
 import { jevText } from '../plugins/jevNotes';
 import { parseBilingual } from '../plugins/lang';
-import { cgFrameFor, sceneAtEnd } from '../plugins/scene';
-import { resolveSprite } from '../plugins/sprite';
+import type { FormsState } from '../plugins/cartridges';
+import { cgFrameFromPairs } from '../plugins/pairings';
 import { facesByCanvas, type SpriteStage } from '../plugins/spriteLayout';
+import { FALLBACK_BACKGROUND } from './fallbacks';
 import { titleSpriteStyle } from './titleArt';
-import { extractTags, type TagKind } from './script';
+import type { TagKind } from './script';
+import { useEmotionMatches } from './useEmotionMatches';
+import { usePairings } from './usePairings';
+import { useTimelineEngine } from './useTimelineEngine';
+import { useWordRecords } from './useWordRecords';
 import './vnSaves.css';
 
 interface Props {
@@ -47,6 +55,10 @@ interface Props {
   spriteLayout: SpriteLayout;
   tagKinds: TagKind[];
   charName: string;
+  /** 和视觉小说一样认「我」 */
+  userName: string;
+  /** 形态(plugins/forms.ts):缩略图按每个存档自己的形态记号换算,和游戏里一样;这张卡没开时它返回 null */
+  formsLensFor: FormsState['lensFor'];
   macros: MacroContext;
   /** 分叉 / 读档等动作正在跑 */
   busy: boolean;
@@ -91,41 +103,14 @@ function fetchEntries(id: string, key: string): Promise<ChatEntry[]> {
   return p;
 }
 
-function previewOf(
-  entries: ChatEntry[],
-  kinds: TagKind[],
-  assets: SceneAsset[],
-  sprites: PackSprite[],
-  charName: string,
-  macros: MacroContext,
-): Preview {
-  const scene = sceneAtEnd(entries, kinds, assets);
-  const spriteKind = kinds.filter((k) => k.kind === 'sprite');
-  let sprite: PackSprite | null = sprites[0] ?? null;
-  let spriteLabel: string | null = null;
-  let line = '';
-  for (const e of entries) {
-    if (e.role !== 'assistant') continue;
-    for (const t of extractTags(jevText(e, kinds), spriteKind, false).tags) {
-      spriteLabel = t.label;
-      sprite = resolveSprite(t.label, sprites) ?? sprite;
-    }
-  }
+/** 角色最后一句(缩略图下面那行):最后一条回复切出来的最后一句 */
+function lastLineOf(entries: readonly ChatEntry[], kinds: TagKind[], charName: string, macros: MacroContext): string {
   const last = [...entries].reverse().find((e) => e.role === 'assistant');
-  if (last) {
-    const raw = substituteMacros(jevText(last, kinds), macros, { seed: `${last.id}:${last.swipeIndex}` });
-    // 日中交替写的回复只取中文那句(日语挂在句子上,不单独成句)
-    const lines = parseBilingual(raw, {
-      charName,
-      userName: macros.user,
-      tags: kinds,
-      streaming: false,
-    }).lines;
-    line = lines[lines.length - 1]?.text ?? '';
-  }
-  const label = sprite ? sprite.label : spriteLabel;
-  const cg = scene.cg ? cgFrameFor(scene.cg, assets, label) : null;
-  return { bg: scene.bg, cg, sprite, spriteLabel: label, line };
+  if (!last) return '';
+  const raw = substituteMacros(jevText(last, kinds), macros, { seed: `${last.id}:${last.swipeIndex}` });
+  // 日中交替写的回复只取中文那句(日语挂在句子上,不单独成句)
+  const lines = parseBilingual(raw, { charName, userName: macros.user, tags: kinds, streaming: false }).lines;
+  return lines[lines.length - 1]?.text ?? '';
 }
 
 /** 上半:存档那一刻的场景(停在 CG 上就是那张 CG)+ 地点 */
@@ -146,7 +131,7 @@ function Thumb({ preview }: { preview: Preview | null }) {
 }
 
 const sceneOf = (p: Preview | null): string =>
-  (p?.cg ? sceneImageUrl(p.cg) : null) ?? (p?.bg ? sceneImageUrl(p.bg) : null) ?? '/vn/bg/default.svg';
+  (p?.cg ? sceneImageUrl(p.cg) : null) ?? (p?.bg ? sceneImageUrl(p.bg) : null) ?? FALLBACK_BACKGROUND;
 
 /** 接缝上的圆头像:按脸裁的小图 → 名字首字 */
 function SlotFace({ src, name }: { src: string | null; name: string }) {
@@ -171,6 +156,8 @@ export function VNSaves({
   spriteLayout,
   tagKinds,
   charName,
+  userName,
+  formsLensFor,
   macros,
   busy,
   canSave,
@@ -216,14 +203,79 @@ export function VNSaves({
     };
   }, [chats, currentChatId]);
 
-  const previews = useMemo(() => {
-    const out = new Map<string, Preview>();
+  // 每个存档切好的句子(和视觉小说同一套切法,按条缓存)
+  const beatCache = useRef(newBeatCache());
+  const saves = useMemo(() => {
+    const out = new Map<string, { entries: ChatEntry[]; beats: Beat[] }>();
     for (const c of chats) {
       const entries = c.id === currentChatId ? currentEntries : loaded.get(c.id);
-      if (entries) out.set(c.id, previewOf(entries, tagKinds, sceneAssets, sprites, charName, macros));
+      if (entries) {
+        out.set(c.id, { entries, beats: parseBeats({ entries, tagKinds, macros, charName, userName, cache: beatCache.current }) });
+      }
     }
     return out;
-  }, [chats, currentChatId, currentEntries, loaded, tagKinds, sceneAssets, sprites, charName, macros]);
+  }, [chats, currentChatId, currentEntries, loaded, tagKinds, macros, charName, userName]);
+
+  // 认表情和视觉小说一样(同一个开关、同一份缓存,视觉小说里问过的不再问)
+  const candidates = useMemo(() => emotionCandidates(sprites), [sprites]);
+  const words = useMemo(() => {
+    const out: string[] = [];
+    for (const { beats } of saves.values()) {
+      for (const b of beats) {
+        for (const h of b.parsed?.hits ?? []) if (h.kind === 'sprite' && !isNpcHit(h, charName)) out.push(h.label);
+      }
+    }
+    return out;
+  }, [saves, charName]);
+  const engine = useTimelineEngine();
+  const listRef = useMemo(() => emotionListRef(sprites), [sprites]);
+  const legacyResolve = useEmotionMatches(words, candidates, engine === 'legacy');
+  const recordsResolve = useWordRecords(listRef, words, candidates, engine === 'records');
+  const resolve = engine === 'records' ? recordsResolve : legacyResolve;
+  const emotion: EmotionContext = useMemo(
+    () => ({ resolve, rawOnFail: sprites.length === 0, charName }),
+    [resolve, sprites.length, charName],
+  );
+  // CG 那一帧和视觉小说一样:认词记录时查配对表(同一份缓存),旧算法、表还没读到时照旧按名字找
+  const cgPairs = usePairings('cg', listRef, engine === 'records');
+  const pickCgFrame = useMemo(
+    () => (engine === 'records' && cgPairs ? cgFrameFromPairs(cgPairs, sprites, sceneAssets) : undefined),
+    [engine, cgPairs, sprites, sceneAssets],
+  );
+  // 时间线的输入:素材、认词结果、配对表大家共用;形态记号每个存档各有一份(存档里的 + 这个浏览器里的)。
+  // 条目和共用的那份都没变就给同一个对象 —— 时间线按它认缓存,当前对话在流式时只重算正在写的那条
+  const base: TimelineCtx = useMemo(
+    () => ({ sprites, sceneAssets, emotion, forms: null, ...(pickCgFrame ? { cgFrame: pickCgFrame } : {}) }),
+    [sprites, sceneAssets, emotion, pickCgFrame],
+  );
+  const formsCtx = useRef(
+    new WeakMap<readonly ChatEntry[], { base: TimelineCtx; lensFor: FormsState['lensFor']; ctx: TimelineCtx }>(),
+  );
+
+  const previews = useMemo(() => {
+    const ctxOf = (id: string, entries: readonly ChatEntry[]): TimelineCtx => {
+      const hit = formsCtx.current.get(entries);
+      if (hit && hit.base === base && hit.lensFor === formsLensFor) return hit.ctx;
+      const lens = formsLensFor(id, entries, sprites);
+      const ctx = lens ? { ...base, forms: lens } : base;
+      formsCtx.current.set(entries, { base, lensFor: formsLensFor, ctx });
+      return ctx;
+    };
+    const out = new Map<string, Preview>();
+    for (const [id, { entries, beats }] of saves) {
+      const st = stateAtEnd(buildTimeline(beats, ctxOf(id, entries)), beats);
+      // 和舞台一样按显示的表情名找立绘,找不到用排第一的;一张立绘都没有时占位上写表情名
+      const sprite = sprites.find((s) => s.label === st.shownLabel) ?? sprites[0] ?? null;
+      out.set(id, {
+        bg: st.scene.bg,
+        cg: st.cgFrame,
+        sprite,
+        spriteLabel: sprite ? sprite.label : st.shownLabel,
+        line: lastLineOf(entries, tagKinds, charName, macros),
+      });
+    }
+    return out;
+  }, [saves, base, formsLensFor, sprites, tagKinds, charName, macros]);
 
   const faces = useMemo(() => facesByCanvas(sprites), [sprites]);
   // spriteStage / spriteLayout 是游戏里的构图;左边那列按脸单独摆,用不上

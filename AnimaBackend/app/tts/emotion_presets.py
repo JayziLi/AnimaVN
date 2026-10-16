@@ -2,11 +2,13 @@
 
 向量 8 维,顺序是 IndexTTS 官方定的。每维 0–1.2,合计不超过 1.5 —— 再高会明显影响
 音色相似度(见 docs/superpowers/specs/2026-09-24-indextts-engine-design.md)。
+维度、上限和内置表情的名字前后端共用,在 app/contracts.py;这里只放默认向量。
 """
 
-EMO_DIMS = ("高兴", "愤怒", "悲伤", "害怕", "厌恶", "忧郁", "惊讶", "平静")
-DIM_MAX = 1.2
-SUM_MAX = 1.5
+from app.contracts import BUILTIN_EMOTIONS, EMO_DIM_MAX, EMO_DIMS, EMO_SUM_MAX
+
+DIM_MAX = EMO_DIM_MAX
+SUM_MAX = EMO_SUM_MAX
 
 
 def clean_emo_vector(raw: list[float] | None) -> list[float] | None:
@@ -28,32 +30,32 @@ def clean_emo_vector(raw: list[float] | None) -> list[float] | None:
     return out if total > 0 else None
 
 
-# 表情名 / 别名 → 默认向量(没写的维度是 0;None = 不控制,沿用音色参考的语气)。
-# 只是起点,要以用户试听为准
+# 内置表情的名字 → 默认向量(没写的维度是 0;None = 不控制,沿用音色参考的语气)。
+# 只是起点,要以用户试听为准。名字和别名在 app/contracts.py 的 BUILTIN_EMOTIONS(BUILTIN_EMOTIONS 也从这里
+# 照旧导出),每一项都要有向量(有测试对照)
+_VECTORS: dict[str, dict[str, float] | None] = {
+    "平静": None,
+    "微笑": {"高兴": 0.4, "平静": 0.4},
+    "开心": {"高兴": 0.8},
+    "温柔": {"高兴": 0.3, "平静": 0.5},
+    "认真": {"愤怒": 0.1, "平静": 0.6},
+    "担心": {"害怕": 0.4, "忧郁": 0.3},
+    "难过": {"悲伤": 0.8},
+    "哭": {"悲伤": 1.0},
+    "惊讶": {"惊讶": 0.8},
+    "慌张": {"害怕": 0.4, "惊讶": 0.4},
+    "害羞": {"高兴": 0.3, "害怕": 0.3},
+    "疑惑": {"惊讶": 0.4, "平静": 0.3},
+    "生气": {"愤怒": 0.7},
+    "害怕": {"害怕": 0.8},
+    "厌恶": {"厌恶": 0.7},
+    "忧郁": {"忧郁": 0.7},
+}
+# 表情名 / 别名 → 默认向量:每组第一个词是名字,其余是别名
 PRESETS: list[tuple[tuple[str, ...], dict[str, float] | None]] = [
-    (("平静", "normal", "calm", "neutral", "说话", "talk", "默认"), None),
-    (("微笑", "smile"), {"高兴": 0.4, "平静": 0.4}),
-    (("开心", "高兴", "happy"), {"高兴": 0.8}),
-    (("温柔", "gentle"), {"高兴": 0.3, "平静": 0.5}),
-    (("认真", "serious"), {"愤怒": 0.1, "平静": 0.6}),
-    (("担心", "worried"), {"害怕": 0.4, "忧郁": 0.3}),
-    (("难过", "伤心", "sad"), {"悲伤": 0.8}),
-    (("哭", "cry"), {"悲伤": 1.0}),
-    (("惊讶", "surprised"), {"惊讶": 0.8}),
-    (("慌张", "flustered"), {"害怕": 0.4, "惊讶": 0.4}),
-    (("害羞", "脸红", "shy"), {"高兴": 0.3, "害怕": 0.3}),
-    (("疑惑", "confused"), {"惊讶": 0.4, "平静": 0.3}),
-    (("生气", "angry"), {"愤怒": 0.7}),
-    (("害怕", "afraid", "scared"), {"害怕": 0.8}),
-    (("厌恶", "嫌弃", "disgusted"), {"厌恶": 0.7}),
-    (("忧郁", "失落", "melancholic"), {"忧郁": 0.7}),
+    ((label, *aliases), _VECTORS[label]) for label, aliases in BUILTIN_EMOTIONS
 ]
 _BY_NAME = {n.casefold(): dims for names, dims in PRESETS for n in names}
-
-# 没配立绘的卡用的内置基础表情:{{sprites}} 展开成它们,立绘标签也拿它们当候选。
-# 每组第一个词是名字,其余是别名;上面的默认向量正好覆盖每一项。
-# 前端 frontend/src/debug/plugins/emotions.ts 抄了一份,改这里要一起改(有测试对照)
-BUILTIN_EMOTIONS: list[tuple[str, tuple[str, ...]]] = [(names[0], names[1:]) for names, _ in PRESETS]
 
 
 def dims_to_vector(dims: dict[str, float]) -> list[float]:

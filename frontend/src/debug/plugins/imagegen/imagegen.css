@@ -1,0 +1,494 @@
+/* 生图卡带:视觉小说里的「画」按钮、左上角的状态和图上的操作、「画这一幕」小面板。颜色和玻璃质感跟视觉小说的变量走 */
+
+/* 发送右边的画笔:样子和发送的纸飞机一样(没底色、淡色,悬停加一层底);
+   设置开着时变角色主题色;正在画时右上角一个呼吸的小点 */
+.ig-btn {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--vn-text-dim);
+  cursor: pointer;
+  /* 手机长按开设置:别弹系统菜单、别选中文字 */
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+  transition:
+    color 0.15s,
+    background 0.15s;
+}
+@media (hover: hover) {
+  .ig-btn:hover {
+    color: var(--vn-text);
+    background: var(--skin-rule, rgba(255, 255, 255, 0.12));
+  }
+}
+.ig-btn:focus-visible {
+  outline: 2px solid rgba(var(--vn-accent-rgb), 0.8);
+  outline-offset: 2px;
+}
+.ig-btn.on {
+  color: var(--vn-accent);
+}
+.ig-btn svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+.ig-btn.busy::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--vn-accent);
+  animation: ig-breathe 1.2s ease-in-out infinite;
+}
+/* 左上角:状态标签 + 图上的操作(右上角是语音和模型标签) */
+.ig-corner {
+  position: absolute;
+  top: calc(env(safe-area-inset-top) + 10px);
+  left: calc(env(safe-area-inset-left) + var(--vn-gutter));
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  max-width: calc(100vw - 2 * var(--vn-gutter));
+}
+.vn-chip.ig-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--vn-text);
+  font-variant-numeric: tabular-nums;
+  pointer-events: auto;
+}
+.ig-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--vn-accent);
+  animation: ig-breathe 1.2s ease-in-out infinite;
+}
+@keyframes ig-breathe {
+  50% {
+    opacity: 0.35;
+  }
+}
+.ig-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  pointer-events: auto;
+}
+.ig-tools .vn-pill {
+  font-size: 12px;
+  padding: 4px 11px;
+}
+
+/* 「画这一幕」小面板和提示词详情:默认在左上角,不挡站在中间的人、不压对话框。
+   「画这一幕」量得到画笔时(.ig-pop)改成从画笔上方弹出,位置写在行内样式里 */
+.ig-panel {
+  position: absolute;
+  top: calc(env(safe-area-inset-top) + 52px);
+  left: calc(env(safe-area-inset-left) + var(--vn-gutter));
+  width: min(420px, calc(100vw - 2 * var(--vn-gutter)));
+  max-height: calc(100dvh - 300px);
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border-radius: var(--vn-radius);
+  border: 1px solid var(--vn-border);
+  background: var(--vn-glass-strong);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+  color: var(--vn-text);
+  font-size: 13px;
+  pointer-events: auto;
+  cursor: auto;
+}
+.ig-panel.ig-pop {
+  transform-origin: bottom right;
+  animation: ig-pop 0.16s ease-out both;
+}
+@keyframes ig-pop {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ig-panel.ig-pop,
+  .ig-btn.busy::after,
+  .ig-dot {
+    animation: none;
+  }
+}
+.ig-info {
+  width: min(560px, calc(100vw - 2 * var(--vn-gutter)));
+}
+.ig-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ig-title {
+  flex: 1;
+  font-weight: 700;
+}
+.ig-beta {
+  margin-left: 4px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--vn-text-dim);
+}
+.vn-pill.ig-x {
+  font-size: 12px;
+  padding: 3px 10px;
+}
+.ig-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--vn-text-dim);
+}
+.ig-line {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.ig-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.ig-label {
+  flex: none;
+  font-size: 12px;
+  color: var(--vn-text-dim);
+}
+.ig-row .vn-seg button {
+  font-size: 12px;
+  padding: 4px 11px;
+}
+.ig-input {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--vn-border);
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--vn-text);
+  resize: vertical;
+}
+.ig-input:focus {
+  outline: none;
+  border-color: rgba(var(--vn-accent-rgb), 0.7);
+}
+.ig-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--vn-text-dim);
+}
+.ig-pair {
+  display: flex;
+  gap: 8px;
+}
+.ig-pair .ig-field:first-child {
+  flex: 0 0 34%;
+}
+.ig-grow {
+  flex: 1;
+}
+.ig-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--vn-text-dim);
+  cursor: pointer;
+}
+.ig-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.ig-code-label {
+  font-size: 11px;
+  color: var(--vn-text-dim);
+}
+.ig-code {
+  margin: 2px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.3);
+  font-family: var(--vn-mono);
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--vn-text);
+}
+
+/* ── 生图的设置(ImageGenSettings):游戏里「菜单 → 设置 → 生图」和调试台插件页共用,样子照视觉小说设置页 ── */
+.ig-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+/* 调试台里没有视觉小说的配色变量:自带一份(和视觉小说默认的灰白主题一样),再垫一块深色底 */
+.ig-settings.console {
+  --vn-accent: #e4e4ea;
+  --vn-accent-ink: #17181f;
+  --vn-accent-rgb: 228, 228, 234;
+  --vn-glass-strong: rgba(15, 17, 29, 0.94);
+  --vn-border: rgba(255, 255, 255, 0.14);
+  --vn-text: #f6f3f8;
+  --vn-text-dim: rgba(246, 243, 248, 0.6);
+  --vn-text-faint: rgba(246, 243, 248, 0.4);
+  --vn-miss: #ff9d9d;
+  --vn-radius: 14px;
+  --vn-font: system-ui, -apple-system, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif;
+  --vn-mono: ui-monospace, 'Cascadia Code', Consolas, monospace;
+  padding: 14px 16px 18px;
+  border-radius: 12px;
+  border: 1px solid var(--vn-border);
+  background: #14151d;
+  color: var(--vn-text);
+  font-family: var(--vn-font);
+}
+.ig-settings-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+.ig-settings-title {
+  font-size: 15px;
+  font-weight: 700;
+}
+.ig-settings .ig-intro {
+  margin: 0;
+  line-height: 1.6;
+}
+/* 生图里面再分的小页:下划线样式,和外面设置页的胶囊分页分得开 */
+.ig-subtabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 20px;
+  border-bottom: 1px solid var(--vn-border);
+}
+.ig-subtab {
+  margin-bottom: -1px;
+  padding: 7px 2px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--vn-text-dim);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.ig-subtab:hover {
+  color: var(--vn-text);
+}
+.ig-subtab.active {
+  border-bottom-color: var(--vn-accent);
+  color: var(--vn-text);
+  font-weight: 700;
+}
+/* 一行里几个东西(下拉框 + 按钮、输入框 + 按钮) */
+.ig-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.ig-inline .ig-grow {
+  flex: 1 1 200px;
+  width: auto;
+}
+.ig-settings .ig-pad {
+  margin: 0;
+  padding: 10px 0;
+}
+.ig-settings .vn-set-select {
+  max-width: 100%;
+}
+/* NovelAI 网页上的叫法:名字下面一行小字(组名里跟在后面) */
+.ig-en {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--vn-text-faint, var(--vn-text-dim));
+  letter-spacing: 0.02em;
+}
+.ig-en.inline {
+  display: inline;
+  margin: 0 0 0 8px;
+}
+/* 「更多」收起来的那几项(照网页 Sampler 旁边的箭头) */
+.ig-more > summary {
+  padding: 10px 0;
+  font-size: 13px;
+  color: var(--vn-text-dim);
+  cursor: pointer;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.ig-more > summary:hover {
+  color: var(--vn-text);
+}
+.ig-more[open] > summary {
+  color: var(--vn-text);
+}
+/* 滑块下面跟着的一个按钮(引导恢复默认):和控件那一栏对齐 */
+.ig-under {
+  padding: 2px 0 8px 134px;
+}
+.ig-seed {
+  width: 160px;
+  flex: none;
+}
+.ig-side {
+  width: 84px;
+  flex: none;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+/* 画一张扣多少:照网页 Generate 按钮上的那个数 */
+.ig-cost {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin: 14px 0 4px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--vn-border);
+  background: rgba(var(--vn-accent-rgb), 0.08);
+  font-size: 14px;
+}
+.ig-cost b {
+  font-variant-numeric: tabular-nums;
+}
+.ig-cost.paid {
+  border-color: rgba(255, 196, 120, 0.5);
+  background: rgba(255, 196, 120, 0.08);
+}
+
+/* 插件页「生图」 */
+
+/* 参考图:这张卡的立绘一排小图,选中的描边 */
+.ig-ref {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ig-ref-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(68px, 1fr));
+  gap: 6px;
+  /* 立绘多的卡(十几张表情)别把整页撑长:两排多一点,其余滚动 */
+  max-height: 290px;
+  overflow-y: auto;
+}
+.ig-ref-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  padding: 4px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: rgba(127, 127, 127, 0.08);
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.ig-ref-item.on {
+  border-color: var(--vn-accent, var(--accent, #8ab4f8));
+}
+.ig-ref-item img {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  object-fit: contain;
+}
+.ig-ref-item span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ig-album {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+.ig-album-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  font-size: 11px;
+}
+.ig-album-item img {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.2);
+}
+.ig-album-desc {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ig-album-actions {
+  display: flex;
+  gap: 4px;
+}
+.ig-account {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 手机:和发送一样大,好按;左上角的操作挪到右上角语音、模型标签的下面一行,不叠在一起 */
+@media (max-width: 720px) {
+  .ig-btn {
+    width: 44px;
+    height: 40px;
+  }
+  .ig-corner {
+    top: calc(env(safe-area-inset-top) + 48px);
+  }
+  .ig-panel {
+    top: calc(env(safe-area-inset-top) + 88px);
+    max-height: calc(100dvh - 430px);
+  }
+}
+/* 视觉小说设置页 640 以下名字那一栏变窄(84px) */
+@media (max-width: 640px) {
+  .ig-under {
+    padding-left: 94px;
+  }
+}

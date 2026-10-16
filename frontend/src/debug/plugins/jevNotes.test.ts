@@ -3,7 +3,7 @@ import type { AssemblyResult } from '../lib/assembler';
 import type { ChatEntry } from '../lib/chatEntry';
 import { vnTagKinds } from '../vn/tags';
 import { NO_JEV, jevStripPrompt, jevTagKinds, type JevKinds } from './jev';
-import { cutJev, insertionPoint, jevText, jevView, looseLines, makeNote, type JevNote } from './jevNotes';
+import { cutJev, insertionPoint, jevText, jevView, lineTones, looseLines, makeNote, type JevNote } from './jevNotes';
 import type { JevStats } from './jevRun';
 import { parseBilingual } from './lang';
 
@@ -125,5 +125,28 @@ describe('history sent to the model', () => {
       jevTagKinds({ ...NO_JEV, sprite: true }, kinds),
     ).messages[0].content;
     expect(content).toBe('「早」');
+  });
+});
+
+describe('tones (a two-level question a cartridge registers)', () => {
+  const lines = '两人走进食堂。\n「今天有咖喱！」\n「好烫……」';
+  const withTones = (tones: (string | null)[]): JevStats => {
+    const { ends } = parseBilingual(lines, opts);
+    const notes = ['', '<sprite:开心>', ''].map((t, k) => makeNote(lines, insertionPoint(lines, ends, k), t, tones[k]));
+    return { kinds: ['sprite'], lines: 3, requests: 1, tokens: 0, maxMs: 0, failed: 0, notes };
+  };
+
+  it('keeps the tone off the text and lands it on its line', () => {
+    const view = jevView(lines, withTones([null, '高', '低']), kinds);
+    expect(view.text).toBe('两人走进食堂。\n<sprite:开心>「今天有咖喱！」\n「好烫……」');
+    expect(lineTones(view, parseBilingual(view.text, opts).ends)).toEqual([null, '高', '低']);
+  });
+
+  it('has no tones when none was judged', () => {
+    const view = jevView(lines, withTones([null, null, null]), kinds);
+    expect(view.tones).toBeNull();
+    expect(lineTones(view, parseBilingual(view.text, opts).ends)).toBeNull();
+    // 没写 tone 的旧标注里也没有这个字段
+    expect(makeNote(lines, 0, '')).not.toHaveProperty('tone');
   });
 });

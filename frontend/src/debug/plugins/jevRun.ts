@@ -13,6 +13,11 @@
  * CG 不限次数,而且每句都要知道上一句判出来的画面(「不换」才有意义):CG 是 Jev 时一句一句按顺序判,
  * 上一句回来了才发下一句。整段一次到达(中转站)时也是从第一句开始排队,一句约 0.2 秒,
  * 前面的句子先判完,读的人不会等。
+ *
+ * 两条队列(twoQueues,设计稿 2.2;开关在 Jev 通用设置,默认关):CG 是 Jev 时,别的题(说话人、表情、
+ * 背景、音乐、声线)不再跟着 CG 一句一句排队,而是和 CG 不是 Jev 时一样多句一批;CG 单独一条队列,
+ * 只问 CG、一句一句发,第 k 句等批量那边把第 0…k−1 句判完(背景是 Jev 时)再发,地点用这几句里判出来的背景。
+ * 一句两边都回来了才算判完;语音只等批量那边(说话人、表情、声线):快照里的 voicePendingFrom。
  */
 
 import { parseBilingual } from './lang';
@@ -64,6 +69,8 @@ export interface AnnotateRequest {
   };
   /** 立绘或玩家台词是 Jev 时问「谁说的」 */
   ask_speaker: boolean;
+  /** 角色的台词多判一道档(卡带登记的两档题,plugins/voiceExtensions.ts 的 asksTone 决定问不问) */
+  ask_tone?: boolean;
   thresholds: AnnotateThresholds;
   /** 改过的问法(没改的不带) */
   prompts: Record<string, string>;
@@ -99,6 +106,8 @@ export interface JevSnapshot {
   record: JevStats;
   /** 还在等 Jev 的第一句;都判完了是 null */
   pendingFrom: number | null;
+  /** 语音要等的第一句:说话人、表情、声线还没判完的;一条队列时和 pendingFrom 一样 */
+  voicePendingFrom: number | null;
 }
 
 /** 一次试判的结果:每句的判断、统计、总耗时 */
@@ -138,11 +147,18 @@ export interface JevRunOptions {
   emotionBefore: string | null;
   /** Jev 认出的玩家台词弹成选项(玩家台词插件的设置);关了不标 <我> */
   popup: boolean;
+  /** 这条回复角色的台词多判一道档(asksTone),答案记在标注的 tone 上 */
+  askTone?: boolean;
   thresholds: AnnotateThresholds;
   prompts: Record<string, string>;
   annotate: (req: AnnotateRequest, signal: AbortSignal) => Promise<AnnotateResponse>;
   onChange: (snap: JevSnapshot) => void;
+  /** 两条队列(见文件开头);只在 CG 是 Jev 时有区别 */
+  twoQueues?: boolean;
 }
+
+/** CG 那条队列判出来的一句:只有画面 */
+type CgDecision = Pick<JevDecision, 'cg' | 'cg_off'>;
 
 /** 后端一次最多判这么多句 */
 const MAX_TARGETS = 16;
@@ -155,6 +171,10 @@ export class JevRun {
   private readonly decided = new Map<number, JevDecision | 'failed'>();
   private readonly sent = new Set<number>();
   private inflight = 0;
+  /** 两条队列时 CG 那边的:判出来的、发出去的、在路上的 */
+  private readonly cgDecided = new Map<number, CgDecision | 'failed'>();
+  private readonly cgSent = new Set<number>();
+  private cgInflight = 0;
   private readonly controller = new AbortController();
   private waiters: (() => void)[] = [];
   private stats: JevStats;
@@ -185,7 +205,7 @@ export class JevRun {
       index,
       text: l.text,
       speaker: l.speaker,
-      decision: this.decided.get(index) ?? null,
+      decision: this.decisionOf(index),
     }));
   }
 
@@ -199,7 +219,7 @@ export class JevRun {
   settle(ms: number): Promise<void> {
     if (this.done()) return Promise.resolve();
     // CG 一句一句排队判:还没判的句子多,就多等一会儿(一句按 0.4 秒算)
-    const wait = this.o.jevKinds.cg ? Math.max(ms, this.undecided() * 400) : ms;
+    const wait = this.o.jevKinds.cg ? Math.max(ms, (this.twoQueues ? this.cgUndecided() : this.undecided()) * 400) : ms;
     return new Promise((resolve) => {
       const t = setTimeout(() => this.abort(), wait);
       this.waiters.push(() => {
@@ -217,8 +237,10 @@ export class JevRun {
     const { parsed } = this.parse();
     for (let k = 0; k < this.completeCount(parsed); k++) {
       if (!this.decided.has(k)) this.fail([k], '没等到 Jev');
+      if (this.twoQueues && !this.cgDecided.has(k)) this.cgDecided.set(k, 'failed');
     }
     this.inflight = 0;
+    this.cgInflight = 0;
     this.emit();
     this.wake();
   }
@@ -239,16 +261,44 @@ export class JevRun {
     return this.streaming ? Math.max(0, parsed.lines.length - 1) : parsed.lines.length;
   }
 
+  /** 两条队列在用吗:开关开着、而且 CG 是 Jev */
+  private get twoQueues(): boolean {
+    return Boolean(this.o.twoQueues) && this.o.jevKinds.cg;
+  }
+
+  /** 这句判完了吗:两条队列时两边都要回来 */
+  private isDecided(k: number): boolean {
+    return this.decided.has(k) && (!this.twoQueues || this.cgDecided.has(k));
+  }
+
+  /** 这句的判断(两条队列时把 CG 那边的画面并进来);还没判完是 null */
+  private decisionOf(k: number): JevDecision | 'failed' | null {
+    const d = this.decided.get(k);
+    if (d === undefined || !this.twoQueues) return d ?? null;
+    const c = this.cgDecided.get(k);
+    if (c === undefined) return null;
+    if (d === 'failed' || c === 'failed') return d;
+    return { ...d, cg: c.cg ?? null, cg_off: c.cg_off ?? false };
+  }
+
   /** 写完了、还没判出结果的句子数 */
   private undecided(): number {
     const { parsed } = this.parse();
     let n = 0;
-    for (let k = 0; k < this.completeCount(parsed); k++) if (!this.decided.has(k)) n++;
+    for (let k = 0; k < this.completeCount(parsed); k++) if (!this.isDecided(k)) n++;
+    return n;
+  }
+
+  /** 两条队列时 CG 那边写完了、还没判的句子数 */
+  private cgUndecided(): number {
+    const { parsed } = this.parse();
+    let n = 0;
+    for (let k = 0; k < this.completeCount(parsed); k++) if (!this.cgDecided.has(k)) n++;
     return n;
   }
 
   private done(): boolean {
-    return !this.streaming && this.inflight === 0 && this.undecided() === 0;
+    return !this.streaming && this.inflight === 0 && this.cgInflight === 0 && this.undecided() === 0;
   }
 
   private wake(): void {
@@ -264,7 +314,9 @@ export class JevRun {
     for (let k = 0; k < this.completeCount(parsed); k++) {
       if (!this.sent.has(k) && !this.decided.has(k)) todo.push(k);
     }
-    if (this.o.jevKinds.cg) {
+    if (this.twoQueues) {
+      this.stepTwoQueues(todo, parsed);
+    } else if (this.o.jevKinds.cg) {
       // CG:上一句回来了才发下一句,每句都带着上一句判出来的画面
       if (this.inflight === 0 && todo.length > 0) void this.send([todo[0]], parsed);
     } else {
@@ -272,6 +324,31 @@ export class JevRun {
     }
     this.emit();
     this.wake();
+  }
+
+  /** 两条队列:批量那边多句一批(没有别的题时直接算判过);CG 那边一句一句、等前面的背景判完 */
+  private stepTwoQueues(todo: number[], parsed: ParsedReply): void {
+    const k = this.o.jevKinds;
+    if (k.sprite || k.player || k.bg || k.bgm) {
+      for (let i = 0; i < todo.length; i += MAX_TARGETS) void this.send(todo.slice(i, i + MAX_TARGETS), parsed);
+    } else {
+      for (const t of todo) {
+        this.sent.add(t);
+        this.decided.set(t, { index: t, speaker: null, emotion: null, bg: null, bgm: null, confidence: {} });
+      }
+    }
+    if (this.cgInflight === 0 && !this.controller.signal.aborted) {
+      let next = -1;
+      for (let j = 0; j < this.completeCount(parsed); j++) {
+        if (!this.cgSent.has(j) && !this.cgDecided.has(j)) {
+          next = j;
+          break;
+        }
+      }
+      // 背景是 Jev 时,第 k 句的 CG 等第 0…k−1 句的背景判完:地点要用判出来的
+      const ready = next !== -1 && (!k.bg || Array.from({ length: next }, (_, j) => j).every((j) => this.decided.has(j)));
+      if (ready) void this.sendCg(next, parsed);
+    }
   }
 
   /** 已知的场景切换:按句子顺序最前面的那次 */
@@ -290,8 +367,9 @@ export class JevRun {
   private cgSteps(): Map<number, { cg: string | null; off: boolean; now: string | null }> {
     let cur = this.o.scene.cg;
     const out = new Map<number, { cg: string | null; off: boolean; now: string | null }>();
-    for (const k of [...this.decided.keys()].sort((a, b) => a - b)) {
-      const d = this.decided.get(k);
+    const source: ReadonlyMap<number, CgDecision | JevDecision | 'failed'> = this.twoQueues ? this.cgDecided : this.decided;
+    for (const k of [...source.keys()].sort((a, b) => a - b)) {
+      const d = source.get(k);
       let cg: string | null = null;
       let off = false;
       if (d && d !== 'failed') {
@@ -322,6 +400,8 @@ export class JevRun {
     const bgm = this.firstChange('bgm');
     const last = Math.max(...targets);
     const bgNow = bg && bg.line <= Math.min(...targets) ? bg.label : this.o.scene.bg;
+    // 两条队列时 CG 不在这一批里问
+    const askCg = k.cg && !this.twoQueues;
     const req: AnnotateRequest = {
       char: this.o.charName,
       user: this.o.userName,
@@ -331,16 +411,17 @@ export class JevRun {
       emotions: k.sprite ? this.o.emotions : [],
       bgs: k.bg ? this.o.bgs : [],
       bgms: k.bgm ? this.o.bgms : [],
-      cgs: k.cg ? this.o.cgs : [],
+      cgs: askCg ? this.o.cgs : [],
       scene: {
         bg: bg?.label ?? this.o.scene.bg,
         bgm: bgm?.label ?? this.o.scene.bgm,
         bg_changed: bg !== null,
         bgm_changed: bgm !== null,
-        cg: k.cg ? this.cgBefore(Math.min(...targets)) : null,
-        place: k.cg ? this.o.placeOf(bgNow) : '',
+        cg: askCg ? this.cgBefore(Math.min(...targets)) : null,
+        place: askCg ? this.o.placeOf(bgNow) : '',
       },
       ask_speaker: k.sprite || k.player,
+      ...(this.o.askTone ? { ask_tone: true } : {}),
       thresholds: this.o.thresholds,
       prompts: this.o.prompts,
     };
@@ -363,12 +444,66 @@ export class JevRun {
     } finally {
       if (!this.controller.signal.aborted) {
         this.inflight--;
-        // CG 排队判:接着发下一句(step 里也会 emit / wake)
+        // CG 排队判:接着发下一句(step 里也会 emit / wake);两条队列时批量回来了 CG 可能就能发了
         if (this.o.jevKinds.cg) this.step();
         else {
           this.emit();
           this.wake();
         }
+      }
+    }
+  }
+
+  /** 两条队列的 CG 那边:只问第 k 句的 CG,带着前面判出来的画面和地点 */
+  private async sendCg(line: number, parsed: ParsedReply): Promise<void> {
+    if (this.controller.signal.aborted) return;
+    this.cgSent.add(line);
+    this.cgInflight++;
+    const bg = this.firstChange('bg');
+    const bgm = this.firstChange('bgm');
+    // 地点:前面几句(0…k−1)里判出来的背景,没换用这条回复开头的
+    const bgNow = bg && bg.line < line ? bg.label : this.o.scene.bg;
+    const req: AnnotateRequest = {
+      char: this.o.charName,
+      user: this.o.userName,
+      prev: this.o.prev,
+      lines: parsed.lines.slice(0, line + 1).map((l) => ({ text: l.text, speaker: l.speaker })),
+      targets: [line],
+      emotions: [],
+      bgs: [],
+      bgms: [],
+      cgs: this.o.cgs,
+      scene: {
+        bg: bg?.label ?? this.o.scene.bg,
+        bgm: bgm?.label ?? this.o.scene.bgm,
+        bg_changed: bg !== null,
+        bgm_changed: bgm !== null,
+        cg: this.cgBefore(line),
+        place: this.o.placeOf(bgNow),
+      },
+      ask_speaker: false,
+      thresholds: this.o.thresholds,
+      prompts: this.o.prompts,
+    };
+    try {
+      const res = await this.o.annotate(req, this.controller.signal);
+      if (this.controller.signal.aborted) return;
+      const d = res.lines.find((x) => x.index === line);
+      this.cgDecided.set(line, d ? { cg: d.cg ?? null, cg_off: d.cg_off ?? false } : 'failed');
+      this.stats = {
+        ...this.stats,
+        requests: this.stats.requests + 1,
+        tokens: this.stats.tokens + res.tokens,
+        maxMs: Math.max(this.stats.maxMs, res.ms),
+      };
+    } catch (e) {
+      if (this.controller.signal.aborted) return;
+      this.cgDecided.set(line, 'failed');
+      this.stats = { ...this.stats, error: e instanceof Error ? e.message : String(e) };
+    } finally {
+      if (!this.controller.signal.aborted) {
+        this.cgInflight--;
+        this.step();
       }
     }
   }
@@ -393,17 +528,25 @@ export class JevRun {
     const notes: JevNote[] = [];
     let emotion = this.o.emotionBefore;
     let pendingFrom: number | null = null;
+    let voicePendingFrom: number | null = null;
     parsed.lines.forEach((line, i) => {
-      const d = this.decided.get(i);
+      if (!this.decided.has(i)) voicePendingFrom ??= i;
+      const d = this.decisionOf(i);
       if (!d) {
         pendingFrom ??= i;
         return;
       }
-      // 判失败:照没标处理,切句认成角色的台词沿用上一句的表情
+      // 判失败:照没标处理,切句认成角色的台词沿用上一句的表情(两条队列时 CG 那边判出来的画面照样用)
       const step = cgs.get(i);
       const dec =
         d === 'failed'
-          ? { speaker: line.speaker === this.o.charName ? ('char' as const) : null, emotion: null, bg: null, bgm: null }
+          ? {
+              speaker: line.speaker === this.o.charName ? ('char' as const) : null,
+              emotion: null,
+              bg: null,
+              bgm: null,
+              ...(this.twoQueues ? { cg: step?.cg ?? null, cg_off: step?.off ?? false } : {}),
+            }
           : {
               ...d,
               // 玩家台词不弹选项:不标 <我>,也不标立绘(照常显示、不念)
@@ -414,10 +557,11 @@ export class JevRun {
               cg_off: step?.off ?? false,
             };
       const tags = decisionTags(dec, emotion, this.o.templates, k).join('');
-      notes.push(makeNote(clean, insertionPoint(clean, parsed.ends, i), tags));
+      const tone = d !== 'failed' && dec.speaker === 'char' ? d.tone : null;
+      notes.push(makeNote(clean, insertionPoint(clean, parsed.ends, i), tags, tone));
       if (dec.speaker === 'char' && dec.emotion) emotion = dec.emotion;
     });
     this.notes = notes;
-    this.o.onChange({ record: this.record(), pendingFrom });
+    this.o.onChange({ record: this.record(), pendingFrom, voicePendingFrom });
   }
 }

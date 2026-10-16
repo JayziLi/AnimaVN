@@ -6,7 +6,6 @@ import {
   DEFAULT_JEV_CONFIG,
   NO_JEV,
   decisionTags,
-  emotionBefore,
   insertionPoint,
   jevKindsOf,
   jevLangPrompt,
@@ -194,24 +193,6 @@ describe('assembly helpers', () => {
     expect(jevLangPrompt(DEFAULT_LANG_BLOCK_PROMPT, kinds)).toBe(DEFAULT_LANG_BLOCK_PROMPT_JEV);
     expect(DEFAULT_LANG_BLOCK_PROMPT_JEV).not.toMatch(/标签|<sprite/);
     expect(jevLangPrompt('先日后中。\n<sprite:微笑>\n「おかえり」', kinds)).toBe('先日后中。\n「おかえり」');
-  });
-
-  it('finds the face in effect before a reply', () => {
-    const entry = (role: 'user' | 'assistant', text: string): ChatEntry => ({
-      id: text,
-      role,
-      swipes: [text],
-      swipeIndex: 0,
-      swipeInfo: [{ sendDate: '' }],
-      overswipe: 'regenerate',
-    });
-    const candidates = [
-      { label: '平静', aliases: [] },
-      { label: '微笑', aliases: ['smile'] },
-    ];
-    expect(emotionBefore([], kinds, candidates)).toBe('平静');
-    const entries = [entry('assistant', '<sprite:smile>「早」'), entry('user', '<sprite:微笑>'), entry('assistant', '<sprite:乱写>「嗯」')];
-    expect(emotionBefore(entries, kinds, candidates)).toBe('微笑');
   });
 });
 

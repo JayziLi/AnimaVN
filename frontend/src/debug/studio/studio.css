@@ -1,0 +1,2472 @@
+/* ══════════ 卡编辑器 / 素材管理(全屏页) ══════════
+   样子照画布第四版(v4_boards.py):顶栏 52、导入提示条 40、左栏 264、右栏 340。
+   颜色只用 debug.css 的 :root 变量(中性灰),不按角色变色;一屏只有一个浅色主按钮,删除是红字。
+   浮层的层级:视觉小说 90 < 卡编辑器 92 < 从这里打开的旧抽屉 95 < 确认框 96 < 「?」和「⋯」 99 < 全局提示 100 */
+
+.st-root {
+  /* 只有图里那个警告黄(「1 个文件未识别」「这块被关掉了」)是 :root 里没有的 */
+  --st-amber: #e0b86b;
+  position: fixed;
+  inset: 0;
+  z-index: 92;
+  display: flex;
+  flex-direction: column;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow: hidden;
+  outline: none;
+}
+
+.st-flex {
+  flex: 1;
+}
+
+.st-icon {
+  flex: none;
+  display: block;
+}
+
+/* ── 顶栏 ── */
+
+.st-header {
+  height: 52px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px 0 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+
+.st-header-avatar {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--bg-hover);
+}
+
+.st-header-name {
+  min-width: 0;
+  max-width: 240px;
+  font-size: 15px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.st-tabs {
+  align-self: stretch;
+  display: flex;
+  gap: 2px;
+  margin-left: 18px;
+}
+
+.st-tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  border: 0;
+  background: none;
+  color: var(--text-dim);
+  font-size: 13.5px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.st-tab:hover {
+  color: var(--text);
+}
+.st-tab[aria-current='page'] {
+  color: var(--text);
+  font-weight: 500;
+}
+/* 下划线用伪元素画:inset 阴影在小数像素的位置上右边会多出一道竖线 */
+.st-tab[aria-current='page']::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--accent);
+}
+
+.st-save {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 6px;
+  color: var(--text-faint);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.st-save-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  animation: st-pulse 1s ease-in-out infinite;
+}
+@keyframes st-pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+/* ── 导入提示条 ── */
+
+.st-notice {
+  min-height: 40px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px 0 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+.st-notice > .st-icon {
+  color: var(--text-dim);
+}
+.st-notice-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.st-notice-detail {
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.st-notice-sep {
+  width: 1px;
+  height: 14px;
+  flex: none;
+  margin: 0 4px;
+  background: var(--border-strong);
+}
+.st-notice-warn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.st-notice-warn > .st-icon {
+  color: var(--st-amber);
+}
+.st-notice-file {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+}
+
+/* 文字链接(「编辑资料」「查看」「恢复默认」) */
+.st-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  text-decoration: underline;
+  text-decoration-color: #5a5a5a;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.st-link:hover {
+  text-decoration-color: var(--text);
+}
+
+/* ── 主体:左栏 + 这一栏(主区 + 右栏) ── */
+
+.st-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.st-slot {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+
+.st-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 20px 16px;
+  background: var(--bg);
+  overflow-y: auto;
+}
+
+/* 主区顶上那一行:类型小牌子 + 包页签 + 右边的「⋯」 */
+.st-slot-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* 网格上面那行小标题:「表情差分  14 张 · 点击编辑 · 拖动排序」 */
+.st-grid-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.st-grid-title {
+  font-size: 13.5px;
+  font-weight: 700;
+}
+.st-grid-note {
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.st-pending {
+  flex: 1;
+  min-height: 240px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  border: 1.5px dashed var(--border-strong);
+  border-radius: 14px;
+  color: var(--text-faint);
+  font-size: 13px;
+}
+
+/* ── 左栏:角色信息 + 已绑定素材 ── */
+
+.st-aside {
+  position: relative;
+  width: 264px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  background: var(--bg-panel);
+  overflow-y: auto;
+}
+
+.st-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 22px 18px 16px;
+}
+.st-card-avatar {
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--bg-hover);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.16), 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+.st-card-avatar.blank {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+  font-size: 26px;
+  font-weight: 700;
+}
+.st-card-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.st-card-name {
+  min-width: 0;
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.st-card-spec {
+  flex: none;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+.st-card-blurb {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 12.5px;
+  line-height: 1.65;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.st-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.st-card-stats {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+.st-card-stats b {
+  color: var(--text);
+  font-weight: 400;
+}
+.st-card-stats .st-link {
+  margin-left: auto;
+  font-size: 12px;
+}
+
+.st-aside-head {
+  padding: 14px 18px 6px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-faint);
+  letter-spacing: 0.08em;
+}
+
+.st-slots {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px 12px;
+}
+
+.st-slotrow {
+  position: relative;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.st-slotrow:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+.st-slotrow[aria-current='true'] {
+  background: var(--bg-hover);
+}
+.st-slotrow[aria-current='true']::before {
+  content: '';
+  position: absolute;
+  left: -12px;
+  top: 12px;
+  bottom: 12px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent);
+}
+.st-slotrow-icon {
+  width: 34px;
+  height: 34px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-body);
+}
+.st-slotrow-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.st-slotrow-name {
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.st-slotrow-sub {
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.st-slotrow.empty .st-slotrow-sub {
+  color: var(--text-faint);
+}
+.st-slot-status {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+.st-slot-status.ok {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-body);
+}
+.st-slot-status.empty {
+  border: 1.5px dashed var(--text-faint);
+  color: var(--text-faint);
+}
+
+.st-drop-hint {
+  flex: none;
+  margin: 0 12px 12px;
+  padding: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 11px;
+  color: var(--text-faint);
+  font-size: 12px;
+  line-height: 1.55;
+}
+/* 能点的时候(选文件导入给这张卡) */
+button.st-drop-hint {
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+button.st-drop-hint:hover {
+  border-color: var(--text-faint);
+  color: var(--text-dim);
+}
+/* 把左栏撑满时,拖放框贴在底下 */
+.st-aside-fill {
+  flex: 1;
+  min-height: 12px;
+}
+
+/* ── 右栏 ── */
+
+.st-inspector {
+  width: 340px;
+  flex: none;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+.st-inspector-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 18px 14px;
+}
+.st-inspector-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 18px 16px;
+}
+.st-inspector-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+}
+.st-ihead-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.st-ihead-title {
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.st-ihead-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+/* 右栏头的缩略图:立绘 52 方、背景 80×45;选中的白描边 */
+.st-ihead-media {
+  width: 52px;
+  height: 52px;
+  flex: none;
+  border-radius: 13px;
+  object-fit: cover;
+  background: var(--bg-hover);
+  box-shadow: 0 0 0 1.5px var(--accent);
+}
+.st-ihead-media.wide {
+  width: 80px;
+  height: 45px;
+  border-radius: 9px;
+}
+
+.st-section {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 10px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.st-section.first {
+  border-top: 0;
+}
+.st-section-title {
+  font-size: 13.5px;
+  font-weight: 700;
+}
+.st-section-note {
+  margin: -4px 0 10px;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.st-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.st-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-dim);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.st-chip.strong {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+
+/* ── 「?」 ── */
+
+.st-help {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-faint);
+  font: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: help;
+}
+.st-help[aria-expanded='true'] {
+  border-color: var(--text);
+  color: var(--text);
+  background: var(--bg-hover);
+}
+.st-help:focus-visible {
+  outline: 1.5px solid var(--text-dim);
+  outline-offset: 2px;
+}
+
+.st-tip {
+  position: fixed;
+  z-index: 99;
+  width: 250px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg-hover);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.6);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.7;
+  text-align: left;
+  white-space: normal;
+  pointer-events: none;
+}
+
+/* ── 输入 ── */
+
+.st-textarea,
+.st-input,
+.st-tag-input,
+.st-num {
+  border: 1px solid var(--border);
+  background: var(--bg-raised);
+  color: var(--text);
+  font: inherit;
+  outline: none;
+}
+.st-textarea:focus,
+.st-input:focus,
+.st-tag-input:focus,
+.st-num:focus {
+  border-color: var(--text-faint);
+}
+
+.st-textarea {
+  display: block;
+  width: 100%;
+  padding: 9px 11px;
+  border-radius: 9px;
+  font-size: 13px;
+  line-height: 1.6;
+  resize: vertical;
+  field-sizing: content;
+}
+.st-textarea::placeholder,
+.st-input::placeholder,
+.st-tag-input::placeholder {
+  color: var(--text-faint);
+}
+
+.st-input {
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.st-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.st-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 26px;
+  padding: 0 4px 0 9px;
+  border-radius: 7px;
+  background: var(--bg-hover);
+  color: var(--text);
+  font-size: 12.5px;
+}
+.st-tag-x {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+.st-tag-x:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+.st-tag-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 7px;
+  background: none;
+  color: var(--text-faint);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.st-tag-add:hover {
+  color: var(--text);
+  border-color: var(--text-faint);
+}
+.st-tag-input {
+  width: 130px;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 7px;
+  font-size: 12.5px;
+}
+
+/* 一行:定宽标签 + 控件(下拉、滑块、数字) */
+.st-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+  margin-bottom: 8px;
+}
+.st-row.slider {
+  margin-bottom: 4px;
+}
+.st-row-label {
+  min-width: 52px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-dim);
+  font-size: 12.5px;
+}
+.st-row-value {
+  width: 46px;
+  flex: none;
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+}
+.st-row-note {
+  margin: -2px 0 8px 62px;
+  color: var(--text-faint);
+  font-size: 11.5px;
+}
+
+.st-select {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-raised);
+  color: var(--text);
+  font-size: 13px;
+}
+.st-select:hover {
+  border-color: var(--border-strong);
+}
+.st-select:focus-within {
+  border-color: var(--text-faint);
+}
+.st-select.empty .st-select-value {
+  color: var(--text-faint);
+}
+.st-select.disabled {
+  opacity: 0.45;
+}
+.st-select-value {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.st-select-sub {
+  flex: none;
+  max-width: 45%;
+  color: var(--text-faint);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.st-select > .st-icon {
+  color: var(--text-faint);
+}
+/* 系统下拉盖在上面、透明:点哪都是它,样子是底下那层 */
+.st-select select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  font: inherit;
+}
+.st-select select:disabled {
+  cursor: not-allowed;
+}
+
+/* 滑块:4px 的轨道,走过的那段浅色(--pct 由组件给) */
+.st-range {
+  flex: 1;
+  min-width: 0;
+  height: 18px;
+  margin: 0;
+  background: transparent;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  --pct: 50%;
+}
+.st-range:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.st-range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(to right, var(--text-body) var(--pct), var(--border-strong) var(--pct));
+}
+.st-range::-webkit-slider-thumb {
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border: 3px solid var(--bg);
+  border-radius: 50%;
+  background: var(--text);
+  box-shadow: 0 0 0 1px var(--border-strong);
+  appearance: none;
+  -webkit-appearance: none;
+}
+.st-range::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border-strong);
+}
+.st-range::-moz-range-progress {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--text-body);
+}
+.st-range::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border: 3px solid var(--bg);
+  border-radius: 50%;
+  background: var(--text);
+  box-shadow: 0 0 0 1px var(--border-strong);
+}
+.st-range:focus-visible {
+  outline: none;
+}
+.st-range:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 2px var(--text-dim);
+}
+
+/* 开关一行 */
+.st-switch-row {
+  width: 100%;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.st-switch-row:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.st-switch-label {
+  flex: 1;
+  min-width: 0;
+}
+.st-switch {
+  position: relative;
+  width: 34px;
+  height: 20px;
+  flex: none;
+  border-radius: 10px;
+  background: var(--border-strong);
+  transition: background 0.15s;
+}
+.st-switch.on {
+  background: var(--accent);
+}
+.st-switch-knob {
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s, background 0.15s;
+}
+.st-switch.on .st-switch-knob {
+  transform: translateX(14px);
+  background: var(--bg);
+}
+.st-switch-row:focus-visible .st-switch {
+  outline: 1.5px solid var(--text-dim);
+  outline-offset: 2px;
+}
+.st-switch-note {
+  margin: -4px 0 8px;
+  color: var(--text-faint);
+  font-size: 11.5px;
+}
+
+/* 数字小框 */
+.st-num {
+  width: 54px;
+  height: 30px;
+  flex: none;
+  padding: 0 4px;
+  border-radius: 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+  text-align: center;
+}
+.st-num-axis {
+  color: var(--text-faint);
+  font-size: 12px;
+}
+.st-num-hint {
+  display: inline-flex;
+  color: var(--text-faint);
+  cursor: help;
+}
+
+/* ── 主区顶上:包页签、类型小牌子 ── */
+
+.st-packtabs {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  background: var(--bg-panel);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.st-packtabs::-webkit-scrollbar {
+  display: none;
+}
+.st-packtab {
+  height: 42px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 14px 0 5px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.st-packtab:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+.st-packtab.selected {
+  background: var(--bg-hover);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  color: var(--text);
+}
+.st-packtab-thumb {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: 8px;
+  object-fit: cover;
+  opacity: 0.75;
+}
+.st-packtab.selected .st-packtab-thumb {
+  opacity: 1;
+}
+.st-packtab-icon {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+}
+.st-packtab-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+.st-packtab-name {
+  font-size: 13px;
+}
+.st-packtab.selected .st-packtab-name {
+  font-weight: 500;
+}
+.st-packtab-sub {
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+.st-packtab-add {
+  width: 42px;
+  height: 42px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px dashed var(--border-strong);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.st-packtab-add:hover {
+  color: var(--text);
+  border-color: var(--text-faint);
+}
+
+.st-type {
+  height: 26px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px 0 8px;
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-body);
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* ── 按钮 ── */
+
+.st-btn {
+  height: 32px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  font: inherit;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.st-btn.small {
+  height: 28px;
+  padding: 0 11px;
+  font-size: 12.5px;
+}
+.st-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.st-btn-primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--bg);
+  font-weight: 500;
+}
+.st-btn-primary:hover:not(:disabled) {
+  background: #fff;
+}
+.st-btn-secondary {
+  border-color: var(--border-strong);
+  background: var(--bg-raised);
+  color: var(--text);
+}
+.st-btn-secondary > .st-icon {
+  color: var(--text-dim);
+}
+.st-btn-secondary:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+.st-btn-ghost {
+  background: transparent;
+  color: var(--text-dim);
+}
+.st-btn-ghost:hover:not(:disabled) {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
+}
+.st-btn-danger {
+  background: transparent;
+  color: var(--danger);
+}
+.st-btn-danger:hover:not(:disabled) {
+  background: rgba(248, 113, 113, 0.08);
+}
+/* 确认框里的红色「删除」 */
+.st-btn.st-btn-danger-solid {
+  border-color: rgba(248, 113, 113, 0.45);
+  background: rgba(248, 113, 113, 0.14);
+  color: var(--danger);
+}
+.st-btn.st-btn-danger-solid:hover:not(:disabled) {
+  background: rgba(248, 113, 113, 0.22);
+}
+.st-btn:focus-visible,
+.st-iconbtn:focus-visible,
+.st-tab:focus-visible,
+.st-slotrow:focus-visible,
+.st-packtab:focus-visible,
+.st-packtab-add:focus-visible,
+.st-link:focus-visible,
+.st-menu-item:focus-visible {
+  outline: 1.5px solid var(--text-dim);
+  outline-offset: 2px;
+}
+
+.st-iconbtn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.st-iconbtn.filled {
+  border: 1px solid var(--border-strong);
+  background: var(--bg-raised);
+}
+.st-iconbtn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.st-iconbtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── 「⋯」菜单 ── */
+
+.st-menu {
+  position: fixed;
+  z-index: 99;
+  min-width: 180px;
+  max-width: calc(100vw - 16px);
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--bg-raised);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.6);
+  font-family: var(--sans);
+}
+.st-menu-item {
+  height: 32px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.st-menu-item:hover:not(:disabled),
+.st-menu-item:focus-visible {
+  background: var(--bg-hover);
+}
+.st-menu-item.danger {
+  color: var(--danger);
+}
+.st-menu-item:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── 从卡编辑器里打开的插件抽屉(PluginSheet.tsx):开在这一页上面,顶栏 52 不盖 ── */
+
+.st-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 95;
+  background: rgba(0, 0, 0, 0.5);
+}
+/* 抽屉比这一层矮时,下面空着的地方也算背景:点了关 */
+.st-sheet-box {
+  position: absolute;
+  top: calc(52px + env(safe-area-inset-top));
+  bottom: 0;
+  left: 0;
+  right: 0;
+  width: min(1100px, 100%);
+  margin: 0 auto;
+  pointer-events: none;
+}
+.st-sheet-box > * {
+  pointer-events: auto;
+}
+
+/* ── 弹窗 ── */
+
+.st-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 96;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.6);
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+}
+.st-modal {
+  width: min(440px, 100%);
+  max-height: calc(100dvh - 32px);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  background: var(--bg-panel);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+}
+.st-modal-title {
+  padding: 18px 20px 8px;
+  font-size: 16px;
+  font-weight: 700;
+}
+.st-modal-body {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 20px 16px;
+  color: var(--text-dim);
+  line-height: 1.7;
+}
+.st-modal-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 20px 16px;
+  border-top: 1px solid var(--border);
+}
+.st-prompt {
+  display: block;
+}
+
+/* ══════════ 立绘栏(slots/SpriteSlot、editors/SpritePackEditor) ══════════ */
+
+/* 按脸裁的小头像(FaceThumb):方框 + 里面按 faceCrop 放大挪位的整张图;大小由外面的类定 */
+.st-face {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  overflow: hidden;
+  background: var(--bg-hover);
+  color: var(--text-faint);
+}
+.st-face > img {
+  position: absolute;
+  display: block;
+  max-width: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.st-face > img.cropped {
+  height: auto;
+}
+/* 没认出脸:对着图的上半截 */
+.st-face > img.top {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 0;
+}
+.st-face-56 {
+  width: 56px;
+  height: 56px;
+  border-radius: 10px;
+}
+.st-face.st-ihead-media {
+  box-shadow: 0 0 0 1.5px var(--accent);
+}
+/* 包页签里的 32px 小头像 */
+.st-packtab-media {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  display: inline-flex;
+  border-radius: 8px;
+  overflow: hidden;
+  opacity: 0.75;
+}
+.st-packtab.selected .st-packtab-media {
+  opacity: 1;
+}
+/* 包页签、「从素材库选」里:小头像填满外面那个方块 */
+.st-packtab-media > .st-face,
+.st-picker-media > .st-face {
+  width: 100%;
+  height: 100%;
+}
+
+/* 表情差分网格:每格 56px 头像 + 名字,最后一格「添加差分」 */
+.st-faces {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  gap: 8px;
+}
+.st-face-tile {
+  position: relative;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 4px 6px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--bg-panel);
+  box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.st-face-tile:hover {
+  background: var(--bg-raised);
+}
+.st-face-tile.selected {
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+  color: var(--text);
+}
+.st-face-tile.selected .st-face-label {
+  font-weight: 500;
+}
+.st-face-tile:focus-visible {
+  outline: 1.5px solid var(--text-dim);
+  outline-offset: 2px;
+}
+.st-face-tile.off > .st-face {
+  opacity: 0.45;
+}
+.st-face-tile.dragging {
+  opacity: 0.4;
+}
+/* 拖动排序时的落点:目标格子左 / 右边一道亮线 */
+.st-face-tile.drop-before::after,
+.st-face-tile.drop-after::after {
+  content: '';
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.st-face-tile.drop-before::after {
+  left: -6px;
+}
+.st-face-tile.drop-after::after {
+  right: -6px;
+}
+.st-face-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 右上角:★ 默认差分(亮底)、✦ 设了入场动效(暗底) */
+.st-face-badge {
+  position: absolute;
+  right: 5px;
+  top: 5px;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+.st-face-badge.star {
+  background: var(--accent);
+  color: var(--bg);
+}
+.st-face-badge.fx {
+  background: rgba(14, 14, 14, 0.7);
+  color: var(--text);
+}
+.st-face-off {
+  position: absolute;
+  left: 50%;
+  top: 46px;
+  transform: translateX(-50%);
+  padding: 0 5px;
+  border-radius: 4px;
+  background: rgba(14, 14, 14, 0.8);
+  color: var(--text-dim);
+  font-size: 10.5px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+/* 正在传的那几格 */
+.st-face-tile.uploading {
+  cursor: default;
+}
+.st-face-tile.uploading > .st-face {
+  opacity: 0.5;
+}
+.st-face-tile.uploading.fail {
+  box-shadow: inset 0 0 0 1px rgba(248, 113, 113, 0.5);
+}
+.st-face-progress {
+  position: absolute;
+  left: 50%;
+  top: 22px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border-radius: 9px;
+  background: rgba(14, 14, 14, 0.82);
+  color: var(--text);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.st-face-tile.fail .st-face-progress {
+  color: var(--danger);
+}
+.st-face-add {
+  min-width: 0;
+  min-height: 95px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 4px;
+  border: 1.5px dashed var(--border-strong);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text-faint);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.st-face-add:hover {
+  border-color: var(--text-faint);
+  color: var(--text);
+}
+.st-face-add:focus-visible {
+  outline: 1.5px solid var(--text-dim);
+  outline-offset: 2px;
+}
+
+/* 右栏:名字(点了改)、「设为默认差分」、空着时的说明 */
+.st-ihead-name {
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: text;
+}
+.st-ihead-name:hover {
+  text-decoration: underline dotted var(--text-faint);
+  text-underline-offset: 4px;
+}
+.st-ihead-name:focus-visible {
+  outline: 1.5px solid var(--text-dim);
+  outline-offset: 2px;
+}
+.st-ihead-input {
+  width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--text-faint);
+  border-radius: 7px;
+  background: var(--bg-raised);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  outline: none;
+}
+.st-link.small {
+  font-size: 12px;
+}
+.st-link:disabled {
+  color: var(--text-faint);
+  text-decoration: none;
+  cursor: default;
+}
+.st-gap {
+  height: 14px;
+}
+.st-gap.small {
+  height: 6px;
+}
+.st-inspector-hint {
+  margin: 16px 0 0;
+  color: var(--text-faint);
+  font-size: 12.5px;
+  line-height: 1.75;
+}
+.st-btn-danger.armed {
+  border-color: rgba(248, 113, 113, 0.45);
+  background: rgba(248, 113, 113, 0.12);
+}
+.st-dialog-p {
+  margin: 0 0 8px;
+}
+
+/* 还没挂东西:主区中间的说明 + 两个按钮 */
+.st-empty {
+  flex: 1;
+  min-height: 300px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px 16px;
+  border: 1.5px dashed var(--border-strong);
+  border-radius: 14px;
+  text-align: center;
+}
+.st-empty-icon {
+  width: 52px;
+  height: 52px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 4px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-dim);
+}
+.st-empty-title {
+  font-size: 15px;
+  font-weight: 700;
+}
+.st-empty-note {
+  color: var(--text-faint);
+  font-size: 12.5px;
+}
+.st-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+/* 舞台右上角的下拉小牌子(背景:XX ⌄):样子是 .st-stage-chip,上面盖一层透明的系统下拉 */
+.st-stage-pick {
+  position: relative;
+}
+.st-stage-pick.single {
+  cursor: default;
+}
+.st-stage-pick > select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  font: inherit;
+}
+.st-stage-pick:focus-within {
+  outline: 2px solid rgba(255, 255, 255, 0.6);
+  outline-offset: 1px;
+}
+
+/* 「从素材库选」弹窗 */
+.st-modal.st-picker {
+  width: min(520px, 100%);
+  height: min(620px, calc(100dvh - 32px));
+}
+.st-picker .st-modal-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 12px;
+}
+.st-picker-search {
+  position: relative;
+  display: block;
+  flex: none;
+}
+.st-picker-search > .st-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-faint);
+  pointer-events: none;
+}
+.st-picker-search > .st-input {
+  height: 34px;
+  padding-left: 32px;
+}
+.st-picker-list {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 -8px;
+  overflow-y: auto;
+}
+.st-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 7px 10px 7px 8px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-faint);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.st-picker-row:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.st-picker-row:focus-visible {
+  outline: 1.5px solid var(--text-dim);
+  outline-offset: -1.5px;
+}
+.st-picker-row.bound {
+  cursor: default;
+  opacity: 0.55;
+}
+.st-picker-media {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  overflow: hidden;
+  background: var(--bg-hover);
+  color: var(--text-faint);
+}
+.st-picker-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.st-picker-name {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.st-picker-name .st-chip {
+  height: 20px;
+  padding: 0 7px;
+  font-size: 11px;
+}
+.st-picker-title {
+  min-width: 0;
+  color: var(--text);
+  font-size: 13.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.st-picker-sub {
+  color: var(--text-faint);
+  font-size: 12px;
+}
+.st-picker-state {
+  flex: none;
+  font-size: 12px;
+}
+.st-picker-empty {
+  padding: 32px 8px;
+  color: var(--text-faint);
+  text-align: center;
+}
+.st-picker .st-modal-foot {
+  align-items: center;
+}
+
+/* ══════════ 背景栏、BGM 栏(slots/BackgroundSlot、BgmSlot,editors/BackgroundPackEditor、BgmPackEditor) ══════════ */
+
+/* 网格上面那行右边带按钮(「添加背景」「添加曲子」);窄了小字先让 */
+.st-grid-head.with-action {
+  align-items: center;
+}
+.st-grid-head.with-action > .st-grid-title {
+  flex: none;
+}
+.st-grid-head.with-action > .st-grid-note {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 「从素材库选」里背景包的缩略图:填满 40px 方块 */
+.st-picker-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+/* 右栏头:还没传图的背景 */
+.st-ihead-blank {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+}
+
+/* 试听的圆按钮:solid 浅色实心(舞台、右栏);ghost 描边的小圆(曲目表),在放的那行变实心 */
+.st-play {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0 0 2px;
+  border: 0;
+  border-radius: 50%;
+  font: inherit;
+  cursor: pointer;
+}
+.st-play.on {
+  padding-left: 0;
+}
+.st-play.solid {
+  background: var(--accent);
+  color: var(--bg);
+}
+.st-play.solid:hover:not(:disabled) {
+  background: #fff;
+}
+.st-play.ghost {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+  color: var(--text-dim);
+}
+.st-play.ghost:hover:not(:disabled) {
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--text-faint);
+}
+.st-play.ghost.on {
+  background: var(--accent);
+  box-shadow: none;
+  color: var(--bg);
+}
+.st-play:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.st-play:focus-visible {
+  outline: 1.5px solid var(--text-dim);
+  outline-offset: 2px;
+}
+
+/* 播放条上的小音浪:放着时跳 */
+.st-bars {
+  height: 16px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.st-bars > i {
+  width: 3px;
+  min-height: 3px;
+  border-radius: 1.5px;
+  background: rgba(255, 255, 255, 0.28);
+}
+.st-bars.on > i {
+  background: var(--text);
+  animation: st-bar 0.9s ease-in-out infinite alternate;
+}
+@keyframes st-bar {
+  from {
+    transform: scaleY(0.35);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .st-bars.on > i {
+    animation: none;
+  }
+}
+
+/* 舞台右上角两个开关(叠上立绘 / 手机竖屏) */
+.st-stage-toggles {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 15px;
+  background: rgba(14, 14, 14, 0.62);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.st-stage-toggle {
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text-faint);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.st-stage-toggle:hover {
+  color: var(--text);
+}
+.st-stage-toggle[aria-pressed='true'] {
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--text);
+}
+.st-stage-toggle:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.6);
+  outline-offset: 1px;
+}
+
+/* 舞台左下角:这张背景的默认 BGM */
+.st-stage-bgm {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  max-width: calc(100% - 28px);
+  height: 34px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px 0 4px;
+  border-radius: 17px;
+  background: rgba(14, 14, 14, 0.72);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: var(--text);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.st-stage-bgm > .st-icon {
+  color: var(--text-dim);
+}
+.st-stage-bgm.idle {
+  padding-left: 12px;
+  color: var(--text-dim);
+}
+.st-stage-bgm-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@container (max-width: 520px) {
+  .st-stage-bgm .st-bars {
+    display: none;
+  }
+}
+
+/* 背景网格:16:9 缩略图 + 名字 + 「♪ 默认 BGM」 */
+.st-bgs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+  gap: 8px;
+}
+.st-bg-tile {
+  position: relative;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 5px 5px 6px;
+  border: 0;
+  border-radius: 11px;
+  background: var(--bg-panel);
+  box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--text-dim);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.st-bg-tile:hover {
+  background: var(--bg-raised);
+}
+.st-bg-tile.selected {
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+  color: var(--text);
+}
+.st-bg-tile.selected .st-bg-name {
+  font-weight: 500;
+}
+.st-bg-tile:focus-visible {
+  outline: 1.5px solid var(--text-dim);
+  outline-offset: 2px;
+}
+.st-bg-tile.off .st-bg-thumb > img {
+  opacity: 0.4;
+}
+.st-bg-tile.uploading {
+  cursor: default;
+}
+.st-bg-tile.uploading .st-bg-thumb > img {
+  opacity: 0.5;
+}
+.st-bg-tile.uploading.fail {
+  box-shadow: inset 0 0 0 1px rgba(248, 113, 113, 0.5);
+}
+.st-bg-tile.fail .st-face-progress {
+  color: var(--danger);
+}
+.st-bg-thumb {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  overflow: hidden;
+  background: var(--bg-hover);
+  color: var(--text-faint);
+}
+.st-bg-thumb > img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+.st-bg-thumb > .st-face-badge {
+  right: 4px;
+  top: 4px;
+}
+.st-bg-thumb > .st-face-progress {
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+.st-bg-flag {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  padding: 0 6px;
+  border-radius: 4px;
+  background: rgba(14, 14, 14, 0.8);
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 17px;
+}
+.st-bg-name {
+  padding: 0 2px;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.st-bg-bgm {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 2px;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+.st-bg-bgm > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 不换、放不出来(停用 / 没绑的包)的淡一点 */
+.st-bg-bgm.none > span,
+.st-bg-bgm.off > span,
+.st-bg-bgm.foreign > span {
+  opacity: 0.7;
+}
+
+/* 右栏「默认 BGM」:▶ + 下拉一行,下面小字 */
+.st-bgm-pick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.st-bgm-note {
+  margin-bottom: 14px;
+  color: var(--text-faint);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.st-bgm-note.warn {
+  margin-bottom: 6px;
+  color: var(--st-amber);
+}
+.st-bgm-note.first {
+  margin-top: 4px;
+}
+
+/* BGM 栏的曲目表(照声音栏「情绪参考」那张表的样子):列宽在表上定,每一行用 subgrid 对齐 */
+.st-tracks {
+  flex: none;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 0.9fr) minmax(0, 1fr) minmax(0, 2fr) max-content 44px;
+  column-gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg-panel);
+  overflow: hidden;
+}
+.st-tracks > * {
+  grid-column: 1 / -1;
+}
+.st-tracks-head {
+  padding: 12px 14px 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.st-track {
+  min-height: 46px;
+  display: grid;
+  grid-template-columns: subgrid;
+  align-items: center;
+  padding: 6px 14px;
+  border-top: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 13px;
+  cursor: pointer;
+}
+.st-tracks-head + .st-track {
+  border-top: 0;
+}
+.st-track:hover {
+  background: rgba(255, 255, 255, 0.025);
+}
+.st-track.selected {
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: inset 2px 0 0 var(--accent);
+  color: var(--text);
+}
+.st-track.off .st-track-label,
+.st-track.off .st-track-desc {
+  opacity: 0.5;
+}
+.st-track.uploading {
+  cursor: default;
+}
+.st-track-name {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.st-track-name.static {
+  cursor: default;
+}
+.st-track-name:focus-visible {
+  outline: 1.5px solid var(--text-dim);
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+.st-track-index {
+  flex: none;
+  min-width: 14px;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.st-track-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.st-track.selected .st-track-label {
+  font-weight: 500;
+}
+.st-track-aliases {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+  color: var(--text-faint);
+}
+.st-track-alias {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.st-track-more {
+  flex: none;
+  font-size: 11.5px;
+}
+.st-track-desc {
+  min-width: 0;
+  color: var(--text-dim);
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.st-track-marks {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.st-track-marks .st-chip {
+  height: 21px;
+  padding: 0 8px;
+  font-size: 11.5px;
+}
+.st-track-used {
+  color: var(--text-faint);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.st-track-time {
+  text-align: right;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+.st-track-spin {
+  width: 28px;
+  display: inline-flex;
+  justify-content: center;
+}
+.st-track.fail {
+  color: var(--danger);
+}
+.st-tracks-empty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 28px 16px;
+  color: var(--text-faint);
+  font-size: 12.5px;
+  text-align: center;
+}
+.st-tracks-tip {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* 右栏「这些背景切过来时放它」 */
+.st-bgm-users {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+}
+.st-bgm-user {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 12.5px;
+}
+.st-bgm-user > img,
+.st-bgm-user-blank {
+  width: 48px;
+  height: 27px;
+  flex: none;
+  border-radius: 5px;
+  object-fit: cover;
+  background: var(--bg-hover);
+}
+.st-bgm-user-name {
+  min-width: 0;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.st-bgm-user-pack {
+  flex: none;
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: 11.5px;
+}
+.st-bgm-file {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 8px;
+  color: var(--text-dim);
+  font-size: 12.5px;
+  word-break: break-all;
+}
+.st-bgm-file > .st-icon {
+  color: var(--text-faint);
+}
+
+/* ══════════ 窄屏(< 900px):三栏改成上下排,整页滚 ══════════ */
+
+@media (max-width: 899px) {
+  .st-root {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .st-header {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    gap: 6px;
+    padding: 0 10px 0 4px;
+  }
+  .st-header-name {
+    max-width: 28vw;
+  }
+  .st-tabs {
+    margin-left: 4px;
+  }
+  .st-tab {
+    padding: 0 10px;
+  }
+  .st-save {
+    margin-right: 0;
+  }
+  .st-save-label {
+    display: none;
+  }
+  .st-notice {
+    flex-wrap: wrap;
+    row-gap: 4px;
+    padding: 8px 8px 8px 12px;
+  }
+  .st-notice-title,
+  .st-notice-detail {
+    white-space: normal;
+  }
+  /* 标题和前面的 ✓ 留在同一行 */
+  .st-notice-title {
+    flex: 1 1 0;
+    min-width: 60%;
+  }
+  .st-notice-sep {
+    display: none;
+  }
+
+  .st-body {
+    flex: none;
+    flex-direction: column;
+    min-height: auto;
+  }
+  .st-slot {
+    flex-direction: column;
+  }
+
+  /* 左栏只剩一排横着滚的栏目标签 */
+  .st-aside {
+    width: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    overflow: visible;
+  }
+  .st-card,
+  .st-aside-head,
+  .st-aside-fill,
+  .st-drop-hint {
+    display: none;
+  }
+  .st-slots {
+    flex-direction: row;
+    gap: 6px;
+    padding: 8px 12px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .st-slots::-webkit-scrollbar {
+    display: none;
+  }
+  .st-slotrow {
+    width: auto;
+    flex: none;
+    gap: 8px;
+    padding: 5px 12px 5px 5px;
+    border-radius: 10px;
+    background: var(--bg-raised);
+  }
+  .st-slotrow[aria-current='true'] {
+    background: var(--bg-hover);
+    box-shadow: inset 0 0 0 1.5px var(--accent);
+  }
+  .st-slotrow[aria-current='true']::before,
+  .st-slot-status {
+    display: none;
+  }
+  .st-slotrow-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+  }
+  .st-slotrow-name {
+    font-size: 13px;
+  }
+  .st-slotrow-sub {
+    max-width: 150px;
+    font-size: 11.5px;
+  }
+
+  .st-main {
+    overflow: visible;
+    padding: 12px;
+  }
+  /* 类型小牌子和「⋯」一行,包页签另起一行占满 */
+  .st-slot-bar {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+  .st-slot-bar > .st-packtabs {
+    order: 1;
+    flex-basis: 100%;
+  }
+  .st-inspector {
+    width: auto;
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+  .st-inspector-body {
+    overflow: visible;
+  }
+  /* 曲目表:别名、描述、「被几张背景用」让位 */
+  .st-tracks {
+    grid-template-columns: 28px minmax(0, 1fr) max-content 40px;
+    column-gap: 10px;
+  }
+  .st-track {
+    padding: 6px 10px;
+  }
+  .st-track-aliases,
+  .st-track-desc,
+  .st-track-used {
+    display: none;
+  }
+}
+
+/* 手机竖屏:顶栏放不下,头像和保存状态先让位给卡名 */
+@media (max-width: 520px) {
+  /* 表情差分网格一行放五个左右,头像缩到 48 */
+  .st-faces {
+    grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+    gap: 6px;
+  }
+  .st-face-tile {
+    padding: 6px 2px 5px;
+    font-size: 12px;
+  }
+  .st-face-tile > .st-face-56 {
+    width: 48px;
+    height: 48px;
+  }
+  .st-face-off {
+    top: 38px;
+  }
+  .st-face-progress {
+    top: 16px;
+  }
+  .st-face-add {
+    min-height: 78px;
+  }
+  .st-bgs {
+    grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+    gap: 6px;
+  }
+  .st-empty {
+    min-height: 240px;
+  }
+  .st-header-avatar,
+  .st-save {
+    display: none;
+  }
+  .st-header-name {
+    max-width: none;
+    flex: 0 1 auto;
+  }
+}

@@ -183,6 +183,33 @@ body.dragging-columns {
   padding-right: 10px;
 }
 
+/* 测试环境的小牌子(components/EnvBadge.tsx;构建时设了 VITE_ENV_LABEL 才有):红底白字,一眼看出不是正式版 */
+.env-badge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 4px;
+  background: #c62828;
+  color: #fff;
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+/* 视觉小说里:钉在左上角,压在游戏画面上(90)、卡编辑器(92)下面,不挡点击 */
+.env-badge.floating {
+  position: fixed;
+  top: calc(env(safe-area-inset-top) + 8px);
+  left: calc(env(safe-area-inset-left) + 8px);
+  z-index: 91;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+}
+
 .topbar-spacer {
   flex: 1;
 }
@@ -964,6 +991,11 @@ body.dragging-columns {
   background: var(--accent);
   transform: translateX(11px);
 }
+/* Jev 标的那几路的插件块:开关点不动 */
+.block-toggle:disabled {
+  cursor: not-allowed;
+  border-style: dashed;
+}
 
 .block-name {
   flex: 1;
@@ -1010,6 +1042,20 @@ body.dragging-columns {
 }
 .badge-plugin {
   color: var(--accent);
+  border-style: dashed;
+  font-family: inherit;
+  letter-spacing: 0;
+}
+/* 这次组装自动补上的插件块(不在预设里):灰、左边一道虚线,不能拖、不能开关 */
+.block-row.auto .block-head {
+  box-shadow: inset 2px 0 0 var(--border-strong);
+  color: var(--text-dim);
+}
+.block-row.auto .block-grip {
+  cursor: default;
+}
+.badge-auto {
+  color: var(--text-dim);
   border-style: dashed;
   font-family: inherit;
   letter-spacing: 0;
@@ -1663,21 +1709,16 @@ body.dragging-columns {
   resize: none;
 }
 
-/* 面板底部的「高级设置」入口:常驻可见,不跟着面板内容滚走 */
-/* 整行是按钮的折叠行(角色卡的「高级设置」):长得和能展开的那种一样 */
-.field-head-btn {
-  width: 100%;
-  border: 0;
-  background: none;
-  color: inherit;
-  text-align: left;
+/* 角色卡面板里卡编辑器的两个入口(「编辑资料」「素材」),一行平分 */
+.card-studio-links {
+  display: flex;
+  gap: 6px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #242424;
 }
-.field-head-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-.field-name-sub {
-  color: var(--text-faint);
+.card-studio-links .btn {
+  flex: 1;
+  padding: 6px 10px;
 }
 
 .card-field-head {
@@ -1750,270 +1791,7 @@ body.dragging-columns {
   color: var(--danger);
 }
 
-/* ══════════ 角色卡完整编辑抽屉 ══════════ */
-
-.ce-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.66);
-  display: flex;
-  justify-content: flex-end;
-  z-index: 60;
-}
-
-.ce-drawer {
-  width: min(1020px, 96vw);
-  height: 100%;
-  background: var(--bg-panel);
-  border-left: 1px solid var(--border-strong);
-  display: flex;
-  flex-direction: column;
-  animation: slide-in 0.16s ease-out;
-}
-
-.ce-head {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-
-.ce-avatar-btn {
-  flex-shrink: 0;
-  padding: 0;
-  border: none;
-  background: none;
-  cursor: pointer;
-}
-
-.ce-avatar {
-  width: 40px;
-  height: 40px;
-  object-fit: cover;
-  border-radius: 4px;
-  border: 1px solid var(--border-strong);
-  display: block;
-}
-.ce-avatar.placeholder {
-  display: grid;
-  place-items: center;
-  font-family: var(--mono);
-  font-size: 9px;
-  color: var(--text-faint);
-  background: var(--bg-raised);
-}
-
-.ce-name-input {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text);
-  background: none;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  padding: 4px 8px;
-  min-width: 120px;
-  max-width: 300px;
-}
-.ce-name-input:hover {
-  border-color: var(--border);
-}
-.ce-name-input:focus {
-  outline: none;
-  border-color: var(--accent-dim);
-  background: var(--bg-raised);
-}
-
-.ce-head-tag {
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.1em;
-  color: var(--accent);
-}
-
-.ce-main {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-}
-
-.ce-nav {
-  width: 196px;
-  flex-shrink: 0;
-  border-right: 1px solid var(--border);
-  overflow-y: auto;
-  padding: 12px 8px;
-  display: flex;
-  flex-direction: column;
-}
-
-.ce-nav-group {
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  color: var(--text-faint);
-  padding: 8px 8px 4px;
-}
-.ce-nav-group:first-child {
-  padding-top: 0;
-}
-
-.ce-nav-item {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 6px 8px;
-  border-radius: 4px;
-  font-size: 12px;
-  color: var(--text-dim);
-  text-align: left;
-  border: none;
-  background: none;
-  cursor: pointer;
-}
-.ce-nav-item:hover {
-  background: var(--bg-raised);
-  color: var(--text);
-}
-.ce-nav-item.active {
-  background: var(--bg-raised);
-  color: var(--accent);
-}
-
-.ce-nav-seq {
-  font-family: var(--mono);
-  font-size: 10px;
-  width: 26px;
-  flex-shrink: 0;
-  color: var(--accent);
-}
-.ce-nav-seq.empty {
-  color: var(--text-faint);
-}
-.ce-nav-seq.muted {
-  color: var(--text-faint);
-  text-align: center;
-}
-.ce-nav-seq.disabled,
-.ce-nav-seq.silent,
-.ce-nav-seq.missing,
-.ce-nav-seq.forbidden,
-.ce-nav-seq.unknown {
-  color: var(--danger, #e06c75);
-}
-
-.ce-nav-label {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ce-nav-token {
-  font-family: var(--mono);
-  font-size: 10px;
-  color: var(--text-faint);
-  flex-shrink: 0;
-}
-.ce-nav-token.disabled,
-.ce-nav-token.silent,
-.ce-nav-token.missing,
-.ce-nav-token.forbidden {
-  color: var(--danger, #e06c75);
-}
-.ce-nav-token.muted {
-  color: var(--text-faint);
-}
-
-.ce-nav-foot {
-  margin-top: auto;
-  padding: 12px 8px 2px;
-  border-top: 1px solid var(--border);
-  font-size: 11px;
-  color: var(--text-dim);
-  line-height: 1.8;
-}
-.ce-nav-foot b {
-  color: var(--text);
-}
-.ce-nav-warn {
-  color: var(--danger, #e06c75);
-}
-
-.ce-body {
-  flex: 1;
-  overflow-y: auto;
-  min-width: 0;
-  padding: 16px 20px 40px;
-  scroll-padding-top: 12px;
-}
-
-.ce-section {
-  margin-bottom: 26px;
-  scroll-margin-top: 12px;
-}
-
-.ce-sec-head {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  margin-bottom: 4px;
-}
-
-.ce-seq {
-  font-family: var(--mono);
-  font-size: 12px;
-  color: var(--accent);
-  flex-shrink: 0;
-}
-.ce-seq.muted {
-  color: var(--text-faint);
-}
-.ce-seq.disabled,
-.ce-seq.silent,
-.ce-seq.missing,
-.ce-seq.forbidden,
-.ce-seq.unknown {
-  color: var(--danger, #e06c75);
-}
-
-.ce-sec-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text);
-}
-
-.ce-sec-target {
-  font-family: var(--mono);
-  font-size: 10px;
-  color: var(--text-faint);
-}
-
-.ce-sec-token {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--text-dim);
-}
-
-.ce-sec-hint {
-  font-size: 11px;
-  color: var(--text-faint);
-  line-height: 1.6;
-  margin-bottom: 8px;
-}
-
-.ce-sec-warn {
-  font-size: 11px;
-  color: var(--danger, #e06c75);
-  border: 1px solid var(--danger, #e06c75);
-  border-left-width: 3px;
-  border-radius: 4px;
-  padding: 6px 10px;
-  margin-bottom: 8px;
-  background: rgba(224, 108, 117, 0.06);
-}
+/* ══════════ 世界书编辑器沿用的样式(原来资料编辑抽屉的那几条) ══════════ */
 
 .ce-textarea {
   width: 100%;
@@ -2031,109 +1809,11 @@ body.dragging-columns {
   outline: none;
   border-color: var(--accent-dim);
 }
-/* 不会发出去的字段,框子也标红 */
-.ce-section.disabled .ce-textarea,
-.ce-section.silent .ce-textarea,
-.ce-section.missing .ce-textarea,
-.ce-section.forbidden .ce-textarea {
-  border-color: var(--danger, #e06c75);
-}
-
 .ce-sec-foot {
   display: flex;
   align-items: center;
   gap: 10px;
   margin-top: 6px;
-}
-
-.ce-wrap {
-  font-family: var(--mono);
-  font-size: 10px;
-  color: var(--text-faint);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 60%;
-}
-
-.ce-preview-toggle {
-  font-size: 11px;
-  color: var(--text-faint);
-  border: none;
-  background: none;
-  cursor: pointer;
-  padding: 2px 0;
-}
-.ce-preview-toggle:hover:not(:disabled) {
-  color: var(--accent);
-}
-.ce-preview-toggle:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.ce-preview {
-  margin-top: 8px;
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--accent-dim);
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.ce-preview-role {
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  color: var(--text-faint);
-  padding: 4px 10px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-raised);
-}
-
-.ce-preview-body {
-  padding: 8px 10px;
-  font-size: 12px;
-  line-height: 1.6;
-  white-space: pre-wrap;
-  word-break: break-word;
-  margin: 0;
-  color: var(--text-dim);
-}
-
-.ce-divider {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  color: var(--text-faint);
-  margin: 34px 0 18px;
-  padding-top: 18px;
-  border-top: 1px solid var(--border);
-}
-.ce-divider span {
-  font-size: 10px;
-  letter-spacing: 0;
-}
-
-.ce-meta-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  margin-bottom: 10px;
-}
-
-.ce-inline-field {
-  display: block;
-  margin-bottom: 10px;
-}
-.ce-inline-field > span {
-  display: block;
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--text-dim);
-  margin-bottom: 4px;
 }
 
 .ce-book {
@@ -2400,188 +2080,6 @@ body.dragging-columns {
   color: var(--text);
 }
 
-/* ══════════ 抽屉右缘:竖版 token 明细条 ══════════ */
-
-/* 收起时的竖排小条,点开向右展开面板 */
-.ce-tok-toggle {
-  width: 26px;
-  flex-shrink: 0;
-  border-left: 1px solid var(--border);
-  writing-mode: vertical-rl;
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.18em;
-  color: var(--text-faint);
-}
-.ce-tok-toggle:hover {
-  color: var(--accent);
-  background: var(--bg-raised);
-}
-.ce-tok-toggle.active {
-  color: var(--accent);
-}
-
-.ce-tok-panel {
-  width: 224px;
-  flex-shrink: 0;
-  border-left: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  background: var(--bg-panel);
-}
-
-.ce-tok-head {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 11px 14px;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-.ce-tok-title {
-  font-family: var(--mono);
-  font-size: 12px;
-  letter-spacing: 0.1em;
-  color: var(--accent);
-}
-.ce-tok-sub {
-  font-family: var(--mono);
-  font-size: 10px;
-  color: var(--text-faint);
-  margin-left: auto;
-}
-
-.ce-tok-body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  display: flex;
-  gap: 12px;
-  padding: 14px;
-}
-
-/* 竖条本体:0 在顶,向下堆叠;预算线横贯 */
-.ce-tok-bar {
-  position: relative;
-  width: 30px;
-  flex-shrink: 0;
-  align-self: stretch;
-  min-height: 200px;
-  background: var(--bg);
-  border: 1px solid var(--border-strong);
-  border-radius: 4px;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-.ce-tok-seg {
-  width: 100%;
-  flex-shrink: 0;
-}
-.ce-tok-seg.preset {
-  background: var(--seg-preset);
-}
-.ce-tok-seg.persona {
-  background: var(--seg-persona);
-}
-.ce-tok-seg.card {
-  background: var(--seg-card);
-}
-.ce-tok-seg.examples {
-  background: var(--seg-examples);
-}
-.ce-tok-seg.worldInfo {
-  background: var(--seg-worldinfo);
-}
-.ce-tok-seg.history {
-  background: var(--seg-history);
-}
-/* 固定开销超预算:固定各段转红,历史本就一条都进不来 */
-.ce-tok-bar.overflow .ce-tok-seg:not(.history) {
-  background: var(--danger);
-}
-
-.ce-tok-tick,
-.ce-tok-limit {
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 0;
-  pointer-events: none;
-}
-.ce-tok-tick {
-  border-top: 1px dashed var(--text-faint);
-}
-.ce-tok-limit {
-  border-top: 2px solid var(--accent);
-}
-
-.ce-tok-legend {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  font-size: 11px;
-}
-.ce-tok-legend-row {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-.ce-tok-swatch {
-  width: 8px;
-  height: 8px;
-  border-radius: 2px;
-  flex-shrink: 0;
-}
-.ce-tok-swatch.preset {
-  background: var(--seg-preset);
-}
-.ce-tok-swatch.persona {
-  background: var(--seg-persona);
-}
-.ce-tok-swatch.card {
-  background: var(--seg-card);
-}
-.ce-tok-swatch.examples {
-  background: var(--seg-examples);
-}
-.ce-tok-swatch.worldInfo {
-  background: var(--seg-worldinfo);
-}
-.ce-tok-swatch.history {
-  background: var(--seg-history);
-}
-.ce-tok-legend-name {
-  flex: 1;
-  min-width: 0;
-  color: var(--text-dim);
-}
-.ce-tok-legend-tokens {
-  font-family: var(--mono);
-  font-size: 10px;
-  color: var(--text-faint);
-}
-
-.ce-tok-foot {
-  padding: 10px 14px;
-  border-top: 1px solid var(--border);
-  font-size: 11px;
-  color: var(--text-dim);
-  line-height: 1.8;
-  flex-shrink: 0;
-}
-.ce-tok-foot b {
-  color: var(--text);
-}
-.ce-tok-dim {
-  color: var(--text-faint);
-}
-.ce-tok-warn {
-  color: var(--danger);
-}
-
 /* ══════════ 完整提示词检视器 ══════════ */
 
 .inspector-backdrop {
@@ -2597,9 +2095,16 @@ body.dragging-columns {
 .block-modal-backdrop {
   z-index: 95;
 }
-/* 视觉小说开着时,从它菜单里打开的其他弹窗(角色高级定义、看提示词、裁头像)同理 */
-.console.vn-open .ce-backdrop,
+/* 视觉小说开着时,从它菜单里打开的其他弹窗(看提示词、裁头像)同理 */
 .console.vn-open .inspector-backdrop {
+  z-index: 95;
+}
+/* 卡编辑器(studio/,92,盖在视觉小说上面)开着时,从它里面打开的裁头像、看提示词同理 */
+.console.studio-open .inspector-backdrop {
+  z-index: 95;
+}
+/* 忙碌遮罩(导入预设、导入卡……)也要盖过卡编辑器,不然从资料页导入时看不到「正在……」 */
+.console.studio-open .op-veil {
   z-index: 95;
 }
 
@@ -4718,6 +4223,12 @@ textarea.persona-desc {
   opacity: 0.35;
 }
 
+/* 资料页:右栏正在编辑的那一块 */
+.block-row.selected .block-head {
+  background: var(--bg-raised);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+
 /* 落点指示:2px 强调色横线。用 inset shadow 不用 border,
    免得行高跳动把下面的行推来推去 */
 .block-row.drop-before {
@@ -5010,6 +4521,22 @@ textarea.persona-desc {
   color: var(--text-faint);
 }
 
+/* 还在试的插件:名字后面挂个 BETA,和视觉小说设置页的 .vn-beta 一个意思 */
+.pl-beta {
+  margin-left: 6px;
+  padding: 0 5px;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  vertical-align: middle;
+}
+.sp-nav-item .pl-beta {
+  margin-left: auto;
+}
+
 .pl-row {
   display: flex;
   align-items: center;
@@ -5098,6 +4625,51 @@ textarea.persona-desc {
 }
 .pl-mode button:not(.on):hover {
   color: var(--text);
+}
+/* 插件关着时 AI / Jev 二选一变淡(还能改,打开后照它) */
+.pl-mode.dim {
+  opacity: 0.4;
+}
+/* 插件页右上角的总开关(plugins/switches.ts):和左栏块的开关同一个样子,大一号 */
+.pl-power {
+  flex-shrink: 0;
+  position: relative;
+  width: 36px;
+  height: 20px;
+  padding: 0;
+  border-radius: 10px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.pl-power .knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  transition: transform 0.12s, background 0.12s;
+}
+.pl-power.on {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+}
+.pl-power.on .knob {
+  background: var(--accent);
+  transform: translateX(16px);
+}
+/* 卡带页(没有 AI / Jev 二选一)顶上只放开关的那一行 */
+.pl-powerbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.pl-powerbar .sp-group-note {
+  flex: 1;
 }
 .pl-sub {
   display: flex;
@@ -5512,6 +5084,82 @@ textarea.persona-desc {
 .pl-pack-name {
   flex: 1;
   min-width: 120px;
+}
+
+/* 插件页的认词记录、配对表(components/WordRecordsGroup.tsx、PairingGroup.tsx):一行一条,抽屉窄时自动折行 */
+.pg-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pg-table {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  overflow: hidden;
+}
+.pg-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  padding: 6px 10px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+}
+.pg-row:first-child {
+  border-top: none;
+}
+.pg-item {
+  min-width: 4em;
+  max-width: 10em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text);
+}
+.pg-select {
+  flex: 1 1 8em;
+  min-width: 0;
+  max-width: 14em;
+  padding: 3px 6px;
+  font-size: 11px;
+}
+.pg-meta {
+  color: var(--text-faint);
+}
+.pg-flag {
+  padding: 0 5px;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+.pg-end {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+/* 在一行里占满一整行、排到最后:报错、改之前问的那句 */
+.pg-full {
+  flex-basis: 100%;
+}
+.pg-row > .pg-full,
+.pg-row > .pg-confirm {
+  order: 1;
+}
+/* 改共用的表之前问的那一行 */
+.pg-confirm {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  font-size: 11px;
+  color: var(--text);
 }
 
 /* 顶栏的「视觉小说」入口:桌面端图标 + 文字,移动端只剩图标(见移动端那段) */
@@ -5992,7 +5640,6 @@ textarea.persona-desc {
 
   /* ── 弹窗/抽屉一律铺满 ── */
 
-  .ce-drawer,
   .inspector {
     width: 100dvw;
     max-width: 100dvw;

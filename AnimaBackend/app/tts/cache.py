@@ -16,7 +16,9 @@ from sqlalchemy.orm import Session, undefer
 
 from app.models import TtsCache
 
-CACHE_LIMIT = 500 * 1024 * 1024
+# 素材架构 4.7:缓存搬进单独的 tts-cache.db 以后不再拖累备份,上限从 500 MiB 提到 2 GiB
+# (500 MiB 大约只装得下一天的台词;超出的旧句子重播时会重新合成,GSV 每次的语气略有不同)
+CACHE_LIMIT = 2 * 1024 * 1024 * 1024
 
 
 def _now() -> datetime:

@@ -20,13 +20,13 @@ import { cardFaceUrl, spriteImageUrl, type PackSprite, type SpriteLayout } from 
 import { relTime } from '../lib/time';
 import { spriteStyle, type FaceBox, type SpriteStage } from '../plugins/spriteLayout';
 import { AnimaLogo } from './AnimaLogo';
+import { TITLE_DEFAULT_ACCENT } from './fallbacks';
 import {
   accentOf,
   montageSprites,
   paperOf,
   spriteForMood,
   titleSpriteStyle,
-  type Accent,
   type Paper,
   type TitleMood,
   type TitlePose,
@@ -88,8 +88,6 @@ interface Props {
   /** 纸面 / 明亮封面的「角色」:进选角色界面 */
   onPick?: () => void;
 }
-
-const DEFAULT_ACCENT: Accent = { acc: '#f4a9c4', deep: 'hsl(335 40% 38%)', ink: '#2b1420', rgb: '244, 169, 196' };
 
 const MENU: { mood: TitleMood; zh: string; en: string }[] = [
   { mood: 'continue', zh: '继续', en: 'CONTINUE' },
@@ -395,7 +393,7 @@ export function VNTitle({
   }
 
   const idle = spriteForMood(sprites, 'idle');
-  const accent = useLoaded(idle ? spriteImageUrl(idle) : null, accentOf) ?? DEFAULT_ACCENT;
+  const accent = useLoaded(idle ? spriteImageUrl(idle) : null, accentOf) ?? TITLE_DEFAULT_ACCENT;
   const paper: Paper | null = useLoaded(variant === 'poster' ? home.src : null, paperOf);
 
   // ---- 片头:上次的地方 → 场景包里的其他几个地方 → 回来 ----

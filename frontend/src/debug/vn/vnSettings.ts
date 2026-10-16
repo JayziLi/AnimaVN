@@ -42,13 +42,13 @@ export interface VNSettings {
   spriteFx: boolean;
   /** 特效音效的音量 */
   spriteFxVolume: number;
-  /** 跳字音效:逐字显示旁白时每隔一个字响一声;'off' = 不要。id 见 plugins/spriteFx.ts 的 TYPE_SOUNDS */
+  /** 跳字音效:逐字显示旁白时每隔一个字响一声;'off' = 不要。id 见 vn/typeSound.ts 的 TYPE_SOUNDS */
   typeSound: string;
   typeSoundVolume: number;
 }
 
 import { VN_ACCENTS, type VNAccent } from './accent';
-import { TYPE_SOUNDS } from '../plugins/spriteFx';
+import { TYPE_SOUNDS } from './typeSound';
 
 export type TitleStyle = 'paper' | 'bright' | 'poster' | 'cinema';
 

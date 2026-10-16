@@ -1,0 +1,5 @@
+# 前后端共用常量的生成文件:AnimaBackend/tests/test_contracts.py 逐字比对,不管 core.autocrlf 怎么设都保持 LF
+frontend/src/debug/generated/contracts.ts text eol=lf
+# 导入器对拍用的合成酒馆卡(AnimaBackend/tests/fixtures/cards/make_cards.py 生成):逐字节保持原样,不转换行符
+AnimaBackend/tests/fixtures/cards/*.png -text
+AnimaBackend/tests/fixtures/cards/*.json -text

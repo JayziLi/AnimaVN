@@ -1,0 +1,671 @@
+/* ══════════ 素材管理页(library/) ══════════
+   照画布第四版 V4Library(v4_boards.py 的 lib_header / lib_aside / board_library):顶栏 52、左栏 264,
+   中间和右栏是卡编辑器里同一套包编辑器(studio.css)。颜色只用 debug.css 的 :root 变量。
+   整页和卡编辑器同一层(92);从卡名打开的卡编辑器后挂上,盖在这一页上面 */
+
+/* ── 顶栏 ── */
+
+.lib-header {
+  gap: 8px;
+}
+.lib-title {
+  flex: none;
+  margin: 0 10px 0 2px;
+  font-size: 15px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.lib-tabs {
+  margin-left: 0;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.lib-tabs::-webkit-scrollbar {
+  display: none;
+}
+.lib-tab {
+  gap: 7px;
+  padding: 0 13px;
+}
+.lib-tab > .st-icon {
+  color: var(--text-faint);
+}
+.lib-tab[aria-current='page'] > .st-icon {
+  color: var(--text);
+}
+.lib-tab-count {
+  color: var(--text-faint);
+  font-size: 11.5px;
+  font-weight: 400;
+}
+.lib-search {
+  width: 260px;
+  min-width: 120px;
+  height: 32px;
+  flex: 0 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  background: var(--bg-raised);
+  color: var(--text-faint);
+}
+.lib-search:focus-within {
+  border-color: var(--text-faint);
+}
+.lib-search > input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+.lib-search > input::placeholder {
+  color: var(--text-faint);
+}
+.lib-import {
+  display: inline-flex;
+}
+
+/* ── 左栏 ── */
+
+.lib-aside {
+  width: 264px;
+  flex: none;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+.lib-aside-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px 8px 18px;
+}
+.lib-aside-title {
+  font-size: 13.5px;
+  font-weight: 700;
+}
+.lib-aside-count {
+  color: var(--text-faint);
+  font-size: 12px;
+}
+/* 排序:看起来是「按占用空间 ⌄」,点开是系统自带的下拉 */
+.lib-sort {
+  position: relative;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  border-radius: 8px;
+  color: var(--text-dim);
+  font-size: 12px;
+  cursor: pointer;
+}
+.lib-sort:hover,
+.lib-sort:focus-within {
+  background: rgba(255, 255, 255, 0.05);
+}
+.lib-sort > .st-icon {
+  color: var(--text-faint);
+}
+.lib-sort > select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.lib-chips {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 18px 10px;
+}
+.lib-chip {
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 13px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.lib-chip:hover {
+  color: var(--text);
+}
+.lib-chip[aria-pressed='true'] {
+  border-color: #5a5a5a;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+}
+.lib-chip:focus-visible,
+.lib-row:focus-visible {
+  outline: 1.5px solid var(--text-dim);
+  outline-offset: 1px;
+}
+
+.lib-list {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0 12px 8px;
+  overflow-y: auto;
+}
+.lib-row {
+  position: relative;
+  width: 100%;
+  min-height: 48px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.lib-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+.lib-row.selected {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+.lib-row.selected::before {
+  content: '';
+  position: absolute;
+  left: -12px;
+  top: 11px;
+  bottom: 11px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent);
+}
+.lib-row-thumb {
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border-radius: 8px;
+  object-fit: cover;
+  background: var(--bg-hover);
+}
+/* 立绘是整张全身图:取上半截(脸在那儿) */
+.lib-row-thumb.sprite {
+  object-position: 50% 0;
+}
+.lib-row-thumb.blank {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+}
+.lib-row-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.35;
+}
+.lib-row-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.lib-row-title {
+  min-width: 0;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lib-row.selected .lib-row-title {
+  font-weight: 500;
+}
+.lib-row-name > .st-chip,
+.lib-head-name > .st-chip {
+  height: 18px;
+  flex: none;
+  padding: 0 6px;
+  font-size: 10.5px;
+}
+.lib-row-sub {
+  color: var(--text-faint);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.lib-row-bound {
+  flex: none;
+  color: var(--text-faint);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.lib-list-empty {
+  padding: 24px 8px;
+  color: var(--text-faint);
+  font-size: 12.5px;
+  text-align: center;
+}
+
+.lib-foot {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 18px 14px;
+  border-top: 1px solid var(--border);
+  color: var(--text-faint);
+  font-size: 12px;
+}
+.lib-foot-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.lib-foot-row > :first-child:not(.lib-foot-key) {
+  flex: 1;
+}
+.lib-foot-total {
+  color: var(--text);
+}
+.lib-bar {
+  height: 6px;
+  display: flex;
+  border-radius: 3px;
+  background: var(--border-strong);
+  overflow: hidden;
+}
+.lib-bar > span {
+  min-width: 2px;
+  background: var(--text-dim);
+}
+.lib-foot-key {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 2px;
+  background: var(--text-dim);
+}
+.lib-foot-note {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lib-foot-link {
+  flex: none;
+  font-size: 12px;
+}
+.lib-foot-link:disabled {
+  color: var(--text-faint);
+  text-decoration: none;
+  cursor: default;
+}
+
+/* ── 主区顶上那一行:包名、用量、绑定 ── */
+
+.lib-head {
+  min-height: 50px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.lib-head-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.lib-head-name {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+.lib-head-name > .st-ihead-input {
+  min-width: 240px;
+  font-size: 17px;
+}
+.lib-head-sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 6px;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+/* 几段之间的「·」跟着后一段换行,不会挂在行尾 */
+.lib-head-sub > span + span::before {
+  content: '·';
+  margin-right: 6px;
+}
+.st-link.lib-card-link {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.st-link.lib-card-link:hover {
+  color: var(--text);
+}
+
+/* ── 绑定到角色卡 ── */
+
+.st-modal.lib-bind {
+  width: min(520px, 100%);
+}
+.lib-bind .st-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.lib-bind .st-dialog-p {
+  margin: 0;
+}
+.lib-bind-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  max-height: min(52vh, 440px);
+  margin: 0 -8px;
+  overflow-y: auto;
+}
+.lib-bind-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 9px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.lib-bind-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+.lib-bind-row.on {
+  color: var(--text);
+}
+.lib-bind-row > input {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  margin: 0;
+  accent-color: var(--accent);
+}
+.lib-bind-avatar {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--bg-hover);
+}
+.lib-bind-avatar.blank {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+  font-size: 13px;
+  font-weight: 700;
+}
+.lib-bind-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.35;
+}
+.lib-bind-name {
+  font-size: 13.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lib-bind-sub {
+  color: var(--text-faint);
+  font-size: 11.5px;
+}
+.lib-bind-state {
+  flex: none;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+.lib-bind-count {
+  align-self: center;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+/* ── 删除确认框里的卡 ── */
+
+.lib-del-cards {
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.lib-del-cards > li {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 10px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+.lib-del-card {
+  color: var(--text);
+}
+.lib-del-effect {
+  color: var(--text-dim);
+}
+
+/* ── 导入记录 ── */
+
+.lib-jobs {
+  align-items: stretch;
+}
+.lib-jobs > * {
+  width: 100%;
+  max-width: 920px;
+  margin: 0 auto;
+}
+.lib-jobs > .st-grid-head {
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+.lib-jobs .st-grid-title {
+  flex: none;
+  white-space: nowrap;
+}
+.lib-job-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.lib-job {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-panel);
+}
+.lib-job.highlight {
+  border-color: var(--text-faint);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.lib-job-time {
+  width: 92px;
+  flex: none;
+  color: var(--text-faint);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.lib-job-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.lib-job-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.lib-job-title > .st-chip {
+  height: 20px;
+  padding: 0 7px;
+  font-size: 11px;
+  font-weight: 400;
+}
+.lib-job-sub {
+  color: var(--text-faint);
+  font-size: 12px;
+}
+.lib-job.undone .lib-job-title {
+  color: var(--text-dim);
+}
+.lib-jobs-empty {
+  min-height: 260px;
+}
+.lib-undo-lines {
+  margin: 0 0 10px;
+  padding-left: 18px;
+  color: var(--text);
+}
+.lib-undo-lines > li + li {
+  margin-top: 4px;
+}
+
+/* ══════════ 窄屏(< 900px):左栏到顶上,包列表横着滚;整页滚(studio.css 的 .st-root) ══════════ */
+
+@media (max-width: 899px) {
+  .lib-header {
+    height: auto;
+    min-height: 52px;
+    flex-wrap: wrap;
+    row-gap: 0;
+    padding-bottom: 0;
+  }
+  .lib-title {
+    margin-right: 0;
+  }
+  .lib-search {
+    width: auto;
+    flex: 1 1 140px;
+  }
+  /* 页签另起一行占满,横着滚 */
+  .lib-tabs {
+    order: 1;
+    height: 42px;
+    flex: 1 0 100%;
+    margin: 0 -10px 0 -4px;
+    padding: 0 6px;
+    border-top: 1px solid var(--border);
+  }
+  .lib-tab {
+    padding: 0 11px;
+  }
+
+  .lib-aside {
+    width: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .lib-aside-head {
+    padding: 10px 12px 6px;
+  }
+  .lib-chips {
+    flex-wrap: nowrap;
+    padding: 0 12px 8px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .lib-chips::-webkit-scrollbar,
+  .lib-list::-webkit-scrollbar {
+    display: none;
+  }
+  .lib-list {
+    flex: none;
+    flex-direction: row;
+    gap: 6px;
+    padding: 0 12px 10px;
+    overflow-x: auto;
+    overflow-y: visible;
+    scrollbar-width: none;
+  }
+  .lib-row {
+    width: 210px;
+    background: var(--bg-raised);
+  }
+  .lib-row.selected {
+    background: var(--bg-hover);
+    box-shadow: inset 0 0 0 1.5px var(--accent);
+  }
+  .lib-row.selected::before {
+    display: none;
+  }
+  .lib-list-empty {
+    width: 100%;
+    padding: 12px 8px;
+  }
+  .lib-foot {
+    gap: 6px;
+    padding: 8px 12px 10px;
+  }
+
+  .lib-head {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+  .lib-head-text {
+    flex: 1 1 100%;
+  }
+
+  .lib-job {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+  .lib-job-time {
+    width: auto;
+    flex-basis: 100%;
+  }
+}
+
+@media (max-width: 520px) {
+  .lib-title {
+    display: none;
+  }
+}

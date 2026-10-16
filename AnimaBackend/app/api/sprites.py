@@ -9,20 +9,28 @@
 图片都是直接从浏览器缓存里拿的。
 """
 
-import re
+import copy
+import uuid
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
 from sqlalchemy import delete, func, select, update
-from sqlalchemy.orm import Session, undefer
+from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
+# 名字和图片的校验在 app/assets/common.py(立绘、场景包、声音共用);这几个名字连同 LABEL_MAX
+# 在这里留着同名导出,外面的脚本 from app.api.sprites import ... 照旧能用
+from app import bindings
+from app.assets.common import MAX_IMAGE_BYTES, clean_aliases, clean_label, sniff_image_mime, unique_pack_name
+from app.contracts import LABEL_MAX  # noqa: F401  (同名导出)
 from app.db import get_db
+from app.emotion.lists import PACK_PREFIX
 from app.images import MAX_WIDTH, MIN_WIDTH, shrink_image
-from app.models import CardSpritePack, PackSprite, SpritePack, SpritePackLayout, TavernCard
+from app.models import PackSprite, SpritePack, SpritePackLayout, TavernCard, WordRecord
 from app.schemas import (
     CardSpritePackCurrentIn,
     CardSpritePacksIn,
     CardSpritePacksOut,
+    PackDuplicateIn,
     SpriteCreate,
     SpriteLayoutOut,
     SpriteLayoutUpdate,
@@ -34,21 +42,13 @@ from app.schemas import (
     SpriteUpdate,
 )
 from app.sprite_faces import face_thumbnail, scan
+from app.storage import refs
 
 router = APIRouter(tags=["sprites"])
 
 PACKS = "/api/sprite-packs"
 SPRITES = PACKS + "/{pack_id}/sprites"
 CARD = "/api/tavern/cards/{card_id}"
-
-# 一张立绘撑死几 MB;nginx 那边的上限是 20m,这里再收紧一点
-MAX_IMAGE_BYTES = 8 * 1024 * 1024
-
-LABEL_MAX = 40
-
-# 表情名会被塞进用户自定义的标签模板里(比如 <sprite:{表情}>、【{表情}】),
-# 名字里带这些括号,解析器就分不清标签在哪里结束了
-_FORBIDDEN = re.compile(r"[\n\r<>\[\]{}【】「」]")
 
 
 def _load_card(card_id: str, db: Session) -> TavernCard:
@@ -85,37 +85,12 @@ def _out(sprite: PackSprite) -> SpriteOut:
         description=sprite.description,
         has_image=sprite.mime is not None,
         image_version=_version(sprite),
+        image_sha=sprite.image_sha if sprite.mime is not None else None,
         sort=sprite.sort,
         enabled=sprite.enabled,
         face_scan=sprite.face_scan,
         effect=sprite.effect,
     )
-
-
-def clean_label(raw: str, noun: str = "表情名") -> str:
-    """AI 要在标签里点名的名字:去空白,查长度和括号。场景包的素材名也走这里。"""
-    name = raw.strip()
-    if not name:
-        raise HTTPException(400, f"{noun}不能为空")
-    if len(name) > LABEL_MAX:
-        raise HTTPException(400, f"{noun}最长 {LABEL_MAX} 个字")
-    if _FORBIDDEN.search(name):
-        raise HTTPException(400, f"{noun}「{name}」里不能有换行或 <>[]{{}}【】「」 这些括号")
-    return name
-
-
-def clean_aliases(raw: list[str], label: str, noun: str = "表情名") -> list[str]:
-    out: list[str] = []
-    seen = {label.casefold()}
-    for a in raw:
-        if not a.strip():
-            continue
-        name = clean_label(a, noun)
-        if name.casefold() in seen:
-            continue
-        seen.add(name.casefold())
-        out.append(name)
-    return out
 
 
 def _check_unique(pack_id: str, names: list[str], db: Session, exclude_id: str | None = None):
@@ -131,23 +106,6 @@ def _check_unique(pack_id: str, names: list[str], db: Session, exclude_id: str |
         owner = taken.get(n.casefold())
         if owner is not None:
             raise HTTPException(409, f"表情名「{n}」已经被「{owner}」占用了")
-
-
-def sniff_image_mime(data: bytes) -> str | None:
-    """按文件头认格式,不信任上传时声明的 content-type。
-
-    这些图和页面同源,如果按客户端声明的类型原样返回,就有人能传一个 HTML
-    当「图片」,借同源执行脚本。
-    """
-    if data.startswith(b"\x89PNG\r\n\x1a\n"):
-        return "image/png"
-    if data.startswith(b"\xff\xd8\xff"):
-        return "image/jpeg"
-    if data[:6] in (b"GIF87a", b"GIF89a"):
-        return "image/gif"
-    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
-        return "image/webp"
-    return None
 
 
 def _pack_sprites(pack_id: str, db: Session) -> list[PackSprite]:
@@ -180,15 +138,12 @@ def _pack_out(pack: SpritePack, db: Session) -> SpritePackOut:
     sprites = db.scalar(
         select(func.count()).select_from(PackSprite).where(PackSprite.pack_id == pack.id)
     )
-    cards = db.scalar(
-        select(func.count()).select_from(CardSpritePack).where(CardSpritePack.pack_id == pack.id)
-    )
     return SpritePackOut(
         id=pack.id,
         name=pack.name,
         description=pack.description,
         sprite_count=sprites or 0,
-        card_count=cards or 0,
+        card_count=bindings.count_cards(db, bindings.SPRITE, pack.id),
     )
 
 
@@ -219,23 +174,85 @@ def update_pack(pack_id: str, req: SpritePackUpdate, db: Session = Depends(get_d
     return _pack_out(pack, db)
 
 
-@router.delete(PACKS + "/{pack_id}", status_code=204)
-def delete_pack(pack_id: str, db: Session = Depends(get_db)):
-    """连同包里的立绘、摆法、所有绑定一起删。拿它当当前包的卡换成它后面挂着的下一个包。"""
-    pack = _load_pack(pack_id, db)
-    for row in db.scalars(select(CardSpritePack).where(CardSpritePack.pack_id == pack_id)).all():
-        if row.is_current:
-            rows = _bound_rows(row.card_id, db)
-            old = [r.pack_id for r in rows]
-            nxt = _next_current(old, pack_id, [p for p in old if p != pack_id])
-            for r in rows:
-                r.is_current = r.pack_id == nxt
-        db.delete(row)
+def delete_sprite_pack(db: Session, pack_id: str) -> bool:
+    """删一个立绘包:连同包里的立绘、摆法、所有绑定。拿它当当前包的卡换成它后面挂着的下一个包。
+    不提交;包已经不在了返回 False。删包接口、撤销导入(app/importer/jobs.py)、素材管理页共用"""
+    pack = db.get(SpritePack, pack_id)
+    if pack is None:
+        return False
+    for card_id in bindings.cards_using(db, bindings.SPRITE, pack_id):
+        old = bindings.targets(db, card_id, bindings.SPRITE)
+        was = bindings.primary(db, card_id, bindings.SPRITE)
+        keep = [p for p in old if p != pack_id]
+        current = was if was in keep else _next_current(old, was, keep)
+        bindings.replace(db, card_id, bindings.SPRITE, keep, current)
     # SQLite 没开外键约束,不会自动级联
     db.execute(delete(PackSprite).where(PackSprite.pack_id == pack_id))
     db.execute(delete(SpritePackLayout).where(SpritePackLayout.pack_id == pack_id))
     db.delete(pack)
+    db.flush()
+    return True
+
+
+@router.delete(PACKS + "/{pack_id}", status_code=204)
+def delete_pack(pack_id: str, db: Session = Depends(get_db)):
+    """连同包里的立绘、摆法、所有绑定一起删。拿它当当前包的卡换成它后面挂着的下一个包。"""
+    _load_pack(pack_id, db)
+    delete_sprite_pack(db, pack_id)
     db.commit()
+
+
+def duplicate_sprite_pack(db: Session, pack_id: str, name: str | None = None) -> SpritePack:
+    """复制一个立绘包(素材管理页「创建副本」):立绘照抄(名字、别名、说明、顺序、启用、找脸结果、入场动效),
+    图按指纹共用;摆法、认词记录(pack:<id>,记的那一项换成副本里的同一张)一起复制。不绑到任何卡。
+    name 不给就叫「X 副本」(撞名加「 2」);给了照建包的规矩查(撞名 409)。不提交"""
+    src = _load_pack(pack_id, db)
+    name = _clean_pack_name(name, db) if name and name.strip() else unique_pack_name(db, SpritePack, f"{src.name} 副本")
+    pack = SpritePack(id=uuid.uuid4().hex, name=name, description=src.description)
+    db.add(pack)
+    ids: dict[str, str] = {}
+    for s in _pack_sprites(pack_id, db):
+        row = PackSprite(
+            id=uuid.uuid4().hex,
+            pack_id=pack.id,
+            label=s.label,
+            aliases=list(s.aliases or []),
+            description=s.description,
+            mime=s.mime,
+            sort=s.sort,
+            enabled=s.enabled,
+            face_scan=copy.deepcopy(s.face_scan),
+            effect=copy.deepcopy(s.effect),
+        )
+        refs.copy_content(refs.SPRITE, s, row, db)
+        db.add(row)
+        ids[s.id] = row.id
+    layout = db.get(SpritePackLayout, pack_id)
+    if layout is not None:
+        db.add(SpritePackLayout(pack_id=pack.id, auto=layout.auto, zoom=layout.zoom, dx=layout.dx, dy=layout.dy))
+    # 认词记录:这一项在副本里是哪张就记哪张;指着已经删掉的立绘的不抄
+    for rec in db.scalars(select(WordRecord).where(WordRecord.list_ref == PACK_PREFIX + pack_id)).all():
+        if rec.item in ids:
+            db.add(
+                WordRecord(
+                    list_ref=PACK_PREFIX + pack.id,
+                    word=rec.word,
+                    item=ids[rec.item],
+                    source=rec.source,
+                    guessed=rec.guessed,
+                    unstable=rec.unstable,
+                    score=rec.score,
+                )
+            )
+    db.flush()
+    return pack
+
+
+@router.post(PACKS + "/{pack_id}/duplicate", response_model=SpritePackOut)
+def duplicate_pack(pack_id: str, req: PackDuplicateIn | None = None, db: Session = Depends(get_db)):
+    pack = duplicate_sprite_pack(db, pack_id, req.name if req else None)
+    db.commit()
+    return _pack_out(pack, db)
 
 
 # ── 包里的立绘 ──
@@ -305,15 +322,14 @@ def scan_sprite_faces(pack_id: str, rescan: bool = False, db: Session = Depends(
     不然浏览器要把整套图重新下载一遍。
     """
     _load_pack(pack_id, db)
-    query = (
-        select(PackSprite)
-        .options(undefer(PackSprite.image))
-        .where(PackSprite.pack_id == pack_id, PackSprite.image.is_not(None))
-    )
+    query = select(PackSprite).where(PackSprite.pack_id == pack_id, refs.has_content(refs.SPRITE))
     if not rescan:
         query = query.where(PackSprite.face_scan.is_(None))
     for row in db.scalars(query).all():
-        result = scan(row.image)
+        data = refs.read_bytes(refs.SPRITE, row)
+        if data is None:
+            continue
+        result = scan(data)
         if result is None:
             raise HTTPException(503, "服务器上没装 OpenCV,找不了脸;立绘先按撑满高度、居中摆")
         db.execute(
@@ -383,7 +399,7 @@ async def upload_sprite_image(
     mime = sniff_image_mime(data)
     if mime is None:
         raise HTTPException(400, "只支持 PNG / JPEG / WebP / GIF 图片")
-    sprite.image = data
+    refs.save(refs.SPRITE, sprite, data, mime, db)
     sprite.mime = mime
     # 没装 OpenCV 时是 None,之后由 scan-faces 补。
     # 解码 + 找脸要几百毫秒,放线程池里跑:这是 async 接口,直接跑会把同时在流式生成的回复卡住
@@ -401,16 +417,13 @@ def get_sprite_image(
     db: Session = Depends(get_db),
 ):
     """立绘原图;带 ?w= 时缩到这个宽度的 WebP(取色用,见 app/images.py)"""
-    sprite = db.scalar(
-        select(PackSprite)
-        .options(undefer(PackSprite.image))
-        .where(PackSprite.id == sprite_id, PackSprite.pack_id == pack_id)
-    )
-    if sprite is None or sprite.image is None or sprite.mime is None:
+    sprite = db.scalar(select(PackSprite).where(PackSprite.id == sprite_id, PackSprite.pack_id == pack_id))
+    data = refs.read_bytes(refs.SPRITE, sprite) if sprite is not None and sprite.mime is not None else None
+    if data is None:
         raise HTTPException(404, "这条立绘还没有图")
-    small = shrink_image(sprite.image, w) if w else None
+    small = shrink_image(data, w) if w else None
     return Response(
-        content=small or sprite.image,
+        content=small or data,
         media_type="image/webp" if small else sprite.mime,
         headers={
             # 前端请求的 URL 里带着 ?v=image_version,换图后 URL 就变了,
@@ -424,22 +437,11 @@ def get_sprite_image(
 # ── 角色卡挂哪些包 ──
 
 
-def _bound_rows(card_id: str, db: Session) -> list[CardSpritePack]:
-    return list(
-        db.scalars(
-            select(CardSpritePack)
-            .where(CardSpritePack.card_id == card_id)
-            .order_by(CardSpritePack.sort)
-        ).all()
-    )
-
-
 def _bindings_out(card_id: str, db: Session) -> CardSpritePacksOut:
-    rows = _bound_rows(card_id, db)
     return CardSpritePacksOut(
         card_id=card_id,
-        pack_ids=[r.pack_id for r in rows],
-        current=next((r.pack_id for r in rows if r.is_current), None),
+        pack_ids=bindings.targets(db, card_id, bindings.SPRITE),
+        current=bindings.primary(db, card_id, bindings.SPRITE),
     )
 
 
@@ -456,11 +458,7 @@ def _next_current(old: list[str], gone: str | None, keep: list[str]) -> str | No
 
 def current_pack_id(card_id: str, db: Session) -> str | None:
     """这张卡游戏里正在用的包;一个包都没挂时是 None。"""
-    return db.scalar(
-        select(CardSpritePack.pack_id).where(
-            CardSpritePack.card_id == card_id, CardSpritePack.is_current.is_(True)
-        )
-    )
+    return bindings.primary(db, card_id, bindings.SPRITE)
 
 
 def current_sprites(card_id: str, db: Session) -> list[PackSprite]:
@@ -484,19 +482,10 @@ def set_card_sprite_packs(card_id: str, req: CardSpritePacksIn, db: Session = De
         _load_pack(pid, db)
     if req.current is not None and req.current not in ids:
         raise HTTPException(400, "当前包必须是这张卡挂着的包")
-    rows = {r.pack_id: r for r in _bound_rows(card_id, db)}
-    was = next((pid for pid, r in rows.items() if r.is_current), None)
-    current = req.current or (was if was in ids else _next_current(list(rows), was, ids))
-    for pid, row in rows.items():
-        if pid not in ids:
-            db.delete(row)
-    for i, pid in enumerate(ids):
-        row = rows.get(pid)
-        if row is None:
-            row = CardSpritePack(card_id=card_id, pack_id=pid)
-            db.add(row)
-        row.sort = i
-        row.is_current = pid == current
+    old = bindings.targets(db, card_id, bindings.SPRITE)
+    was = bindings.primary(db, card_id, bindings.SPRITE)
+    current = req.current or (was if was in ids else _next_current(old, was, ids))
+    bindings.replace(db, card_id, bindings.SPRITE, ids, current)
     db.commit()
     return _bindings_out(card_id, db)
 
@@ -507,11 +496,10 @@ def set_card_current_pack(
 ):
     """游戏里换一套立绘:只换当前包,挂着哪些包不变。"""
     _load_card(card_id, db)
-    rows = _bound_rows(card_id, db)
-    if req.pack_id not in [r.pack_id for r in rows]:
+    ids = bindings.targets(db, card_id, bindings.SPRITE)
+    if req.pack_id not in ids:
         raise HTTPException(400, "这张卡没挂这个立绘包")
-    for r in rows:
-        r.is_current = r.pack_id == req.pack_id
+    bindings.replace(db, card_id, bindings.SPRITE, ids, req.pack_id)
     db.commit()
     return _bindings_out(card_id, db)
 
@@ -548,7 +536,9 @@ def get_card_face(
     if request.headers.get("if-none-match") == etag:
         return Response(status_code=304, headers=headers)
 
-    data = db.scalar(select(PackSprite.image).where(PackSprite.id == sprite.id))
+    data = refs.read_bytes(refs.SPRITE, sprite)
+    if data is None:
+        raise HTTPException(404, "这张卡还没有带图的立绘")
     thumb = face_thumbnail(data, face, size)
     if thumb is None:
         raise HTTPException(503, "服务器上没装 OpenCV,裁不了头像")
@@ -571,14 +561,3 @@ def _face_of(sprite: PackSprite, rows: list[PackSprite]) -> dict | None:
             return row.face_scan["face"]
     return None
 
-
-def delete_card_sprite_packs(card_id: str, db: Session) -> None:
-    """删卡时由 tavern.delete_card 调用。包是共用的,只删绑定,包留着
-    (插件页能看到「没有卡在用」的包,手动删)。"""
-    db.execute(delete(CardSpritePack).where(CardSpritePack.card_id == card_id))
-
-
-def copy_card_sprite_packs(src_id: str, dst_id: str, db: Session) -> None:
-    """复制卡时挂同样的包、同样的当前包(指向同一个包,不复制图)。"""
-    for r in _bound_rows(src_id, db):
-        db.add(CardSpritePack(card_id=dst_id, pack_id=r.pack_id, sort=r.sort, is_current=r.is_current))

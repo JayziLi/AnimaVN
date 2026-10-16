@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AssemblyResult } from './assembler';
-import { dropSwipe, toStored, type ChatEntry } from './chatEntry';
+import { appendSwipe, dropSwipe, toStored, type ChatEntry } from './chatEntry';
 
 const snap = { messages: [] } as unknown as AssemblyResult;
 
@@ -51,5 +51,40 @@ describe('dropSwipe', () => {
     expect(e.swipes[e.swipeIndex]).toBe('a');
     const f = dropSwipe(three(2), 0);
     expect(f.swipes[f.swipeIndex]).toBe('c');
+  });
+});
+
+describe('appendSwipe', () => {
+  it('carries the player marks of the message into the new swipe', () => {
+    const vn = { forms: [{ line: 2, form: 'h' }] };
+    const marked = { ...entry(), swipeInfo: [{ sendDate: '1', vn }, { sendDate: '2', vn }] } as unknown as ChatEntry;
+    const next = appendSwipe(marked, snap);
+    expect(next.swipeInfo[2].vn).toEqual(vn);
+    expect(next.swipeIndex).toBe(2);
+  });
+
+  it('adds no marks to a message that has none', () => {
+    expect('vn' in appendSwipe(entry(), snap).swipeInfo[2]).toBe(false);
+  });
+
+  it('leaves out the lines whose emotion the player changed: those belong to that one swipe', () => {
+    const forms = [{ line: 2, form: 'h' }];
+    const manual = [{ line: 1, item: 's1', label: '微笑' }];
+    const both = { ...entry(), swipeInfo: [{ sendDate: '1' }, { sendDate: '2', vn: { forms, manual } }] } as unknown as ChatEntry;
+    expect(appendSwipe(both, snap).swipeInfo[2].vn).toEqual({ forms });
+    const only = { ...entry(), swipeInfo: [{ sendDate: '1' }, { sendDate: '2', vn: { manual } }] } as unknown as ChatEntry;
+    expect('vn' in appendSwipe(only, snap).swipeInfo[2]).toBe(false);
+  });
+
+  it('leaves out the generated pictures too: they were drawn for the old lines', () => {
+    const forms = [{ line: 2, form: 'h' }];
+    const images = [{ line: 3, id: 'g1', sha: 'abc' }];
+    const both = { ...entry(), swipeInfo: [{ sendDate: '1' }, { sendDate: '2', vn: { forms, images } }] } as unknown as ChatEntry;
+    const next = appendSwipe(both, snap);
+    expect(next.swipeInfo[2].vn).toEqual({ forms });
+    // 旧分支上的图还在
+    expect(next.swipeInfo[1].vn?.images).toEqual(images);
+    const only = { ...entry(), swipeInfo: [{ sendDate: '1' }, { sendDate: '2', vn: { images } }] } as unknown as ChatEntry;
+    expect('vn' in appendSwipe(only, snap).swipeInfo[2]).toBe(false);
   });
 });

@@ -11,12 +11,13 @@
  * 跟着换;同一个场景里气氛变了,AI 再写 BGM 标签。关掉 BGM 块,就退化成音乐只跟着
  * 场景走。
  *
- * CG 也是「状态」,而且分两层:
+ * CG 也是「状态」,而且分两层(设计见 docs/superpowers/specs/2026-10-03-cg-plugin-design.md):
  *   构图  AI / Jev 点的是它,写一次一直显示,直到换成别的或者写 <cg:无>
  *   差分  构图下面挂的几张(名字是立绘的表情名),画面上那张跟着当前这句的表情换
  * CG 和背景、音乐互不牵连(10-03 用户定):出 CG 不换曲子,换场景也不收 CG。
  */
 
+import { SWITCH_THRESHOLD } from '../generated/contracts';
 import type { SceneAsset } from '../lib/api';
 import type { PresetOrderEntry, TavernPreset } from '../lib/presetParser';
 import type { ChatEntry } from '../lib/chatEntry';
@@ -38,11 +39,13 @@ import {
   type PluginConfig,
   type TagMode,
 } from './common';
+import { PLUGIN } from './registry';
+import { text as defaultText } from './texts';
 
 export type SceneKindKey = 'bg' | 'bgm' | 'cg';
 
-/** Jev 换场景 / 音乐的门槛:默认、可调范围(和后端 ThresholdsIn 一致) */
-export const SWITCH_THRESHOLD = { def: 0.6, min: 0.3, max: 0.95 };
+/** Jev 换场景 / 音乐 / CG 的门槛:默认、可调范围(前后端共用,定义在 AnimaBackend/app/contracts.py) */
+export { SWITCH_THRESHOLD };
 
 export interface ScenePluginConfig extends PluginConfig {
   /** AI 写标签 / Jev 标(plugins/jev.ts) */
@@ -69,7 +72,7 @@ interface SceneSpec {
 }
 
 const JEV_DEFAULTS: ScenePluginConfig['jev'] = {
-  threshold: SWITCH_THRESHOLD.def,
+  threshold: SWITCH_THRESHOLD.default,
   prompt: null,
   keepPrompt: null,
   offPrompt: null,
@@ -85,7 +88,8 @@ export const DEFAULT_BG_PROMPT = `[场景指令]
 - 列表里没有完全对应的地点时，选最接近的一个
 - 标签单独写，不要放进引号或括号里，也不要解释它`;
 
-export const DEFAULT_CG_PROMPT = `[CG 指令]
+/** CG 块的默认正文(中性说法,公开版用它);装了给出另一个版本的卡带就用卡带的(plugins/texts.ts) */
+const NEUTRAL_CG_PROMPT = `[CG 指令]
 画面上可以显示一张 CG（事件插图），代替立绘和背景。可以用的 CG：
 {{cgs}}
 当前画面：{{current_cg}}
@@ -96,6 +100,7 @@ export const DEFAULT_CG_PROMPT = `[CG 指令]
 - 这段场面结束、回到日常时，在那一句前面插入 {{cg_off_tag}}
 - 哪张都对不上时不要硬选
 - 标签单独写，不要放进引号或括号里，也不要解释它`;
+export const defaultCgPrompt = (): string => defaultText('cg.prompt', NEUTRAL_CG_PROMPT);
 
 export const DEFAULT_BGM_PROMPT = `[音乐指令]
 可以用的背景音乐（按气氛分）：
@@ -108,28 +113,31 @@ export const DEFAULT_BGM_PROMPT = `[音乐指令]
 
 export const SCENE: Record<SceneKindKey, SceneSpec> = {
   bg: {
-    blockId: 'anima_bg',
+    blockId: PLUGIN.bg.blockId,
     blockName: '场景指令 · 插件',
-    settingKey: 'plugin.bg',
+    settingKey: PLUGIN.bg.settingKey,
     placeholder: '{场景}',
     exampleWord: '场景名',
     defaults: { tagTemplate: '<bg:{场景}>', blockPrompt: DEFAULT_BG_PROMPT, mode: 'ai', jev: JEV_DEFAULTS },
   },
   bgm: {
-    blockId: 'anima_bgm',
+    blockId: PLUGIN.bgm.blockId,
     blockName: '音乐指令 · 插件',
-    settingKey: 'plugin.bgm',
+    settingKey: PLUGIN.bgm.settingKey,
     placeholder: '{音乐}',
     exampleWord: '音乐名',
     defaults: { tagTemplate: '<bgm:{音乐}>', blockPrompt: DEFAULT_BGM_PROMPT, mode: 'ai', jev: JEV_DEFAULTS },
   },
   cg: {
-    blockId: 'anima_cg',
+    blockId: PLUGIN.cg.blockId,
     blockName: 'CG 指令 · 插件',
-    settingKey: 'plugin.cg',
+    settingKey: PLUGIN.cg.settingKey,
     placeholder: '{CG}',
     exampleWord: 'CG名',
-    defaults: { tagTemplate: '<cg:{CG}>', blockPrompt: DEFAULT_CG_PROMPT, mode: 'ai', jev: JEV_DEFAULTS },
+    // 默认正文第一次用到时才定(可能是卡带给的那版)
+    get defaults(): ScenePluginConfig {
+      return { tagTemplate: '<cg:{CG}>', blockPrompt: defaultCgPrompt(), mode: 'ai', jev: JEV_DEFAULTS };
+    },
   },
 };
 
@@ -145,7 +153,7 @@ export function normalizeSceneConfig(kind: SceneKindKey, raw: unknown): ScenePlu
     ...normalizePluginConfig(raw, SCENE[kind].defaults, SCENE[kind].placeholder),
     mode: normalizeTagMode(r.mode),
     jev: {
-      threshold: thresholdOf(j.threshold, SWITCH_THRESHOLD.def, SWITCH_THRESHOLD.min, SWITCH_THRESHOLD.max),
+      threshold: thresholdOf(j.threshold, SWITCH_THRESHOLD.default, SWITCH_THRESHOLD.min, SWITCH_THRESHOLD.max),
       prompt: promptOf(j.prompt),
       keepPrompt: promptOf(j.keepPrompt),
       offPrompt: promptOf(j.offPrompt),
@@ -268,28 +276,41 @@ export function applySceneTag(
 
 /**
  * 整段对话末尾的状态 —— 组装提示词时 {{current_bg}} / {{current_bgm}} 用它。
- * 只摘标签、不切句:句子边界不影响标签的先后顺序。Jev 标的合并进来一起算
+ * 只摘标签、不切句:句子边界不影响标签的先后顺序。Jev 标的合并进来一起算。
+ * cgOk:形态开着时,第 i 条那里这张 CG 能不能出(plugins/forms.ts 的 cgOkAt)。不能出的 CG 标签不算,
+ * 走到不能出的那一条就收起(切回来也不带回)。不切句,所以按每条末尾的形态算
  */
 export function sceneAtEnd(
   entries: readonly ChatEntry[],
   kinds: readonly TagKind[],
   assets: readonly SceneAsset[],
+  cgOk?: (cg: SceneAsset, entryIndex: number) => boolean,
 ): SceneState {
   let state = initialScene(assets);
   if (assets.length === 0) return state;
-  for (const e of entries) {
-    if (e.role !== 'assistant') continue;
-    for (const t of extractTags(jevText(e, kinds), kinds, false).tags) state = applySceneTag(state, t, assets);
-  }
+  entries.forEach((e, i) => {
+    if (e.role === 'assistant') {
+      for (const t of extractTags(jevText(e, kinds), kinds, false).tags) {
+        const next = applySceneTag(state, t, assets);
+        if (t.kind === 'cg' && cgOk && next.cg && next.cg !== state.cg && !cgOk(next.cg, i)) continue;
+        state = next;
+      }
+    }
+    if (cgOk && state.cg && !cgOk(state.cg, i)) state = { ...state, cg: null };
+  });
   return state;
 }
 
-/** 插件提供的宏,并入自定义宏的查找表 */
+/**
+ * 插件提供的宏,并入自定义宏的查找表。
+ * cgOk:形态开着时,现在的形态里这张 CG 能不能出(plugins/forms.ts 的 cgOkNow);{{cgs}} 只列能出的
+ */
 export function sceneMacros(
   configs: Record<SceneKindKey, PluginConfig>,
   bound: boolean,
   assets: readonly SceneAsset[],
   state: SceneState,
+  cgOk?: (cg: SceneAsset) => boolean,
 ): Record<string, string> {
   const nameOf = (id: string | null) => assets.find((a) => a.id === id)?.label;
   const line = (a: SceneAsset, extra?: string) => {
@@ -300,7 +321,9 @@ export function sceneMacros(
   const none = bound ? '(场景包里还没有素材)' : '(这张卡还没有绑定场景包)';
   const bgs = backgroundsOf(assets);
   const bgms = bgmsOf(assets);
-  const cgs = cgsOf(assets);
+  const allCgs = cgsOf(assets);
+  const cgs = cgOk ? allCgs.filter(cgOk) : allCgs;
+  const cgNow = state.cg && (!cgOk || cgOk(state.cg)) ? state.cg : null;
   return {
     backgrounds: bgs.length
       ? bgs.map((a) => line(a, a.bgm_id && nameOf(a.bgm_id) ? `默认音乐：${nameOf(a.bgm_id)}` : '')).join('\n')
@@ -310,9 +333,13 @@ export function sceneMacros(
     bgms: bgms.length ? bgms.map((a) => line(a)).join('\n') : none,
     bgm_tag: sceneTagExample('bgm', configs.bgm.tagTemplate),
     current_bgm: state.bgm?.label ?? '(没有音乐)',
-    cgs: cgs.length ? cgs.map((a) => line(a)).join('\n') : none,
+    cgs: cgs.length
+      ? cgs.map((a) => line(a)).join('\n')
+      : allCgs.length
+        ? '(现在不显示 CG，不要写 CG 标签)'
+        : none,
     cg_tag: sceneTagExample('cg', configs.cg.tagTemplate),
     cg_off_tag: configs.cg.tagTemplate.replace(SCENE.cg.placeholder, () => CG_OFF_WORD),
-    current_cg: state.cg?.label ?? '(没有 CG，显示立绘和背景)',
+    current_cg: cgNow?.label ?? '(没有 CG，显示立绘和背景)',
   };
 }

@@ -1,0 +1,24 @@
+{
+  "name": "鴻さゆみ",
+  "description": "日语名字、文件带 BOM",
+  "personality": "",
+  "scenario": "",
+  "first_mes": "おかえりなさい。",
+  "mes_example": "",
+  "system_prompt": "",
+  "post_history_instructions": "",
+  "creator_notes": "",
+  "alternate_greetings": [],
+  "tags": [],
+  "creator": "",
+  "character_version": "",
+  "character_book": null,
+  "extensions": {
+    "depth_prompt": {
+      "prompt": "",
+      "depth": 4
+    }
+  },
+  "spec": "chara_card_v3",
+  "avatar": null
+}

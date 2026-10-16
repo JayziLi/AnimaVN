@@ -1,19 +1,14 @@
-"""One-off dev migration: tavern_cards.last_chat_id.
+"""(留一期)这一步现在由迁移器做:core.2026_08_card_last_chat —— 角色卡:记住上次打开的对话。
 
-The card remembers which chat was open last, like ST's `character.chat`.
-No FK on purpose — a chat can be deleted out from under the pointer, and the
-read side already falls back to the card's most recently updated chat.
+后端启动时会自动检查(设置 MIGRATIONS_MODE=apply 时自动升级),一般不用手动跑。手动跑:在 AnimaBackend 目录下
+python scripts/migrate_card_last_chat_column.py,改的是 data/animabackend.db,只做这一步(连同它依赖的步骤),可以重复跑。
 """
 
-import sqlite3
+import sys
+from pathlib import Path
 
-db = sqlite3.connect("data/animabackend.db")
-cols = {r[1] for r in db.execute("PRAGMA table_info(tavern_cards)")}
-if "last_chat_id" not in cols:
-    db.execute("ALTER TABLE tavern_cards ADD COLUMN last_chat_id VARCHAR(32)")
-    print("added last_chat_id")
-else:
-    print("last_chat_id already present")
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-db.commit()
-print([r[1] for r in db.execute("PRAGMA table_info(tavern_cards)")])
+from app.migrations.legacy_script import run_step  # noqa: E402
+
+run_step("core.2026_08_card_last_chat")

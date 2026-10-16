@@ -59,21 +59,18 @@ def test_asset_names_unique_per_kind_not_across_kinds(client: TestClient):
     assert client.post(base, json={"kind": "sprite", "label": "x"}).status_code == 422
 
 
-def test_default_bgm_must_be_a_bgm_in_the_same_pack_and_is_cleared_on_delete(client: TestClient):
+def test_default_bgm_must_be_a_bgm_and_is_cleared_on_delete(client: TestClient):
     pack = _pack(client)
-    other = _pack(client, "维多利亚")
     base = _assets(pack["id"])
     bg = client.post(base, json={"kind": "bg", "label": "食堂"}).json()
     bg2 = client.post(base, json={"kind": "bg", "label": "走廊"}).json()
     bgm = client.post(base, json={"kind": "bgm", "label": "日常"}).json()
-    foreign = client.post(_assets(other["id"]), json={"kind": "bgm", "label": "日常"}).json()
 
     ok = client.put(f"{base}/{bg['id']}", json={"bgm_id": bgm["id"], "focus_x": 30})
     assert ok.status_code == 200
     assert (ok.json()["bgm_id"], ok.json()["focus_x"]) == (bgm["id"], 30)
 
-    # 另一个包里的曲子、背景当曲子、给曲子设默认曲,都不行
-    assert client.put(f"{base}/{bg['id']}", json={"bgm_id": foreign["id"]}).status_code == 400
+    # 背景当曲子、给曲子设默认曲,都不行(别的包里的曲子可以,见 test_scene_parts.py)
     assert client.put(f"{base}/{bg['id']}", json={"bgm_id": bg2["id"]}).status_code == 400
     assert client.put(f"{base}/{bgm['id']}", json={"bgm_id": bgm["id"]}).status_code == 400
     assert client.put(f"{base}/{bg['id']}", json={"focus_x": 101}).status_code == 422
@@ -262,16 +259,16 @@ def test_background_file_serves_a_shrunk_copy_but_audio_ignores_width(client: Te
 def test_cg_variants_hang_under_a_cg_and_follow_it(client: TestClient):
     pack = _pack(client)
     base = _assets(pack["id"])
-    cg = client.post(base, json={"kind": "cg", "label": "海边烟花", "description": "夜晚的海边"}).json()
-    other = client.post(base, json={"kind": "cg", "label": "撑伞"}).json()
+    cg = client.post(base, json={"kind": "cg", "label": "温泉散步", "description": "温泉边"}).json()
+    other = client.post(base, json={"kind": "cg", "label": "看烟花"}).json()
     music = client.post(base, json={"kind": "bgm", "label": "温馨"}).json()
 
     # 差分的名字是表情名:同一张 CG 里不能重,不同 CG 之间可以重,也不和构图的名字抢
-    v1 = client.post(base, json={"kind": "cg", "label": "开心", "parent_id": cg["id"]})
+    v1 = client.post(base, json={"kind": "cg", "label": "开心·大笑", "parent_id": cg["id"]})
     assert v1.status_code == 200 and v1.json()["parent_id"] == cg["id"]
-    assert client.post(base, json={"kind": "cg", "label": "开心", "parent_id": cg["id"]}).status_code == 409
-    assert client.post(base, json={"kind": "cg", "label": "开心", "parent_id": other["id"]}).status_code == 200
-    assert client.post(base, json={"kind": "cg", "label": "撑伞", "parent_id": cg["id"]}).status_code == 200
+    assert client.post(base, json={"kind": "cg", "label": "开心·大笑", "parent_id": cg["id"]}).status_code == 409
+    assert client.post(base, json={"kind": "cg", "label": "开心·大笑", "parent_id": other["id"]}).status_code == 200
+    assert client.post(base, json={"kind": "cg", "label": "看烟花", "parent_id": cg["id"]}).status_code == 200
     # 只能挂在 CG 构图下面
     v_id = v1.json()["id"]
     assert client.post(base, json={"kind": "cg", "label": "x", "parent_id": v_id}).status_code == 400
@@ -282,13 +279,13 @@ def test_cg_variants_hang_under_a_cg_and_follow_it(client: TestClient):
     assert client.put(f"{base}/{cg['id']}", json={"bgm_id": music["id"]}).status_code == 400
     assert client.put(f"{base}/{v_id}", json={"bgm_id": music["id"]}).status_code == 400
     # 差分改名也只和同一张 CG 的差分比
-    assert client.put(f"{base}/{v_id}", json={"label": "撑伞"}).status_code == 409
+    assert client.put(f"{base}/{v_id}", json={"label": "看烟花"}).status_code == 409
 
     # 包的计数只数构图;排序只排构图
     counted = next(p for p in client.get(PACKS).json() if p["id"] == pack["id"])
     assert counted["cg_count"] == 2
     order = client.post(f"{base}/reorder", json={"kind": "cg", "ids": [other["id"], cg["id"]]})
-    assert [a["label"] for a in order.json()] == ["撑伞", "海边烟花"]
+    assert [a["label"] for a in order.json()] == ["看烟花", "温泉散步"]
 
     # CG 收图片,带 ?w= 也缩
     assert client.put(f"{base}/{cg['id']}/file", files={"file": ("a.mp3", MP3)}).status_code == 400
@@ -298,4 +295,24 @@ def test_cg_variants_hang_under_a_cg_and_follow_it(client: TestClient):
     client.delete(f"{base}/{music['id']}")
     client.delete(f"{base}/{cg['id']}")
     left = client.get(base).json()
-    assert [(a["label"], a["parent_id"] == other["id"]) for a in left] == [("撑伞", False), ("开心", True)]
+    assert [(a["label"], a["parent_id"] == other["id"]) for a in left] == [("看烟花", False), ("开心·大笑", True)]
+
+
+def test_cg_says_which_states_it_shows_up_in(client: TestClient):
+    pack = _pack(client)
+    base = _assets(pack["id"])
+    cg = client.post(base, json={"kind": "cg", "label": "看烟花"}).json()
+    bg = client.post(base, json={"kind": "bg", "label": "草庵"}).json()
+    # 没设过是 [] = 不限
+    assert cg["forms"] == [] and bg["forms"] == []
+    # 去空、去重,顺序照传来的
+    r = client.put(f"{base}/{cg['id']}", json={"forms": ["变身", " ", "普通", "变身"]})
+    assert r.status_code == 200 and r.json()["forms"] == ["变身", "普通"]
+    assert client.put(f"{base}/{cg['id']}", json={"forms": []}).json()["forms"] == []
+    # 改别的格子不动它
+    client.put(f"{base}/{cg['id']}", json={"forms": ["变身"]})
+    assert client.put(f"{base}/{cg['id']}", json={"description": "她在前面"}).json()["forms"] == ["变身"]
+    # 只有 CG 构图能设:背景、差分不行
+    assert client.put(f"{base}/{bg['id']}", json={"forms": ["变身"]}).status_code == 400
+    v = client.post(base, json={"kind": "cg", "label": "开心·大笑", "parent_id": cg["id"]}).json()
+    assert client.put(f"{base}/{v['id']}", json={"forms": ["变身"]}).status_code == 400

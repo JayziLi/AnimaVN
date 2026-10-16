@@ -1,0 +1,311 @@
+/* ══════════ 卡编辑器 · 资料页 · 预设(PresetView) ══════════
+   照 V4CardPreset.png(v4_boards.py 的 board_card_preset):主区顶上预设行(36 高)、
+   绑定 / 编排 / 新建块一行,下面块列表吃掉剩下的高度、自己滚;右栏 340 是 BlockEditorSide。
+   块列表还是 PresetPanel(variant="page",根节点 .pp-list),这里只在 .pp-list 里面改排法,
+   调试台左栏不受影响。选择器都多带一层:要压过 debug.css / profile.css 里同名的规则(加载顺序不保证)。
+   选中行的边框 #5a5a5a、关着的开关圆点 #bdbdbd 是图里的原值。 */
+
+/* ── 主区 ── */
+
+.st-main.pf-main.pv-main {
+  gap: 12px;
+  padding: 18px 26px 16px;
+  overflow: hidden;
+}
+
+.pv-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.st-select.pv-preset {
+  height: 36px;
+  padding: 0 12px;
+  border-color: var(--border-strong);
+  border-radius: 9px;
+  font-size: 14px;
+  font-weight: 500;
+}
+.st-select.pv-preset .pv-unsaved {
+  max-width: none;
+  color: var(--text-dim);
+  font-weight: 400;
+}
+.st-btn.pv-tall {
+  height: 36px;
+  font-size: 12.5px;
+}
+
+/* 绑定 · 编排 · 新建块 */
+.pv-row {
+  flex: none;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  min-height: 28px;
+  font-size: 12.5px;
+}
+.pv-bind {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: var(--text);
+  cursor: pointer;
+}
+.pv-bind input {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.pv-bind input:disabled {
+  cursor: progress;
+}
+.pv-group-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.pv-row-label {
+  flex: none;
+  color: var(--text-faint);
+}
+.st-select.pv-group {
+  flex: 0 1 auto;
+  height: 28px;
+  gap: 6px;
+  padding: 0 9px;
+  border-color: var(--border-strong);
+  border-radius: 7px;
+  font-size: 12.5px;
+}
+.pv-note {
+  flex: none;
+  margin: -4px 0 0;
+  color: var(--text-faint);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* 没有预设 */
+.st-pending.pv-empty {
+  gap: 10px;
+}
+.pv-empty-sub {
+  font-size: 12px;
+}
+.pv-empty-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+/* ── 块列表(PresetPanel 的 page 摆法) ── */
+
+.pp-list {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-panel);
+  overflow: hidden;
+}
+
+.pp-list .block-header {
+  flex: none;
+  height: 34px;
+  gap: 8px;
+  padding: 0 20px 0 14px;
+  font-family: inherit;
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.pp-list .block-header-count {
+  margin-left: 6px;
+  font-family: var(--mono);
+  opacity: 1;
+}
+.pp-list .block-header-token {
+  display: inline-flex;
+  gap: 8px;
+}
+.pp-list .block-header-sum {
+  font-family: var(--mono);
+  color: var(--text-dim);
+}
+
+.pp-list .panel-body {
+  padding: 4px;
+}
+
+.pp-list .block-row {
+  border-bottom: 0;
+  border-radius: 8px;
+}
+.pp-list .block-row .block-head {
+  min-height: 31px;
+  gap: 10px;
+  padding: 0 10px;
+  border-radius: 8px;
+}
+.pp-list .block-row .block-head:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+/* 关着的块:只把名字压灰,开关本身照常亮(图里关着的行开关是灰底) */
+.pp-list .block-row.off .block-head {
+  opacity: 1;
+}
+.pp-list .block-row.off .block-name {
+  color: var(--text-faint);
+}
+.pp-list .block-row.off .block-badge {
+  opacity: 0.6;
+}
+.pp-list .block-row.selected .block-head {
+  background: var(--bg-hover);
+  box-shadow: inset 0 0 0 1px #5a5a5a;
+}
+
+/* 把手常驻:这里不像左栏那么挤 */
+.pp-list .block-row .block-grip {
+  width: 12px;
+  font-size: 13px;
+  opacity: 1;
+}
+.pp-list .block-name {
+  font-size: 13px;
+}
+
+/* 角色 / 标记位徽章:灰底小牌子,不描边(和右栏、卡字段那边的 .pf-badge 一个样子) */
+.pp-list .block-head .block-badge {
+  height: 19px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px;
+  border-color: transparent;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-dim);
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+  opacity: 1;
+}
+/* 插件、自动补、Jev 不发:虚线框,和普通块分开 */
+.pp-list .block-head .block-badge.badge-plugin,
+.pp-list .block-head .block-badge.badge-auto {
+  border-color: currentColor;
+  background: transparent;
+}
+/* 被卡覆盖:反相实心块,一眼能看到 */
+.pp-list .block-head .block-badge.badge-override {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--bg);
+}
+.pp-list .block-head .block-badge.badge-missing {
+  color: var(--danger);
+}
+
+.pp-list .block-head .icon-btn.tiny {
+  width: 20px;
+  height: 20px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+/* 开关:28 × 16,开 = 浅底深圆点,关 = 灰底浅圆点 */
+.pp-list .block-head .block-toggle {
+  width: 28px;
+  height: 16px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--border-strong);
+}
+.pp-list .block-head .block-toggle .knob {
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  background: #bdbdbd;
+}
+.pp-list .block-head .block-toggle.on {
+  background: var(--text);
+}
+.pp-list .block-head .block-toggle.on .knob {
+  background: var(--bg);
+  transform: translateX(12px);
+}
+/* Jev 标的、插件关了的那几块:点不动,虚线空框 */
+.pp-list .block-head .block-toggle:disabled {
+  border: 1px dashed var(--border-strong);
+  background: transparent;
+}
+.pp-list .block-head .block-toggle:disabled .knob {
+  top: 1px;
+  left: 1px;
+  background: var(--text-faint);
+}
+
+.pp-list .block-tokens {
+  min-width: 42px;
+  font-size: 11.5px;
+}
+
+/* ── 右栏 ── */
+
+.pv-side {
+  width: 340px;
+  flex: none;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+.pv-side > .bes {
+  flex: 1;
+  height: auto;
+}
+
+/* ══════════ 窄屏(< 900px):上下排、整页滚 ══════════
+   列表自己留一段滚动(最多 65vh):拖块时手指停在边上要能接着滚,整页滚接不上 */
+
+@media (max-width: 899px) {
+  .st-main.pf-main.pv-main {
+    overflow: visible;
+    padding: 12px;
+  }
+  .pp-list {
+    flex: none;
+  }
+  .pp-list .panel-body {
+    max-height: 65vh;
+  }
+  /* 手指好捏:把手、✎ 放大 */
+  .pp-list .block-row .block-grip {
+    width: 16px;
+  }
+  .pp-list .block-head .icon-btn.tiny {
+    width: 26px;
+    height: 26px;
+  }
+  .pv-side {
+    width: auto;
+    border-left: 0;
+    border-top: 1px solid var(--border);
+    /* 点块后滚到这里:别被贴顶的顶栏 + 目录条盖住(和 .pf-sec 一样) */
+    scroll-margin-top: 108px;
+  }
+  .pv-side .bes-body {
+    overflow: visible;
+  }
+}

@@ -1,26 +1,14 @@
-"""One-off dev migration: the two IndexTTS columns.
+"""(留一期)这一步现在由迁移器做:core.2026_09_voice_indextts —— 声音:IndexTTS 的音色参考和情绪向量。
 
-voice_profiles.ref_path (speaker reference) and voice_emotions.emo_vector
-(8-dim emotion vector). A fresh database gets them from create_all; this only
-patches databases that already have the voice tables. Safe to run twice.
+后端启动时会自动检查(设置 MIGRATIONS_MODE=apply 时自动升级),一般不用手动跑。手动跑:在 AnimaBackend 目录下
+python scripts/migrate_voice_indextts_columns.py,改的是 data/animabackend.db,只做这一步(连同它依赖的步骤),可以重复跑。
 """
 
-import sqlite3
+import sys
+from pathlib import Path
 
-db = sqlite3.connect("data/animabackend.db")
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from app.migrations.legacy_script import run_step  # noqa: E402
 
-def add(table: str, column: str, ddl: str) -> None:
-    cols = {r[1] for r in db.execute(f"PRAGMA table_info({table})")}
-    if not cols:
-        print(f"{table} missing, skipped (create_all will build it)")
-    elif column in cols:
-        print(f"{table}.{column} already present")
-    else:
-        db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
-        print(f"added {table}.{column}")
-
-
-add("voice_profiles", "ref_path", "VARCHAR(500) NOT NULL DEFAULT ''")
-add("voice_emotions", "emo_vector", "JSON")
-db.commit()
+run_step("core.2026_09_voice_indextts")

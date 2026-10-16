@@ -7,18 +7,18 @@
  *     之后 AI 回复里换曲子,不用再点就能响
  *   - 整首解码后循环是无缝的,<audio loop> 的 MP3 在接缝处会顿一下
  * 代价是解码后的 PCM 比较占内存(一首三分钟的曲子几十 MB),所以只缓存最近几首。
+ *
+ * AudioContext、解锁、切后台挂起、念台词时压低 BGM 都在音频总线(audioBus.ts)上,这里走它的 bgm 声道。
  */
 
 import { useSyncExternalStore } from 'react';
+import { audioBus } from './audioBus';
 
 /** 换歌时交叉淡入淡出的秒数 */
 const FADE = 1.5;
 /** 解码后的曲子最多留几首 */
 const MAX_BUFFERS = 3;
 const STORE_KEY = 'anima.vn.audio';
-/** 念台词时 BGM 压到原音量的多少 */
-/** 念台词时 BGM 默认压到原音量的 35%;设置里可以改 */
-const DEFAULT_DUCK_LEVEL = 0.35;
 
 interface Track {
   url: string;
@@ -37,25 +37,17 @@ export interface BgmSnapshot {
   muted: boolean;
   /** 下载或解码失败的曲子 → 原因 */
   error: string | null;
+  /** 解码过的曲子有多长(秒,按地址记);卡编辑器的 BGM 栏读到了才显示时长 */
+  durations: Readonly<Record<string, number>>;
 }
 
-type WebkitWindow = Window & { webkitAudioContext?: typeof AudioContext };
-
 class BgmPlayer {
-  private ctx: AudioContext | null = null;
-  private master: GainNode | null = null;
-  /** 串在 master 后面,念台词时压低 BGM;和音量滑条分开,互不影响 */
-  private duckGain: GainNode | null = null;
-  private duckLevel = DEFAULT_DUCK_LEVEL;
-  private ducked = false;
   private current: Track | null = null;
   private buffers = new Map<string, Promise<AudioBuffer>>();
   /** 最近一次下载 / 解码失败的曲子(play 换曲子时清掉) */
   private failedUrl: string | null = null;
-  private active = false;
   /** 插件页试听之前在放什么:停止试听时还原(在视觉小说菜单里试听完,场景的曲子接着放) */
   private beforePreview: { wanted: string | null; active: boolean } | null = null;
-  private suspendTimer: number | undefined;
   private listeners = new Set<() => void>();
   private snap: BgmSnapshot = {
     wanted: null,
@@ -64,6 +56,7 @@ class BgmPlayer {
     volume: 0.7,
     muted: false,
     error: null,
+    durations: {},
   };
 
   constructor() {
@@ -79,14 +72,9 @@ class BgmPlayer {
     } catch {
       // 隐私模式等拿不到 localStorage,用默认音量
     }
-    if (typeof document !== 'undefined') {
-      // 切到后台就停,回来接着放(手机锁屏、切 App 时不该一直响)
-      document.addEventListener('visibilitychange', () => {
-        if (!this.ctx) return;
-        if (document.hidden) void this.ctx.suspend().catch(() => {});
-        else if (this.active) void this.ctx.resume().catch(() => {});
-      });
-    }
+    audioBus.setLevel('bgm', this.level());
+    // 解锁之前就要求过的曲子,解锁时补上
+    audioBus.onUnlock(() => void this.sync());
   }
 
   // ---- 给 React 订阅 ----
@@ -103,47 +91,22 @@ class BgmPlayer {
 
   // ---- 控制 ----
 
-  /**
-   * 在用户手势(点击、按键)里调用:第一次会创建 AudioContext,之后每次确保它在运行。
-   * iOS 上 AudioContext 只能在手势里启动;锁屏回来后也可能被系统挂起,要再点一下。
-   */
+  /** 解锁声音:就是 audioBus.unlock()(解锁之前要求过的曲子跟着补上)。调试台开视觉小说时还在用这个名字 */
   unlock() {
-    if (!this.ctx) {
-      const Ctor = window.AudioContext ?? (window as WebkitWindow).webkitAudioContext;
-      if (!Ctor) return;
-      this.ctx = new Ctor();
-      this.master = this.ctx.createGain();
-      this.master.gain.value = this.level();
-      this.duckGain = this.ctx.createGain();
-      this.master.connect(this.duckGain);
-      this.duckGain.connect(this.ctx.destination);
-    }
-    if (this.ctx.state !== 'running' && !document.hidden) void this.ctx.resume().catch(() => {});
-    // 解锁之前就要求过的曲子,现在补上
-    void this.sync();
+    audioBus.unlock();
   }
 
   /** 视觉小说界面打开 / 关闭(关闭时淡出,淡完挂起,不占声卡) */
   setActive(on: boolean) {
-    this.active = on;
-    window.clearTimeout(this.suspendTimer);
-    if (on) {
-      if (this.ctx && this.ctx.state !== 'running' && !document.hidden) {
-        void this.ctx.resume().catch(() => {});
-      }
-      return;
-    }
-    this.play(null);
-    this.suspendTimer = window.setTimeout(() => {
-      if (!this.active) void this.ctx?.suspend().catch(() => {});
-    }, FADE * 1000 + 300);
+    audioBus.setActive(on, FADE * 1000 + 300);
+    if (!on) this.play(null);
   }
 
   /** 试听一首(插件页)。要在点击里调:顺手解锁 */
   startPreview(url: string) {
-    this.beforePreview ??= { wanted: this.snap.wanted, active: this.active };
+    this.beforePreview ??= { wanted: this.snap.wanted, active: audioBus.active };
     this.set({ preview: url });
-    this.unlock();
+    audioBus.unlock();
     this.setActive(true);
     this.play(url);
   }
@@ -154,8 +117,8 @@ class BgmPlayer {
     if (!before) return;
     this.beforePreview = null;
     this.set({ preview: null });
-    // 试听期间视觉小说关了(先于插件页卸载)的话,this.active 已经是 false,别再放出声来
-    if (before.active && this.active) this.play(before.wanted);
+    // 试听期间视觉小说关了(先于插件页卸载)的话,audioBus.active 已经是 false,别再放出声来
+    if (before.active && audioBus.active) this.play(before.wanted);
     else this.setActive(false);
   }
 
@@ -169,7 +132,7 @@ class BgmPlayer {
 
   /** 提前下载 + 解码,切过去时不用等 */
   prefetch(url: string) {
-    if (this.ctx) {
+    if (audioBus.context) {
       void this.load(url).catch(() => {});
     } else {
       // 还没解锁就没有 AudioContext 可以解码,先把文件拉进浏览器缓存
@@ -187,27 +150,6 @@ class BgmPlayer {
     this.applyLevel();
   }
 
-  /** 语音播放器和 BGM 共用这个 AudioContext(iOS 只用解锁一次)。还没解锁时是 null */
-  get context(): AudioContext | null {
-    return this.ctx;
-  }
-
-  /** 念台词时 BGM 压到多少(1 = 不压)。正压着的时候改,立刻按新值压 */
-  setDuckLevel(v: number) {
-    this.duckLevel = Math.min(1, Math.max(0, v));
-    if (this.ducked) this.duck(true);
-  }
-
-  /** 念台词时把 BGM 压低(默认 35%),念完 0.5 秒内淡回 */
-  duck(on: boolean) {
-    this.ducked = on;
-    if (!this.ctx || !this.duckGain) return;
-    const g = this.duckGain.gain;
-    const now = this.ctx.currentTime;
-    g.cancelScheduledValues(now);
-    g.setTargetAtTime(on ? this.duckLevel : 1, now, on ? 0.08 : 0.15);
-  }
-
   // ---- 内部 ----
 
   /** 滑条是线性的,耳朵听响度是对数的:平方一下,滑条中间听起来才像「一半」 */
@@ -216,9 +158,7 @@ class BgmPlayer {
   }
 
   private applyLevel() {
-    if (this.ctx && this.master) {
-      this.master.gain.setTargetAtTime(this.level(), this.ctx.currentTime, 0.05);
-    }
+    audioBus.setLevel('bgm', this.level());
     try {
       localStorage.setItem(
         STORE_KEY,
@@ -237,13 +177,19 @@ class BgmPlayer {
       this.buffers.set(url, hit);
       return hit;
     }
-    const ctx = this.ctx!;
+    const ctx = audioBus.context!;
     const p = fetch(url)
       .then((r) => {
         if (!r.ok) throw new Error(`下载失败(HTTP ${r.status})`);
         return r.arrayBuffer();
       })
-      .then((buf) => ctx.decodeAudioData(buf));
+      .then((buf) => ctx.decodeAudioData(buf))
+      .then((decoded) => {
+        if (this.snap.durations[url] !== decoded.duration) {
+          this.set({ durations: { ...this.snap.durations, [url]: decoded.duration } });
+        }
+        return decoded;
+      });
     // 只删自己:这条可能早被挤出缓存、换成了同一地址的新请求,别把新的删了
     p.catch(() => {
       if (this.buffers.get(url) === p) this.buffers.delete(url);
@@ -258,9 +204,9 @@ class BgmPlayer {
 
   private async sync() {
     const url = this.snap.wanted;
-    const ctx = this.ctx;
-    const master = this.master;
-    if (!ctx || !master) return; // 还没解锁;unlock() 会再调一次
+    const ctx = audioBus.context;
+    const out = audioBus.input('bgm');
+    if (!ctx || !out) return; // 还没解锁;解锁时(audioBus.onUnlock)会再调一次
     if ((this.current?.url ?? null) === url) return;
     // 这首刚失败过(404、解码不了):别每次点击解锁时都再下一遍、再报一遍错。换曲子(play)时清掉
     if (url !== null && url === this.failedUrl) return;
@@ -287,7 +233,7 @@ class BgmPlayer {
     const gain = ctx.createGain();
     gain.gain.setValueAtTime(0, ctx.currentTime);
     gain.gain.linearRampToValueAtTime(1, ctx.currentTime + FADE);
-    gain.connect(master);
+    gain.connect(out);
     const source = ctx.createBufferSource();
     source.buffer = buffer;
     source.loop = true;
@@ -299,7 +245,7 @@ class BgmPlayer {
 
   private fadeOut() {
     const t = this.current;
-    const ctx = this.ctx;
+    const ctx = audioBus.context;
     if (!t || !ctx) return;
     this.current = null;
     const now = ctx.currentTime;

@@ -2,7 +2,7 @@ import { entryTitle, type CharacterBookEntry } from '../lib/characterBook';
 import { estimateTokens, formatTokens } from '../lib/tokens';
 
 /**
- * 世界书条目列表(只读)。一行一条,点开看正文。块详情弹窗用;要改去卡编辑抽屉。
+ * 世界书条目列表(只读)。一行一条,点开看正文。块详情弹窗用;要改去卡编辑器的资料页。
  *
  * 顺序按 insertion_order 排,和组装器拼进提示词的顺序一致。
  */

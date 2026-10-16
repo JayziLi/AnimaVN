@@ -5,7 +5,7 @@
  * 这里只管壳子,每页画什么由外面传进来。
  */
 
-import { useEffect, useRef, type ReactNode } from 'react';
+import { Fragment, useEffect, useRef, type ReactNode } from 'react';
 import { AnimaLogo } from './AnimaLogo';
 
 export type MenuPage = 'log' | 'save' | 'card' | 'plugin' | 'preset' | 'model' | 'config' | 'dev';
@@ -42,9 +42,11 @@ interface Props {
   children: ReactNode;
   onClose: () => void;
   onTitle: () => void;
+  /** 「素材」:打开素材管理页(全屏,盖在菜单上面,不是菜单里的一页);不给就没有这一项 */
+  onLibrary?: () => void;
 }
 
-export function VNMenu({ page, onPage, charName, chatName, headExtra, children, onClose, onTitle }: Props) {
+export function VNMenu({ page, onPage, charName, chatName, headExtra, children, onClose, onTitle, onLibrary }: Props) {
   // 窄屏时导航是一排横滑的标签,当前页可能在屏幕外 —— 换页时把它滚进来
   const navRef = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -64,14 +66,20 @@ export function VNMenu({ page, onPage, charName, chatName, headExtra, children, 
           </div>
         </div>
         {MENU_PAGES.map((p) => (
-          <button
-            key={p.key}
-            className={`vn-nav${page === p.key ? ' on' : ''}`}
-            aria-current={page === p.key ? 'page' : undefined}
-            onClick={() => onPage(p.key)}
-          >
-            {p.name}
-          </button>
+          <Fragment key={p.key}>
+            <button
+              className={`vn-nav${page === p.key ? ' on' : ''}`}
+              aria-current={page === p.key ? 'page' : undefined}
+              onClick={() => onPage(p.key)}
+            >
+              {p.name}
+            </button>
+            {p.key === 'plugin' && onLibrary && (
+              <button className="vn-nav" title="素材管理:库里所有的立绘、声音、背景、BGM、CG(全屏打开)" onClick={onLibrary}>
+                素材
+              </button>
+            )}
+          </Fragment>
         ))}
         <div className="vn-nav-gap" />
         <button

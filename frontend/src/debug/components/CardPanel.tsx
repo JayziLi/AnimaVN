@@ -2,13 +2,15 @@ import { useState, type ReactNode } from 'react';
 import type { StoredCard } from '../lib/api';
 import type { TavernCard } from '../lib/cardParser';
 import { estimateTokens, formatTokens } from '../lib/tokens';
+import { dropTarget } from '../importer/dropTarget';
+import type { StudioTab } from '../studio/types';
 import { CharacterList } from './CharacterList';
 import { AnimaIcon } from './AnimaIcon';
 
 /**
  * 右栏角色卡 —— 两层结构,和酒馆一致:
  *   一级(这里)     头像 / 名字 / 标签 / 创作者注释(折叠) / 角色描述 / 开场白
- *   二级(高级定义)  personality / scenario / mes_example / 提示词覆盖 / 元数据
+ *   二级(卡编辑器的资料页)  personality / scenario / mes_example / 提示词覆盖 / 世界书 / 元数据
  * 一级只放这两个正文字段,是因为现代卡的内容基本都写在 description 里。
  *
  * 选角色不再是下拉框:view 为 'list' 时整块编辑器让给角色列表(酒馆首页那种
@@ -41,7 +43,8 @@ interface Props {
   onDelete: () => void;
   onImport: () => void;
   onExport: () => void;
-  onOpenAdvanced: () => void;
+  /** 打开卡编辑器(全屏页)的「资料」或「素材」页;工具行的滑块图标也开「资料」 */
+  onOpenStudio: (tab: StudioTab) => void;
   onPickAvatar: () => void;
   /** 头像下面的「绑定」一栏(CardBindings),由 DebugApp 填好传进来 */
   bindings?: ReactNode;
@@ -73,7 +76,7 @@ export function CardPanel({
   onDelete,
   onImport,
   onExport,
-  onOpenAdvanced,
+  onOpenStudio,
   onPickAvatar,
   bindings,
 }: Props) {
@@ -130,7 +133,12 @@ export function CardPanel({
           <span className={`save-state ${saveState}`}>{SAVE_LABEL[saveState]}</span>
         )}
         <div style={{ flex: 1 }} />
-        <button className="icon-btn" onClick={onImport} disabled={busy} title="导入角色卡">
+        <button
+          className="icon-btn"
+          onClick={onImport}
+          disabled={busy}
+          title="导入:角色卡(PNG / JSON)、立绘、背景、曲子、zip 都行;文件夹直接拖进窗口"
+        >
           <AnimaIcon name="import" size={16} />
         </button>
         <button className="icon-btn" onClick={onExport} disabled={busy || !card} title="导出角色卡">
@@ -146,7 +154,7 @@ export function CardPanel({
         </button>
       </div>
 
-      {/* 工具行:列表/编辑器切换 + 新建 / 复制 / 高级定义。
+      {/* 工具行:列表/编辑器切换 + 新建 / 复制 / 资料(卡编辑器的资料页)。
           下拉选角色换成了左边那颗 ☰ —— 点开是占满整栏的头像列表 */}
       <div className="preset-bar">
         <button
@@ -176,9 +184,9 @@ export function CardPanel({
         </button>
         <button
           className="icon-btn"
-          onClick={onOpenAdvanced}
+          onClick={() => onOpenStudio('profile')}
           disabled={busy || !card || view === 'list'}
-          title="高级定义（性格 / 情景 / 对话示例 / 提示词覆盖）"
+          title="编辑资料(性格 / 情景 / 对话示例 / 提示词覆盖 / 世界书)"
         >
           <AnimaIcon name="sliders" size={16} />
         </button>
@@ -210,7 +218,8 @@ export function CardPanel({
 
       {view === 'editor' && card && (
         <div className="panel-body card-fields">
-          <div className="card-hero">
+          {/* 头像、名字这一块也是拖放落点:把文件拖到这里 = 给这张卡加素材 */}
+          <div className="card-hero" {...(selectedId ? dropTarget(selectedId, card.name || '(无名)') : {})}>
             <button
               className="card-avatar-btn"
               onClick={onPickAvatar}
@@ -267,14 +276,16 @@ export function CardPanel({
             )}
           </div>
 
-          {/* 高级设置:和创作者的注释同一种小行,点开是完整的角色卡编辑抽屉(按装配顺序排)。
-              工具行右边的滑块图标是同一个入口 */}
-          <div className="field-row">
-            <button type="button" className="field-head field-head-btn" onClick={onOpenAdvanced} disabled={busy}>
-              <span className="field-name">
-                高级设置<span className="field-name-sub"> · 性格 / 情景 / 对话示例 / 提示词覆盖</span>
-              </span>
-              <span className="field-empty-mark">打开 ›</span>
+          {/* 卡编辑器的两个入口:资料(角色卡的全部字段)/ 素材(这张卡的立绘、声音、背景、BGM、CG)。
+              工具行右边的滑块图标也开资料页 */}
+          <div className="card-studio-links">
+            <button type="button" className="btn" onClick={() => onOpenStudio('profile')} disabled={busy}>
+              <AnimaIcon name="edit" size={15} />
+              编辑资料
+            </button>
+            <button type="button" className="btn" onClick={() => onOpenStudio('assets')} disabled={busy}>
+              <AnimaIcon name="plugin" size={15} />
+              素材
             </button>
           </div>
 

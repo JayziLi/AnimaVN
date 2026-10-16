@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, LargeBinary, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, LargeBinary, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -114,6 +114,8 @@ class PackSprite(Base):
     description: Mapped[str] = mapped_column(Text, default="")
     image: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True, deferred=True)
     mime: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # 图在文件仓库里的指纹(app/storage,第 3 期):有它、文件也在时从文件出图;null = 还没复制进去
+    image_sha: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     # 排第一的是默认表情:一条回复里还没出现标签时用它
     sort: Mapped[int] = mapped_column(Integer, default=0)
     # 关掉 = 游戏里当它不存在(不进 {{sprites}}、不认它的名字),但行和图都留着,
@@ -176,6 +178,21 @@ class AppSetting(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 
 
+class CardPref(Base):
+    """按卡设置(素材架构设计 2.9、第 2 期):一张卡在全局设置(app_settings)之上另外改的几项。
+
+    key 和全局设置同一个键(比如 plugin.cg);value 只存这张卡改了的那几个字段
+    (比如 {"jev": {"threshold": 0.75}}),没改的照用全局,合并在前端做。
+    没有这一行 = 这张卡完全照全局。删卡时一起删,复制卡时一起复制。"""
+
+    __tablename__ = "card_prefs"
+
+    card_id: Mapped[str] = mapped_column(ForeignKey("tavern_cards.id"), primary_key=True)
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[dict] = mapped_column(JSON, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+
 class ScenePack(Base):
     """场景包:一组背景 + BGM,给视觉小说的背景插件和 BGM 插件用。
 
@@ -216,6 +233,8 @@ class SceneAsset(Base):
     data: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True, deferred=True)
     mime: Mapped[str | None] = mapped_column(String(40), nullable=True)
     size: Mapped[int] = mapped_column(Integer, default=0)
+    # 文件在文件仓库里的指纹(同 PackSprite.image_sha)
+    data_sha: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     # 同类素材里排第一的是默认:对话里还没出现背景标签时用它
     sort: Mapped[int] = mapped_column(Integer, default=0)
     # 仅背景:竖屏只看得到横图中间一窄条,这个百分比决定对准哪儿(0 最左,100 最右)
@@ -224,7 +243,55 @@ class SceneAsset(Base):
     bgm_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     # 仅 CG 差分:它属于哪张 CG(同一个包里一条没有 parent 的 cg)
     parent_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    # 仅 CG 构图:在哪些状态里出(存状态的名字,由形态卡带定;没装时不读);空 = 不限。
+    # 状态靠名字和立绘那边对上,差分跟着构图
+    forms: Mapped[list] = mapped_column(JSON, default=list)
     # 同 PackSprite.enabled。包是几张卡共用的,关了对这些卡都生效
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class CgPack(Base):
+    """CG 包(素材架构设计 3.4,第 4 期):一个角色在一个场景里的一组 CG,和场景包一样外置、单独绑到卡上
+    (卡级绑定,app/bindings.py 的 cg)。谁绑了它,谁才会出这些 CG。
+    source_scene_pack_id:从哪个场景包拆出来的(迁移时拆的才有)。旧的场景素材接口往这个场景包里写 CG 时,
+    同时写进这个 CG 包(转接层,清理期以前两边都写)"""
+
+    __tablename__ = "cg_packs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    name: Mapped[str] = mapped_column(String(120))
+    description: Mapped[str] = mapped_column(Text, default="")
+    source_scene_pack_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    # 生图卡带里点「收藏」建出来的包(「AI 生图 · 卡名」)。素材页把它放进「AI 生成」那一栏,不和导入的现成 CG 混在一起;
+    # 游戏里照样能被 AI / Jev 选到
+    generated: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class CgAsset(Base):
+    """CG 包里的一条:构图(parent_id 为空,AI / Jev 点的是它)或者它下面的差分(label 是立绘的表情名),
+    规则和以前场景包里的 CG 一样(SceneAsset 的说明)。迁过来的沿用 scene_assets 那一行的编号,
+    所以配对表、Jev 标注里记的编号不用换;原件按指纹指向同一份文件,库里不再存第二份(data 是空的,
+    读的时候按指纹到场景素材那一行找)。forms 是旧形态卡带用的,第 6 期随它删"""
+
+    __tablename__ = "cg_assets"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    pack_id: Mapped[str] = mapped_column(ForeignKey("cg_packs.id"), index=True)
+    parent_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    label: Mapped[str] = mapped_column(String(80))
+    aliases: Mapped[list] = mapped_column(JSON, default=list)
+    description: Mapped[str] = mapped_column(Text, default="")
+    data: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True, deferred=True)
+    mime: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    size: Mapped[int] = mapped_column(Integer, default=0)
+    data_sha: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    sort: Mapped[int] = mapped_column(Integer, default=0)
+    focus_x: Mapped[int] = mapped_column(Integer, default=50)
+    forms: Mapped[list] = mapped_column(JSON, default=list)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
@@ -328,6 +395,70 @@ class CardVoice(Base):
     is_main: Mapped[bool] = mapped_column(default=False)
 
 
+class CardRole(Base):
+    """角色位(素材架构设计 3.2、3.3,第 4 期):卡和素材之间的一层。每张卡至少一个主角色位(就是卡本身);
+    一卡多人的卡(Risu 那种双人卡)第 6 期起才有配角位。立绘包、声音绑在角色位上,场景包、CG 包绑在卡上。
+    名字默认 = 建它时的卡名;别名给「名字:」前缀认人用(第 6 期)"""
+
+    __tablename__ = "card_roles"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    card_id: Mapped[str] = mapped_column(ForeignKey("tavern_cards.id"), index=True)
+    name: Mapped[str] = mapped_column(String(80), default="")
+    aliases: Mapped[list] = mapped_column(JSON, default=list)
+    sort: Mapped[int] = mapped_column(Integer, default=0)
+    is_main: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class CardStateGroup(Base):
+    """状态组(素材架构设计 3.5,第 4 期):几张卡是同一个角色的几个状态(比如普通 / 换了衣服),游戏顶栏点一下就切。
+    main_card_id 是主卡:选角页、封面用它;对话一般从它开局。没加过状态的卡没有组,行为和以前一样"""
+
+    __tablename__ = "card_state_groups"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    main_card_id: Mapped[str] = mapped_column(String(32), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class CardState(Base):
+    """组里的一张状态卡:状态名、顺序、要不要在选角页单独显示。主卡也有一行(状态名默认「普通」)。
+    一张卡只能在一个组里。卡和预设本身不加字段;对话里在哪一句切到哪张卡记在 swipe_info 的 vn.state"""
+
+    __tablename__ = "card_states"
+
+    card_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    group_id: Mapped[str] = mapped_column(ForeignKey("card_state_groups.id"), index=True)
+    name: Mapped[str] = mapped_column(String(40))
+    sort: Mapped[int] = mapped_column(Integer, default=0)
+    show_in_pick: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class AssetBinding(Base):
+    """卡 → 素材的一条绑定(素材架构设计 3.2)。读写都走 app/bindings.py。
+
+    kind:sprite 立绘包 / voice 声音(这两种绑在角色位上,role_id 是角色位)/ scene 场景包 / cg CG 包
+    (这两种绑在卡上,role_id 是空串;不用 NULL,SQLite 的唯一约束不管 NULL)。
+    同一种按 sort 排;is_primary:立绘包里「当前」那个、声音里的主声音(其余是备用声音)。
+    parts:场景包分成背景、BGM 两栏绑(第 1 步),包本身不拆。
+    旧表 card_sprite_packs / card_voices / card_scene_packs 在清理期以前照旧写一份(退回旧代码用)"""
+
+    __tablename__ = "asset_bindings"
+    __table_args__ = (UniqueConstraint("card_id", "role_id", "kind", "target_id", name="uq_asset_bindings_target"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    card_id: Mapped[str] = mapped_column(ForeignKey("tavern_cards.id"), index=True)
+    role_id: Mapped[str] = mapped_column(String(32), default="")
+    kind: Mapped[str] = mapped_column(String(8))
+    target_id: Mapped[str] = mapped_column(String(32), index=True)
+    sort: Mapped[int] = mapped_column(Integer, default=0)
+    is_primary: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 只对场景包有意义:这个包给这张卡出什么。'' = 背景和 BGM 都出、'bg' = 只出背景、'bgm' = 只出曲子
+    parts: Mapped[str] = mapped_column(String(8), default="", server_default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 class TtsCache(Base):
     """合成过的语音。GPT-SoVITS 每次请求的随机种子不同,同一句重算语气会变;回看、重播
     要听到同一段,所以按「权重 + 请求体」的哈希存下来。data 列 deferred,统计时不拖出来。"""
@@ -344,6 +475,62 @@ class TtsCache(Base):
     size: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     last_used_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class Blob(Base):
+    """文件仓库(app/storage)里的一个文件:按内容的 sha256 存在 data/blobs/<前两位>/<sha>.<扩展名>,
+    放进去就不再改。这张表记它的类型和大小,出文件、清理、体检都按它来"""
+
+    __tablename__ = "blobs"
+
+    sha: Mapped[str] = mapped_column(String(64), primary_key=True)
+    mime: Mapped[str] = mapped_column(String(80))
+    size: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class MaintenanceJob(Base):
+    """后台慢活(复制进文件仓库一类)的进度,设置页显示。一种活一行,能续传"""
+
+    __tablename__ = "maintenance_jobs"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    # pending / running / done / failed
+    state: Mapped[str] = mapped_column(String(16), default="pending")
+    done: Mapped[int] = mapped_column(Integer, default=0)
+    total: Mapped[int] = mapped_column(Integer, default=0)
+    message: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class ImportJob(Base):
+    """一次导入(素材架构第 1 步 B5;设计稿 6.2、6.6):建了哪些卡和包、往原有的卡上加了哪些绑定、改了哪些卡,
+    还有报告和还没认领的暂存文件。编号就是导入计划的编号(暂存目录 import-staging/<id>/),一个计划只执行一次。
+    撤销照这里记的删、拿掉、改回去(app/importer/jobs.py)。新表,启动时 create_all 建,不用迁移步骤"""
+
+    __tablename__ = "import_jobs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    # 一行摘要:「刻晴.png + 3 个文件夹」
+    title: Mapped[str] = mapped_column(String(200), default="")
+    # 拖到的那张卡;导完要打开的那张卡(新建的第一张,或者拖到的卡;都没有是 null)
+    target_card_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    card_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # done / undone
+    status: Mapped[str] = mapped_column(String(16), default="done")
+    # 这次新建的:{cards: [], sprite_packs: [], scene_packs: [], cg_packs: []}
+    created: Mapped[dict] = mapped_column(JSON, default=dict)
+    # 加到原有卡上的绑定:[{card_id, kind, target_id, parts?, added?, previous_primary?}]
+    bound: Mapped[list] = mapped_column(JSON, default=list)
+    # 选了「更新这张卡」的:{card_id: 改之前的字段}
+    replaced_cards: Mapped[dict] = mapped_column(JSON, default=dict)
+    report: Mapped[list] = mapped_column(JSON, default=list)
+    # 还没认领的暂存文件(相对路径)
+    unknown: Mapped[list] = mapped_column(JSON, default=list)
+    # 提示条第一句用的:{main: 主文件名, kinds: [绑上的类型], has_packs: bool}
+    meta: Mapped[dict] = mapped_column(JSON, default=dict)
+    undone_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class PromptPreset(Base):
@@ -453,3 +640,66 @@ class Persona(Base):
     avatar: Mapped[str | None] = mapped_column(Text, default=None)
     is_active: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class WordRecord(Base):
+    """认词记录(素材架构设计 1.4):一份表情名单里「这个原词以前认成了哪一项」。
+
+    AI 写的表情词对不上名单里的名字和别名时先查这里;没记过才让本地认词模型(固定算法:每个词单独算)
+    挑一项,挑完记下来,以后同一个词直接用,不再随后端重启、随一起算的词变。
+    list_ref 是名单:pack:<立绘包 id>(有立绘的卡)/ builtin(内置的 16 个);item 是名单里的一项:立绘的 id / 内置表情的名字。
+    source:migrated 迁移时按旧结果 / model 游戏里模型认的 / rename 改名留下的 / player 你改的。
+    guessed:这一项是模型猜的;unstable:今天的结果本来就随批次变(单独算和一起算挑的不一样)。
+    """
+
+    __tablename__ = "word_records"
+    __table_args__ = (UniqueConstraint("list_ref", "word", name="uq_word_records_list_word"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    list_ref: Mapped[str] = mapped_column(String(80))
+    word: Mapped[str] = mapped_column(String(40))
+    item: Mapped[str] = mapped_column(String(80))
+    source: Mapped[str] = mapped_column(String(16))
+    guessed: Mapped[bool] = mapped_column(Boolean, default=False)
+    unstable: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 模型给的相似度;不是模型认的是 null
+    score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class Pairing(Base):
+    """配对表(素材架构设计 1.6.4):一份表情名单的每一项,配一个跟着表情换的素材 —— 声音里哪段语气(follower=voice)、
+    CG 构图的哪张差分(follower=cg)。按「名单 × 声音」「名单 × CG 构图」存:几张卡用同一个立绘包和同一个声音就共用一张。
+    card_id 不是空的那张是只给这张卡另存的(配对页做),游戏里先查它再查共用的。
+    第 1b 期只建表、按今天的结果填好;第 1c 期语音和 CG 才改成查它。"""
+
+    __tablename__ = "pairings"
+    __table_args__ = (UniqueConstraint("follower", "list_ref", "target", "card_id", name="uq_pairings_scope"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    follower: Mapped[str] = mapped_column(String(8))
+    list_ref: Mapped[str] = mapped_column(String(80))
+    # 跟的那一边:声音的 id / CG 构图(场景素材)的 id
+    target: Mapped[str] = mapped_column(String(32))
+    # 空 = 共用。用空字符串不用 NULL:SQLite 的唯一约束不管 NULL,同一张共用表会存出两份
+    card_id: Mapped[str] = mapped_column(String(32), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class PairingRow(Base):
+    """配对表的一格:名单里的一项 → 声音的一行语气 / CG 的一张差分(value 空 = 用构图本身那张)。
+    source:migrated 迁移时按旧结果 / name 名字对上 / chat 聊天模型配的 / jev / local 本地模型 / player 你改的。
+    guessed:今天是认词模型猜的;pending:待重配;unstable:今天的结果本来就随批次变"""
+
+    __tablename__ = "pairing_rows"
+
+    pairing_id: Mapped[str] = mapped_column(ForeignKey("pairings.id"), primary_key=True)
+    item: Mapped[str] = mapped_column(String(80), primary_key=True)
+    value: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    source: Mapped[str] = mapped_column(String(16))
+    guessed: Mapped[bool] = mapped_column(Boolean, default=False)
+    pending: Mapped[bool] = mapped_column(Boolean, default=False)
+    unstable: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)

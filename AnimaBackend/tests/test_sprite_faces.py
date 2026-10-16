@@ -105,3 +105,17 @@ def test_face_thumbnail_pads_with_transparency_and_falls_back_without_a_face():
     assert img.shape[2] == 3 or img[:, :, 3].min() == 255
 
     assert face_thumbnail(b"not an image", None, 64) is None
+
+
+def test_scanning_from_several_threads_at_once_gives_the_same_faces():
+    """导入时一包立绘在线程池里一起找脸(app/importer/apply.py):OpenCV 的级联分类器不能几个线程共用一个,
+    共用时会报 scaleIdx 的断言错,所以每个线程各有一个"""
+    from concurrent.futures import ThreadPoolExecutor
+
+    img = cv2.imdecode(np.frombuffer(SYLVIE.read_bytes(), np.uint8), cv2.IMREAD_UNCHANGED)
+    sizes = [1.0, 1.5, 2.0, 2.5, 3.0, 0.8]
+    datas = [cv2.imencode(".png", cv2.resize(img, None, fx=f, fy=f))[1].tobytes() for f in sizes] * 4
+    alone = [scan(d) for d in datas]
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        together = list(pool.map(scan, datas))
+    assert together == alone

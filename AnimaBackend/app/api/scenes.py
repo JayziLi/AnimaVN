@@ -8,17 +8,23 @@ CG 下面可以挂差分(parent_id 指向它,名字是立绘的表情名),视觉
 文件同样存 BLOB、列表只回元数据、取文件的端点带版本号长缓存。
 """
 
+import uuid
+
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
 from sqlalchemy import delete, func, select, update
-from sqlalchemy.orm import Session, undefer
+from sqlalchemy.orm import Session
 
-from app.api.sprites import MAX_IMAGE_BYTES, clean_aliases, clean_label, sniff_image_mime
+from app import bindings, cg_sync
+from app.assets.common import MAX_IMAGE_BYTES, clean_aliases, clean_label, sniff_image_mime, unique_pack_name
 from app.db import get_db
 from app.images import MAX_WIDTH, MIN_WIDTH, shrink_image
-from app.models import CardScenePack, SceneAsset, ScenePack, TavernCard
+from app.models import CgPack, SceneAsset, ScenePack, TavernCard
 from app.schemas import (
     CardScenePackIn,
     CardScenePackOut,
+    CardScenePartsIn,
+    CardScenePartsOut,
+    PackDuplicateIn,
     SceneAssetCreate,
     SceneAssetOut,
     SceneAssetReorder,
@@ -27,6 +33,7 @@ from app.schemas import (
     ScenePackOut,
     ScenePackUpdate,
 )
+from app.storage import refs
 
 router = APIRouter(tags=["scenes"])
 
@@ -76,9 +83,6 @@ def _pack_out(pack: ScenePack, db: Session) -> ScenePackOut:
             .group_by(SceneAsset.kind)
         ).all()
     )
-    cards = db.scalar(
-        select(func.count()).select_from(CardScenePack).where(CardScenePack.pack_id == pack.id)
-    )
     return ScenePackOut(
         id=pack.id,
         name=pack.name,
@@ -86,15 +90,24 @@ def _pack_out(pack: ScenePack, db: Session) -> ScenePackOut:
         bg_count=counts.get("bg", 0),
         bgm_count=counts.get("bgm", 0),
         cg_count=counts.get("cg", 0),
-        card_count=cards or 0,
+        card_count=bindings.count_cards(db, bindings.SCENE, pack.id),
         title_bgm_id=pack.title_bgm_id,
+        cg_pack_id=db.scalar(select(CgPack.id).where(CgPack.source_scene_pack_id == pack.id).limit(1)),
     )
 
 
 def _check_own_bgm(pack_id: str, bgm_id: str, db: Session, what: str) -> None:
+    """封面曲只能是本包的曲子"""
     target = db.get(SceneAsset, bgm_id)
     if target is None or target.pack_id != pack_id or target.kind != "bgm":
         raise HTTPException(400, f"{what}必须是同一个场景包里的一首 BGM")
+
+
+def _check_bgm(bgm_id: str, db: Session, what: str) -> None:
+    """背景的默认曲:任何一个场景包里的曲子都行(背景、BGM 分开绑以后,曲子常在另一个包里)"""
+    target = db.get(SceneAsset, bgm_id)
+    if target is None or target.kind != "bgm":
+        raise HTTPException(400, f"{what}必须是一首 BGM")
 
 
 def _asset_out(a: SceneAsset) -> SceneAssetOut:
@@ -109,11 +122,13 @@ def _asset_out(a: SceneAsset) -> SceneAssetOut:
         mime=a.mime,
         size=a.size,
         file_version=int(a.updated_at.timestamp() * 1000),
+        data_sha=a.data_sha if a.mime is not None else None,
         focus_x=a.focus_x,
         bgm_id=a.bgm_id,
         sort=a.sort,
         enabled=a.enabled,
         parent_id=a.parent_id,
+        forms=list(a.forms or []),
     )
 
 
@@ -207,14 +222,83 @@ def update_pack(pack_id: str, req: ScenePackUpdate, db: Session = Depends(get_db
     return _pack_out(pack, db)
 
 
-@router.delete(PACKS + "/{pack_id}", status_code=204)
-def delete_pack(pack_id: str, db: Session = Depends(get_db)):
-    pack = _load_pack(pack_id, db)
+def delete_scene_pack(db: Session, pack_id: str) -> bool:
+    """删一个场景包:连同包里的素材、所有卡上的绑定;别的包里拿它的曲子当默认曲的背景改回「不换」;
+    从它拆出来的 CG 包留着、不再同步。不提交;包已经不在了返回 False。
+    删包接口、撤销导入(app/importer/jobs.py)、素材管理页共用"""
+    pack = db.get(ScenePack, pack_id)
+    if pack is None:
+        return False
+    # 别的包里拿这个包的曲子当默认曲的背景改回「不换」
+    music = select(SceneAsset.id).where(SceneAsset.pack_id == pack_id, SceneAsset.kind == "bgm")
+    db.execute(
+        update(SceneAsset)
+        .where(SceneAsset.pack_id != pack_id, SceneAsset.bgm_id.in_(music))
+        .values(bgm_id=None)
+        .execution_options(synchronize_session=False)
+    )
     # SQLite 没开外键约束,不会自动级联:素材和绑定手动删
     db.execute(delete(SceneAsset).where(SceneAsset.pack_id == pack_id))
-    db.execute(delete(CardScenePack).where(CardScenePack.pack_id == pack_id))
+    bindings.remove_target(db, bindings.SCENE, pack_id)
+    # 拆出来的 CG 包留着(它是单独绑到卡上的),只是不再和这个场景包同步
+    db.execute(update(CgPack).where(CgPack.source_scene_pack_id == pack_id).values(source_scene_pack_id=None))
     db.delete(pack)
+    db.flush()
+    return True
+
+
+@router.delete(PACKS + "/{pack_id}", status_code=204)
+def delete_pack(pack_id: str, db: Session = Depends(get_db)):
+    _load_pack(pack_id, db)
+    delete_scene_pack(db, pack_id)
     db.commit()
+
+
+def duplicate_scene_pack(db: Session, pack_id: str, name: str | None = None) -> ScenePack:
+    """复制一个场景包(素材管理页「创建副本」):背景、曲子照抄(名字、别名、说明、顺序、启用、竖屏焦点),文件按指纹共用;
+    背景的默认曲、包的封面曲指着包里的曲子的,换成副本里的同一首(指着别的包的照旧)。
+    CG:已经拆成 CG 包的不带(游戏里出的是那个 CG 包;带上就成了没拆过的包,绑上会多出一份 CG);没拆过的连同差分照抄。
+    不绑到任何卡。name 同 duplicate_sprite_pack。不提交"""
+    src = _load_pack(pack_id, db)
+    name = _clean_pack_name(name, db) if name and name.strip() else unique_pack_name(db, ScenePack, f"{src.name} 副本")
+    pack = ScenePack(id=uuid.uuid4().hex, name=name, description=src.description)
+    db.add(pack)
+    rows = db.scalars(
+        select(SceneAsset).where(SceneAsset.pack_id == pack_id).order_by(SceneAsset.kind, SceneAsset.sort, SceneAsset.created_at)
+    ).all()
+    if cg_sync.cg_pack_of_scene(db, pack_id) is not None:
+        rows = [r for r in rows if r.kind != "cg"]
+    ids = {r.id: uuid.uuid4().hex for r in rows}
+    for r in rows:
+        row = SceneAsset(
+            id=ids[r.id],
+            pack_id=pack.id,
+            kind=r.kind,
+            label=r.label,
+            aliases=list(r.aliases or []),
+            description=r.description,
+            mime=r.mime,
+            size=r.size,
+            sort=r.sort,
+            focus_x=r.focus_x,
+            bgm_id=ids.get(r.bgm_id, r.bgm_id),
+            parent_id=ids.get(r.parent_id, r.parent_id),
+            forms=list(r.forms or []),
+            enabled=r.enabled,
+        )
+        refs.copy_content(refs.SCENE_ASSET, r, row, db)
+        db.add(row)
+    # 封面曲只能是本包的曲子:指着别处的(本来就不该有)回到默认
+    pack.title_bgm_id = ids.get(src.title_bgm_id) if src.title_bgm_id else None
+    db.flush()
+    return pack
+
+
+@router.post(PACKS + "/{pack_id}/duplicate", response_model=ScenePackOut)
+def duplicate_pack(pack_id: str, req: PackDuplicateIn | None = None, db: Session = Depends(get_db)):
+    pack = duplicate_scene_pack(db, pack_id, req.name if req else None)
+    db.commit()
+    return _pack_out(pack, db)
 
 
 # ── 素材 ──
@@ -261,6 +345,8 @@ def create_asset(pack_id: str, req: SceneAssetCreate, db: Session = Depends(get_
         parent_id=req.parent_id,
     )
     db.add(asset)
+    db.flush()
+    cg_sync.from_scene(db, [asset])
     db.commit()
     db.refresh(asset)
     return _asset_out(asset)
@@ -295,11 +381,19 @@ def update_asset(
             # CG 和音乐互不牵连(10-03 用户定),只有背景有默认曲
             if asset.kind != "bg":
                 raise HTTPException(400, "只有背景能设默认音乐")
-            _check_own_bgm(pack_id, bgm_id, db, "默认音乐")
+            _check_bgm(bgm_id, db, "默认音乐")
         asset.bgm_id = bgm_id
     if updates.get("enabled") is not None:
         asset.enabled = updates["enabled"]
+    if updates.get("forms") is not None:
+        if asset.kind != "cg" or asset.parent_id:
+            raise HTTPException(400, "只有 CG 能设在哪些状态出现(差分跟着 CG)")
+        # 去空、去重,顺序照传来的
+        forms = [f.strip() for f in updates["forms"] if f.strip()]
+        asset.forms = list(dict.fromkeys(forms))
 
+    db.flush()
+    cg_sync.from_scene(db, [asset])
     db.commit()
     db.refresh(asset)
     return _asset_out(asset)
@@ -308,16 +402,14 @@ def update_asset(
 @router.delete(PACKS + "/{pack_id}/assets/{asset_id}", status_code=204)
 def delete_asset(pack_id: str, asset_id: str, db: Session = Depends(get_db)):
     asset = _load_asset(pack_id, asset_id, db)
-    if asset.kind == "cg" and asset.parent_id is None:
-        # CG 的差分跟着删
+    if asset.kind == "cg":
+        # CG 的差分跟着删;拆出来的 CG 包里同一批也删
+        variants = list(db.scalars(select(SceneAsset.id).where(SceneAsset.parent_id == asset_id)).all())
         db.execute(delete(SceneAsset).where(SceneAsset.parent_id == asset_id))
+        cg_sync.deleted_from_scene(db, [asset_id, *variants])
     if asset.kind == "bgm":
-        # 把这首当默认曲的背景 / CG、当封面音乐的包改回默认,不然前端会拿着一个不存在的 id
-        db.execute(
-            update(SceneAsset)
-            .where(SceneAsset.pack_id == pack_id, SceneAsset.bgm_id == asset_id)
-            .values(bgm_id=None)
-        )
+        # 把这首当默认曲的背景 / CG(别的包里的也算)、当封面音乐的包改回默认,不然前端会拿着一个不存在的 id
+        db.execute(update(SceneAsset).where(SceneAsset.bgm_id == asset_id).values(bgm_id=None))
         db.execute(
             update(ScenePack)
             .where(ScenePack.id == pack_id, ScenePack.title_bgm_id == asset_id)
@@ -344,6 +436,8 @@ def reorder_assets(pack_id: str, req: SceneAssetReorder, db: Session = Depends(g
         raise HTTPException(400, "排序列表必须正好包含这一类的全部素材")
     for i, aid in enumerate(req.ids):
         rows[aid].sort = i
+    db.flush()
+    cg_sync.from_scene(db, rows.values())
     db.commit()
     return [_asset_out(rows[aid]) for aid in req.ids]
 
@@ -363,9 +457,11 @@ async def upload_asset_file(
     mime = sniff(data)
     if mime is None:
         raise HTTPException(400, f"只支持 {accepted}")
-    asset.data = data
+    refs.save(refs.SCENE_ASSET, asset, data, mime, db)
     asset.mime = mime
     asset.size = len(data)
+    db.flush()
+    cg_sync.from_scene(db, [asset])
     db.commit()
     db.refresh(asset)
     return _asset_out(asset)
@@ -379,16 +475,13 @@ def get_asset_file(
     db: Session = Depends(get_db),
 ):
     """素材文件;背景、CG 带 ?w= 时缩到这个宽度的 WebP(标题画面取色、插件页缩略图,见 app/images.py)"""
-    asset = db.scalar(
-        select(SceneAsset)
-        .options(undefer(SceneAsset.data))
-        .where(SceneAsset.id == asset_id, SceneAsset.pack_id == pack_id)
-    )
-    if asset is None or asset.data is None or asset.mime is None:
+    asset = db.scalar(select(SceneAsset).where(SceneAsset.id == asset_id, SceneAsset.pack_id == pack_id))
+    data = refs.read_bytes(refs.SCENE_ASSET, asset) if asset is not None and asset.mime is not None else None
+    if data is None:
         raise HTTPException(404, "这条素材还没有文件")
-    small = shrink_image(asset.data, w) if w and asset.kind in ("bg", "cg") else None
+    small = shrink_image(data, w) if w and asset.kind in ("bg", "cg") else None
     return Response(
-        content=small or asset.data,
+        content=small or data,
         media_type="image/webp" if small else asset.mime,
         headers={
             # URL 里带 ?v=file_version,换文件后 URL 就变了,同一个 URL 的内容永远不变
@@ -405,35 +498,43 @@ def get_asset_file(
 def get_card_scene_pack(card_id: str, db: Session = Depends(get_db)):
     if db.get(TavernCard, card_id) is None:
         raise HTTPException(404, "角色卡不存在")
-    row = db.get(CardScenePack, card_id)
-    return CardScenePackOut(card_id=card_id, pack_id=row.pack_id if row else None)
+    packs = bindings.targets(db, card_id, bindings.SCENE)
+    return CardScenePackOut(card_id=card_id, pack_id=packs[0] if packs else None)
 
 
 @router.put("/api/tavern/cards/{card_id}/scene-pack", response_model=CardScenePackOut)
 def set_card_scene_pack(card_id: str, req: CardScenePackIn, db: Session = Depends(get_db)):
     if db.get(TavernCard, card_id) is None:
         raise HTTPException(404, "角色卡不存在")
-    row = db.get(CardScenePack, card_id)
-    if req.pack_id is None:
-        if row is not None:
-            db.delete(row)
-    else:
+    if req.pack_id is not None:
         _load_pack(req.pack_id, db)
-        if row is None:
-            db.add(CardScenePack(card_id=card_id, pack_id=req.pack_id))
-        else:
-            row.pack_id = req.pack_id
+    # 旧接口只管一个场景包:换掉排第一的那个(换上的背景和 BGM 都出),后面叠着的不动
+    bindings.replace_first_scene(db, card_id, req.pack_id)
     db.commit()
     return CardScenePackOut(card_id=card_id, pack_id=req.pack_id)
 
 
-def delete_card_scene_binding(card_id: str, db: Session) -> None:
-    """删卡时由 tavern.delete_card 调用。场景包本身是共用的,不跟着删。"""
-    db.execute(delete(CardScenePack).where(CardScenePack.card_id == card_id))
+def _scene_parts_out(card_id: str, db: Session) -> CardScenePartsOut:
+    parts = bindings.scene_parts(db, card_id)
+    return CardScenePartsOut(card_id=card_id, bg=parts["bg"], bgm=parts["bgm"])
 
 
-def copy_card_scene_binding(src_id: str, dst_id: str, db: Session) -> None:
-    """复制卡时绑定同一个场景包(包是共用的,不复制包本身)。"""
-    row = db.get(CardScenePack, src_id)
-    if row is not None:
-        db.add(CardScenePack(card_id=dst_id, pack_id=row.pack_id))
+@router.get("/api/tavern/cards/{card_id}/scene-packs", response_model=CardScenePartsOut)
+def get_card_scene_parts(card_id: str, db: Session = Depends(get_db)):
+    """这张卡的场景包分两栏:出背景的、出曲子的,各按顺序(一个包可能两边都在)"""
+    if db.get(TavernCard, card_id) is None:
+        raise HTTPException(404, "角色卡不存在")
+    return _scene_parts_out(card_id, db)
+
+
+@router.put("/api/tavern/cards/{card_id}/scene-packs", response_model=CardScenePartsOut)
+def set_card_scene_parts(card_id: str, req: CardScenePartsIn, db: Session = Depends(get_db)):
+    """整组替换。两栏共用一个先后(背景的在前,只出曲子的接在后面,见 bindings.replace_scene),返回读回来的样子"""
+    if db.get(TavernCard, card_id) is None:
+        raise HTTPException(404, "角色卡不存在")
+    for pid in dict.fromkeys([*req.bg, *req.bgm]):
+        _load_pack(pid, db)
+    bindings.replace_scene(db, card_id, req.bg, req.bgm)
+    db.commit()
+    return _scene_parts_out(card_id, db)
+

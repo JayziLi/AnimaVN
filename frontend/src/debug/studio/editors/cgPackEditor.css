@@ -1,0 +1,407 @@
+/* ══════════ CG 包编辑器(卡编辑器「CG」栏 / 素材管理页的 CG 包) ══════════
+   格局照 V4AttachCg.png / V4AttachBg.png:舞台下面 16:9 缩略图网格(名字 +「3 张差分」),
+   右栏 st-inspector 里的表情差分列表。颜色只用 debug.css 的 :root 变量。窄屏见文件末尾。 */
+
+/* ── 构图网格 ── */
+
+.cg-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+  gap: 8px;
+}
+.cg-tile {
+  position: relative;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 5px 5px 7px;
+  border: 0;
+  border-radius: 11px;
+  background: var(--bg-panel);
+  box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.cg-tile:hover {
+  background: var(--bg-raised);
+}
+.cg-tile.selected {
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+  color: var(--text);
+}
+.cg-tile.selected .cg-tile-name {
+  font-weight: 500;
+}
+.cg-tile:focus-visible {
+  outline: 1.5px solid var(--text-dim);
+  outline-offset: 2px;
+}
+.cg-tile.off .cg-thumb > img {
+  opacity: 0.45;
+}
+.cg-tile.dragging {
+  opacity: 0.4;
+}
+/* 拖动排序时的落点:目标格子左 / 右边一道亮线 */
+.cg-tile.drop-before::after,
+.cg-tile.drop-after::after {
+  content: '';
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.cg-tile.drop-before::after {
+  left: -6px;
+}
+.cg-tile.drop-after::after {
+  right: -6px;
+}
+.cg-thumb {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  margin-bottom: 4px;
+  border-radius: 7px;
+  overflow: hidden;
+  background: var(--bg-hover);
+}
+.cg-thumb > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.cg-thumb-none {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  color: var(--text-faint);
+  font-size: 11.5px;
+}
+.cg-off {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  padding: 0 6px;
+  border-radius: 4px;
+  background: rgba(14, 14, 14, 0.8);
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.cg-tile-name,
+.cg-tile-sub {
+  min-width: 0;
+  padding: 0 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cg-tile-sub {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-faint);
+  font-size: 11.5px;
+}
+/* 正在传的那几格 */
+.cg-tile.uploading {
+  cursor: default;
+}
+.cg-tile.uploading .cg-thumb > img {
+  opacity: 0.5;
+}
+.cg-tile.uploading.fail {
+  box-shadow: inset 0 0 0 1px rgba(248, 113, 113, 0.5);
+}
+.cg-progress {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 9px;
+  background: rgba(14, 14, 14, 0.82);
+  color: var(--text);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.cg-tile.fail .cg-progress {
+  color: var(--danger);
+}
+.cg-add {
+  min-width: 0;
+  min-height: 112px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 4px;
+  border: 1.5px dashed var(--border-strong);
+  border-radius: 11px;
+  background: transparent;
+  color: var(--text-faint);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.cg-add:hover {
+  border-color: var(--text-faint);
+  color: var(--text);
+}
+.cg-add:focus-visible {
+  outline: 1.5px solid var(--text-dim);
+  outline-offset: 2px;
+}
+
+/* ── 舞台 ── */
+
+/* 右上角「手机竖屏」开关:开着是亮底 */
+.st-stage-chip.cg-toggle.on {
+  background: rgba(237, 237, 237, 0.9);
+  color: #111;
+}
+/* 舞台上没有图时中间那句说明 */
+.cg-stage-empty {
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  transform: translate(-50%, -50%);
+  max-width: 80%;
+  color: var(--text-faint);
+  font-size: 13px;
+  text-align: center;
+}
+
+/* ── 右栏 ── */
+
+.cg-ihead-none {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+}
+/* 形态卡带的「在哪些形态出」:插件页的样子,标签换成右栏的小字 */
+.cg-forms {
+  margin-top: 14px;
+}
+.cg-forms .pl-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.cg-forms .conn-label {
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.cg-vars {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+.cg-var {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 8px 5px 5px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--text-dim);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+button.cg-var:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+button.cg-var:focus-visible {
+  outline: 1.5px solid var(--text-dim);
+  outline-offset: 1px;
+}
+.cg-var.off .cg-var-thumb {
+  opacity: 0.45;
+}
+/* 选中的那张展开:改名、别名、替换、删除 */
+.cg-var.open {
+  display: block;
+  padding: 6px 8px 10px 6px;
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+  color: var(--text);
+  cursor: default;
+}
+.cg-var.open .st-label {
+  margin-top: 10px;
+}
+.cg-var-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.cg-var-thumb {
+  position: relative;
+  width: 64px;
+  height: 36px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--bg-hover);
+  color: var(--text-faint);
+}
+.cg-var-thumb > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.cg-var-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.cg-var-name,
+.cg-var-sub {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cg-var-name {
+  font-size: 13px;
+}
+.cg-var-sub {
+  color: var(--text-faint);
+  font-size: 11.5px;
+}
+.cg-var-warn {
+  flex: none;
+  display: inline-flex;
+  color: var(--text-faint);
+}
+.cg-var-rename {
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: text;
+}
+.cg-var-rename:hover {
+  text-decoration: underline dotted var(--text-faint);
+  text-underline-offset: 4px;
+}
+.cg-var-rename:focus-visible {
+  outline: 1.5px solid var(--text-dim);
+  outline-offset: 2px;
+}
+.cg-var-input {
+  width: 100%;
+  height: 26px;
+  padding: 0 7px;
+  border: 1px solid var(--text-faint);
+  border-radius: 6px;
+  background: var(--bg-raised);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  outline: none;
+}
+.cg-var-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 8px;
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.cg-var-note > .st-icon {
+  flex: none;
+  margin-top: 3px;
+}
+.cg-var-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.cg-var.uploading {
+  cursor: default;
+}
+.cg-var.uploading .cg-var-thumb > img {
+  opacity: 0.5;
+}
+.cg-var.uploading .cg-var-sub {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.cg-free {
+  margin-top: 10px;
+  color: var(--text-faint);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* 还没绑 CG 包时右栏的几段说明 */
+.st-inspector-hint.cg-intro {
+  margin-top: 10px;
+}
+
+/* 「从素材库选」、包页签里的缩略图(构图裁成方块) */
+.cg-picker-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+@media (max-width: 899px) {
+  .cg-grid {
+    grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  }
+  .cg-add {
+    min-height: 100px;
+  }
+}

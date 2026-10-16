@@ -5,8 +5,8 @@
  * 换声音、试音、调参数在菜单的插件页(语音),这里只放个入口。
  */
 
-import { useState, type ReactNode } from 'react';
-import type { SceneAsset } from '../lib/api';
+import { useEffect, useState, type ReactNode } from 'react';
+import { debugApi, type MigrationStatus, type RecordsSummary, type SceneAsset, type StorageStatus } from '../lib/api';
 import { ENTER_KEY_MODES, type EnterKeyMode } from '../lib/chatSettings';
 import {
   MAX_WAIT_MAX,
@@ -14,7 +14,7 @@ import {
   normalizeVoiceConfig,
   type VoicePluginConfig,
 } from '../plugins/voice';
-import { playTypeSound, TYPE_SOUNDS } from '../plugins/spriteFx';
+import { playTypeSound, TYPE_SOUNDS } from './typeSound';
 import { bgmPlayer, useBgm } from './bgm';
 import { useVoice, voicePlayer } from './voice';
 import {
@@ -34,6 +34,21 @@ import {
   type VNSettings,
 } from './vnSettings';
 import { VN_ACCENTS } from './accent';
+import {
+  describeBackup,
+  describeCheck,
+  describeClean,
+  describeDb,
+  describeRecords,
+  describeStorage,
+  describeUpload,
+  ENGINE_NOTE,
+  STORAGE_NOTE,
+  UPLOAD_NOTE,
+} from './dataTab';
+import type { TimelineEngine } from '../core/engine';
+import { setTimelineEngine, useTimelineEngine } from './useTimelineEngine';
+import type { MarksUploadReport } from '../plugins/cartridges';
 
 const ACCENT_NOTE = {
   mono: '按钮、名牌、滑块用灰白,不抢立绘和背景的颜色',
@@ -41,7 +56,15 @@ const ACCENT_NOTE = {
   pink: '原来的粉色',
 } as const;
 
-export type SettingsTab = 'text' | 'sound' | 'control' | 'display' | 'look';
+export type SettingsTab = 'text' | 'sound' | 'control' | 'display' | 'look' | 'data';
+
+/** 卡带加进设置页的一个分页 */
+export interface ExtraSettingsTab {
+  key: string;
+  name: string;
+  beta?: boolean;
+  render: () => ReactNode;
+}
 
 const TABS: { key: SettingsTab; name: string }[] = [
   { key: 'text', name: '文字' },
@@ -49,6 +72,7 @@ const TABS: { key: SettingsTab; name: string }[] = [
   { key: 'control', name: '操作' },
   { key: 'display', name: '显示' },
   { key: 'look', name: '外观' },
+  { key: 'data', name: '数据' },
 ];
 
 interface Props {
@@ -65,14 +89,18 @@ interface Props {
   /** 字幕:外语插件的「显示日语」(全局一份,和调试台插件里的是同一个开关) */
   showJa: boolean;
   onChangeShowJa: (showJa: boolean) => void;
-  /** 打开时停在哪一栏(右上角语音面板点「完整设置」进来是「声音」) */
-  initialTab?: SettingsTab;
+  /** 打开时停在哪一栏(右上角语音面板点「完整设置」进来是「声音」;卡带的分页是它的 key) */
+  initialTab?: SettingsTab | string;
+  /** 卡带加的分页(生图),排在「数据」后面 */
+  extraTabs?: readonly ExtraSettingsTab[];
   /** 封面音乐:这张卡的场景包里启用的 BGM、包里设的那首(null = 默认);没选角色时为 null */
   titleMusic: {
     bgms: SceneAsset[];
     value: string | null;
     onChange: (bgmId: string | null) => void;
   } | null;
+  /** 把这个浏览器地址上的形态记号存进存档(形态卡带提供,素材架构第 0 期);没装就不显示这一行 */
+  onUploadMarks?: () => Promise<MarksUploadReport>;
 }
 
 function Row({
@@ -131,6 +159,165 @@ const ON_OFF = [
   { value: false, name: '不显示' },
 ];
 
+const ENGINES: { value: TimelineEngine; name: string }[] = [
+  { value: 'legacy', name: '旧算法' },
+  { value: 'records', name: '认词记录' },
+];
+
+/** 「表情认法」开关(core/engine.ts,素材架构第 1b 期)和认词记录有几条 */
+function EngineRow() {
+  const engine = useTimelineEngine();
+  const [summary, setSummary] = useState<RecordsSummary | 'error' | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    debugApi
+      .emotionRecordsSummary()
+      .then((s) => live && setSummary(s))
+      .catch(() => live && setSummary('error'));
+    return () => {
+      live = false;
+    };
+  }, []);
+  const pick = (next: TimelineEngine) => {
+    setSaving(true);
+    setError(null);
+    setTimelineEngine(next)
+      .catch((e: unknown) => setError(`没存上:${e instanceof Error ? e.message : String(e)}`))
+      .finally(() => setSaving(false));
+  };
+  return (
+    <Row label="表情认法">
+      <div className="vn-set-stack">
+        <Seg
+          options={ENGINES.map((o) => ({ ...o, disabled: saving || engine === null }))}
+          value={engine ?? 'legacy'}
+          onPick={pick}
+        />
+        <span className="vn-set-note">{error ?? describeRecords(summary)}</span>
+        <span className="vn-set-note">{ENGINE_NOTE}</span>
+      </div>
+    </Row>
+  );
+}
+
+type StorageJob = 'backup' | 'check' | 'clean';
+const JOB_LABELS: Record<StorageJob, [idle: string, busy: string]> = {
+  backup: ['现在备份', '正在备份…'],
+  check: ['体检', '正在查…'],
+  clean: ['清理', '正在清理…'],
+};
+
+/** 文件仓库(素材架构第 3 期):多大、复制进度;手动备份、体检、清理。复制还在跑时每 2 秒刷新一次 */
+function StorageRow({ onBackedUp }: { onBackedUp: () => void }) {
+  const [status, setStatus] = useState<StorageStatus | 'error' | null>(null);
+  const [job, setJob] = useState<{ busy: StorageJob | null; text: string | null }>({ busy: null, text: null });
+  const [tick, setTick] = useState(0);
+  const running = status !== null && status !== 'error' && status.copy?.state === 'running';
+  useEffect(() => {
+    let live = true;
+    debugApi
+      .storage()
+      .then((s) => live && setStatus(s))
+      .catch(() => live && setStatus('error'));
+    return () => {
+      live = false;
+    };
+  }, [tick]);
+  useEffect(() => {
+    if (!running) return;
+    const timer = setTimeout(() => setTick((t) => t + 1), 2000);
+    return () => clearTimeout(timer);
+  }, [running, status]);
+  const run = (which: StorageJob) => {
+    setJob({ busy: which, text: null });
+    const work: Promise<string> =
+      which === 'backup'
+        ? debugApi.backupNow().then((b) => {
+            onBackedUp();
+            return `备份好了:${b.name}`;
+          })
+        : which === 'check'
+          ? debugApi.checkStorage().then(describeCheck)
+          : debugApi.cleanStorage().then(describeClean);
+    work
+      .then((text) => setJob({ busy: null, text }))
+      .catch((e: unknown) => setJob({ busy: null, text: `没做成:${e instanceof Error ? e.message : String(e)}` }))
+      .finally(() => setTick((t) => t + 1));
+  };
+  return (
+    <Row label="素材文件">
+      <div className="vn-set-stack">
+        <span>{describeStorage(status)}</span>
+        <div className="vn-set-buttons">
+          {(Object.keys(JOB_LABELS) as StorageJob[]).map((k) => (
+            <button key={k} className="vn-pill" disabled={job.busy !== null || status === 'error'} onClick={() => run(k)}>
+              {JOB_LABELS[k][job.busy === k ? 1 : 0]}
+            </button>
+          ))}
+        </div>
+        <span className="vn-set-note">{job.text ?? STORAGE_NOTE}</span>
+      </div>
+    </Row>
+  );
+}
+
+/** 「数据」一栏:数据库升级到哪了、上次整库备份、文件仓库(第 3 期)、形态记号存进存档(素材架构第 0 期)、表情认法(第 1b 期) */
+function DataTab({ onUploadMarks }: { onUploadMarks?: () => Promise<MarksUploadReport> }) {
+  const [status, setStatus] = useState<MigrationStatus | 'error' | null>(null);
+  const [upload, setUpload] = useState<{ busy: boolean; text: string | null }>({ busy: false, text: null });
+  const [reload, setReload] = useState(0);
+  useEffect(() => {
+    let live = true;
+    debugApi
+      .migrations()
+      .then((s) => live && setStatus(s))
+      .catch(() => live && setStatus('error'));
+    return () => {
+      live = false;
+    };
+  }, [reload]);
+  const s = status === 'error' ? null : status;
+  const doUpload = () => {
+    if (!onUploadMarks) return;
+    setUpload({ busy: true, text: null });
+    onUploadMarks()
+      .then((r) => setUpload({ busy: false, text: describeUpload(r, location.host) }))
+      .catch((e: unknown) =>
+        setUpload({
+          busy: false,
+          text: `没存完:${e instanceof Error ? e.message : String(e)}。重复点不会重复写,可以再点一次`,
+        }),
+      );
+  };
+  return (
+    <div className="vn-set-list">
+      <Row label="数据库">
+        <div className="vn-set-stack">
+          <span>{status === 'error' ? '读不到:后端还是旧版,重启后端以后再看' : s ? describeDb(s) : '读取中…'}</span>
+          {s && <span className="vn-set-note">程序版本 {s.app_version}</span>}
+        </div>
+      </Row>
+      <Row label="上次备份">
+        <span className="vn-set-note">{s ? describeBackup(s.last_backup) : '—'}</span>
+      </Row>
+      <StorageRow onBackedUp={() => setReload((n) => n + 1)} />
+      {onUploadMarks && (
+        <Row label="形态记号">
+          <div className="vn-set-stack">
+            <button className="vn-pill" disabled={upload.busy} onClick={doUpload}>
+              {upload.busy ? '正在存…' : '存进存档'}
+            </button>
+            <span className="vn-set-note">{upload.text ?? UPLOAD_NOTE}</span>
+          </div>
+        </Row>
+      )}
+      <EngineRow />
+    </div>
+  );
+}
+
 export function VNSettingsPage({
   settings,
   onChange,
@@ -144,8 +331,11 @@ export function VNSettingsPage({
   onChangeShowJa,
   initialTab,
   titleMusic,
+  onUploadMarks,
+  extraTabs = [],
 }: Props) {
-  const [tab, setTab] = useState<SettingsTab>(initialTab ?? 'text');
+  const [tab, setTab] = useState<SettingsTab | string>(initialTab ?? 'text');
+  const extra = extraTabs.find((t) => t.key === tab);
   const bgm = useBgm();
   const voice = useVoice();
   const set = <K extends keyof VNSettings>(k: K, v: VNSettings[K]) => onChange({ ...settings, [k]: v });
@@ -166,7 +356,21 @@ export function VNSettingsPage({
             {t.name}
           </button>
         ))}
+        {extraTabs.map((t) => (
+          <button
+            key={t.key}
+            role="tab"
+            aria-selected={tab === t.key}
+            className={`vn-tab${tab === t.key ? ' active' : ''}`}
+            onClick={() => setTab(t.key)}
+          >
+            {t.name}
+            {t.beta && <span className="vn-beta">BETA</span>}
+          </button>
+        ))}
       </div>
+
+      {extra?.render()}
 
       {tab === 'text' && (
         <div className="vn-set-list">
@@ -448,7 +652,7 @@ export function VNSettingsPage({
                   onPick={(v) => set('autoWaitVoice', v)}
                 />
               </Row>
-              {voice.lastError && voice.failures > 0 && (
+              {voice.lastError && (
                 <p className="vn-set-error">语音最近一次失败:{voice.lastError}</p>
               )}
             </>
@@ -595,6 +799,7 @@ export function VNSettingsPage({
           </Row>
         </div>
       )}
+      {tab === 'data' && <DataTab onUploadMarks={onUploadMarks} />}
     </div>
   );
 }

@@ -7,13 +7,12 @@
 实测数据和报错格式见 docs/voice-server.md。
 """
 
-import asyncio
 import re
 from typing import Any
 
 import httpx
 
-from app.tts.base import TTSError, VoiceSpec
+from app.tts.base import ServerState, SharedServer, TTSError, VoiceSpec
 from app.tts.http import REF_TIMEOUT, make_tts_client, read_reference, transport_error
 
 COLD_TIMEOUT = 90.0
@@ -56,15 +55,12 @@ def _api_error(res: httpx.Response) -> str:
     return f"HTTP {res.status_code}"
 
 
-class GptSovitsEngine:
-    def __init__(self, base_url: str, sample_steps: int):
+class GptSovitsEngine(SharedServer):
+    def __init__(self, base_url: str, sample_steps: int, state: ServerState | None = None):
         self.base_url = base_url.rstrip("/")
         self.sample_steps = sample_steps
-        self.lock = asyncio.Lock()
-        self.loaded_gpt: str | None = None
-        self.loaded_sovits: str | None = None
-        # 合成成功过一次 = CUDA 已经初始化好了,之后按正常超时等
-        self.warm = False
+        # 锁、加载着的权重、热没热(合成成功过一次 = CUDA 已经初始化好了,之后按正常超时等)按服务地址共用,见 registry
+        self.state = state or ServerState()
 
     def request_body(self, text: str, voice: VoiceSpec) -> dict[str, Any]:
         p = voice.params

@@ -90,6 +90,13 @@
       <path d="M12 16.5v4"/>
     </symbol>
 
+    <symbol id="library" viewBox="0 0 24 24">
+      <rect x="7.5" y="3.5" width="13" height="13" rx="2.5"/>
+      <path d="M7.5 13.5l3.25-3.25 2.75 2.75 2-2 5 5"/>
+      <circle cx="16.25" cy="7.75" r="1.25"/>
+      <path d="M4.5 7.5v10a3 3 0 0 0 3 3h10"/>
+    </symbol>
+
     <symbol id="sliders" viewBox="0 0 24 24">
       <path d="M4 6h6M14 6h6M4 12h10M18 12h2M4 18h3M11 18h9"/>
       <circle cx="12" cy="6" r="2"/>

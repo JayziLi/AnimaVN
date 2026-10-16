@@ -1,10 +1,31 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './debug.css';
-import { CardEditorDrawer } from './components/CardEditorDrawer';
 import { AnimaIcon } from './components/AnimaIcon';
 import { ChatHistoryOverlay, type ChatOp } from './components/ChatHistoryOverlay';
 import { CardBindings } from './components/CardBindings';
 import { CardPanel, type CardView, type SaveState } from './components/CardPanel';
+import { EnvBadge } from './components/EnvBadge';
+import { CardStudio } from './studio/CardStudio';
+import { DropLayer } from './importer/DropLayer';
+import { ImportConfirm } from './importer/ImportConfirm';
+import { ImportProgress } from './importer/ImportProgress';
+import { libraryRouteAfterImport, noticeOf, slotAfterImport } from './importer/importModel';
+import { useImporter, type ImportDone } from './importer/useImporter';
+import { summarizeSlots } from './studio/slotSummary';
+import { BackgroundSlot } from './studio/slots/BackgroundSlot';
+import { BgmSlot } from './studio/slots/BgmSlot';
+import { SpriteSlot } from './studio/slots/SpriteSlot';
+import type { ImportNotice, PackSync, SlotKey, StudioRoute } from './studio/types';
+import { SlotPending } from './studio/ui';
+import { ProfileTab } from './studio/profile/ProfileTab';
+import { PresetView } from './studio/profile/PresetView';
+import { VoiceSlot } from './studio/slots/VoiceSlot';
+import { CgSlot } from './studio/slots/CgSlot';
+import { PluginSheet } from './studio/PluginSheet';
+import { AssetLibrary } from './library/AssetLibrary';
+import type { CardBindingWriter } from './library/libraryApi';
+import type { LibraryKind, LibraryRoute } from './library/libraryModel';
+import { bindRemove } from './studio/slots/voiceSlotModel';
 import { ChatPanel } from './components/ChatPanel';
 import { ConnectionsDrawer } from './components/ConnectionsDrawer';
 import { CropModal } from './components/CropModal';
@@ -28,14 +49,17 @@ import {
   type CustomMacro,
 } from './lib/customMacros';
 import { BudgetBar } from './components/BudgetBar';
-import { PresetPanel } from './components/PresetPanel';
+import { PresetPanel, type PresetBaseProps } from './components/PresetPanel';
+import { Frozen } from './components/Frozen';
 import { PromptInspector } from './components/PromptInspector';
 import { assemble, type AssemblyResult, type BudgetReport, type ChatTurn } from './lib/assembler';
 import {
   debugApi,
   type ChatPayload,
   type ChatSummary,
+  type ClassifyKind,
   type DebugPersona,
+  type ImportUndoPreview,
   type JevDefaults,
   type JevKeyStatus,
   type StoredCard,
@@ -63,7 +87,7 @@ import {
 import { resolveMarkerSource } from './lib/cardFields';
 import type { WorldInfoSettings } from './lib/worldInfo';
 import { loadWorldInfoSettings, saveWorldInfoSettings } from './lib/worldInfoSettings';
-import { EMPTY_CARD, parseCardFile, type TavernCard } from './lib/cardParser';
+import { EMPTY_CARD, type TavernCard } from './lib/cardParser';
 import { cardFromStored, cardToFileJson, cardToStored, fileToDataUrl } from './lib/cardStore';
 import {
   buildPresetSkeleton,
@@ -75,9 +99,11 @@ import {
 } from './lib/presetParser';
 import { presetFromStored, presetToFileJson, presetToStored } from './lib/presetStore';
 import { loadLastPresetId, saveLastPresetId } from './lib/lastPreset';
+import { throttle } from './lib/throttle';
 import {
   DEFAULT_SPRITE_CONFIG,
   SPRITE_BLOCK_ID,
+  SPRITE_BLOCK_NAME,
   SPRITE_SETTING_KEY,
   insertSpriteBlock,
   normalizeSpriteConfig,
@@ -96,14 +122,40 @@ import {
   sceneMacros,
   sceneTagKind,
 } from './plugins/scene';
+import { effectiveOf } from './plugins/cardPrefs';
+import { useCardPrefs } from './plugins/useCardPrefs';
+import { usePluginConfig } from './plugins/usePluginConfig';
 import { useScenePlugin } from './plugins/useScenePlugin';
 import { useSpriteLayout } from './plugins/useSpriteLayout';
 import { useSpritePacks } from './plugins/useSpritePacks';
+import { setManual } from './plugins/manualMarks';
+import {
+  ASSEMBLY_SETTING_KEY,
+  DEFAULT_ASSEMBLY_CONFIG,
+  moveToLastUserTurn,
+  normalizeAssemblyConfig,
+  pluginAssemblyPass,
+  type AssemblyConfig,
+  type AutoFill,
+} from './core/assembly';
+import { useForms } from './plugins/forms';
+import { useStates } from './plugins/useStates';
+import { asksTone, useSplice } from './plugins/voiceExtensions';
+import { useIllustrations } from './plugins/illustrations';
 import { useVoicePlugin } from './plugins/useVoicePlugin';
 import { enabledOnly, isPluginBlock, syncPluginBlocks } from './plugins/common';
+import { blockIdOf, pluginOfBlock } from './plugins/registry';
+import {
+  DEFAULT_SWITCHES,
+  SWITCH_SETTING_KEY,
+  normalizeSwitches,
+  offKindsOf,
+  type PluginSwitches,
+} from './plugins/switches';
 import {
   DEFAULT_LANG_CONFIG,
   LANG_BLOCK_ID,
+  LANG_BLOCK_NAME,
   LANG_SETTING_KEY,
   insertLangBlock,
   langBlockState,
@@ -113,15 +165,11 @@ import {
 import {
   DEFAULT_JEV_CONFIG,
   JEV_SETTING_KEY,
-  emotionBefore,
   anyJev,
-  jevLangPrompt,
-  jevOrder,
+  jevBlockIds,
   jevStripPrompt,
-  jevTagKinds,
   normalizeJevConfig,
   promptOverrides,
-  wantsTagFreeLang,
   type JevKinds,
   type JevPluginConfig,
 } from './plugins/jev';
@@ -160,9 +208,18 @@ import {
   type PresetBindings,
 } from './lib/presetBinding';
 import { bgmPlayer } from './vn/bgm';
+import { forgetPickDetail } from './vn/pickDetail';
 import { VNSaves } from './vn/VNSaves';
 import { VNScreen } from './vn/VNScreen';
 import { stripTags, vnTagKinds } from './vn/tags';
+import { newBeatCache, parseBeats } from './core/beats';
+import { buildTimeline, emotionAtStart, type TimelineCtx } from './core/timeline';
+import { emotionCandidates, emotionListRef } from './plugins/emotionMatch';
+import { cgFrameFromPairs } from './plugins/pairings';
+import { cachedResolver } from './vn/useEmotionMatches';
+import { cachedPairs } from './vn/usePairings';
+import { useTimelineEngine } from './vn/useTimelineEngine';
+import { cachedRecordsResolver } from './vn/useWordRecords';
 import {
   autoRange,
   budgetFromParams,
@@ -196,6 +253,9 @@ const EMPTY_RESULT: AssemblyResult = {
 
 /** 选卡时自动换人设 / 预设要说的一句话;选卡时几句合成一条提示。null = 没换 */
 type Said = { kind: 'ok' | 'error'; text: string } | null;
+
+/** 流式时最多隔多久把新到的字写进条目一次(每秒 10 次;见 runGeneration) */
+const STREAM_PAINT_MS = 100;
 
 const PANEL_MIN = 230;
 const PANEL_MAX = 560;
@@ -269,7 +329,6 @@ export default function DebugApp() {
    */
   const [busyLabel, setBusyLabel] = useState<string | null>(null);
   const [cardSaveState, setCardSaveState] = useState<SaveState>('idle');
-  const [showAdvanced, setShowAdvanced] = useState(false);
   /**
    * 右栏在编辑还是列表 —— 列表和编辑器共用那块面板,点 ☰ 互换,选完卡自动回编辑。
    * 开局是列表:进来没有选中的卡(停在开始界面),右栏直接摊开角色列表,
@@ -422,79 +481,6 @@ export default function DebugApp() {
     saveCustomMacros(next);
   };
 
-  /**
-   * 立绘插件:全局配置(标签格式 + 提示词模板)存后端,手机和电脑共用;
-   * 表情映射跟着当前卡走。改配置时先改内存,停手半秒再写库,免得每敲一个字发一次请求。
-   */
-  const [spriteConfig, setSpriteConfig] = useState<SpritePluginConfig>(DEFAULT_SPRITE_CONFIG);
-  const spriteSaveTimer = useRef<number | undefined>(undefined);
-  const changeSpriteConfig = (next: SpritePluginConfig) => {
-    setSpriteConfig(next);
-    window.clearTimeout(spriteSaveTimer.current);
-    spriteSaveTimer.current = window.setTimeout(() => {
-      debugApi
-        .putSetting(SPRITE_SETTING_KEY, next)
-        .catch((e: unknown) =>
-          notify('error', `插件配置保存失败: ${e instanceof Error ? e.message : String(e)}`),
-        );
-    }, 500);
-  };
-
-  /** 外语插件(日语配音、中文字幕):全局配置,和立绘插件一样停手半秒再写库 */
-  const [langConfig, setLangConfig] = useState<LangPluginConfig>(DEFAULT_LANG_CONFIG);
-  const langSaveTimer = useRef<number | undefined>(undefined);
-  const changeLangConfig = (next: LangPluginConfig) => {
-    setLangConfig(next);
-    window.clearTimeout(langSaveTimer.current);
-    langSaveTimer.current = window.setTimeout(() => {
-      debugApi
-        .putSetting(LANG_SETTING_KEY, next)
-        .catch((e: unknown) =>
-          notify('error', `插件配置保存失败: ${e instanceof Error ? e.message : String(e)}`),
-        );
-    }, 500);
-  };
-
-  /** 玩家台词插件(<我> 弹选项):全局配置,同样停手半秒再写库 */
-  const [playerConfig, setPlayerConfig] = useState<PlayerPluginConfig>(DEFAULT_PLAYER_CONFIG);
-  const playerSaveTimer = useRef<number | undefined>(undefined);
-  const changePlayerConfig = (next: PlayerPluginConfig) => {
-    setPlayerConfig(next);
-    window.clearTimeout(playerSaveTimer.current);
-    playerSaveTimer.current = window.setTimeout(() => {
-      debugApi
-        .putSetting(PLAYER_SETTING_KEY, next)
-        .catch((e: unknown) =>
-          notify('error', `插件配置保存失败: ${e instanceof Error ? e.message : String(e)}`),
-        );
-    }, 500);
-  };
-
-  /**
-   * Jev 标注:每个标签插件可以选「AI 写」或「Jev 标」(模式存在各插件自己的配置里,plugins/jev.ts)。
-   * 这里是几个插件共用的那份(立绘和文字同步、说话人门槛、通用问法),同样停手半秒再写库;
-   * key 只在后端,这里只知道设了没有。默认问法从后端拿(只存一份)
-   */
-  const [jevConfig, setJevConfig] = useState<JevPluginConfig>(DEFAULT_JEV_CONFIG);
-  const [jevKey, setJevKey] = useState<JevKeyStatus | null>(null);
-  const [jevDefaults, setJevDefaults] = useState<JevDefaults | null>(null);
-  const jevSaveTimer = useRef<number | undefined>(undefined);
-  const changeJevConfig = (next: JevPluginConfig) => {
-    setJevConfig(next);
-    window.clearTimeout(jevSaveTimer.current);
-    jevSaveTimer.current = window.setTimeout(() => {
-      debugApi
-        .putSetting(JEV_SETTING_KEY, next)
-        .catch((e: unknown) =>
-          notify('error', `插件配置保存失败: ${e instanceof Error ? e.message : String(e)}`),
-        );
-    }, 500);
-  };
-  const saveJevKey = async (key: string) => {
-    await debugApi.setJevKey(key);
-    setJevKey(await debugApi.annotateStatus());
-  };
-
   // 视觉小说模式。刻意不跨刷新保留:开机不会自动选角色卡,刷新后直接进视觉小说
   // 只会看到一个「先选卡」的空界面 —— 还不如回到开始界面,选完卡再点一次入口
   const [vnOpen, setVnOpen] = useState(false);
@@ -505,6 +491,18 @@ export default function DebugApp() {
     setVnOpen(open);
   };
 
+  // 卡编辑器(全屏页,studio/):开在哪个页签、哪一栏;null = 没开。编辑的永远是当前这张卡
+  const [studio, setStudio] = useState<StudioRoute | null>(null);
+  // 从卡编辑器里打开的插件抽屉(盖在卡编辑器上面,PluginSheet);null = 没开
+  const [studioPlugin, setStudioPlugin] = useState<PluginFocus | null>(null);
+  // 素材管理页(全屏页,library/):开在哪个页签、选中哪个包;null = 没开。关了再开回到上次的地方
+  const [library, setLibrary] = useState<LibraryRoute | null>(null);
+  const lastLibrary = useRef<LibraryRoute>({ tab: 'sprite', id: null });
+  // 导完没有卡可开时素材管理页顶上那一行提示;关掉素材管理页就没了
+  const [libraryNotice, setLibraryNotice] = useState<ImportNotice | null>(null);
+  // 导完一批加一:素材管理页开着就重读列表和导入记录
+  const [libraryReload, setLibraryReload] = useState(0);
+
   // 三栏宽度:初始从 localStorage 恢复,拖动时实时更新,松手时持久化。
   // 恢复时以「聊天列至少 CHAT_MIN」收一收两栏 —— 只收载入值,拖动仍按用户手上的来
   const [leftW, setLeftW] = useState(() => fitPanels().left);
@@ -512,7 +510,6 @@ export default function DebugApp() {
   const draggingSide = useRef<'left' | 'right' | null>(null);
 
   const toastTimer = useRef<number | undefined>(undefined);
-  const cardInputRef = useRef<HTMLInputElement | null>(null);
   const presetInputRef = useRef<HTMLInputElement | null>(null);
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const chatInputRef = useRef<HTMLInputElement | null>(null);
@@ -557,36 +554,164 @@ export default function DebugApp() {
     toastTimer.current = window.setTimeout(() => setToast(null), 4000);
   }, []);
 
-  /** 背景 / BGM / CG 插件:配置、场景包、当前卡绑的包和素材 */
-  const scenePlugin = useScenePlugin(cardId, notify);
+  // 下面几个插件的全局配置都走 usePluginConfig:开机读一次,改的时候先改内存、停手半秒再写库。
+  // 出错要弹提示,所以放在 notify 后面
+
+  /**
+   * 立绘插件:全局配置(标签格式 + 提示词模板)存后端,手机和电脑共用;
+   * 表情映射跟着当前卡走。改配置时先改内存,停手半秒再写库,免得每敲一个字发一次请求。
+   */
+  const { config: spriteConfig, change: changeSpriteConfig } = usePluginConfig<SpritePluginConfig>(
+    SPRITE_SETTING_KEY,
+    normalizeSpriteConfig,
+    DEFAULT_SPRITE_CONFIG,
+    notify,
+  );
+
+  /** 插件开关(插件页右上角的小开关,关立绘 / 背景 / 音乐 / CG / AI 出图,plugins/switches.ts) */
+  const { config: switches, change: changeSwitches } = usePluginConfig<PluginSwitches>(
+    SWITCH_SETTING_KEY,
+    normalizeSwitches,
+    DEFAULT_SWITCHES,
+    notify,
+  );
+
+  /** 外语插件(日语配音、中文字幕):全局配置,和立绘插件一样停手半秒再写库 */
+  const { config: langConfig, change: changeLangConfig } = usePluginConfig<LangPluginConfig>(
+    LANG_SETTING_KEY,
+    normalizeLangConfig,
+    DEFAULT_LANG_CONFIG,
+    notify,
+    { load: '外语插件配置读取失败' },
+  );
+
+  /** 组装的设置(core/assembly.ts):自动补块的总开关 */
+  const { config: assemblyConfig } = usePluginConfig<AssemblyConfig>(
+    ASSEMBLY_SETTING_KEY,
+    normalizeAssemblyConfig,
+    DEFAULT_ASSEMBLY_CONFIG,
+    notify,
+  );
+
+  /** 玩家台词插件(<我> 弹选项):全局配置,同样停手半秒再写库 */
+  const { config: playerConfig, change: changePlayerConfig } = usePluginConfig<PlayerPluginConfig>(
+    PLAYER_SETTING_KEY,
+    normalizePlayerConfig,
+    DEFAULT_PLAYER_CONFIG,
+    notify,
+    { load: '玩家台词插件配置读取失败' },
+  );
+
+  /**
+   * Jev 标注:每个标签插件可以选「AI 写」或「Jev 标」(模式存在各插件自己的配置里,plugins/jev.ts)。
+   * 这里是几个插件共用的那份(立绘和文字同步、说话人门槛、通用问法),同样停手半秒再写库;
+   * key 只在后端,这里只知道设了没有。默认问法从后端拿(只存一份)
+   */
+  const { config: jevConfig, change: changeJevConfig } = usePluginConfig<JevPluginConfig>(
+    JEV_SETTING_KEY,
+    normalizeJevConfig,
+    DEFAULT_JEV_CONFIG,
+    notify,
+    { load: 'Jev 标注配置读取失败' },
+  );
+  const [jevKey, setJevKey] = useState<JevKeyStatus | null>(null);
+  const [jevDefaults, setJevDefaults] = useState<JevDefaults | null>(null);
+  const saveJevKey = async (key: string) => {
+    await debugApi.setJevKey(key);
+    setJevKey(await debugApi.annotateStatus());
+  };
+
+  /**
+   * 按卡设置(plugins/cardPrefs.ts):当前这张卡在全局插件设置之上另外改的几项(Jev 标还是 AI 写、Jev 的门槛)。
+   * 管行为的地方(组装时摘哪几块、Jev 标哪几类、门槛、标签格式、视觉小说)用叠过的「这张卡实际用的」;
+   * 插件抽屉、写进预设的插件块正文还是全局那份。这张卡没另设时就是全局那份本身,和没有按卡设置时一样
+   */
+  const cardPrefs = useCardPrefs(cardId, notify);
+  const spriteEffective = useMemo(
+    () => effectiveOf(spriteConfig, cardPrefs, SPRITE_SETTING_KEY, normalizeSpriteConfig),
+    [spriteConfig, cardPrefs],
+  );
+  const playerEffective = useMemo(
+    () => effectiveOf(playerConfig, cardPrefs, PLAYER_SETTING_KEY, normalizePlayerConfig),
+    [playerConfig, cardPrefs],
+  );
+
+  /** 背景 / BGM / CG 插件:配置(全局的 configs、这张卡实际用的 effective)、场景包、当前卡绑的包和素材 */
+  const scenePlugin = useScenePlugin(cardId, notify, cardPrefs);
   /** 立绘包:这张卡挂着哪些包、游戏里用哪个(换了跟着卡走),以及那个包里的立绘 */
   const spritePacks = useSpritePacks(cardId, notify);
   const { sprites } = spritePacks;
   /** 语音插件:配置、语音服务、声音,以及当前卡用哪些声音 */
   const voicePlugin = useVoicePlugin(cardId, notify);
+  // 拆句拼接(卡带的 useSplice;没装是关着的):开关跟着语音请求走,插件页里它那一页用同一份状态
+  const splice = useSplice(notify);
   // 游戏、提示词、语音、存档缩略图只看没禁用的素材;插件抽屉拿完整列表,好重新打开
-  const activeSprites = useMemo(() => enabledOnly(sprites), [sprites]);
-  const activeSceneAssets = useMemo(() => enabledOnly(scenePlugin.assets), [scenePlugin.assets]);
+  const cardSprites = useMemo(() => enabledOnly(sprites), [sprites]);
+  const cardSceneAssets = useMemo(() => enabledOnly(scenePlugin.assets), [scenePlugin.assets]);
+  // 形态(plugins/forms.ts;没装形态卡带时没有):开着时 AI({{sprites}})和 Jev 只在当前形态那组表情里选;
+  // 画面和语音由视觉小说按玩家插的切换记号换。
+  // 记号也存进存档(swipe_info[i].vn.forms):改的是当前对话的条目,persist effect 照常写库
+  const patchEntry = useCallback(
+    (id: string, fn: (e: ChatEntry) => ChatEntry) =>
+      setEntries((prev) => prev.map((e) => (e.id === id ? fn(e) : e))),
+    [],
+  );
+  const legacyForms = useForms({ cardId, chatId, entries, sprites: cardSprites, patchEntry });
+  // 状态(素材架构 3.5,plugins/useStates.ts):这张卡在状态组里时接手形态的那一套(同一个接口),
+  // 游戏、提示词、Jev 拿整组状态卡的立绘和场景素材,每句按它所在的状态看。「形态记号」那一行还是形态卡带的
+  const states = useStates({ cardId, chatId, entries, sprites: cardSprites, assets: cardSceneAssets, patchEntry });
+  const forms = useMemo(
+    () => (states.enabled ? { ...states, uploadMarks: legacyForms.uploadMarks } : legacyForms),
+    [states, legacyForms],
+  );
+  const activeSprites = states.enabled ? states.sprites : cardSprites;
+  // 生成的插图(生图卡带,plugins/illustrations.ts;没装就没有):插件页里那一页、视觉小说的「画」按钮和 CG 层上的图
+  const illustrations = useIllustrations({
+    notify,
+    cardId,
+    cardName: card?.name ?? '',
+    chatId,
+    charName: card?.name ?? '',
+    userName,
+    entries,
+    patchEntry,
+    connections,
+    // 收藏进 CG 包以后重读这张卡的 CG 绑定和包列表:第一次收藏新建的「AI 生图 · 卡名」包马上绑上,
+    // 游戏里马上选得到,卡编辑器里马上算进去(以前要重选这张卡)
+    onKept: () => {
+      void scenePlugin.reloadCard();
+      void scenePlugin.refreshCgPacks();
+    },
+  });
+  const cartridgePanels = useMemo(() => (illustrations.panel ? [illustrations.panel] : []), [illustrations.panel]);
+  const activeSceneAssets = states.enabled ? states.assets : cardSceneAssets;
+  const { current: formNow, spritesNow } = forms;
+  const formSprites = useMemo(() => spritesNow(activeSprites), [spritesNow, activeSprites]);
   const sceneKinds = useMemo(
     () => [
-      sceneTagKind('bg', scenePlugin.configs.bg.tagTemplate),
-      sceneTagKind('bgm', scenePlugin.configs.bgm.tagTemplate),
-      sceneTagKind('cg', scenePlugin.configs.cg.tagTemplate),
+      sceneTagKind('bg', scenePlugin.effective.bg.tagTemplate),
+      sceneTagKind('bgm', scenePlugin.effective.bgm.tagTemplate),
+      sceneTagKind('cg', scenePlugin.effective.cg.tagTemplate),
     ],
-    [scenePlugin.configs],
+    [scenePlugin.effective],
   );
+  // 形态开着时每张 CG 只在它标的形态里出:新回复只给 Jev / AI 现在的形态能出的 CG;
+  // 切到不能出的形态时收起。视觉小说里按句算,见 VNScreen
+  const { cgOkAt, cgOkNow } = forms;
   // 整段对话末尾是哪个场景、在放哪首、画面上有没有 CG —— {{current_bg}} / {{current_bgm}} / {{current_cg}}
   const sceneNow = useMemo(
-    () => sceneAtEnd(entries, sceneKinds, activeSceneAssets),
-    [entries, sceneKinds, activeSceneAssets],
+    () => sceneAtEnd(entries, sceneKinds, activeSceneAssets, cgOkAt),
+    [entries, sceneKinds, activeSceneAssets, cgOkAt],
   );
   const sceneMacroValues = useMemo(
-    () => sceneMacros(scenePlugin.configs, scenePlugin.packId !== null, activeSceneAssets, sceneNow),
-    [scenePlugin.configs, scenePlugin.packId, activeSceneAssets, sceneNow],
+    () =>
+      sceneMacros(scenePlugin.effective, scenePlugin.packId !== null, activeSceneAssets, sceneNow, cgOkNow),
+    [scenePlugin.effective, scenePlugin.packId, activeSceneAssets, sceneNow, cgOkNow],
   );
 
   // 插件块的正文只认插件里的提示词模板(全局一份)。预设里存的只是副本,读的时候
-  // 换成模板 —— 组装、左栏显示、保存、导出用的都是这个同步过的 preset
+  // 换成模板 —— 组装、左栏显示、保存、导出用的都是这个同步过的 preset。
+  // 预设是几张卡共用的,所以这里用全局那份,不叠按卡设置(块的正文本来也不能按卡设)
   const pluginTemplates = useMemo(
     () => ({
       [SPRITE_BLOCK_ID]: spriteConfig.blockPrompt,
@@ -607,29 +732,39 @@ export default function DebugApp() {
   const vnKinds = useMemo(
     () =>
       vnTagKinds(
-        spriteConfig.tagTemplate,
-        scenePlugin.configs.bg.tagTemplate,
-        scenePlugin.configs.bgm.tagTemplate,
-        scenePlugin.configs.cg.tagTemplate,
+        spriteEffective.tagTemplate,
+        scenePlugin.effective.bg.tagTemplate,
+        scenePlugin.effective.bgm.tagTemplate,
+        scenePlugin.effective.cg.tagTemplate,
       ),
-    [spriteConfig.tagTemplate, scenePlugin.configs],
+    [spriteEffective.tagTemplate, scenePlugin.effective],
   );
 
-  /** 哪几类标签在用 Jev:插件选了 Jev、而且后端有 key(没 key 时照旧由 AI 写) */
+  /**
+   * 哪几类标签在用 Jev:插件选了 Jev、而且后端有 key(没 key 时照旧由 AI 写)。
+   * 按这张卡实际用的模式算(这张卡可以另设 AI 写还是 Jev 标)
+   */
   const hasJevKey = Boolean(jevKey?.has_key);
   const jevKinds: JevKinds = useMemo(
     () => ({
-      sprite: hasJevKey && spriteConfig.mode === 'jev',
-      bg: hasJevKey && scenePlugin.configs.bg.mode === 'jev',
-      bgm: hasJevKey && scenePlugin.configs.bgm.mode === 'jev',
-      cg: hasJevKey && scenePlugin.configs.cg.mode === 'jev',
-      player: hasJevKey && playerConfig.mode === 'jev',
+      sprite: hasJevKey && switches.sprite && spriteEffective.mode === 'jev',
+      bg: hasJevKey && switches.bg && scenePlugin.effective.bg.mode === 'jev',
+      bgm: hasJevKey && switches.bgm && scenePlugin.effective.bgm.mode === 'jev',
+      cg: hasJevKey && switches.cg && scenePlugin.effective.cg.mode === 'jev',
+      player: hasJevKey && playerEffective.mode === 'jev',
     }),
-    [hasJevKey, spriteConfig.mode, scenePlugin.configs, playerConfig.mode],
+    [hasJevKey, switches, spriteEffective.mode, scenePlugin.effective, playerEffective.mode],
   );
   const jevOn = anyJev(jevKinds);
-  /** 在用 Jev 的那几类标签:提示词里摘掉、模型自己写的也摘掉 */
-  const jevStripKinds = useMemo(() => jevTagKinds(jevKinds, vnKinds), [jevKinds, vnKinds]);
+  /** 插件页右上角关掉的那几路(组装时块不发、标签摘掉) */
+  const offKinds = useMemo(() => offKindsOf(switches), [switches]);
+  /** 这次不发的插件块和原因:Jev 标的、插件关掉的。左栏显示成关着 */
+  const skippedBlocks = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const id of jevBlockIds(jevKinds)) m.set(id, 'Jev 标 · 不发');
+    for (const id of jevBlockIds(offKinds)) m.set(id, '插件关了 · 不发');
+    return m;
+  }, [jevKinds, offKinds]);
   /** 最新一条 AI 回复的 Jev 统计(插件页标题栏显示) */
   const lastJevStats = useMemo(() => {
     for (let i = entries.length - 1; i >= 0; i--) {
@@ -643,20 +778,6 @@ export default function DebugApp() {
     null,
   );
   /** 左栏点插件块:不在预设里改,跳到插件抽屉里它的提示词模板 */
-  /** 预设里的插件块 → 它属于哪个插件 */
-  const pluginOfBlock = (identifier: string): PluginKey =>
-    identifier === SCENE.bg.blockId
-      ? 'bg'
-      : identifier === SCENE.bgm.blockId
-        ? 'bgm'
-        : identifier === SCENE.cg.blockId
-        ? 'cg'
-        : identifier === LANG_BLOCK_ID
-          ? 'lang'
-          : identifier === PLAYER_BLOCK_ID
-            ? 'player'
-            : 'sprite';
-
   const openPluginEditor = (identifier: string) => {
     const section = pluginOfBlock(identifier);
     setMobileMenu(false);
@@ -671,10 +792,10 @@ export default function DebugApp() {
   const macroLookup = useMemo(
     () => ({
       ...toLookup(customMacros),
-      ...spriteMacros(spriteConfig, activeSprites),
+      ...spriteMacros(spriteEffective, formSprites),
       ...sceneMacroValues,
     }),
-    [customMacros, spriteConfig, activeSprites, sceneMacroValues],
+    [customMacros, spriteEffective, formSprites, sceneMacroValues],
   );
 
   /**
@@ -1238,14 +1359,7 @@ export default function DebugApp() {
 
     refreshConnections();
     refreshPersonas();
-    debugApi
-      .getSetting(SPRITE_SETTING_KEY)
-      .then((v) => {
-        if (v !== null) setSpriteConfig(normalizeSpriteConfig(v));
-      })
-      .catch((e: unknown) =>
-        notify('error', `插件配置读取失败: ${e instanceof Error ? e.message : String(e)}`),
-      );
+    // 立绘 / 外语 / 玩家台词 / Jev 的插件配置由 usePluginConfig 自己开机读
     debugApi
       .getSetting(PERSONA_BINDING_KEY)
       .then((v) => {
@@ -1261,30 +1375,6 @@ export default function DebugApp() {
       })
       .catch((e: unknown) =>
         notify('error', `预设绑定读取失败: ${e instanceof Error ? e.message : String(e)}`),
-      );
-    debugApi
-      .getSetting(LANG_SETTING_KEY)
-      .then((v) => {
-        if (v !== null) setLangConfig(normalizeLangConfig(v));
-      })
-      .catch((e: unknown) =>
-        notify('error', `外语插件配置读取失败: ${e instanceof Error ? e.message : String(e)}`),
-      );
-    debugApi
-      .getSetting(PLAYER_SETTING_KEY)
-      .then((v) => {
-        if (v !== null) setPlayerConfig(normalizePlayerConfig(v));
-      })
-      .catch((e: unknown) =>
-        notify('error', `玩家台词插件配置读取失败: ${e instanceof Error ? e.message : String(e)}`),
-      );
-    debugApi
-      .getSetting(JEV_SETTING_KEY)
-      .then((v) => {
-        if (v !== null) setJevConfig(normalizeJevConfig(v));
-      })
-      .catch((e: unknown) =>
-        notify('error', `Jev 标注配置读取失败: ${e instanceof Error ? e.message : String(e)}`),
       );
     debugApi
       .annotateStatus()
@@ -1331,7 +1421,6 @@ export default function DebugApp() {
     () => () => {
       window.clearTimeout(cardSaveTimer.current);
       window.clearTimeout(savedFlagTimer.current);
-      window.clearTimeout(spriteSaveTimer.current);
     },
     [],
   );
@@ -1380,32 +1469,8 @@ export default function DebugApp() {
     }
   }, [avatarWanted, savedCards, cardAvatars]);
 
-  // ---- 载入 ----
-
-  /** 导入文件 = 解析 + 直接入库。PNG 的图本身留作头像;JSON 则看卡里带没带 */
-  const loadCard = async (file: File) => {
-    setCardBusy(true);
-    setBusyLabel('正在导入角色卡……');
-    try {
-      const parsed = await parseCardFile(file);
-      const isPng = file.name.toLowerCase().endsWith('.png') || file.type === 'image/png';
-      const created = await debugApi.createCard({
-        ...cardToStored(parsed),
-        avatar: isPng ? await fileToDataUrl(file) : parsed.avatar,
-      });
-      const list = await debugApi.listCards();
-      setSavedCards(list);
-      await selectCard(created);
-      notify('ok', `已导入角色卡「${parsed.name || file.name}」· ${parsed.spec}`);
-    } catch (e) {
-      notify('error', `角色卡导入失败: ${e instanceof Error ? e.message : String(e)}`);
-    } finally {
-      setCardBusy(false);
-      setBusyLabel(null);
-    }
-  };
-
   // ---- 角色卡:自动保存 + CRUD ----
+  // (导入角色卡走导入器 importer/:卡、立绘、背景、曲子、CG 一起拖进来也行,见下面卡编辑器那一段)
 
   /**
    * 改字段:立刻更新内存(输入框要跟手),然后 debounce 600ms 写库。
@@ -1469,9 +1534,33 @@ export default function DebugApp() {
     }
   };
 
+  /** 卡面板的删除:先问一句 */
   const deleteCard = async () => {
     if (!cardId || !card) return;
     if (!window.confirm(`确定删除角色卡「${card.name || '(无名)'}」? 这个操作不可撤销。`)) return;
+    await removeCard();
+  };
+
+  /** 当前卡没了(删掉了、撤销了导入它的那次):换成列表里第一张,一张都没有就清空 */
+  const leaveCard = async (list: StoredCard[]) => {
+    if (list[0]) {
+      await selectCard(list[0]);
+      return;
+    }
+    setCard(null);
+    setCardId(null);
+    setAvatarUrl(null);
+    setEntries([]);
+    // 对话留在库里(卡删了引用自动置空),只是界面上没地方挂它了
+    setChats([]);
+    setTreeChats([]);
+    setChatId(null);
+    persistedRef.current = { chatId: null, rows: new Map() };
+  };
+
+  /** 删掉当前这张卡(已经确认过:卡面板问过一句,卡编辑器里点过两下)。删成了返回 true */
+  const removeCard = async (): Promise<boolean> => {
+    if (!cardId) return false;
     setCardBusy(true);
     try {
       // 别让在途的自动保存把刚删的卡又写回去
@@ -1488,22 +1577,12 @@ export default function DebugApp() {
       });
       const list = await debugApi.listCards();
       setSavedCards(list);
-      if (list[0]) {
-        await selectCard(list[0]);
-      } else {
-        setCard(null);
-        setCardId(null);
-        setAvatarUrl(null);
-        setEntries([]);
-        // 对话留在库里(卡删了引用自动置空),只是界面上没地方挂它了
-        setChats([]);
-        setTreeChats([]);
-        setChatId(null);
-        persistedRef.current = { chatId: null, rows: new Map() };
-      }
+      await leaveCard(list);
       notify('ok', '已删除');
+      return true;
     } catch (e) {
       notify('error', `删除失败: ${e instanceof Error ? e.message : String(e)}`);
+      return false;
     } finally {
       setCardBusy(false);
     }
@@ -1584,22 +1663,71 @@ export default function DebugApp() {
       enabled: overrides[o.identifier] ?? o.enabled,
     }));
   }, [preset, groupIndex, overrides]);
-  // 组装用的预设和编排:在用 Jev 的插件块不发;开着的标签插件块全是 Jev 时,外语块换成不提标签的
-  // 版本(plugins/jev.ts)。只影响发出去的提示词,左栏看到、保存的还是原来的
-  const assemblyOrder = useMemo(() => (jevOn ? jevOrder(order, jevKinds) : order), [jevOn, order, jevKinds]);
-  const tagFreeLang = wantsTagFreeLang(jevKinds, order);
-  const assemblyPreset = useMemo(
-    () =>
-      tagFreeLang && preset
-        ? {
-            ...preset,
-            prompts: preset.prompts.map((p) =>
-              p.identifier === LANG_BLOCK_ID ? { ...p, content: jevLangPrompt(p.content, vnKinds) } : p,
-            ),
-          }
-        : preset,
-    [tagFreeLang, preset, vnKinds],
+  // 组装期的插件规则(core/assembly.ts):在用 Jev 的插件块不发;开着的标签插件块全是 Jev 时,外语块换成
+  // 不提标签的版本;组装完摘掉 Jev 负责的标签。只影响发出去的提示词,左栏看到、保存的还是原来的
+  // 自动补块(设计稿 2.7):AI 模式的那一路、这张卡有跟着它走的素材、当前编排组里完全没有这块时,这次组装里补上
+  const langEffective = useMemo(
+    () => effectiveOf(langConfig, cardPrefs, LANG_SETTING_KEY, normalizeLangConfig),
+    [langConfig, cardPrefs],
   );
+  const autoFill: AutoFill = useMemo(() => {
+    const cgs = cgsOf(activeSceneAssets);
+    return {
+      enabled: assemblyConfig.autoFill,
+      configuredJev: {
+        sprite: spriteEffective.mode === 'jev',
+        bg: scenePlugin.effective.bg.mode === 'jev',
+        bgm: scenePlugin.effective.bgm.mode === 'jev',
+        cg: scenePlugin.effective.cg.mode === 'jev',
+        player: playerEffective.mode === 'jev',
+      },
+      material: {
+        // 跟着表情走的:启用的立绘、能念的主声音、有差分的 CG
+        sprite:
+          activeSprites.length > 0 ||
+          Boolean(voicePlugin.cast.main?.connection_id) ||
+          activeSceneAssets.some((a) => a.kind === 'cg' && a.parent_id),
+        bg: backgroundsOf(activeSceneAssets).length > 0,
+        bgm: bgmsOf(activeSceneAssets).length > 0,
+        cg: cgs.some((a) => !cgOkNow || cgOkNow(a)),
+      },
+      lang: langEffective.autoFill,
+      blocks: {
+        [SPRITE_BLOCK_ID]: { identifier: SPRITE_BLOCK_ID, name: SPRITE_BLOCK_NAME, content: spriteConfig.blockPrompt },
+        [SCENE.bg.blockId]: { identifier: SCENE.bg.blockId, name: SCENE.bg.blockName, content: scenePlugin.configs.bg.blockPrompt },
+        [SCENE.bgm.blockId]: { identifier: SCENE.bgm.blockId, name: SCENE.bgm.blockName, content: scenePlugin.configs.bgm.blockPrompt },
+        [SCENE.cg.blockId]: { identifier: SCENE.cg.blockId, name: SCENE.cg.blockName, content: scenePlugin.configs.cg.blockPrompt },
+        [LANG_BLOCK_ID]: { identifier: LANG_BLOCK_ID, name: LANG_BLOCK_NAME, content: langConfig.blockPrompt },
+      },
+      // Anthropic 格式的连接(库里的 kimi、glm):补的块并进最后一个 user 回合,不进开头的 system
+      lastUserTurn: connections.find((c) => c.id === connectionId)?.api_type === 'anthropic',
+    };
+  }, [
+    assemblyConfig.autoFill,
+    spriteEffective.mode,
+    scenePlugin.effective,
+    scenePlugin.configs,
+    playerEffective.mode,
+    activeSprites,
+    voicePlugin.cast.main,
+    activeSceneAssets,
+    cgOkNow,
+    langEffective.autoFill,
+    spriteConfig.blockPrompt,
+    langConfig.blockPrompt,
+    connections,
+    connectionId,
+  ]);
+  const assemblyPass = useMemo(
+    () => pluginAssemblyPass({ preset, order, jevKinds, offKinds, vnKinds, autoFill }),
+    [preset, order, jevKinds, offKinds, vnKinds, autoFill],
+  );
+  const {
+    preset: assemblyPreset,
+    order: assemblyOrder,
+    stripKinds: jevStripKinds,
+    lastUserTurn: autoToLastUser,
+  } = assemblyPass;
 
   // ---- 预设 CRUD ----
 
@@ -1763,16 +1891,6 @@ export default function DebugApp() {
     });
     setPresetDirty(true);
   };
-
-  /** 插件块的 identifier:立绘、背景、音乐、外语、玩家台词各一块 */
-  const blockIdOf = (kind: PluginKey) =>
-    kind === 'sprite'
-      ? SPRITE_BLOCK_ID
-      : kind === 'lang'
-        ? LANG_BLOCK_ID
-        : kind === 'player'
-          ? PLAYER_BLOCK_ID
-          : SCENE[kind].blockId;
 
   /** 把插件块加进当前预设。和手动加块一样只动内存,点「存」才写回 */
   const insertPluginBlock = (kind: PluginKey) => {
@@ -2178,8 +2296,28 @@ export default function DebugApp() {
    * 组装提示词;在用 Jev 的那几类标签全摘掉(历史、卡里的对话示例……模型看见就会照着写)。
    * AI 模式的那几类留着,模型才会接着写
    */
-  const assembleForSend = (input: Parameters<typeof assemble>[0]) =>
-    jevOn ? jevStripPrompt(assemble(input), jevStripKinds) : assemble(input);
+  /** 左栏要显示的自动补的块:各自排在哪一块前面(发出去用的编排里它后面第一块不是自动补的) */
+  const autoBlockRows = useMemo(() => {
+    const autoIds = new Set(assemblyPass.auto.map((a) => a.identifier));
+    return assemblyPass.auto.map((a) => {
+      const at = assemblyOrder.findIndex((e) => e.identifier === a.identifier);
+      const next = assemblyOrder.slice(at + 1).find((e) => !autoIds.has(e.identifier));
+      return { ...a, before: next?.identifier ?? null };
+    });
+  }, [assemblyPass.auto, assemblyOrder]);
+
+  const assembleForSend = (input: Parameters<typeof assemble>[0]) => {
+    const result = jevStripKinds ? jevStripPrompt(assemble(input), jevStripKinds) : assemble(input);
+    return moveToLastUserTurn(result, autoToLastUser);
+  };
+
+  // 生成中历史每来一段字就变一次:下面这份统计(预算条、输入框上方)先按发出去那一刻的历史算,
+  // 写完再按最新的算 —— 不跟着每段字重拼整份提示词、重数 token。预设、卡这些改了照样马上重算
+  const previewHistory = useMemo(
+    () => history,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sending ? null : history],
+  );
 
   /** 下一次请求会发出去的东西 —— 输入框上方的统计就来自这里 */
   const preview = useMemo(() => {
@@ -2188,7 +2326,7 @@ export default function DebugApp() {
       card,
       preset: assemblyPreset,
       order: assemblyOrder,
-      history,
+      history: previewHistory,
       userName,
       personaDescription: persona,
       customMacros: macroLookup,
@@ -2204,9 +2342,9 @@ export default function DebugApp() {
     card,
     assemblyPreset,
     assemblyOrder,
-    jevOn,
     jevStripKinds,
-    history,
+    autoToLastUser,
+    previewHistory,
     userName,
     persona,
     macroLookup,
@@ -2271,33 +2409,68 @@ export default function DebugApp() {
   /** 条目 → 发给模型的一条历史(和 history 一样合并了 Jev 的标注) */
   const turnOf = (e: ChatEntry): ChatTurn => ({ role: e.role, content: jevText(e, vnKinds) });
 
+  // 设置 → 数据「表情认法」:Jev 的起始表情和舞台用同一种认法
+  const timelineEngine = useTimelineEngine();
+  // Jev 起始表情要的切句缓存(和视觉小说各一份)
+  const jevBeatCache = useRef(newBeatCache());
   /**
-   * 一条回复的 Jev 标注(plugins/jevRun.ts),按现在各插件的模式、门槛、问法。before 是这条回复
-   * 之前的条目(算回复开始时的场景、表情),prev 是玩家上一句
+   * 新回复开头生效的表情(签字清单第 10 条):和舞台在这条回复第 0 句、还没有标签时一样(core/timeline.ts)。
+   * 认表情用视觉小说已经问到的结果(表情认法选了认词记录时是已经读到的认词记录,CG 那一帧也查已经读到的配对表),
+   * 没问到的保持上一个(和舞台在结果回来以前一样)。
+   * 没有立绘的卡、还没出现过表情时舞台上是空的,照旧给内置表情的第一个:Jev 要拿它给没判出表情的台词补立绘标签,
+   * 不然那句会被当成旁白
+   */
+  const jevStartEmotion = (before: readonly ChatEntry[], targetId: string): string | null => {
+    const charName = card?.name ?? '';
+    const candidates = emotionCandidates(activeSprites);
+    const cgPairs = timelineEngine === 'records' ? cachedPairs('cg', emotionListRef(activeSprites)) : null;
+    const ctx: TimelineCtx = {
+      sprites: activeSprites,
+      sceneAssets: activeSceneAssets,
+      emotion: {
+        resolve:
+          timelineEngine === 'records'
+            ? cachedRecordsResolver(emotionListRef(activeSprites), candidates)
+            : cachedResolver(candidates),
+        rawOnFail: activeSprites.length === 0,
+        charName,
+      },
+      forms: forms.lens,
+      ...(cgPairs ? { cgFrame: cgFrameFromPairs(cgPairs, activeSprites, activeSceneAssets) } : {}),
+    };
+    const beats = parseBeats({ entries: before, tagKinds: vnKinds, macros: displayMacros, charName, userName, cache: jevBeatCache.current });
+    return emotionAtStart(buildTimeline(beats, ctx), ctx, targetId, candidates[0]?.label ?? null);
+  };
+
+  /**
+   * 一条回复的 Jev 标注(plugins/jevRun.ts),按现在各插件的模式、门槛、问法(这张卡实际用的,叠过按卡设置)。
+   * before 是这条回复之前的条目(算回复开始时的场景、表情),prev 是玩家上一句,
+   * targetId 是这次要标的那条(它第 0 句的形态)
    */
   const makeJevRun = (
     before: readonly ChatEntry[],
     prev: string,
     onChange: (snap: JevSnapshot) => void,
+    targetId: string,
   ): JevRun => {
-    const scene = sceneAtEnd(before, sceneKinds, activeSceneAssets);
+    const scene = sceneAtEnd(before, sceneKinds, activeSceneAssets, cgOkAt);
     const choice = (x: { label: string; aliases: readonly string[]; description?: string }): AnnotateChoice => ({
       label: x.label,
       aliases: [...x.aliases],
       description: x.description ?? '',
     });
-    const emotions = activeSprites.length > 0 ? activeSprites.map(choice) : BUILTIN_EMOTIONS.map(choice);
-    const { bg, bgm, cg } = scenePlugin.configs;
+    const emotions = formSprites.length > 0 ? formSprites.map(choice) : BUILTIN_EMOTIONS.map(choice);
+    const { bg, bgm, cg } = scenePlugin.effective;
     const backgrounds = backgroundsOf(activeSceneAssets);
-    // 一张 CG 都没有时这道题不问(也就不用一句一句排队等)
-    const cgsNow = cgsOf(activeSceneAssets);
+    // 现在的形态里能出的 CG;一张都没有时这道题不问(也就不用一句一句排队等)
+    const cgsNow = cgsOf(activeSceneAssets).filter((a) => !cgOkNow || cgOkNow(a));
     return new JevRun({
       charName: card?.name ?? '',
       userName,
       prev,
       kinds: vnKinds,
       jevKinds: cgsNow.length ? jevKinds : { ...jevKinds, cg: false },
-      templates: { sprite: spriteConfig.tagTemplate, bg: bg.tagTemplate, bgm: bgm.tagTemplate, cg: cg.tagTemplate },
+      templates: { sprite: spriteEffective.tagTemplate, bg: bg.tagTemplate, bgm: bgm.tagTemplate, cg: cg.tagTemplate },
       emotions,
       bgs: backgrounds.map(choice),
       bgms: bgmsOf(activeSceneAssets).map(choice),
@@ -2308,17 +2481,20 @@ export default function DebugApp() {
         const b = label ? backgrounds.find((x) => x.label === label) : null;
         return b ? (b.description.trim() ? `${b.label}(${b.description.trim()})` : b.label) : '';
       },
-      emotionBefore: emotionBefore(before, vnKinds, emotions),
-      popup: playerConfig.jev.popup,
+      emotionBefore: jevStartEmotion(before, targetId),
+      popup: playerEffective.jev.popup,
+      // 要不要给角色的台词多判一道档(卡带的 asksTone,plugins/voiceExtensions.ts);语音按它换版本
+      askTone: asksTone({ form: formNow, voice: voicePlugin.cast.main }),
       thresholds: {
         speaker: jevConfig.speakerThreshold,
         bg: bg.jev.threshold,
         bgm: bgm.jev.threshold,
         cg: cg.jev.threshold,
       },
-      prompts: promptOverrides(jevConfig, spriteConfig, bg, bgm, cg),
+      prompts: promptOverrides(jevConfig, spriteEffective, bg, bgm, cg),
       annotate: (req, signal) => debugApi.annotateLines(req, signal),
       onChange,
+      twoQueues: jevConfig.twoQueues,
     });
   };
 
@@ -2335,7 +2511,7 @@ export default function DebugApp() {
     void debugApi.annotateWarmup().catch(() => {});
     // 回复开始时的场景、表情:按这条之前的条目算(重新生成时不算被换掉的那个分支)
     const before = latest.current.entries.filter((e) => e.id !== targetId);
-    return makeJevRun(before, prev, write);
+    return makeJevRun(before, prev, write, targetId);
   };
 
   /**
@@ -2348,7 +2524,7 @@ export default function DebugApp() {
     const idx = all.findLastIndex((e) => e.role === 'assistant' && !e.streaming);
     if (idx === -1) throw new Error('当前对话里还没有 AI 回复');
     const before = all.slice(0, idx);
-    const run = makeJevRun(before, lastUserText(before), () => {});
+    const run = makeJevRun(before, lastUserText(before), () => {}, all[idx].id);
     const started = performance.now();
     run.feed(currentText(all[idx]), false);
     await run.settle(JEV_SETTLE_MS * 2);
@@ -2396,8 +2572,13 @@ export default function DebugApp() {
     let swipe: number | null = null;
     const target = (e: ChatEntry) => (swipe ??= e.swipeIndex);
     // 正文只存模型写的原文;Jev 的标注另外记在这个分支的 swipe_info.jev 里,用的时候合并
-    const jev = startJev(targetId, prev, ({ record, pendingFrom }) =>
-      patch((e) => ({ ...patchSwipeInfo(e, { jev: record }, target(e)), jevPending: pendingFrom ?? undefined })),
+    const jev = startJev(targetId, prev, ({ record, pendingFrom, voicePendingFrom }) =>
+      patch((e) => ({
+        ...patchSwipeInfo(e, { jev: record }, target(e)),
+        jevPending: pendingFrom ?? undefined,
+        // 语音要等的第一句;批量那边判完了、只剩 CG 在判时是「不用等」(两条队列时)
+        jevVoicePending: voicePendingFrom ?? (pendingFrom === null ? undefined : Number.MAX_SAFE_INTEGER),
+      })),
     );
     controller.signal.addEventListener('abort', () => jev?.abort());
     // 一开始就记上「这个分支是 Jev 标的」:切句从第一句起就按严格规则认说话人
@@ -2406,17 +2587,26 @@ export default function DebugApp() {
       patch((e) => setSwipeText(e, body, target(e)));
       jev?.feed(body, true);
     };
+    let reasoning = '';
+    // 模型每秒推几十段字(思考过程也是),每段都改一次条目,整个页面就跟着重画几十遍 —— 2026-10-15 实测
+    // 开发模式下 AI 写字时主线程 99% 在忙。攒成最多每 STREAM_PAINT_MS 改一次,第一段照样马上出;
+    // 写完、出错、被停下时先 flush,最后一段不丢
+    const bodyWriter = throttle(writeBody, STREAM_PAINT_MS);
+    const reasoningWriter = throttle(() => patch((e) => patchSwipeInfo(e, { reasoning })), STREAM_PAINT_MS);
+    const flushWrites = () => {
+      reasoningWriter.flush();
+      bodyWriter.flush();
+    };
     /** 写完了:等 Jev 判完最后几句(最多 JEV_SETTLE_MS),统计和标注记到这个分支上 */
     const settleJev = async () => {
       if (!jev) return;
       await jev.settle(JEV_SETTLE_MS);
       const record = jev.record();
-      patch((e) => ({ ...patchSwipeInfo(e, { jev: record }, target(e)), jevPending: undefined }));
+      patch((e) => ({ ...patchSwipeInfo(e, { jev: record }, target(e)), jevPending: undefined, jevVoicePending: undefined }));
     };
 
     try {
       if (useStreaming) {
-        let reasoning = '';
         const done = await debugApi.streamComplete(
           messages,
           connectionId,
@@ -2433,14 +2623,15 @@ export default function DebugApp() {
               ),
             onReasoning: (t) => {
               reasoning += t;
-              patch((e) => patchSwipeInfo(e, { reasoning }));
+              reasoningWriter();
             },
             onDelta: (t) => {
               body += t;
-              writeBody();
+              bodyWriter();
             },
           },
         );
+        flushWrites();
         setLastRaw(body);
         if (jev) jev.feed(body, false);
         patch((e) => ({
@@ -2467,6 +2658,8 @@ export default function DebugApp() {
       }
       await settleJev();
     } catch (e) {
+      // 攒着还没写进条目的那一段先写进去:停下 / 断线时已经拿到手的字一个不少
+      flushWrites();
       const aborted = e instanceof DOMException && e.name === 'AbortError';
       // 已经吐出来的留着,一个字都没有的气泡才撤销 —— 不管是手动停止、网络断线,
       // 还是像"没收到结束帧"这种流被腰斩的情况:已经拿到手的内容不该因为收尾
@@ -2484,6 +2677,8 @@ export default function DebugApp() {
         await settleJev();
       }
     } finally {
+      bodyWriter.cancel();
+      reasoningWriter.cancel();
       setSending(false);
       finish();
     }
@@ -2784,6 +2979,9 @@ export default function DebugApp() {
       sceneBlocks={{ bg: blockControls('bg'), bgm: blockControls('bgm'), cg: blockControls('cg') }}
       sceneMacros={sceneMacroValues}
       voice={voicePlugin}
+      splice={splice}
+      panels={cartridgePanels}
+      switches={{ value: switches, onChange: changeSwitches }}
       lang={{ config: langConfig, onChangeConfig: changeLangConfig, block: blockControls('lang') }}
       player={{
         config: playerConfig,
@@ -2866,77 +3064,440 @@ export default function DebugApp() {
     />
   ) : null;
 
+  // ---- 卡编辑器(studio/):全屏页,盖在调试台和视觉小说上面 ----
+
+  /** 打开卡编辑器;给了别的卡就先选那张卡(编辑的永远是当前这张) */
+  const openStudio = (route: StudioRoute, forCardId?: string) => {
+    if (forCardId && forCardId !== cardId) {
+      const row = savedCards.find((c) => c.id === forCardId);
+      if (!row) return;
+      void selectCard(row);
+    }
+    setMobileMenu(false);
+    setStudio(route);
+  };
+  // 卡没了(删掉了)就关
+  useEffect(() => {
+    if (!cardId) setStudio(null);
+  }, [cardId]);
+  /** 「开始」:关掉卡编辑器进游戏;已经在视觉小说里就只关。从素材管理页点卡名进来的,素材管理页也一起关 */
+  const startFromStudio = () => {
+    setStudio(null);
+    setLibrary(null);
+    if (!vnOpen) toggleVn(true);
+  };
+  // 包编辑器(卡编辑器、素材管理)改完包里的东西 → 交给各个按卡的 hook:是当前卡正在用的包就马上换进游戏,
+  // 别的包的结果它们自己丢掉。hook 交出来的函数每次渲染都是新的,这里经 ref 转一道,给编辑器一个不变的对象
+  const syncTargets = useRef({ spritePacks, spriteLayout, scenePlugin, voicePlugin, cardId });
+  useEffect(() => {
+    syncTargets.current = { spritePacks, spriteLayout, scenePlugin, voicePlugin, cardId };
+  });
+  const packSync = useMemo<PackSync>(
+    () => ({
+      sprites: (pid, list) => syncTargets.current.spritePacks.changeSprites(pid, list),
+      layout: (pid, layout) => syncTargets.current.spriteLayout.adopt(pid, layout),
+      scene: (pid, list) => syncTargets.current.scenePlugin.changeAssets(pid, list),
+      packs: (kind) => {
+        const t = syncTargets.current;
+        if (kind === 'sprite') void t.spritePacks.refreshPacks();
+        else if (kind === 'scene') void t.scenePlugin.refreshPacks();
+        else if (kind === 'cg') void t.scenePlugin.refreshCgPacks();
+        else void t.voicePlugin.refresh();
+      },
+    }),
+    [],
+  );
+  // ---- 素材管理页(library/):全屏页,和卡编辑器同一层;点卡名打开的卡编辑器盖在它上面 ----
+
+  const openLibrary = () => {
+    setMobileMenu(false);
+    setLibrary(lastLibrary.current);
+  };
+  const routeLibrary = (next: LibraryRoute) => {
+    lastLibrary.current = next;
+    setLibrary(next);
+  };
+  // 素材管理页关了(左上角、Esc、「开始」),导入提示跟着收起
+  const libraryOpen = library !== null;
+  useEffect(() => {
+    if (!libraryOpen) setLibraryNotice(null);
+  }, [libraryOpen]);
+  // 「绑定到角色卡…」改卡的绑定:都直接写库;当前这张卡写完让对应的 hook 重读(游戏里马上换),声音走 hook 自己的写法
+  const libraryBindings = useMemo<CardBindingWriter>(() => {
+    const isCurrent = (id: string) => id === syncTargets.current.cardId;
+    return {
+      sprite: async (id, ids) => {
+        await debugApi.setCardSpritePacks(id, ids);
+        if (isCurrent(id)) await syncTargets.current.spritePacks.reload();
+      },
+      scene: async (id, parts) => {
+        await debugApi.setCardScenePacks(id, parts);
+        if (isCurrent(id)) await syncTargets.current.scenePlugin.reloadCard();
+      },
+      cg: async (id, ids) => {
+        await debugApi.setCardCgPacks(id, ids);
+        if (isCurrent(id)) await syncTargets.current.scenePlugin.reloadCard();
+      },
+      voice: async (id, v) => {
+        if (!isCurrent(id)) {
+          await debugApi.setCardVoices(id, v);
+          return;
+        }
+        if (!(await syncTargets.current.voicePlugin.bind(v))) throw new Error('声音绑定没存上');
+      },
+    };
+  }, []);
+  /** 素材管理页删了一个包 / 声音:当前卡绑着它的话让对应的 hook 忘掉(包列表 AssetLibrary 已经让 PackSync 刷新了) */
+  const forgetDeleted = (kind: LibraryKind, id: string) => {
+    const t = syncTargets.current;
+    if (kind === 'sprite') void t.spritePacks.reload();
+    else if (kind === 'bg' || kind === 'bgm') t.scenePlugin.forgetPack(id);
+    else if (kind === 'cg') t.scenePlugin.forgetCgPack(id);
+    else if (t.voicePlugin.binding.main === id || t.voicePlugin.binding.extras.includes(id)) {
+      void t.voicePlugin.bind(bindRemove(t.voicePlugin.binding, id));
+    }
+  };
+  /** 撤销了一次导入:卡列表重读;当前卡被删了换一张,资料被改回去了换上改回去的,绑定重读;那次的提示条收起 */
+  const afterImportUndone = async (result: ImportUndoPreview) => {
+    setLibraryNotice((n) => (n?.jobId === result.job_id ? null : n));
+    try {
+      const list = await debugApi.listCards();
+      setSavedCards(list);
+      const current = syncTargets.current.cardId;
+      if (current && result.cards.some((c) => c.id === current)) {
+        await leaveCard(list);
+        return;
+      }
+      const restored = current ? list.find((c) => c.id === current && result.restore_cards.some((r) => r.id === c.id)) : undefined;
+      if (restored) setCard(cardFromStored(restored));
+      const t = syncTargets.current;
+      await Promise.all([t.spritePacks.reload(), t.scenePlugin.reloadCard()]);
+    } catch (e) {
+      notify('error', `撤销以后重读角色卡失败: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+  const libraryCards = useMemo(
+    () => savedCards.map((c) => ({ id: c.id, name: c.name, stateOf: c.state_of ?? null })),
+    [savedCards],
+  );
+
+  // 立绘栏的预览背景从这张卡的背景里挑(只看没停用的,和游戏里一样)
+  const studioBackgrounds = useMemo(() => backgroundsOf(cardSceneAssets), [cardSceneAssets]);
+  // 左栏的 CG 行只数导入的包,要看包的来源(导入 / AI 生成):CG 包列表平时只有插件页的 CG 页才读,打开卡编辑器时读一遍
+  const studioOpen = studio !== null;
+  useEffect(() => {
+    if (studioOpen) void syncTargets.current.scenePlugin.refreshCgPacks();
+  }, [studioOpen]);
+  // 卡编辑器关了,从它里面开的插件抽屉也收起来(下次打开别还挂着)
+  useEffect(() => {
+    if (!studioOpen) setStudioPlugin(null);
+  }, [studioOpen]);
+  // 「AI 生成」那一栏(生图卡带经扩展点给,cartridges.ts 的 StudioIllustrations);没装就没有这一栏
+  const aiStudio = illustrations.vn?.studio ?? null;
+  // 那一栏的「已收藏」:这张卡绑的 AI 生成 CG 包(generated)里的构图和差分。绑定没读完、
+  // 或者绑着的包还不在包列表里(刚收藏新建的,列表还没刷新)时看不出哪个是 AI 生成的,给 null
+  const { ready: sceneReady, cgPacks, cgPackIds, assets: sceneAssets } = scenePlugin;
+  const studioKept = useMemo(() => {
+    if (!sceneReady) return null;
+    const byId = new Map(cgPacks.map((p) => [p.id, p]));
+    if (cgPackIds.some((id) => !byId.has(id))) return null;
+    const generated = new Set(cgPackIds.filter((id) => byId.get(id)?.generated));
+    return sceneAssets.filter((a) => a.kind === 'cg' && generated.has(a.pack_id));
+  }, [sceneReady, cgPacks, cgPackIds, sceneAssets]);
+  /** 「生图设置」:插件抽屉开在卡编辑器上面,停在卡带那一页 */
+  const illustrationPanelKey = illustrations.panel?.key ?? null;
+  const openIllustrationSettings = useCallback(() => {
+    if (illustrationPanelKey) setStudioPlugin({ section: illustrationPanelKey, nonce: Date.now() });
+  }, [illustrationPanelKey]);
+  // 左栏「已绑定素材」每一行的副标题
+  const studioSlots = studio
+    ? summarizeSlots({
+        sprite: { packs: spritePacks.packs, bound: spritePacks.packIds, current: spritePacks.packId },
+        voice: { profiles: voicePlugin.profiles, binding: voicePlugin.binding },
+        scene: { packs: scenePlugin.packs, binding: scenePlugin.binding, lists: scenePlugin.sceneLists },
+        cg: { packs: scenePlugin.cgPacks, bound: scenePlugin.cgPackIds },
+        ai: aiStudio ? { name: aiStudio.name, counts: aiStudio.summary(studioKept) } : null,
+      })
+    : [];
+
+  // ---- 导入(importer/):拖进窗口 / 点「导入」→ 出计划 → 要问就先问 → 执行 → 打开那张卡的素材页,顶上一行提示
+  //      (没有卡就打开素材管理页,选中新建的包) ----
+
+  /** 执行完了:卡列表、包列表都刷一遍(可能有新卡、新包),再打开那张卡的卡编辑器素材页;没有卡就打开素材管理页 */
+  const finishImport = async ({ result, plan, target, body }: ImportDone) => {
+    const t = syncTargets.current;
+    void t.spritePacks.refreshPacks();
+    void t.scenePlugin.refreshPacks();
+    void t.scenePlugin.refreshCgPacks();
+    // 素材管理页开着(哪怕被卡编辑器盖着)就重读它的列表和导入记录
+    setLibraryReload((n) => n + 1);
+    // 选角页记着每张卡的立绘和背景:挂了素材的卡下次重读
+    for (const id of [result.card_id, target.cardId]) if (id) forgetPickDetail(id);
+    const list = await debugApi.listCards().catch(() => null);
+    if (list) setSavedCards(list);
+    const row = result.card_id ? list?.find((c) => c.id === result.card_id) : undefined;
+    if (!row) {
+      // 没有卡可开(导进来的只有包,没拖到卡上):打开素材管理页,选中第一个新建的包,顶上一行提示。
+      // 新建的场景包要看有没有背景(只有曲子的开 BGM 页);卡编辑器开着就关掉,不然素材管理页在它底下看不见
+      const scenes = result.created?.scene_packs.length ? await debugApi.listScenePacks().catch(() => null) : null;
+      setStudio(null);
+      setMobileMenu(false);
+      routeLibrary(libraryRouteAfterImport(result, plan, body, scenes));
+      setLibraryNotice(noticeOf(result));
+      return;
+    }
+    // 选了「是同一张,更新它」的卡,字段变了,当前卡也要重新选一次
+    const updated = plan.groups.some(
+      (g) => g.type === 'card' && g.duplicate_of?.id === row.id && body.decisions?.[g.key] === 'update',
+    );
+    if (row.id !== cardId || updated) {
+      // selectCard 一开头就换上这张卡(接对话在后面慢慢来),卡编辑器马上能开
+      void selectCard(row);
+    } else {
+      // 挂到了当前这张卡上:重读它的立绘包、场景包、CG 包绑定
+      void t.spritePacks.reload();
+      void t.scenePlugin.reloadCard();
+    }
+    setMobileMenu(false);
+    setStudio({ tab: 'assets', slot: slotAfterImport(plan, target.kind), notice: noticeOf(result) });
+  };
+
+  const importer = useImporter({
+    notify,
+    spritePackName: (id) => spritePacks.packs.find((p) => p.id === id)?.name ?? null,
+    onApplied: finishImport,
+  });
+
+  /** 提示条里认领一个没认出来的文件:换上新的提示,这张卡的包可能多了、变了 */
+  const classifyUnknown = async (path: string, kind: ClassifyKind) => {
+    const jobId = studio?.notice?.jobId;
+    if (!jobId) return;
+    const result = await importer.classify(jobId, path, kind);
+    if (!result) return;
+    setStudio((s) => (s ? { ...s, notice: noticeOf(result) } : s));
+    const t = syncTargets.current;
+    void t.spritePacks.reload();
+    void t.scenePlugin.reloadCard();
+    void t.scenePlugin.refreshCgPacks();
+    if (result.card_id) forgetPickDetail(result.card_id);
+  };
+
+  /** 素材管理页的提示条里认领一个没认出来的文件:换上新的提示,包列表刷新(素材管理页的列表它自己重读) */
+  const classifyInLibrary = async (path: string, kind: ClassifyKind) => {
+    const jobId = libraryNotice?.jobId;
+    if (!jobId) return;
+    const result = await importer.classify(jobId, path, kind);
+    if (!result) return;
+    setLibraryNotice(noticeOf(result));
+    const t = syncTargets.current;
+    void t.spritePacks.refreshPacks();
+    void t.scenePlugin.refreshPacks();
+    void t.scenePlugin.refreshCgPacks();
+  };
+
+  /**
+   * 资料页:左栏目录 + 角色卡的全部字段 + 右栏(绑定、Token 分布、上下文预算、删卡);目录点「玩家人设」换成人设页。
+   * 原来的资料编辑抽屉拆掉了,卡面板的「编辑资料」和滑块图标、视觉小说菜单的「角色」页都开这里
+   */
+  const renderStudioProfile = () =>
+    card && cardId ? (
+      <ProfileTab
+        card={card}
+        avatarUrl={avatarUrl}
+        preset={preset}
+        order={order}
+        result={preview}
+        presetName={savedPresets.find((p) => p.id === presetId)?.name ?? preset?.name ?? null}
+        persona={{ name: activePersona?.name ?? '', description: persona }}
+        budget={tokenBudget}
+        onChangeBudget={changeBudget}
+        busy={cardBusy}
+        onChange={changeCard}
+        onPickAvatar={() => pickAvatarFor({ kind: 'card' })}
+        onExport={() => void exportCard()}
+        onDuplicate={() => void duplicateCard()}
+        // 删的就是正在编辑的这张:删完回到原来的界面,别停在下一张卡的资料页上
+        onDelete={() => void removeCard().then((ok) => ok && setStudio(null))}
+        binding={{
+          personas,
+          personaId: personas.some((p) => p.id === boundPersonaId) ? boundPersonaId : null,
+          defaultPersonaName: personas.find((p) => p.id === personaBindings.default)?.name ?? null,
+          onPersona: (id) => void bindPersonaToCard(id),
+          presets: savedPresets,
+          presetId: boundPresetId,
+          onPreset: bindPresetToCard,
+        }}
+        personaPage={{
+          personas,
+          cardId,
+          cardName,
+          bindings: personaBindings,
+          onChangeBindings: changePersonaBindings,
+          onBindToCard: (id) => void bindPersonaToCard(id),
+          onRefresh: refreshPersonas,
+          onPickAvatar: (id) => pickAvatarFor({ kind: 'persona', id }),
+          cardNames: new Map(savedCards.map((c) => [c.id, c.name])),
+          notify,
+        }}
+        renderPreset={renderStudioPreset}
+      />
+    ) : null;
+  /** 素材页的一栏(主区 + 右栏)。第 1 段的各个任务逐个换成真的编辑器,还没做的先占位 */
+  const renderStudioSlot = (slot: SlotKey) => {
+    if (slot === 'sprite' && card) {
+      return (
+        <SpriteSlot
+          key={cardId}
+          card={card}
+          userName={userName}
+          sprite={spritePacks}
+          stage={spriteLayout.stage}
+          backgrounds={studioBackgrounds}
+          sync={packSync}
+          notify={notify}
+        />
+      );
+    }
+    if (slot === 'bg' && card) {
+      return (
+        <BackgroundSlot
+          key={cardId}
+          cardName={cardName}
+          scene={scenePlugin}
+          sprites={spritePacks.sprites}
+          layout={spriteLayout.layout}
+          stage={spriteLayout.stage}
+          sync={packSync}
+          notify={notify}
+        />
+      );
+    }
+    if (slot === 'bgm' && card) {
+      return <BgmSlot key={cardId} cardName={cardName} scene={scenePlugin} sync={packSync} notify={notify} />;
+    }
+    if (slot === 'voice') {
+      // 情绪对照用当前服装里启用的差分(游戏里 AI 只能写这些)
+      return (
+        <VoiceSlot
+          voice={voicePlugin}
+          cardName={cardName}
+          spriteLabels={cardSprites.map((s) => s.label)}
+          notify={notify}
+        />
+      );
+    }
+    if (slot === 'cg') {
+      // 只列导入的 CG 包(AI 生成的归「AI 生成」那一栏);差分名用当前服装里启用的(游戏里 AI 只能写这些)
+      return (
+        <CgSlot
+          key={cardId}
+          cardName={cardName}
+          scene={scenePlugin}
+          emotions={cardSprites.map((s) => s.label)}
+          sync={packSync}
+          notify={notify}
+        />
+      );
+    }
+    if (slot === 'ai' && aiStudio && cardId) {
+      // 相册 + 收藏进 CG 包的那些;生图卡带自己画(主区 + 右栏)
+      return aiStudio.render({ cardId, cardName, kept: studioKept, openSettings: openIllustrationSettings });
+    }
+    return <SlotPending slot={slot} />;
+  };
+
+  /**
+   * 预设那一套(状态、块操作、预设增删改):调试台左栏、视觉小说菜单的「预设」页、卡编辑器资料页的预设页
+   * 拿的是同一份,哪边改了别处跟着变。各处只有收起、点插件块去哪不一样
+   */
+  const presetBase: PresetBaseProps = {
+    preset,
+    order,
+    activeGroupIndex: groupIndex,
+    onPickGroup: (i) => {
+      // 块的开关是按顺序组记的,换组就清掉 —— 有改过的先问一句,别悄悄没了
+      const n = Object.keys(overrides).length;
+      if (n > 0 && !window.confirm(`换顺序组会清掉刚才改的 ${n} 个块的开关,继续?`)) return;
+      setGroupIndex(i);
+      setOverrides({});
+    },
+    onToggleBlock: toggleBlock,
+    saved: savedPresets,
+    selectedId: presetId,
+    dirty: presetDirty,
+    busy: presetBusy,
+    onUpdateBlock: updateBlock,
+    onReorder: reorderBlock,
+    onAddBlock: addBlock,
+    onDeleteBlock: deleteBlock,
+    isPluginBlock,
+    autoBlocks: autoBlockRows,
+    skippedBlocks,
+    onPinAuto: (identifier) => insertPluginBlock(pluginOfBlock(identifier)),
+    overridden: overriddenIdentifiers,
+    resolveMarker,
+    macros: displayMacros,
+    onUpdateCard: changeCard,
+    onSelectPreset: choosePreset,
+    onSave: savePreset,
+    onSaveAs: savePresetAs,
+    onNewPreset: newPreset,
+    onRename: renamePreset,
+    onRestore: restorePreset,
+    onDelete: deletePreset,
+    onImport: () => presetInputRef.current?.click(),
+    onExport: exportPreset,
+    cardBinding:
+      cardId && presetId
+        ? {
+            cardName,
+            boundName: savedPresets.find((p) => p.id === boundPresetId)?.name ?? null,
+            bound: boundPresetId === presetId,
+            onToggle: (on) => bindPresetToCard(on ? presetId : null),
+          }
+        : undefined,
+  };
+
   const renderPresetPanel = (at: {
     collapsed: boolean;
     onToggleCollapse: () => void;
     onOpenPlugin: (identifier: string) => void;
   }) => (
     <PresetPanel
-      preset={preset}
-      order={order}
-      activeGroupIndex={groupIndex}
+      {...presetBase}
       collapsed={at.collapsed}
       onToggleCollapse={at.onToggleCollapse}
-      onPickGroup={(i) => {
-        // 块的开关是按顺序组记的,换组就清掉 —— 有改过的先问一句,别悄悄没了
-        const n = Object.keys(overrides).length;
-        if (n > 0 && !window.confirm(`换顺序组会清掉刚才改的 ${n} 个块的开关,继续?`)) return;
-        setGroupIndex(i);
-        setOverrides({});
-      }}
-      onToggleBlock={toggleBlock}
-      saved={savedPresets}
-      selectedId={presetId}
-      dirty={presetDirty}
-      busy={presetBusy}
-      onUpdateBlock={updateBlock}
-      onReorder={reorderBlock}
-      onAddBlock={addBlock}
-      onDeleteBlock={deleteBlock}
-      isPluginBlock={isPluginBlock}
       onOpenPlugin={at.onOpenPlugin}
-      overridden={overriddenIdentifiers}
-      resolveMarker={resolveMarker}
-      macros={displayMacros}
-      onUpdateCard={changeCard}
-      onSelectPreset={choosePreset}
-      onSave={savePreset}
-      onSaveAs={savePresetAs}
-      onNewPreset={newPreset}
-      onRename={renamePreset}
-      onRestore={restorePreset}
-      onDelete={deletePreset}
-      onImport={() => presetInputRef.current?.click()}
-      onExport={exportPreset}
-      cardBinding={
-        cardId && presetId
-          ? {
-              cardName,
-              boundName: savedPresets.find((p) => p.id === boundPresetId)?.name ?? null,
-              bound: boundPresetId === presetId,
-              onToggle: (on) => bindPresetToCard(on ? presetId : null),
-            }
-          : undefined
-      }
     />
+  );
+
+  /**
+   * 资料页 · 预设:同一套状态摆成整页,右栏编辑选中的块。
+   * 调试台的插件抽屉被卡编辑器盖着,点插件块时抽屉开在这一页上面
+   */
+  const renderStudioPreset = () => (
+    <PresetView {...presetBase} pluginOf={pluginOfBlock} renderPlugin={renderPluginsDrawer} />
   );
 
   // 给 VN 的角色列表:每次渲染都 map 出一个新数组的话,流式生成时每来一个字选角页和等待页
   // 就要重算一遍、选角页的加载循环被打断重来
+  // 状态卡(素材架构 3.5)先不单独列:选角页、卡列表只有主卡,玩的时候在顶栏切
+  const listedCards = useMemo(() => savedCards.filter((c) => !c.state_of), [savedCards]);
   const vnCards = useMemo(
     () =>
-      savedCards.map((c) => ({
+      listedCards.map((c) => ({
         id: c.id,
         name: c.name,
         avatar: cardAvatars.get(c.id) ?? null,
         hasLastChat: Boolean(c.last_chat_id),
       })),
-    [savedCards, cardAvatars],
+    [listedCards, cardAvatars],
   );
 
   return (
     // vn-open:视觉小说盖在最上面时,从它里面打开的弹窗(块编辑、高级定义、看提示词)得压过它
-    <div className={`console${vnOpen ? ' vn-open' : ''}`}>
+    // studio-open:卡编辑器开着时,从它里面打开的旧抽屉、弹窗也得压过它
+    <div className={`console${vnOpen ? ' vn-open' : ''}${studio ? ' studio-open' : ''}`}>
       {toast && <div className={`toast ${toast.kind}`}>{toast.message}</div>}
 
       {/* 导入/导出遮罩:比开机那层轻,只是挡住重复点击并说明在忙什么 */}
@@ -2961,6 +3522,8 @@ export default function DebugApp() {
       )}
 
       <div className="topbar">
+        {/* 测试环境的小牌子:设了 VITE_ENV_LABEL 才有 */}
+        <EnvBadge />
         <div className="topbar-brand">
           <img className="topbar-logo" src="/anima-logo.svg?v=72" alt="" draggable={false} />
           <span className="topbar-title">
@@ -3025,18 +3588,6 @@ export default function DebugApp() {
         {/* 桌面端:玩家、设置、连接和模型都是全局控制。
             移动端:前两项折进 ⋯；预设和角色卡本身有一级入口,导入动作留在各自面板。 */}
         <div className={`topbar-rest${mobileMenu ? ' open' : ''}`}>
-          <input
-            ref={cardInputRef}
-            type="file"
-            accept=".png,.json,image/png,application/json"
-            hidden
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) loadCard(f);
-              e.target.value = '';
-            }}
-          />
-
           {/* 玩家人设不常动,桌面保留文字入口;手机折进 ⋯ 菜单。 */}
           <button
             className={`btn icon-label topbar-action${drawer === 'persona' ? ' accent' : ''}`}
@@ -3062,6 +3613,14 @@ export default function DebugApp() {
           >
             <AnimaIcon name="plugin" size={16} />
             <span>插件</span>
+          </button>
+          <button
+            className={`btn icon-label topbar-action${library ? ' accent' : ''}`}
+            onClick={openLibrary}
+            title="素材 —— 库里所有的立绘、声音、背景、BGM、CG,按包管理、绑到角色卡上"
+          >
+            <AnimaIcon name="library" size={16} />
+            <span>素材</span>
           </button>
           <input
             ref={presetInputRef}
@@ -3147,198 +3706,202 @@ export default function DebugApp() {
         )}
       </div>
 
-      <div
-        className={`console-body ${leftCollapsed ? 'left-collapsed' : ''} ${
-          rightCollapsed ? 'right-collapsed' : ''
-        }`}
-        style={bodyStyle}
-      >
-        <div className="left-col">
-          {renderPresetPanel({
-            collapsed: leftCollapsed,
-            onToggleCollapse: () => setLeftCollapsed((v) => !v),
-            onOpenPlugin: openPluginEditor,
-          })}
-          {!leftCollapsed && (
-            <BudgetBar
-              report={preview.budget}
-              value={tokenBudget}
-              onChange={changeBudget}
-              range={rangeScale}
-              onRange={changeRange}
-            />
-          )}
-          {!leftCollapsed && (
-            <div className="history-bar">
-              <span className="chat-current" title="当前对话">
-                {chats.find((c) => c.id === chatId) ? chatLabel(chats.find((c) => c.id === chatId)!) : '(无)'}
-              </span>
-              <button
-                className={`history-trigger${showHistory ? ' open' : ''}`}
-                onClick={() => {
-                  const next = !showHistory;
-                  setShowHistory(next);
-                  // 入口在左栏,面板却画在聊天区里。移动端左栏是盖住聊天区的
-                  // 全屏抽屉 —— 不顺手收掉它,点开历史看上去就是什么都没发生
-                  if (next && isMobile) setLeftCollapsed(true);
-                }}
-                title="对话历史与分支 —— 在聊天区展开"
-              >
-                <AnimaIcon name="history" size={15} />
-                <span>对话历史</span>
-                {(treeLoading || chatOp === 'branch') && <span className="spinner tiny" />}
-              </button>
-            </div>
-          )}
-        </div>
-
+      {/* 视觉小说开着时三栏被盖住看不见:冻住,不跟着流式一段段重画(Frozen.tsx);退出时按最新的画一遍。
+          顶栏不冻:便宜。视觉小说的「导入」走导入器临时建的文件框(importer/useImporter.ts),不靠三栏里的东西 */}
+      <Frozen frozen={vnOpen}>
         <div
-          className={`col-resizer${leftCollapsed ? ' disabled' : ''}`}
-          role="separator"
-          aria-orientation="vertical"
-          onPointerDown={(e) => startDrag('left', e)}
-        />
+          className={`console-body ${leftCollapsed ? 'left-collapsed' : ''} ${
+            rightCollapsed ? 'right-collapsed' : ''
+          }`}
+          style={bodyStyle}
+        >
+          <div className="left-col">
+            {renderPresetPanel({
+              collapsed: leftCollapsed,
+              onToggleCollapse: () => setLeftCollapsed((v) => !v),
+              onOpenPlugin: openPluginEditor,
+            })}
+            {!leftCollapsed && (
+              <BudgetBar
+                report={preview.budget}
+                value={tokenBudget}
+                onChange={changeBudget}
+                range={rangeScale}
+                onRange={changeRange}
+              />
+            )}
+            {!leftCollapsed && (
+              <div className="history-bar">
+                <span className="chat-current" title="当前对话">
+                  {chats.find((c) => c.id === chatId) ? chatLabel(chats.find((c) => c.id === chatId)!) : '(无)'}
+                </span>
+                <button
+                  className={`history-trigger${showHistory ? ' open' : ''}`}
+                  onClick={() => {
+                    const next = !showHistory;
+                    setShowHistory(next);
+                    // 入口在左栏,面板却画在聊天区里。移动端左栏是盖住聊天区的
+                    // 全屏抽屉 —— 不顺手收掉它,点开历史看上去就是什么都没发生
+                    if (next && isMobile) setLeftCollapsed(true);
+                  }}
+                  title="对话历史与分支 —— 在聊天区展开"
+                >
+                  <AnimaIcon name="history" size={15} />
+                  <span>对话历史</span>
+                  {(treeLoading || chatOp === 'branch') && <span className="spinner tiny" />}
+                </button>
+              </div>
+            )}
+          </div>
 
-        <div className="chat-col">
-          {drawer === 'settings' && (
-            <SettingsDrawer
+          <div
+            className={`col-resizer${leftCollapsed ? ' disabled' : ''}`}
+            role="separator"
+            aria-orientation="vertical"
+            onPointerDown={(e) => startDrag('left', e)}
+          />
+
+          <div className="chat-col">
+            {drawer === 'settings' && (
+              <SettingsDrawer
+                settings={chatSettings}
+                onChange={changeChatSettings}
+                macros={displayMacros}
+                custom={customMacros}
+                onChangeCustom={changeCustomMacros}
+                variables={variables}
+                onChangeVariables={(next) => commitVariables(next)}
+                hasChat={chatId !== null}
+                worldInfo={worldInfoSettings}
+                onChangeWorldInfo={changeWorldInfoSettings}
+                onClose={() => setDrawer(null)}
+              />
+            )}
+
+            {drawer === 'plugins' && renderPluginsDrawer(pluginFocus, () => setDrawer(null))}
+
+            {drawer === 'persona' && (
+              <PersonaDrawer
+                notify={notify}
+                onClose={() => setDrawer(null)}
+                onChanged={refreshPersonas}
+                onPickAvatar={(id) => pickAvatarFor({ kind: 'persona', id })}
+                bindings={personaBindings}
+                onChangeBindings={changePersonaBindings}
+                card={cardId && card ? { id: cardId, name: card.name } : null}
+                cardNames={new Map(savedCards.map((c) => [c.id, c.name]))}
+              />
+            )}
+
+            {drawer === 'api' && (
+              <ConnectionsDrawer
+                connections={connections}
+                notify={notify}
+                onClose={() => setDrawer(null)}
+                onChanged={refreshConnections}
+              />
+            )}
+
+            {showHistory && (
+              <ChatHistoryOverlay
+                chats={treeChats}
+                currentChatId={chatId}
+                noCharacter={!cardId}
+                busy={treeLoading || chatOp === 'branch'}
+                pending={chatOp}
+                onSelect={(id) => {
+                  setShowHistory(false);
+                  void loadChat(id);
+                }}
+                onNewChat={() => {
+                  setShowHistory(false);
+                  void newChat();
+                }}
+                onImport={() => chatInputRef.current?.click()}
+                onExport={() => void runExport(false)}
+                onExportTree={() => void runExport(true)}
+                onExportOne={(id) => runExport(false, id)}
+                onRename={renameChat}
+                onDelete={removeChat}
+                onClose={() => setShowHistory(false)}
+              />
+            )}
+
+            <ChatPanel
+              entries={entries}
               settings={chatSettings}
-              onChange={changeChatSettings}
               macros={displayMacros}
-              custom={customMacros}
-              onChangeCustom={changeCustomMacros}
-              variables={variables}
-              onChangeVariables={(next) => commitVariables(next)}
-              hasChat={chatId !== null}
-              worldInfo={worldInfoSettings}
-              onChangeWorldInfo={changeWorldInfoSettings}
-              onClose={() => setDrawer(null)}
-            />
-          )}
-
-          {drawer === 'plugins' && renderPluginsDrawer(pluginFocus, () => setDrawer(null))}
-
-          {drawer === 'persona' && (
-            <PersonaDrawer
-              notify={notify}
-              onClose={() => setDrawer(null)}
-              onChanged={refreshPersonas}
-              onPickAvatar={(id) => pickAvatarFor({ kind: 'persona', id })}
-              bindings={personaBindings}
-              onChangeBindings={changePersonaBindings}
-              card={cardId && card ? { id: cardId, name: card.name } : null}
-              cardNames={new Map(savedCards.map((c) => [c.id, c.name]))}
-            />
-          )}
-
-          {drawer === 'api' && (
-            <ConnectionsDrawer
-              connections={connections}
-              notify={notify}
-              onClose={() => setDrawer(null)}
-              onChanged={refreshConnections}
-            />
-          )}
-
-          {showHistory && (
-            <ChatHistoryOverlay
-              chats={treeChats}
-              currentChatId={chatId}
-              noCharacter={!cardId}
-              busy={treeLoading || chatOp === 'branch'}
-              pending={chatOp}
-              onSelect={(id) => {
-                setShowHistory(false);
-                void loadChat(id);
+              chatKey={chatId}
+              charName={card?.name ?? ''}
+              userName={userName}
+              userAvatar={avatarOf(activePersona)}
+              charAvatar={avatarUrl}
+              sending={sending}
+              error={error}
+              preview={preview}
+              ready={ready}
+              loading={chatLoading}
+              version={version}
+              activeConnection={activeConnection}
+              cardCount={listedCards.length}
+              onPickCharacter={() => {
+                // 摊开右栏并切到角色列表 —— 移动端进来两栏是收起的,
+                // 开始界面上这颗按钮就是唯一的入口
+                setCardView('list');
+                setRightCollapsed(false);
               }}
-              onNewChat={() => {
-                setShowHistory(false);
-                void newChat();
-              }}
-              onImport={() => chatInputRef.current?.click()}
-              onExport={() => void runExport(false)}
-              onExportTree={() => void runExport(true)}
-              onExportOne={(id) => runExport(false, id)}
-              onRename={renameChat}
-              onDelete={removeChat}
-              onClose={() => setShowHistory(false)}
+              onOpenConnections={() => setDrawer('api')}
+              onSend={send}
+              onInspect={setInspecting}
+              onInspectSwipe={inspectSwipe}
+              tainted={tainted}
+              onStop={() => abortRef.current?.abort()}
+              onEdit={editMessage}
+              onDelete={deleteAt}
+              onSwipe={swipe}
+              onBranch={branchHere}
+              onReset={() => void newChat()}
+              onRegenerate={regenerateLast}
+              tagKinds={vnKinds}
             />
-          )}
+          </div>
 
-          <ChatPanel
-            entries={entries}
-            settings={chatSettings}
-            macros={displayMacros}
-            chatKey={chatId}
-            charName={card?.name ?? ''}
-            userName={userName}
-            userAvatar={avatarOf(activePersona)}
-            charAvatar={avatarUrl}
-            sending={sending}
-            error={error}
-            preview={preview}
-            ready={ready}
-            loading={chatLoading}
-            version={version}
-            activeConnection={activeConnection}
-            cardCount={savedCards.length}
-            onPickCharacter={() => {
-              // 摊开右栏并切到角色列表 —— 移动端进来两栏是收起的,
-              // 开始界面上这颗按钮就是唯一的入口
-              setCardView('list');
-              setRightCollapsed(false);
+          <div
+            className={`col-resizer${rightCollapsed ? ' disabled' : ''}`}
+            role="separator"
+            aria-orientation="vertical"
+            onPointerDown={(e) => startDrag('right', e)}
+          />
+
+          <CardPanel
+            card={card}
+            avatarUrl={avatarUrl}
+            collapsed={rightCollapsed}
+            saved={listedCards}
+            selectedId={cardId}
+            view={cardView}
+            avatars={cardAvatars}
+            onNeedAvatars={wantAvatars}
+            saveState={cardSaveState}
+            busy={cardBusy}
+            onToggleCollapse={() => setRightCollapsed((v) => !v)}
+            onToggleView={() => setCardView((v) => (v === 'list' ? 'editor' : 'list'))}
+            onChange={changeCard}
+            onSelectCard={(id) => {
+              const row = savedCards.find((c) => c.id === id);
+              if (row) selectCard(row);
             }}
-            onOpenConnections={() => setDrawer('api')}
-            onSend={send}
-            onInspect={setInspecting}
-            onInspectSwipe={inspectSwipe}
-            tainted={tainted}
-            onStop={() => abortRef.current?.abort()}
-            onEdit={editMessage}
-            onDelete={deleteAt}
-            onSwipe={swipe}
-            onBranch={branchHere}
-            onReset={() => void newChat()}
-            onRegenerate={regenerateLast}
-            tagKinds={vnKinds}
+            onNew={newCard}
+            onDuplicate={duplicateCard}
+            onDelete={deleteCard}
+            onImport={() => importer.pick()}
+            onExport={() => void exportCard()}
+            onOpenStudio={(tab) => openStudio({ tab, slot: 'sprite' })}
+            onPickAvatar={() => pickAvatarFor({ kind: 'card' })}
+            bindings={cardBindings}
           />
         </div>
-
-        <div
-          className={`col-resizer${rightCollapsed ? ' disabled' : ''}`}
-          role="separator"
-          aria-orientation="vertical"
-          onPointerDown={(e) => startDrag('right', e)}
-        />
-
-        <CardPanel
-          card={card}
-          avatarUrl={avatarUrl}
-          collapsed={rightCollapsed}
-          saved={savedCards}
-          selectedId={cardId}
-          view={cardView}
-          avatars={cardAvatars}
-          onNeedAvatars={wantAvatars}
-          saveState={cardSaveState}
-          busy={cardBusy}
-          onToggleCollapse={() => setRightCollapsed((v) => !v)}
-          onToggleView={() => setCardView((v) => (v === 'list' ? 'editor' : 'list'))}
-          onChange={changeCard}
-          onSelectCard={(id) => {
-            const row = savedCards.find((c) => c.id === id);
-            if (row) selectCard(row);
-          }}
-          onNew={newCard}
-          onDuplicate={duplicateCard}
-          onDelete={deleteCard}
-          onImport={() => cardInputRef.current?.click()}
-          onExport={() => void exportCard()}
-          onOpenAdvanced={() => setShowAdvanced(true)}
-          onPickAvatar={() => avatarInputRef.current?.click()}
-          bindings={cardBindings}
-        />
-      </div>
+      </Frozen>
 
       {/* 头像选择:藏起来的 file input,点头像时触发 */}
       <input
@@ -3381,20 +3944,6 @@ export default function DebugApp() {
         }}
       />
 
-      {showAdvanced && card && (
-        <CardEditorDrawer
-          card={card}
-          preset={preset}
-          order={order}
-          result={preview}
-          budget={tokenBudget}
-          avatarUrl={avatarUrl}
-          onChange={changeCard}
-          onPickAvatar={() => avatarInputRef.current?.click()}
-          onClose={() => setShowAdvanced(false)}
-        />
-      )}
-
       {vnOpen && (
         <VNScreen
           entries={entries}
@@ -3402,17 +3951,19 @@ export default function DebugApp() {
           charName={card?.name ?? ''}
           userName={userName}
           sprites={activeSprites}
+          forms={forms}
           spriteStage={spriteLayout.stage}
           spriteLayout={spriteLayout.layout}
-          tagTemplate={spriteConfig.tagTemplate}
+          tagTemplate={spriteEffective.tagTemplate}
           sceneAssets={activeSceneAssets}
           titleBgmId={scenePlugin.titleBgmId}
           onChangeTitleBgm={(id) => void scenePlugin.setTitleBgm(id)}
-          bgTemplate={scenePlugin.configs.bg.tagTemplate}
-          bgmTemplate={scenePlugin.configs.bgm.tagTemplate}
-          cgTemplate={scenePlugin.configs.cg.tagTemplate}
+          bgTemplate={scenePlugin.effective.bg.tagTemplate}
+          bgmTemplate={scenePlugin.effective.bgm.tagTemplate}
+          cgTemplate={scenePlugin.effective.cg.tagTemplate}
           voiceConfig={voicePlugin.config}
           voiceCast={voicePlugin.cast}
+          sfxEnabled={splice.on}
           onChangeVoiceConfig={voicePlugin.changeConfig}
           showJa={langConfig.showJa}
           onChangeShowJa={(showJa) => changeLangConfig({ ...langConfig, showJa })}
@@ -3432,7 +3983,7 @@ export default function DebugApp() {
           chatUpdatedAt={chats.find((x) => x.id === chatId)?.updated_at ?? null}
           cardTags={card?.tags?.map((t) => t.trim()).filter(Boolean) ?? []}
           loading={chatLoading}
-          assetsReady={spritePacks.ready && scenePlugin.ready}
+          assetsReady={spritePacks.ready && scenePlugin.ready && states.ready}
           modelLabel={activeModel}
           onSend={(text) => void send(text)}
           onInterject={(text, entryId, keep) => void interject(text, entryId, keep)}
@@ -3442,12 +3993,17 @@ export default function DebugApp() {
           onExit={() => toggleVn(false)}
           cards={vnCards}
           onWantAvatar={(id) => wantAvatars([id])}
-          onImportCard={() => cardInputRef.current?.click()}
+          onImportCard={() => importer.pick()}
           currentCardId={cardId}
           onPickCard={(id, fresh) => {
             const row = savedCards.find((c) => c.id === id);
             if (row) void selectCard(row, { fresh });
           }}
+          // 检查器里只改这一句的表情:记进这条当前分支的 swipe_info.vn.manual,persist effect 照常写库
+          onSetManual={(id, line, pick) => patchEntry(id, (e) => setManual(e, line, pick))}
+          illustrations={illustrations.vn}
+          switches={switches}
+          onOpenLibrary={openLibrary}
           renderPage={(page, ctx) => {
             if (page === 'log') {
               return (
@@ -3476,7 +4032,7 @@ export default function DebugApp() {
                     loading={chatLoading}
                     version={version}
                     activeConnection={activeConnection}
-                    cardCount={savedCards.length}
+                    cardCount={listedCards.length}
                     onPickCharacter={() => {}}
                     onOpenConnections={() => {}}
                     onSend={(text) => void send(text)}
@@ -3507,6 +4063,8 @@ export default function DebugApp() {
                   spriteLayout={spriteLayout.layout}
                   tagKinds={vnKinds}
                   charName={card?.name ?? ''}
+                  userName={userName}
+                  formsLensFor={forms.lensFor}
                   macros={displayMacros}
                   busy={chatOp !== null || chatLoading}
                   canSave={Boolean(chatId) && !sending && entries.length > 0}
@@ -3531,7 +4089,7 @@ export default function DebugApp() {
                     card={card}
                     avatarUrl={avatarUrl}
                     collapsed={false}
-                    saved={savedCards}
+                    saved={listedCards}
                     selectedId={cardId}
                     view={cardView}
                     avatars={cardAvatars}
@@ -3548,10 +4106,10 @@ export default function DebugApp() {
                     onNew={newCard}
                     onDuplicate={duplicateCard}
                     onDelete={deleteCard}
-                    onImport={() => cardInputRef.current?.click()}
+                    onImport={() => importer.pick()}
                     onExport={() => void exportCard()}
-                    onOpenAdvanced={() => setShowAdvanced(true)}
-                    onPickAvatar={() => avatarInputRef.current?.click()}
+                    onOpenStudio={(tab) => openStudio({ tab, slot: 'sprite' })}
+                    onPickAvatar={() => pickAvatarFor({ kind: 'card' })}
                     bindings={cardBindings}
                   />
                 </div>
@@ -3598,6 +4156,79 @@ export default function DebugApp() {
             );
           }}
         />
+      )}
+      {vnOpen && <EnvBadge floating />}
+
+      {/* 素材管理页:全屏,盖在视觉小说上面;排在卡编辑器前面 —— 点卡名打开的卡编辑器盖在它上面 */}
+      {library && (
+        <AssetLibrary
+          route={library}
+          onRoute={routeLibrary}
+          onClose={() => setLibrary(null)}
+          cards={libraryCards}
+          stage={spriteLayout.stage}
+          sync={packSync}
+          notify={notify}
+          bindings={libraryBindings}
+          // 包上「被几张卡用」跟着变
+          onBindingsChanged={(kind) => packSync.packs(kind === 'bg' || kind === 'bgm' ? 'scene' : kind)}
+          onDeleted={forgetDeleted}
+          onOpenCard={(id, slot) => openStudio({ tab: 'assets', slot }, id)}
+          onUndone={(r) => void afterImportUndone(r)}
+          // 「导入」:选文件交给导入器,不带目标卡;导完有卡就开那张卡的卡编辑器(盖在这一页上面)
+          onImport={() => importer.pick()}
+          notice={libraryNotice}
+          onNoticeClose={() => setLibraryNotice(null)}
+          onClassifyUnknown={classifyInLibrary}
+          covered={studio !== null}
+          reloadKey={libraryReload}
+        />
+      )}
+
+      {/* 卡编辑器:全屏,盖在视觉小说上面(从选角页、菜单的「角色」页也能打开) */}
+      {studio && card && cardId && (
+        <CardStudio
+          cardId={cardId}
+          card={card}
+          avatarUrl={avatarUrl}
+          faceVersion={spritePacks.packId}
+          route={studio}
+          onRoute={setStudio}
+          onClose={() => setStudio(null)}
+          onStart={startFromStudio}
+          saveState={cardSaveState}
+          renderProfile={renderStudioProfile}
+          renderSlot={renderStudioSlot}
+          slots={studioSlots}
+          notify={notify}
+          onClassifyUnknown={classifyUnknown}
+          onImport={() => importer.pick({ cardId, cardName, kind: null })}
+        />
+      )}
+
+      {/* 导入:拖进窗口的遮罩(落点在卡片列表、选角页、卡编辑器里)、上传和整理的进度、导入前的确认框 */}
+      <DropLayer
+        blocked={booting ? '正在载入,稍等再拖' : importer.blocked}
+        onDrop={importer.start}
+        onRefuse={(reason) => notify('error', reason)}
+      />
+      <ImportProgress phase={importer.phase} onCancel={importer.cancelUpload} />
+      {importer.confirm && (
+        <ImportConfirm
+          key={importer.confirm.plan.plan_id}
+          plan={importer.confirm.plan}
+          target={importer.confirm.target}
+          sprites={importer.confirm.sprites}
+          busy={importer.confirm.busy}
+          error={importer.confirm.error}
+          onCancel={importer.cancelConfirm}
+          onConfirm={importer.confirmApply}
+        />
+      )}
+      {studio && studioPlugin && (
+        <PluginSheet onClose={() => setStudioPlugin(null)}>
+          {renderPluginsDrawer(studioPlugin, () => setStudioPlugin(null))}
+        </PluginSheet>
       )}
 
       {inspecting && (

@@ -106,7 +106,7 @@ AMIYA_REFS = {
 }
 
 
-def test_import_refs_json_creates_then_updates_by_name(client: TestClient):
+def test_import_refs_json_creates_then_asks_before_touching_a_same_name_voice(client: TestClient):
     conn = make_conn(client)
     r = client.post("/api/voices/import", json={"connection_id": conn["id"], "refs": AMIYA_REFS})
     assert r.status_code == 200, r.text
@@ -126,7 +126,11 @@ def test_import_refs_json_creates_then_updates_by_name(client: TestClient):
             {"emotion": "担心", "file": "D:/worry.wav", "text": "博士……"},
         ],
     )
-    v2 = client.post("/api/voices/import", json={"connection_id": conn["id"], "refs": again}).json()
+    # 同名不再悄悄覆盖:先问(409),说「更新」才合进去
+    asked = client.post("/api/voices/import", json={"connection_id": conn["id"], "refs": again})
+    assert (asked.status_code, asked.json()["detail"]) == (409, "已经有叫「阿米娅」的声音了:更新它,还是另建一个?")
+    body = {"connection_id": conn["id"], "refs": again, "on_conflict": "update"}
+    v2 = client.post("/api/voices/import", json=body).json()
     assert v2["id"] == v["id"]
     assert v2["sovits_weights"] == "D:/new.pth"
     assert [(e["label"], e["ref_path"]) for e in v2["emotions"]] == [
@@ -135,6 +139,17 @@ def test_import_refs_json_creates_then_updates_by_name(client: TestClient):
         ("担心", "D:/worry.wav"),
     ]
     assert len(client.get("/api/voices").json()) == 1
+
+    # 另建一个:名字后面加数字,原来那个不动
+    body = {"connection_id": conn["id"], "refs": AMIYA_REFS, "on_conflict": "new"}
+    v3 = client.post("/api/voices/import", json=body).json()
+    assert (v3["name"], v3["sovits_weights"]) == ("阿米娅 2", AMIYA_REFS["sovits_weights"])
+    assert {x["id"]: x["sovits_weights"] for x in client.get("/api/voices").json()}[v["id"]] == "D:/new.pth"
+    # 清单带着声音编号:直接合进那个声音,不问
+    by_id = dict(again, id=v3["id"], gpt_weights="D:/by-id.ckpt")
+    v4 = client.post("/api/voices/import", json={"connection_id": conn["id"], "refs": by_id}).json()
+    assert (v4["id"], v4["name"], v4["gpt_weights"]) == (v3["id"], "阿米娅 2", "D:/by-id.ckpt")
+    assert len(client.get("/api/voices").json()) == 2
 
     bad = [
         {"refs": [{"file": "D:/a.wav"}]},
@@ -171,6 +186,7 @@ def test_aux_refs_are_cleaned_and_follow_the_main_reference(client: TestClient):
     # refs.json 里每条可以带 aux(路径或带 file 的对象);没写 aux 的不动原来的
     refs = {
         "character": v["name"],
+        "id": v["id"],
         "refs": [
             {"emotion": "开心", "file": "D:/b.wav", "text": "原文", "aux": ["D:/d.wav", {"file": "D:/e.wav"}]},
             {"emotion": "平静", "file": "D:/p.wav", "text": "平静的原文"},

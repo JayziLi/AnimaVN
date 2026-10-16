@@ -2,6 +2,7 @@
  * 对不上立绘名的标签,批量问后端模型;结果放在整个页面共用的缓存里(重新进视觉小说
  * 不用再问),键 = 候选签名 + 标签。返回一个查询函数,结果回来后换成新函数,
  * 用到它的 useMemo 会跟着重算。
+ * enabled 关着时不发请求(表情认法选了认词记录,或者开关还没读到),只读已经问到的。
  */
 
 import { useCallback, useEffect, useMemo, useReducer } from 'react';
@@ -27,9 +28,19 @@ const BATCH = 50;
 
 const keyOf = (sig: string, tag: string) => `${sig}\u0000${tag}`;
 
+/**
+ * 不发请求、只读已经问到的结果(Jev 的起始表情用):视觉小说开着时它问过的词都在这;
+ * 还没问到的算「还在认」,和舞台在结果回来以前一样保持上一个
+ */
+export function cachedResolver(candidates: readonly EmotionCandidate[]): TagResolver {
+  const sig = candidatesSignature(candidates);
+  return (label) => matchTag(label, candidates, (tag) => cache.get(keyOf(sig, tag)));
+}
+
 export function useEmotionMatches(
   labels: readonly string[],
   candidates: readonly EmotionCandidate[],
+  enabled = true,
 ): TagResolver {
   const [version, bump] = useReducer((x: number) => x + 1, 0);
   const sig = useMemo(() => candidatesSignature(candidates), [candidates]);
@@ -46,6 +57,7 @@ export function useEmotionMatches(
   }, [labels, candidates]);
 
   useEffect(() => {
+    if (!enabled) return;
     const now = Date.now();
     const todo = wanted
       .filter((t) => {
@@ -72,7 +84,7 @@ export function useEmotionMatches(
         keys.forEach((k) => inflight.delete(k));
         bump();
       });
-  }, [wanted, sig, candidates, version]);
+  }, [enabled, wanted, sig, candidates, version]);
 
   return useCallback(
     (label: string) => matchTag(label, candidates, (tag) => cache.get(keyOf(sig, tag))),

@@ -1,5 +1,8 @@
 """Jev 标注的题目怎么出、答案怎么变成标注(纯函数,不发请求)。"""
 
+import pytest
+
+from app.annotate import judge
 from app.annotate.judge import (
     CG_OFF,
     CG_OFF_FALLBACK,
@@ -12,6 +15,7 @@ from app.annotate.judge import (
     Line,
     SceneState,
     Thresholds,
+    TwoLevel,
     build_request,
     decide,
 )
@@ -201,6 +205,79 @@ def test_decide_keeps_only_the_first_change_when_judging_several_lines():
     assert [(d.index, d.bg, d.bgm) for d in out] == [(0, "食堂", None), (1, None, "紧张"), (2, None, None)]
 
 
+# 「这句的档」题由卡带登记(真的在声线卡带里,有它自己的测试);这里用一道中性的假题
+LEVEL = TwoLevel(first="高", second="低", min_first=0.3, prompt="lv", first_prompt="lv_hi", second_prompt="lv_lo")
+LEVEL_PROMPTS = {"lv": "第 {{n}} 句 {{line}} 是哪一档?", "lv_hi": "高的说明,{{user}}", "lv_lo": "低的说明"}
+
+
+@pytest.fixture
+def level(monkeypatch):
+    monkeypatch.setattr(judge, "_tone", LEVEL)
+    for key, text in LEVEL_PROMPTS.items():
+        monkeypatch.setitem(judge.DEFAULT_PROMPTS, key, text)
+
+
+@pytest.fixture
+def no_level(monkeypatch):
+    monkeypatch.setattr(judge, "_tone", None)
+
+
+def test_tone_is_asked_only_for_the_characters_lines_and_only_when_told(level):
+    _, plain = build_request(make_input(LINES, [0, 1, 2]))
+    assert not any(k.startswith("t") for k in plain)
+    _, q = build_request(make_input(LINES, [0, 1, 2], ask_tone=True))
+    assert [k for k in q if k.startswith("t")] == ["t2"]
+    assert q["t2"]["instructions"] == "第 2 句 「哇,今天有咖喱!」 是哪一档?"
+    assert q["t2"]["criteria"] == {"高": "高的说明,Lj", "低": "低的说明"}
+    # 问法可以改
+    _, edited = build_request(make_input(LINES, [1], ask_tone=True, prompts={"lv_lo": "改过的"}))
+    assert edited["t2"]["criteria"]["低"] == "改过的"
+
+
+def test_tone_is_not_asked_when_no_cartridge_registered_it(no_level):
+    _, q = build_request(make_input(LINES, [0, 1, 2], ask_tone=True))
+    assert not any(k.startswith("t") for k in q)
+    assert decide(make_input(LINES, [1], ask_tone=True), {"t2": answer("高")})[0].tone is None
+
+
+def test_register_tone_adds_its_prompts(monkeypatch):
+    monkeypatch.setattr(judge, "DEFAULT_PROMPTS", dict(judge.DEFAULT_PROMPTS))
+    monkeypatch.setattr(judge, "_tone", None)
+    judge.register_tone(LEVEL, LEVEL_PROMPTS)
+    assert judge.tone_question() is LEVEL
+    assert {k: judge.DEFAULT_PROMPTS[k] for k in LEVEL_PROMPTS} == LEVEL_PROMPTS
+    # 可以重复登记
+    judge.register_tone(LEVEL, LEVEL_PROMPTS)
+    assert judge.tone_question() is LEVEL
+
+
+def test_decide_takes_the_tone_for_the_characters_lines(level):
+    inp = make_input(LINES, [1], ask_tone=True)
+    out = decide(inp, {"s2": answer("char", 0.97), "e2": answer("害羞"), "t2": answer("高", 0.55)})
+    assert (out[0].emotion, out[0].tone) == ("害羞", "高")
+    assert out[0].confidence["tone"] == 0.55
+    # 判成玩家说的、答了不认识的、没问的:都没有
+    assert decide(inp, {"s2": answer("user", 0.9), "t2": answer("低")})[0].tone is None
+    assert decide(inp, {"t2": answer("中")})[0].tone is None
+    assert decide(make_input(LINES, [1]), {"t2": answer("低")})[0].tone is None
+
+
+def test_tone_leans_to_the_first_level_once_it_is_likely_enough(level):
+    inp = make_input(LINES, [1], ask_tone=True)
+
+    def probs(first):
+        return {"t2": {"type": "choice", "choice": "低", "confidence": 1 - first,
+                       "probabilities": {"高": first, "低": 1 - first}}}
+
+    # 选的是第二档,但第一档的把握到了门槛
+    leaning = decide(inp, probs(0.3))[0]
+    assert (leaning.tone, leaning.confidence["tone"]) == ("高", 0.3)
+    assert decide(inp, probs(0.29))[0].tone == "低"
+    # 没给概率:只信选中的那项
+    bare = {"t2": {"type": "choice", "choice": "低", "confidence": 0.9}}
+    assert decide(inp, bare)[0].tone == "低"
+
+
 def test_decide_ignores_answers_it_did_not_ask_for_or_does_not_know():
     inp = make_input(LINES, [1])
     out = decide(inp, {"s2": answer("char"), "e2": answer("不存在的表情")})
@@ -214,60 +291,60 @@ def test_decide_ignores_answers_it_did_not_ask_for_or_does_not_know():
 # ── CG ──
 
 CGS = [
-    Choice("海边散步", (), "傍晚的海边,两人并肩走在沙滩上"),
-    Choice("海边烟花", (), "夜晚的海边,两人一起抬头看烟花"),
-    Choice("撑伞", (), "下雨天,她和你撑着同一把伞"),
+    Choice("温泉散步", (), "温泉边,两人并肩走"),
+    Choice("雪地散步", (), "户外雪地上,两人并肩走"),
+    Choice("看烟花", (), "她跨坐在你身上"),
 ]
 
 
 def cg_input(targets, cg=None, **overrides):
     return make_input(
         LINES, targets, emotions=[], bgs=[], bgms=[], cgs=CGS, ask_speaker=False,
-        scene=SceneState(cg=cg, place="海边(傍晚的沙滩)"), **overrides,
+        scene=SceneState(cg=cg, place="露天温泉(山里的温泉)"), **overrides,
     )
 
 
 def test_cg_is_asked_for_every_line_with_the_place_and_the_current_picture():
-    state, q = build_request(cg_input([0, 1, 2], cg="撑伞"))
+    state, q = build_request(cg_input([0, 1, 2], cg="看烟花"))
     assert set(q) == {"cg1", "cg2", "cg3"}
-    assert state["现在的地点(背景)"] == "海边(傍晚的沙滩)"
-    assert state["现在的画面"] == "CG「撑伞」:下雨天,她和你撑着同一把伞"
+    assert state["现在的地点(背景)"] == "露天温泉(山里的温泉)"
+    assert state["现在的画面"] == "CG「看烟花」:她跨坐在你身上"
     # 现在的那张不单列,用「不换」代替;「不显示CG」排在它后面
-    assert list(q["cg1"]["criteria"]) == [KEEP, CG_OFF, "海边散步", "海边烟花"]
+    assert list(q["cg1"]["criteria"]) == [KEEP, CG_OFF, "温泉散步", "雪地散步"]
     assert "第 1 句" in q["cg1"]["instructions"]
 
 
 def test_cg_without_a_picture_has_no_keep_option():
     state, q = build_request(cg_input([0]))
     assert state["现在的画面"] == "没有 CG(显示立绘和背景)"
-    assert list(q["cg1"]["criteria"]) == [CG_OFF, "海边散步", "海边烟花", "撑伞"]
+    assert list(q["cg1"]["criteria"]) == [CG_OFF, "温泉散步", "雪地散步", "看烟花"]
 
 
 def test_cg_sums_similar_pictures_before_comparing_with_the_threshold():
-    # 两张海边的各 0.4:单看哪张都过不了 0.6,加起来 0.8 就换成高的那张
-    split = {"type": "choice", "choice": "海边散步", "confidence": 0.42,
-             "probabilities": {"海边散步": 0.42, "海边烟花": 0.38, CG_OFF: 0.2}}
+    # 两张散步各 0.4:单看哪张都过不了 0.6,加起来 0.8 就换成高的那张
+    split = {"type": "choice", "choice": "温泉散步", "confidence": 0.42,
+             "probabilities": {"温泉散步": 0.42, "雪地散步": 0.38, CG_OFF: 0.2}}
     out = decide(cg_input([0]), {"cg1": split})
-    assert (out[0].cg, out[0].cg_off) == ("海边散步", False)
+    assert (out[0].cg, out[0].cg_off) == ("温泉散步", False)
     assert out[0].confidence["cg"] == 0.8
 
 
 def test_cg_keeps_or_turns_off_or_stays_put_when_unsure():
-    keep = decide(cg_input([0], cg="撑伞"), {"cg1": answer(KEEP, 0.9)})
+    keep = decide(cg_input([0], cg="看烟花"), {"cg1": answer(KEEP, 0.9)})
     assert (keep[0].cg, keep[0].cg_off, keep[0].confidence) == (None, False, {})
-    off = decide(cg_input([0], cg="撑伞"), {"cg1": answer(CG_OFF, 0.7)})
+    off = decide(cg_input([0], cg="看烟花"), {"cg1": answer(CG_OFF, 0.7)})
     assert (off[0].cg, off[0].cg_off) == (None, True)
     # 本来就没有 CG:「不显示CG」什么都不用做
     nothing = decide(cg_input([0]), {"cg1": answer(CG_OFF, 0.95)})
     assert (nothing[0].cg, nothing[0].cg_off) == (None, False)
-    unsure = decide(cg_input([0], cg="撑伞"), {"cg1": answer("海边烟花", 0.5)})
+    unsure = decide(cg_input([0], cg="看烟花"), {"cg1": answer("雪地散步", 0.5)})
     assert (unsure[0].cg, unsure[0].cg_off) == (None, False)
-    picky = decide(cg_input([0], thresholds=Thresholds(cg=0.9)), {"cg1": answer("海边烟花", 0.85)})
+    picky = decide(cg_input([0], thresholds=Thresholds(cg=0.9)), {"cg1": answer("雪地散步", 0.85)})
     assert picky[0].cg is None
 
 
 def test_cg_options_with_reserved_names_get_renamed():
-    cgs = [Choice(CG_OFF), Choice(KEEP), Choice("撑伞")]
+    cgs = [Choice(CG_OFF), Choice(KEEP), Choice("看烟花")]
     _, q = build_request(make_input(LINES, [0], emotions=[], bgs=[], bgms=[], cgs=cgs, ask_speaker=False,
-                                    scene=SceneState(cg="撑伞")))
+                                    scene=SceneState(cg="看烟花")))
     assert list(q["cg1"]["criteria"])[:2] == [KEEP_FALLBACK, CG_OFF_FALLBACK]

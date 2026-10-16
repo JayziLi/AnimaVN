@@ -1,0 +1,19 @@
+{
+  "name": "旧名字",
+  "description": "chara 块里的旧版本",
+  "personality": "",
+  "scenario": "",
+  "first_mes": "旧的开场白",
+  "mes_example": "",
+  "system_prompt": "",
+  "post_history_instructions": "",
+  "creator_notes": "",
+  "alternate_greetings": [],
+  "tags": [],
+  "creator": "",
+  "character_version": "",
+  "character_book": null,
+  "extensions": {},
+  "spec": "chara_card_v2",
+  "avatar": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP438DwHwAGgAJ/EEwb4QAAAAV0RVh0Y2N2MwD5pIZbAAAA1nRFWHRjaGFyYQBleUp6Y0dWaklqb2dJbU5vWVhKaFgyTmhjbVJmZGpJaUxDQWljM0JsWTE5MlpYSnphVzl1SWpvZ0lqSXVNQ0lzSUNKa1lYUmhJam9nZXlKdVlXMWxJam9nSXVhWHArV1FqZVd0bHlJc0lDSmtaWE5qY21sd2RHbHZiaUk2SUNKamFHRnlZU0RsblpmcGg0em5tb1RtbDZmbmlZam1uS3dpTENBaVptbHljM1JmYldWeklqb2dJdWFYcCtlYWhPVzhnT1djdXVlWnZTSjlmUT09oZzfEAAAAABJRU5ErkJggg=="
+}

@@ -18,6 +18,8 @@ dependencies = [
     "numpy>=1.26",
     # 立绘按脸对齐(app/sprite_faces.py);5.x 把级联分类器挪出了主包
     "opencv-python-headless>=4.8,<5",
+    # 导入的 OGG / FLAC / WAV 转成 m4a(app/importer/audio.py):自带 ffmpeg 的轮子,不用装系统包;没装就原样存
+    "av>=14",
 ]
 
 [project.optional-dependencies]

@@ -30,11 +30,19 @@ export interface JevNote {
   check: string;
   /** 加的标签(按插件模板写好的);判成不用加的是空串 */
   tags: string;
+  /**
+   * Jev 给这句判的档(问了 ask_tone 才有,卡带登记的两档题):只给语音换版本用,不写成标签 —— 不进正文、
+   * 不进发给模型的历史,也不显示。没判的没有这个字段
+   */
+  tone?: string;
 }
 
 /** 核对用的开头取几个字 */
 const CHECK_LEN = 8;
-/** 第一版存的没有 kinds:四类都是 */
+/**
+ * 第一版存的没有 kinds:四类都是。这是老记录的含义,不是「现在能让 Jev 标的几类」(没有 CG 是对的)——
+ * 所以不从插件总表(registry.ts 的 JEV_KINDS)取,总表加了新的类也别改它
+ */
 const ALL_KINDS: readonly JevKind[] = ['sprite', 'bg', 'bgm', 'player'];
 export const NO_KINDS: readonly JevKind[] = [];
 
@@ -85,10 +93,11 @@ export function insertionPoint(text: string, ends: readonly number[], k: number)
 }
 
 /** 一句的标注:标签插在 base 的 at 前面,记下这句开头几个字 */
-export const makeNote = (base: string, at: number, tags: string): JevNote => ({
+export const makeNote = (base: string, at: number, tags: string, tone?: string | null): JevNote => ({
   at,
   check: base.slice(at, at + CHECK_LEN),
   tags,
+  ...(tone ? { tone } : {}),
 });
 
 /** 标注落在 base 的哪儿:开头对得上就是原位;前面改过就找最近的同样开头;找不到是 null */
@@ -110,6 +119,8 @@ export interface JevView {
   original: string;
   /** Jev 判过的句子:它的标签插在 text 的哪儿。null = 第一版存法,全判过 */
   judged: readonly number[] | null;
+  /** 和 judged 一一对应:那句的声线档(没判是 null)。一句都没判档时整个是 null */
+  tones: readonly (string | null)[] | null;
   /** Jev 加的标签在 text 里的范围(聊天区高亮用) */
   marks: readonly { from: number; to: number }[];
   /** 原文改过、对不上扔掉的标注条数 */
@@ -126,6 +137,7 @@ const plain = (raw: string): JevView => ({
   text: raw,
   original: raw,
   judged: NO_JUDGED,
+  tones: null,
   marks: NO_MARKS,
   dropped: 0,
   kinds: NO_KINDS,
@@ -140,6 +152,7 @@ function buildView(raw: string, jev: JevStats, kinds: readonly TagKind[]): JevVi
       text: raw,
       original: stripReplyTags(raw, own),
       judged: null,
+      tones: null,
       marks: NO_MARKS,
       dropped: 0,
       kinds: jevKinds,
@@ -157,10 +170,12 @@ function buildView(raw: string, jev: JevStats, kinds: readonly TagKind[]): JevVi
   let text = '';
   let last = 0;
   const judged: number[] = [];
+  const tones: (string | null)[] = [];
   const marks: { from: number; to: number }[] = [];
-  for (const [at, { tags }] of [...placed].sort((a, b) => a[0] - b[0])) {
+  for (const [at, { tags, tone }] of [...placed].sort((a, b) => a[0] - b[0])) {
     text += base.slice(last, at);
     judged.push(text.length);
+    tones.push(tone ?? null);
     if (tags) marks.push({ from: text.length, to: text.length + tags.length });
     text += tags;
     last = at;
@@ -170,6 +185,7 @@ function buildView(raw: string, jev: JevStats, kinds: readonly TagKind[]): JevVi
     text,
     original: raw,
     judged,
+    tones: tones.some((t) => t !== null) ? tones : null,
     marks,
     dropped,
     kinds: jevKinds,
@@ -208,6 +224,21 @@ export function looseLines(view: JevView, ends: readonly number[]): ReadonlySet<
   const judged = new Set(view.judged.map((p) => ends.findIndex((e) => e > p)));
   const loose = ends.flatMap((_, i) => (judged.has(i) ? [] : [i]));
   return loose.length === 0 ? NONE : new Set(loose);
+}
+
+/**
+ * 每句的档(卡带登记的两档题):Jev 判了档的那句是判的那一档,其余是 null;一句都没判档时是 null。
+ * ends 是切 view.text 得到的每句结尾,标注落在哪句和 looseLines 一样算
+ */
+export function lineTones(view: JevView, ends: readonly number[]): readonly (string | null)[] | null {
+  const { judged, tones } = view;
+  if (!judged || !tones) return null;
+  const out: (string | null)[] = ends.map(() => null);
+  judged.forEach((p, k) => {
+    const i = ends.findIndex((e) => e > p);
+    if (i !== -1 && tones[k]) out[i] = tones[k];
+  });
+  return out;
 }
 
 /**

@@ -1,22 +1,14 @@
-"""One-off dev migration: macro variables on debug_chats.
+"""(留一期)这一步现在由迁移器做:core.2026_09_chat_variables —— 对话:宏变量。
 
-{{setvar}} and friends write chat-local variables; SillyTavern keeps them in the
-chat file's chat_metadata.variables, we keep them in a JSON column. New databases
-get the column from create_all; this only patches databases that already have the
-table. Safe to run twice.
+后端启动时会自动检查(设置 MIGRATIONS_MODE=apply 时自动升级),一般不用手动跑。手动跑:在 AnimaBackend 目录下
+python scripts/migrate_chat_variables_column.py,改的是 data/animabackend.db,只做这一步(连同它依赖的步骤),可以重复跑。
 """
 
-import sqlite3
+import sys
+from pathlib import Path
 
-db = sqlite3.connect("data/animabackend.db")
-cols = {r[1] for r in db.execute("PRAGMA table_info(debug_chats)")}
-if not cols:
-    print("debug_chats missing, skipped (create_all will build it)")
-elif "variables" not in cols:
-    db.execute("ALTER TABLE debug_chats ADD COLUMN variables JSON NOT NULL DEFAULT '{}'")
-    print("added variables")
-else:
-    print("variables already present")
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-db.commit()
-print([r[1] for r in db.execute("PRAGMA table_info(debug_chats)")])
+from app.migrations.legacy_script import run_step  # noqa: E402
+
+run_step("core.2026_09_chat_variables")

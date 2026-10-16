@@ -72,3 +72,36 @@ def test_cache_evicts_oldest_beyond_limit():
     m.match(["a"], [Candidate("k", ("b",))])
     assert enc.calls.count("a") == 2
     assert enc.calls.count("b") == 1
+
+
+class BatchRecorder(FakeEncoder):
+    """另外记下每次一批编码了几个文字"""
+
+    def __init__(self, table):
+        super().__init__(table)
+        self.batches: list[int] = []
+
+    def encode(self, texts):
+        self.batches.append(len(texts))
+        return super().encode(texts)
+
+
+def test_match_singles_encodes_every_text_on_its_own():
+    enc = BatchRecorder(TABLE)
+    m = EmotionMatcher(enc)
+    cands = [Candidate("s1", ("微笑", "smile")), Candidate("s2", ("担心", "worried"))]
+    out = m.match_singles(["有点心疼", "小得意"], cands)
+    assert [(r.tag, r.key, r.name) for r in out] == [("有点心疼", "s2", "worried"), ("小得意", "s1", "smile")]
+    assert set(enc.batches) == {1}
+    m.match_singles(["有点心疼"], cands)
+    assert enc.calls.count("有点心疼") == 1  # 单独编码的向量也缓存
+
+
+def test_match_singles_never_reuses_vectors_encoded_in_a_batch():
+    enc = BatchRecorder(TABLE)
+    m = EmotionMatcher(enc)
+    cands = [Candidate("s1", ("微笑",))]
+    m.match(["小得意"], cands)
+    m.match_singles(["小得意"], cands)
+    assert enc.calls.count("小得意") == 2
+    assert enc.calls.count("微笑") == 2

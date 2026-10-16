@@ -10,9 +10,9 @@ const ALL: JevKinds = { sprite: true, bg: true, bgm: true, cg: false, player: tr
 /** 假后端:记下每次请求,按 answer 回(可以控制什么时候回) */
 function setup(
   answer: (req: AnnotateRequest) => Partial<JevDecision>[] | Error,
-  o: { jevKinds?: JevKinds; popup?: boolean; cg?: string | null } = {},
+  o: { jevKinds?: JevKinds; popup?: boolean; cg?: string | null; askTone?: boolean; twoQueues?: boolean } = {},
 ) {
-  const calls: { req: AnnotateRequest; resolve: () => void }[] = [];
+  const calls: { req: AnnotateRequest; resolve: () => void; done?: boolean }[] = [];
   const snaps: JevSnapshot[] = [];
   const run = new JevRun({
     charName: '星绘',
@@ -38,6 +38,7 @@ function setup(
     placeOf: (bg) => (bg ? `${bg}(地点说明)` : ''),
     emotionBefore: '平静',
     popup: o.popup ?? true,
+    askTone: o.askTone,
     thresholds: { speaker: 0.8, bg: 0.6, bgm: 0.6, cg: 0.6 },
     prompts: { emotion: '表情?' },
     annotate: (req) =>
@@ -65,6 +66,7 @@ function setup(
         });
       }),
     onChange: (s) => snaps.push(s),
+    twoQueues: o.twoQueues,
   });
   const last = () => snaps[snaps.length - 1];
   /** 原文合并上最新的标注(正文本身不动) */
@@ -256,5 +258,115 @@ describe('JevRun', () => {
     await flush();
     run.feed('「啊——」\n她笑了。', false);
     expect(calls[1].req.scene.cg).toBe('喂饭');
+  });
+});
+
+describe('tones (a two-level question a cartridge registers)', () => {
+  const body = '两人走进食堂。\n「今天有咖喱！」\n「欢迎光临。」店员说。';
+  const answer = (req: AnnotateRequest) =>
+    req.targets.map((k) =>
+      k === 1 ? { speaker: 'char' as const, emotion: '微笑', tone: '高' } : { speaker: null, tone: '低' },
+    );
+
+  it('asks for the tone only when told and keeps it on the character lines notes', async () => {
+    const { run, calls, last, flush } = setup(answer, { askTone: true });
+    run.feed(body, false);
+    calls.forEach((c) => c.resolve());
+    await flush();
+    expect(calls.every((c) => c.req.ask_tone === true)).toBe(true);
+    const notes = last().record.notes ?? [];
+    expect(notes.map((n) => n.tone ?? null)).toEqual([null, '高', null, null]);
+    // 档不写成标签
+    expect(notes.map((n) => n.tags)).toEqual(['', '<sprite:微笑>', '', '']);
+  });
+
+  it('does not ask without it', () => {
+    const { run, calls } = setup(answer);
+    run.feed(body, false);
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls.some((c) => 'ask_tone' in c.req)).toBe(false);
+  });
+});
+
+describe('two queues (behind a switch)', () => {
+  const body = '两人走进食堂。\n「好困……」\n她趴在桌上睡着了。\n「醒醒,吃饭了。」\n她揉着眼睛坐起来。';
+  // 批量那边:第 0 句换到食堂,台词是角色说的、微笑
+  const batch = (k: number): Partial<JevDecision> =>
+    k === 0 ? { bg: '食堂' } : k % 2 === 1 ? { speaker: 'char', emotion: '微笑' } : {};
+  // CG 那边
+  const cgAnswers: Partial<JevDecision>[] = [{}, { cg: '午睡' }, { cg: '午睡' }, { cg_off: true }, {}];
+  // 假的 Jev:问了哪几类就答哪几类(一条队列时一个请求全问,两条队列时批量的不问 CG、CG 的只问 CG)
+  const both = (req: AnnotateRequest) =>
+    req.targets.map((k) => ({
+      ...(req.emotions.length || req.bgs.length || req.ask_speaker ? batch(k) : {}),
+      ...(req.cgs.length ? cgAnswers[k] : {}),
+    }));
+  const KINDS: JevKinds = { ...ALL, cg: true };
+
+  it('asks the other questions in one batch and CG line by line, CG waiting for the earlier backgrounds', async () => {
+    const { run, calls, last, flush } = setup(both, { jevKinds: KINDS, twoQueues: true });
+    run.feed(body, false);
+    // 一批判全部句子(不带 CG),CG 第 0 句同时发
+    expect(calls.map((c) => [c.req.targets, c.req.cgs.length > 0])).toEqual([
+      [[0, 1, 2, 3, 4], false],
+      [[0], true],
+    ]);
+    expect(calls[0].req.scene).toMatchObject({ cg: null, place: '' });
+    expect(calls[1].req).toMatchObject({ emotions: [], bgs: [], bgms: [], ask_speaker: false });
+    expect(calls[1].req.scene).toMatchObject({ cg: null, place: '教室(地点说明)' });
+    // CG 第 0 句先回来:第 1 句还要等批量那边把第 0 句的背景判完
+    calls[1].resolve();
+    await flush();
+    expect(calls).toHaveLength(2);
+    expect(last().voicePendingFrom).toBe(0);
+    calls[0].resolve();
+    await flush();
+    // 批量回来了:语音不用再等,画面还在一句一句判;CG 第 1 句的地点是判出来的食堂
+    expect(calls).toHaveLength(3);
+    expect(calls[2].req.targets).toEqual([1]);
+    expect(calls[2].req.scene.place).toBe('食堂(地点说明)');
+    expect(last().voicePendingFrom).toBeNull();
+    expect(last().pendingFrom).toBe(1);
+    const settled = run.settle(100);
+    for (let i = 2; i < 5; i++) {
+      calls[i].resolve();
+      await flush();
+    }
+    calls[5].resolve();
+    await flush();
+    await settled;
+    expect(calls.slice(1).map((c) => c.req.scene.cg)).toEqual([null, null, '午睡', '午睡', null]);
+    expect(last().pendingFrom).toBeNull();
+  });
+
+  it('ends up with the same tags as judging line by line when Jev gives the same answers', async () => {
+    const one = setup(both, { jevKinds: KINDS });
+    const two = setup(both, { jevKinds: KINDS, twoQueues: true });
+    for (const r of [one, two]) {
+      r.run.feed(body, false);
+      const settled = r.run.settle(100);
+      for (let i = 0; i < 10 && r.calls.some((c) => !c.done); i++) {
+        for (const c of r.calls.filter((x) => !x.done)) {
+          c.done = true;
+          c.resolve();
+          await r.flush();
+        }
+      }
+      await settled;
+    }
+    expect(two.shown(body)).toBe(one.shown(body));
+    expect(two.last().record.notes).toEqual(one.last().record.notes);
+    // 一条队列 5 个请求;两条队列 1 批 + 5 句 CG
+    expect([one.calls.length, two.calls.length]).toEqual([5, 6]);
+  });
+
+  it('does nothing different when CG is not Jev, and sends only CG when CG is the only Jev kind', async () => {
+    const plain = setup(both, { jevKinds: ALL, twoQueues: true });
+    plain.run.feed(body, false);
+    expect(plain.calls.map((c) => c.req.targets)).toEqual([[0, 1, 2, 3, 4]]);
+    const cgOnly = setup(both, { jevKinds: { ...NO_JEV, cg: true }, twoQueues: true });
+    cgOnly.run.feed(body, false);
+    expect(cgOnly.calls.map((c) => [c.req.targets, c.req.cgs.length > 0])).toEqual([[[0], true]]);
+    expect(cgOnly.last().voicePendingFrom).toBeNull();
   });
 });

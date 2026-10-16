@@ -1,6 +1,6 @@
 """TTS 请求用的 httpx 客户端。
 
-语音服务一般在局域网或 Tailscale 上(见 docs/voice-server.md)。本机开着 Clash 之类的
+语音服务一般在本机、局域网或 Tailscale 上(接法见 docs/plugins/voice.md)。本机开着 Clash 之类的
 系统代理、或者设了 HTTP(S)_PROXY 时,发往这些地址的请求会被转去代理,然后连不上 ——
 所以目标是本机、私有网段、Tailscale 时一律直连,其他地址照常走环境里的代理设置。
 """
@@ -46,8 +46,8 @@ def _ssl_context() -> ssl.SSLContext:
 
 def transport_error(base_url: str, service: str, e: httpx.HTTPError) -> tuple[int, str]:
     """连接层的异常 → (状态码, 给人看的原因)。几种断法能分开(2026-09-25 实测):
-    - 本机地址连接被拒:SSH 隧道没开(隧道开着时,本机端口总是有人接)
-    - 连上了但一个字没回就断开:隧道 / tailscale serve 通了,台式机上的服务没启动
+    - 本机地址连接被拒:语音服务没启动、端口不对,或者 SSH 隧道没开(隧道开着时,本机端口总是有人接)
+    - 连上了但一个字没回就断开:隧道 / tailscale serve 通了,那边的服务没启动
     - 连接超时:台式机没开机,或者不在同一个网络(Tailscale 上的设备离线时就是这样)
     """
     if isinstance(e, httpx.TimeoutException) and not isinstance(e, httpx.ConnectTimeout):
@@ -56,20 +56,19 @@ def transport_error(base_url: str, service: str, e: httpx.HTTPError) -> tuple[in
         return 503, f"连不上语音服务 {base_url}(台式机没响应:没开机,或者不在同一个网络)"
     if isinstance(e, (httpx.RemoteProtocolError, httpx.ReadError)):
         return 503, (
-            f"语音服务没回应 {base_url}(连接是通的,但台式机上的 {service} 没启动,"
-            "用台式机桌面上的快捷方式启动它)"
+            f"语音服务没回应 {base_url}(连接是通的,但那边的 {service} 没启动,或者还没加载完)"
         )
     host = (urlsplit(base_url).hostname or "").strip("[]").lower()
     if host == "localhost" or host.startswith("127.") or host == "::1":
         return 503, (
-            f"连不上语音服务 {base_url}(本机地址要靠 SSH 隧道转到台式机,隧道没开。"
-            "建议把地址换成台式机的 Tailscale 地址,见 docs/voice-server.md)"
+            f"连不上语音服务 {base_url}({service} 没启动,或者端口不对;"
+            "语音服务在另一台电脑上、靠 SSH 隧道转到本机的话,也可能是隧道没开)"
         )
     return 503, f"连不上语音服务 {base_url}(台式机没开机、{service} 没启动,或者网络不通)"
 
 
 # 台式机上的服务额外开的只读接口:按路径原样取回一段参考音频(「语音详情」里试听)。
-# GSV 由 D:\GPT-SoVITS\api_v2_anima.py 提供(包着 api_v2.py,见 docs/voice-server.md);
+# 官方 api_v2 没有,要在语音机上包一层加上(包一个脚本 import api_v2,在它的 APP 上加这条只读路由);
 # IndexTTS 小服务还没有
 REF_ROUTE = "/anima/ref"
 # api_v2 合成时会堵住自己的事件循环,碰上正在合成一句长的要等几秒
@@ -90,8 +89,8 @@ async def read_reference(client: httpx.AsyncClient, base_url: str, service: str,
     if res.status_code == 404 and detail in (None, "Not Found"):
         raise TTSError(
             501,
-            f"{service} 还没开放取参考音频的接口({REF_ROUTE}),听不了原声。"
-            "GPT-SoVITS 要用台式机上的 api_v2_anima.py 启动,见 docs/voice-server.md",
+            f"{service} 没有取参考音频的接口({REF_ROUTE}),这里听不了原声(官方 api_v2 没有这个接口)。"
+            "插件页情绪表里的 ▶ 是合成试听,照样能用",
         )
     # 接口自己的报错(文件不存在、路径不在允许的目录里)原样带回去
     status = res.status_code if 400 <= res.status_code < 500 else 502

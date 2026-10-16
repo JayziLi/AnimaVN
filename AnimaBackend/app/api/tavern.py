@@ -11,9 +11,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import and_, select, update
 from sqlalchemy.orm import Session, defer
 
-from app.api.scenes import copy_card_scene_binding, delete_card_scene_binding
-from app.api.sprites import copy_card_sprite_packs, delete_card_sprite_packs
-from app.api.voices import copy_card_voices, delete_card_voices
+from app import bindings, states
+from app.api.card_prefs import copy_card_prefs, delete_card_prefs
 from app.db import get_db, without_required_nulls
 from app.models import DebugChat, PromptPreset, TavernCard
 from app.schemas import (
@@ -29,7 +28,7 @@ from app.schemas import (
 router = APIRouter(prefix="/api/tavern", tags=["tavern"])
 
 
-def _card_out(card: TavernCard, has_avatar: bool | None = None) -> TavernCardOut:
+def _card_out(card: TavernCard, has_avatar: bool | None = None, state_of: str | None = None) -> TavernCardOut:
     return TavernCardOut(
         id=card.id,
         name=card.name,
@@ -50,6 +49,7 @@ def _card_out(card: TavernCard, has_avatar: bool | None = None) -> TavernCardOut
         spec=card.spec,
         has_avatar=bool(card.avatar) if has_avatar is None else has_avatar,
         last_chat_id=card.last_chat_id,
+        state_of=state_of,
         created_at=card.created_at,
         updated_at=card.updated_at,
     )
@@ -92,12 +92,20 @@ def list_cards(db: Session = Depends(get_db)):
     rows = db.execute(
         select(TavernCard, has_avatar).options(defer(TavernCard.avatar)).order_by(TavernCard.created_at)
     ).all()
-    return [_card_out(c, bool(h)) for c, h in rows]
+    mains = states.main_of_states(db)
+    return [_card_out(c, bool(h), mains.get(c.id)) for c, h in rows]
 
 
 @router.get("/cards/{card_id}", response_model=TavernCardOut)
 def get_card(card_id: str, db: Session = Depends(get_db)):
-    return _card_out(_load_card(card_id, db))
+    return _card_out(_load_card(card_id, db), state_of=states.main_of_states(db).get(card_id))
+
+
+@router.get("/cards/{card_id}/states")
+def card_states(card_id: str, db: Session = Depends(get_db)):
+    """这张卡所在的状态组(主卡、各状态卡的名字和顺序);不在组里时 group_id 是 null"""
+    _load_card(card_id, db)
+    return states.group_of(db, card_id)
 
 
 @router.post("/cards", response_model=TavernCardOut)
@@ -120,17 +128,41 @@ def update_card(card_id: str, req: TavernCardUpdate, db: Session = Depends(get_d
     return _card_out(card)
 
 
+def delete_card_cascade(db: Session, card_id: str) -> list[str]:
+    """删一张卡,连同(它是主卡时)它的状态卡、它们的绑定和按卡设置;对话留着、不再指向它们。
+    不提交;返回删掉的卡(这张在最前),卡已经不在了返回 []。删卡接口、撤销导入(app/importer/jobs.py)共用"""
+    card = db.get(TavernCard, card_id)
+    if card is None:
+        return []
+    # 主卡的状态卡跟着删;状态卡自己被删时,从它开局的对话改指主卡(states.forget_card)
+    doomed = [card_id, *states.cards_to_delete_with(db, card_id)]
+    states.forget_card(db, card_id)
+    for cid in doomed:
+        # 对话比卡活得久:每条分支都存着完整提示词快照,历史照样能回看。
+        # 引用置空而不是删对话(SQLAlchemy 的 FK 不带 pragma 不级联,手动来)。
+        db.execute(update(DebugChat).where(DebugChat.card_id == cid).values(card_id=None))
+        # 绑定、角色位删掉;包和声音是共用的,留着
+        bindings.delete_card(db, cid)
+        delete_card_prefs(cid, db)
+        if cid != card_id:
+            db.delete(db.get(TavernCard, cid))
+    db.delete(card)
+    db.flush()
+    return doomed
+
+
 @router.delete("/cards/{card_id}", status_code=204)
 def delete_card(card_id: str, db: Session = Depends(get_db)):
-    card = _load_card(card_id, db)
-    # 对话比卡活得久:每条分支都存着完整提示词快照,历史照样能回看。
-    # 引用置空而不是删对话(SQLAlchemy 的 FK 不带 pragma 不级联,手动来)。
-    db.execute(update(DebugChat).where(DebugChat.card_id == card_id).values(card_id=None))
-    delete_card_sprite_packs(card_id, db)
-    delete_card_scene_binding(card_id, db)
-    delete_card_voices(card_id, db)
-    db.delete(card)
+    _load_card(card_id, db)
+    delete_card_cascade(db, card_id)
     db.commit()
+
+
+@router.get("/cards/{card_id}/roster")
+def card_roster(card_id: str, db: Session = Depends(get_db)):
+    """名册:这张卡的角色位(这一期只有主角色位)和各自绑的立绘包、声音,卡级的场景包、CG 包。只读"""
+    _load_card(card_id, db)
+    return bindings.roster(db, card_id)
 
 
 @router.post("/cards/{card_id}/duplicate", response_model=TavernCardOut)
@@ -159,9 +191,8 @@ def duplicate_card(card_id: str, req: DuplicateRequest, db: Session = Depends(ge
     )
     db.add(copy)
     db.flush()  # 先拿到副本的 id,绑定行要挂在它下面
-    copy_card_sprite_packs(src.id, copy.id, db)
-    copy_card_scene_binding(src.id, copy.id, db)
-    copy_card_voices(src.id, copy.id, db)
+    bindings.copy_card(db, src.id, copy.id)
+    copy_card_prefs(src.id, copy.id, db)
     db.commit()
     db.refresh(copy)
     return _card_out(copy)

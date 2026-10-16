@@ -7,20 +7,17 @@
  *   她有背景 → 整页铺她的场景、面板是毛玻璃(E4);没有 → 夜空 + 纸面板(E3)。
  *   「资料」把面板换成她的卡:资料 / 开场白两页。
  *
- * 每张卡的立绘、背景、卡内容进来时按需去拉,拉过的记在模块里,下次进来直接有。
+ * 每张卡的立绘、背景、卡内容进来时按需去拉,拉过的记在模块里(pickDetail.ts),下次进来直接有。
+ * 卡片是拖放落点:把文件拖到某张卡上 = 给她加素材;「导入」那一格和右上角的按钮走导入器(选文件)。
  */
 
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
-import {
-  debugApi,
-  sceneThumbUrl,
-  spriteImageUrl,
-  type PackSprite,
-  type StoredCard,
-} from '../lib/api';
+import { spriteImageUrl } from '../lib/api';
 import { relTime } from '../lib/time';
-import { facesByCanvas, type FaceBox } from '../plugins/spriteLayout';
-import { accentOf, spriteForMood, titleSpriteStyle, type Accent, type TitlePose } from './titleArt';
+import { dropTarget } from '../importer/dropTarget';
+import { FALLBACK_BACKGROUND } from './fallbacks';
+import { cachedPickDetails, hasPickDetail, loadPickDetail, type PickDetail as Detail } from './pickDetail';
+import { accentOf, titleSpriteStyle, type Accent, type TitlePose } from './titleArt';
 import type { TitleCard } from './VNTitle';
 import './vnPick.css';
 
@@ -37,47 +34,6 @@ interface Props {
   onNewStory: (id: string) => void;
   onImport?: () => void;
   onWantAvatar: (cardId: string) => void;
-}
-
-interface Detail {
-  card: StoredCard | null;
-  sprite: PackSprite | null;
-  face: FaceBox | null;
-  bg: string | null;
-}
-
-const cache = new Map<string, Detail>();
-const pending = new Map<string, Promise<Detail>>();
-
-async function loadDetail(id: string): Promise<Detail> {
-  const hit = cache.get(id);
-  if (hit) return hit;
-  let p = pending.get(id);
-  if (!p) {
-    p = (async () => {
-      const [card, sprites, bg] = await Promise.all([
-        debugApi.getCard(id).catch(() => null),
-        debugApi.listCardSprites(id).catch(() => [] as PackSprite[]),
-        (async () => {
-          const pack = await debugApi.getCardScenePack(id).catch(() => null);
-          if (!pack) return null;
-          const assets = await debugApi.listSceneAssets(pack).catch(() => []);
-          const first = assets.find((a) => a.kind === 'bg' && a.enabled && a.has_file);
-          return first ? sceneThumbUrl(first, 1024) : null;
-        })(),
-      ]);
-      const usable = sprites.filter((s) => s.enabled && s.has_image);
-      const sprite = spriteForMood(usable, 'idle') ?? usable[0] ?? null;
-      const face = sprite ? (facesByCanvas([sprite]).get(sprite.id) ?? null) : null;
-      const d: Detail = { card, sprite, face, bg };
-      // 卡没读到(网络断了、后端在重启)不记下来:不然这次打开页面里再也不会重试
-      if (card) cache.set(id, d);
-      pending.delete(id);
-      return d;
-    })();
-    pending.set(id, p);
-  }
-  return p;
 }
 
 /** 卡片里:脸一样大、头在同一高度 */
@@ -116,7 +72,7 @@ export function VNPick({
   onImport,
   onWantAvatar,
 }: Props) {
-  const [details, setDetails] = useState<Map<string, Detail>>(() => new Map(cache));
+  const [details, setDetails] = useState<Map<string, Detail>>(cachedPickDetails);
   const [cur, setCur] = useState<string | null>(currentCardId ?? cards[0]?.id ?? null);
   const [hot, setHot] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -134,13 +90,13 @@ export function VNPick({
   // 先拉选中的那位,再四个一批拉其他人
   useEffect(() => {
     let alive = true;
-    const ids = cards.map((c) => c.id).filter((id) => !cache.has(id));
+    const ids = cards.map((c) => c.id).filter((id) => !hasPickDetail(id));
     if (cur && ids.includes(cur)) ids.unshift(...ids.splice(ids.indexOf(cur), 1));
     void (async () => {
       for (let i = 0; i < ids.length && alive; i += 4) {
         await Promise.all(
           ids.slice(i, i + 4).map((id) =>
-            loadDetail(id).then((d) => {
+            loadPickDetail(id).then((d) => {
               if (!alive) return;
               setDetails((m) => new Map(m).set(id, d));
               if (!d.sprite) onWantAvatar(id);
@@ -438,9 +394,9 @@ export function VNPick({
                 <button className="pk-tile import" onClick={onImport}>
                   <span className="pk-tile-art">
                     <b>+</b>
-                    <small>PNG / JSON</small>
+                    <small>卡 · 立绘 · 背景</small>
                   </span>
-                  <span className="pk-tile-name">导入角色卡</span>
+                  <span className="pk-tile-name">导入</span>
                 </button>
               )}
             </div>
@@ -476,6 +432,8 @@ function Tile({
   return (
     <button
       className={`pk-tile${selected ? ' selected' : ''}`}
+      // 拖文件到这张卡上 = 给她加素材(先问一句)
+      {...dropTarget(card.id, card.name)}
       onClick={onPick}
       onDoubleClick={onOpen}
       onPointerEnter={() => onHover(true)}
@@ -485,7 +443,7 @@ function Tile({
       <span className="pk-tile-art">
         {src && style ? (
           <>
-            <img className="bg" src={detail?.bg ?? '/vn/bg/default.svg'} alt="" draggable={false} loading="lazy" />
+            <img className="bg" src={detail?.bg ?? FALLBACK_BACKGROUND} alt="" draggable={false} loading="lazy" />
             <img className="spr" src={src} style={style} alt="" draggable={false} loading="lazy" />
           </>
         ) : card.avatar ? (

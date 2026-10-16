@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   debugApi,
   sceneFileUrl,
@@ -7,11 +7,15 @@ import {
   type PackSprite,
   type SpriteEffect,
   type EmotionStatus,
+  type SceneAsset,
+  type SceneAssetPatch,
   type SceneKind,
 } from '../lib/api';
 import { enabledOnly, type BlockState, type PluginConfig } from '../plugins/common';
+import { labelFromFile, uniqueLabel } from '../lib/assetNames';
 import type { LangPluginConfig } from '../plugins/lang';
 import type { PlayerPluginConfig } from '../plugins/player';
+import { navItems, type BlockPluginId } from '../plugins/registry';
 import {
   SCENE,
   SWITCH_THRESHOLD,
@@ -38,15 +42,21 @@ import type { SpritePackState } from '../plugins/useSpritePacks';
 import type { VoicePluginState } from '../plugins/useVoicePlugin';
 import { bgmPlayer, useBgm } from '../vn/bgm';
 import { CommitField, DeleteButton } from './pluginFields';
-import { JevCommon, ModeBar, PromptField, ThresholdField, type JevControls } from './JevSettings';
+import { JevCommon, ModeBar, OFF_NOTE, PowerSwitch, PromptField, ThresholdField, type JevControls, type Power } from './JevSettings';
+import type { PluginSwitches, SwitchKind } from '../plugins/switches';
 import { LangPanel } from './LangPanel';
 import { PlayerPanel } from './PlayerPanel';
 import { SpritePosition } from './SpritePosition';
 import { SpriteFxFields } from './SpriteFxFields';
 import { SpriteBubble } from '../vn/SpriteBubble';
 import { MOTION_FRAMES, playFxSound } from '../plugins/spriteFx';
+import type { CartridgePanel, SpliceState } from '../plugins/cartridges';
+import { cgForms } from '../plugins/forms';
+import { text as defaultText } from '../plugins/texts';
 import { errText, formatSize, useRunner } from './pluginRunner';
 import { VoicePanel } from './VoicePanel';
+import { WordRecordsGroup } from './WordRecordsGroup';
+import { CgPairingGroup } from './PairingGroup';
 
 /**
  * 插件抽屉 —— 左边是插件列表,右边是选中插件的配置。
@@ -66,10 +76,13 @@ export interface BlockControls {
   onRemove: () => void;
 }
 
-/** 有提示词块的插件 */
-export type PluginKey = 'sprite' | 'bg' | 'bgm' | 'cg' | 'lang' | 'player';
-/** 抽屉左边列的插件;语音没有提示词块,所以不在 PluginKey 里 */
-export type PluginSection = PluginKey | 'voice';
+/** 有提示词块的插件(插件总表 plugins/registry.ts 里有 blockId 的那几行) */
+export type PluginKey = BlockPluginId;
+/**
+ * 抽屉左边列的一页:插件总表的 id(语音没有提示词块,所以不在 PluginKey 里),
+ * 或者卡带那一页的 key(plugins/cartridges.ts 的 CartridgePanel)
+ */
+export type PluginSection = string;
 /** 打开到哪个插件;有提示词模板的滚到模板那儿。nonce 变了就再跳一次 */
 export interface PluginFocus {
   section: PluginSection;
@@ -102,6 +115,12 @@ interface Props {
   sceneMacros: Record<string, string>;
 
   voice: VoicePluginState;
+  /** 拆句拼接(卡带的 useSplice):插件页里它那一页 */
+  splice: SpliceState;
+  /** 别的卡带在插件页里的页(插图卡带的「生图」…);拆句拼接那一页在 splice 里 */
+  panels?: readonly CartridgePanel[];
+  /** 插件开关(plugins/switches.ts):立绘 / 背景 / 音乐 / CG / AI 出图页右上角的小开关 */
+  switches: { value: PluginSwitches; onChange: (next: PluginSwitches) => void };
 
   /** 外语插件:日语配音、中文字幕 */
   lang: {
@@ -126,16 +145,6 @@ interface Props {
   notify: (kind: 'ok' | 'error', message: string) => void;
   onClose: () => void;
 }
-
-const PLUGINS = [
-  { key: 'sprite', name: '立绘', ready: true },
-  { key: 'bg', name: '背景', ready: true },
-  { key: 'bgm', name: 'BGM', ready: true },
-  { key: 'cg', name: 'CG', ready: true },
-  { key: 'voice', name: '语音', ready: true },
-  { key: 'lang', name: '外语', ready: true },
-  { key: 'player', name: '玩家台词', ready: true },
-] as const satisfies readonly { key: PluginSection; name: string; ready: boolean }[];
 
 /** 示例立绘:Ren'Py 官方示例游戏 The Question 里的 Sylvie(MIT 授权,见 public/vn/CREDITS.txt) */
 const SAMPLE_SPRITES = [
@@ -166,29 +175,24 @@ const SAMPLE_PACK = {
   ],
 };
 
-/** 文件名 → 名字:去扩展名,去掉模板里会出问题的括号 */
-function labelFromFile(name: string): string {
-  return name
-    .replace(/\.[^.]+$/, '')
-    .replace(/[\n\r<>[\]{}【】「」]/g, '')
-    .trim()
-    .slice(0, 40);
-}
+/** 这张卡当前立绘包的名字;没挂包是 null */
+const currentPackName = (packs: SpritePackState) => packs.packs.find((p) => p.id === packs.packId)?.name ?? null;
 
-/** 从已占用的名字里挑一个不撞的:食堂、食堂2、食堂3… */
-function uniqueLabel(base: string, fallback: string, taken: Set<string>) {
-  const root = base || fallback;
-  let name = root;
-  let i = 2;
-  while (taken.has(name.toLowerCase())) name = `${root}${i++}`;
-  taken.add(name.toLowerCase());
-  return name;
-}
+/** 一个插件的总开关(plugins/switches.ts) */
+const powerOf = (sw: Props['switches'], kind: SwitchKind): Power => ({
+  on: sw.value[kind],
+  onChange: (on) => sw.onChange({ ...sw.value, [kind]: on }),
+});
 
 export function PluginsDrawer(props: Props) {
   const { focus } = props;
   const [section, setSection] = useState<PluginSection>(focus?.section ?? 'sprite');
   const { refreshPacks } = props.scene;
+  // 卡带的页:拆句拼接那一页 + 别的卡带给的
+  const cartridgePanels = useMemo(
+    () => [props.splice.panel, ...(props.panels ?? [])].filter((p): p is CartridgePanel => p !== null),
+    [props.splice.panel, props.panels],
+  );
 
   // 左栏点了插件块:切到那个插件,把提示词模板滚进视野并闪一下,光标放进去
   useEffect(() => {
@@ -227,16 +231,15 @@ export function PluginsDrawer(props: Props) {
 
       <div className="sp-main">
         <div className="sp-nav">
-          {PLUGINS.map((p) => (
+          {/* 左栏照插件总表(plugins/registry.ts)的先后列 */}
+          {navItems(cartridgePanels).map((p) => (
             <button
-              key={p.key}
-              className={`sp-nav-item${section === p.key ? ' active' : ''}`}
-              disabled={!p.ready}
-              onClick={() => setSection(p.key)}
-              title={p.ready ? undefined : '还没做,之后接进来'}
+              key={p.id}
+              className={`sp-nav-item${section === p.id ? ' active' : ''}`}
+              onClick={() => setSection(p.id)}
             >
               <span>{p.name}</span>
-              {!p.ready && <span className="pl-soon">即将推出</span>}
+              {p.beta && <span className="pl-beta">BETA</span>}
             </button>
           ))}
         </div>
@@ -251,9 +254,30 @@ export function PluginsDrawer(props: Props) {
               voice={props.voice}
               card={props.card}
               sprites={enabledOnly(props.sprite.packs.sprites)}
+              packName={currentPackName(props.sprite.packs)}
+              cards={props.cards}
               notify={props.notify}
             />
           )}
+          {(() => {
+            const panel = cartridgePanels.find((p) => p.key === section);
+            if (!panel) return null;
+            const power = panel.power ? powerOf(props.switches, panel.power) : null;
+            return (
+              <>
+                {/* 卡带页没有 AI / Jev 二选一:有开关的,顶上单放一行 */}
+                {power && (
+                  <div className="pl-powerbar">
+                    <span className={power.on ? 'sp-group-note' : 'pl-error'}>
+                      {power.on ? `${panel.title}开着` : OFF_NOTE}
+                    </span>
+                    <PowerSwitch name={panel.title} {...power} />
+                  </div>
+                )}
+                {panel.render({ profiles: props.voice.profiles })}
+              </>
+            );
+          })()}
           {section === 'lang' && (
             <LangPanel
               config={props.lang.config}
@@ -291,7 +315,7 @@ function PlayerSection({ player, jev, notify, presetName, presetDirty, presetBus
         onChangeMode={(mode) => onChangeConfig({ ...config, mode })}
         jev={jev}
         aiNote="AI 按「玩家台词」块在玩家说的每一句前写 <我>"
-        jevNote="LLM 只写正文,哪句是玩家说的由 Jev 判断后补上"
+        jevNote="LLM 只写正文,哪句是玩家说的由 Jev 判断后补上;「玩家台词 · 插件」块不发"
       />
       {config.mode === 'jev' ? (
         <>
@@ -556,6 +580,7 @@ function SpriteSection({
   card,
   notify,
   jev,
+  switches,
 }: Props) {
   const { config, onChangeConfig, block, packs } = sprite;
   const { sprites, packId } = packs;
@@ -576,7 +601,8 @@ function SpriteSection({
         onChangeMode={(mode) => onChangeConfig({ ...config, mode })}
         jev={jev}
         aiNote="AI 按「立绘指令」块在角色的每句台词前写表情标签"
-        jevNote="LLM 只写正文,每句台词是谁说的、什么表情由 Jev 判断后补上"
+        jevNote="LLM 只写正文,每句台词是谁说的、什么表情由 Jev 判断后补上;「立绘指令 · 插件」块不发"
+        power={powerOf(switches, 'sprite')}
       />
 
       <SpritePackBar card={card} packs={packs} notify={notify} />
@@ -682,6 +708,8 @@ function SpriteSection({
           noPack
         )}
       </div>
+
+      <WordRecordsGroup card={card} sprites={sprites} pack={pack} />
     </>
   );
 }
@@ -1217,8 +1245,11 @@ const SCENE_TEXT: Record<
   },
   cg: {
     what: 'CG',
-    tagNote: `AI 进入 CG 对得上的场面、场面变了时用这个格式。{CG} 的位置写 CG 名,写「${CG_OFF_WORD}」收起 CG。`,
-    sample: '海边烟花',
+    tagNote: `AI 进入 CG 对得上的场面、换姿势时用这个格式。{CG} 的位置写 CG 名,写「${CG_OFF_WORD}」收起 CG。`,
+    // 示例的 CG 名:卡带可以给另一个(plugins/texts.ts)
+    get sample() {
+      return defaultText('cg.sample', '海边烟花');
+    },
     macros: ['cgs', 'current_cg'],
     exampleMacro: 'cg_tag',
   },
@@ -1228,7 +1259,7 @@ const SCENE_NAME: Record<SceneKindKey, string> = { bg: '背景', bgm: 'BGM', cg:
 const SCENE_AI_WHEN: Record<SceneKindKey, string> = {
   bg: '换场景',
   bgm: '气氛转变',
-  cg: '进入 CG 场面、场面变化、场面结束',
+  cg: '进入 CG 场面、换姿势、场面结束',
 };
 const SCENE_JEV_WHAT: Record<SceneKindKey, string> = {
   bg: '场景换没换、换到哪',
@@ -1246,14 +1277,22 @@ function SceneSection({
   presetBusy,
   onSavePreset,
   card,
+  cards,
   notify,
   jev,
   sprite,
+  switches,
 }: Props & { kind: SceneKindKey }) {
   const text = SCENE_TEXT[kind];
   const config = scene.configs[kind];
   const [listMacro, currentMacro] = text.macros;
   const pack = scene.packs.find((p) => p.id === scene.packId) ?? null;
+  // CG 页编辑的是这张卡绑的某个 CG 包(第 4 期):点上面的包名切换,默认排第一的
+  const [cgEdit, setCgEdit] = useState<string | null>(null);
+  const cgPackId =
+    kind === 'cg' ? (cgEdit && scene.cgPackIds.includes(cgEdit) ? cgEdit : (scene.cgPackIds[0] ?? null)) : null;
+  const cgPack = scene.cgPacks.find((p) => p.id === cgPackId) ?? null;
+  const shared = kind === 'cg' ? cgPack : pack;
 
   const change = (next: ScenePluginConfig) => scene.changeConfig(kind, next);
   const changeJev = (patch: Partial<ScenePluginConfig['jev']>) =>
@@ -1270,10 +1309,15 @@ function SceneSection({
         onChangeMode={(mode) => change({ ...config, mode })}
         jev={jev}
         aiNote={`AI 按「${SCENE[kind].blockName}」块在${SCENE_AI_WHEN[kind]}时写标签`}
-        jevNote={`LLM 只写正文,${SCENE_JEV_WHAT[kind]}由 Jev 判断后补上`}
+        jevNote={`LLM 只写正文,${SCENE_JEV_WHAT[kind]}由 Jev 判断后补上;「${SCENE[kind].blockName}」块不发`}
+        power={powerOf(switches, kind)}
       />
 
-      <PackBar card={card} scene={scene} notify={notify} />
+      {kind === 'cg' ? (
+        <CgPackBar card={card} scene={scene} notify={notify} editing={cgPackId} onEdit={setCgEdit} />
+      ) : (
+        <PackBar card={card} scene={scene} notify={notify} />
+      )}
 
       {config.mode === 'jev' && kind === 'cg' ? (
         <>
@@ -1282,16 +1326,16 @@ function SceneSection({
             <div className="sp-group-head">
               <span className="sp-group-title">出 CG / 换 CG / 收起</span>
               <span className="sp-group-note">
-                每一句问 Jev 一道选择题:选项是「{keep}」「{off}」和场景包里的每张 CG(<b>说明会给 Jev 看</b>,先写场面和在做什么,
-                衣着、小细节放最后当参考)。Jev 还会看到现在的背景(名字和说明),只当参考。
+                每一句问 Jev 一道选择题:选项是「{keep}」「{off}」和场景包里的每张 CG(<b>说明会给 Jev 看</b>,先写{defaultText('cg.describeFirst', '场面')}和在做什么,
+                地点、衣着放最后当参考)。Jev 还会看到现在的背景(名字和说明),只当参考。
                 几张相似的 CG 把握加起来算:加起来够门槛就换成其中最高的那张;「{off}」的把握够门槛就收起。换场景不收 CG。
-                画面上显示哪张差分跟着这句的表情走,不用 Jev 判。
+                {cgForms()?.jevNote ?? ''}画面上显示哪张差分跟着这句的表情走,不用 Jev 判。
               </span>
             </div>
             <ThresholdField
               label="门槛"
               value={config.jev.threshold}
-              def={SWITCH_THRESHOLD.def}
+              def={SWITCH_THRESHOLD.default}
               min={SWITCH_THRESHOLD.min}
               max={SWITCH_THRESHOLD.max}
               low="多换"
@@ -1344,7 +1388,7 @@ function SceneSection({
             <ThresholdField
               label="门槛"
               value={config.jev.threshold}
-              def={SWITCH_THRESHOLD.def}
+              def={SWITCH_THRESHOLD.default}
               min={SWITCH_THRESHOLD.min}
               max={SWITCH_THRESHOLD.max}
               low="多换"
@@ -1410,37 +1454,243 @@ function SceneSection({
         <div className="sp-group-head">
           <span className="sp-group-title">
             {kind === 'bg' ? '背景' : kind === 'cg' ? 'CG' : '音乐'}
-            {pack ? ` · ${pack.name}` : ''}
+            {shared ? ` · ${shared.name}` : ''}
           </span>
           <span className="sp-group-note">
             {kind === 'bg'
               ? '排第一的是默认场景。每个场景可以指定一首默认音乐:换到这个场景时自动换上。'
               : kind === 'cg'
-                ? '一张 CG = 一个构图(场面、地点、衣着),AI / Jev 点的是它;名字和说明写清楚。每张 CG 可以挂几张差分,差分的名字用立绘的表情名(比如 微笑、害羞):游戏里跟着这句的表情换,没有对应的就用 CG 本身那张。CG 不换音乐,换场景也不会收起。'
+                ? `一张 CG = 一个构图(姿势、地点、衣着),AI / Jev 点的是它;名字和说明写清楚。每张 CG 可以挂几张差分,差分的名字用立绘的表情名(比如 ${defaultText('cg.variantExample', '害羞')}):游戏里跟着这句的表情换,没有对应的就用 CG 本身那张。CG 不换音乐,换场景也不会收起。${cgForms()?.help ?? ''}`
                 : '按气氛起名(日常、温馨、紧张、伤感…),AI 看名字和说明挑曲子;真正的曲名写在说明里。'}
             不想用的点「禁用」:游戏里当它不存在,文件留在包里,随时能再启用。
-            {pack && pack.card_count > 1 && `这个包有 ${pack.card_count} 张卡在用,禁用对它们都生效。`}
+            {shared && shared.card_count > 1 && `这个包有 ${shared.card_count} 张卡在用,禁用对它们都生效。`}
           </span>
         </div>
         {!card ? (
           <div className="sp-empty">先在右栏选一张角色卡。</div>
+        ) : kind === 'cg' ? (
+          cgPackId ? (
+            <CgTable
+              key={cgPackId}
+              packId={cgPackId}
+              scene={scene}
+              emotions={enabledOnly(sprite.packs.sprites).map((x) => x.label)}
+              notify={notify}
+            />
+          ) : (
+            <div className="sp-empty">这张卡还没有 CG 包。在上面挂一个,或者新建一个。</div>
+          )
         ) : !scene.packId ? (
           <div className="sp-empty">这张卡还没有绑定场景包。在上面选一个,或者新建一个。</div>
         ) : kind === 'bg' ? (
           <BgTable key={scene.packId} packId={scene.packId} scene={scene} notify={notify} />
-        ) : kind === 'cg' ? (
-          <CgTable
-            key={scene.packId}
-            packId={scene.packId}
-            scene={scene}
-            emotions={enabledOnly(sprite.packs.sprites).map((x) => x.label)}
-            notify={notify}
-          />
         ) : (
           <BgmTable key={scene.packId} packId={scene.packId} scene={scene} notify={notify} />
         )}
       </div>
+
+      {kind === 'cg' && card && (scene.cgPackIds.length > 0 || scene.packId) && (
+        <CgPairingGroup
+          card={card}
+          sprites={enabledOnly(sprite.packs.sprites)}
+          packName={currentPackName(sprite.packs)}
+          assets={scene.assets}
+          cards={cards}
+        />
+      )}
     </>
+  );
+}
+
+/**
+ * CG 包(第 4 期):这张卡挂了哪几个 CG 包(按顺序叠,构图重名时取排前面的)、下面编辑的是哪一个;
+ * 挂上 / 拿掉 / 新建 / 重命名 / 删除。样子照立绘包那一条
+ */
+function CgPackBar({
+  card,
+  scene,
+  notify,
+  editing,
+  onEdit,
+}: {
+  card: Props['card'];
+  scene: ScenePluginState;
+  notify: Props['notify'];
+  editing: string | null;
+  onEdit: (packId: string) => void;
+}) {
+  const [naming, setNaming] = useState<'new' | 'rename' | null>(null);
+  const [draft, setDraft] = useState('');
+  const [busy, setBusy] = useState<string | null>(null);
+  const { cgPackIds, refreshCgPacks } = scene;
+  const byId = new Map(scene.cgPacks.map((p) => [p.id, p]));
+  const pack = editing ? (byId.get(editing) ?? null) : null;
+  const loose = scene.cgPacks.filter((p) => !cgPackIds.includes(p.id));
+
+  // 包的 CG 数、在用的卡数在别处也会变,进 CG 页时刷新一次
+  useEffect(() => {
+    void refreshCgPacks();
+  }, [refreshCgPacks]);
+
+  const act = async (label: string, fn: () => Promise<void>) => {
+    setBusy(label);
+    try {
+      await fn();
+    } catch (e) {
+      notify('error', errText(e));
+    } finally {
+      setBusy(null);
+      await refreshCgPacks();
+    }
+  };
+
+  /** 挂上一个包(接在最后)并编辑它 */
+  const attach = async (id: string) => {
+    await scene.bindCgPacks([...cgPackIds, id]);
+    onEdit(id);
+  };
+
+  const submitName = () => {
+    const name = draft.trim();
+    if (!name) return;
+    const mode = naming;
+    setNaming(null);
+    void act(mode === 'new' ? '新建' : '重命名', async () => {
+      if (mode === 'new') await attach((await debugApi.createCgPack(name)).id);
+      else if (pack) await debugApi.updateCgPack(pack.id, { name });
+    });
+  };
+
+  return (
+    <div className="sp-group">
+      <div className="sp-group-head">
+        <span className="sp-group-title">CG 包{card ? ` · ${card.name || '(未命名)'}` : ''}</span>
+        <span className="sp-group-note">
+          一个 CG 包是一个角色在一个场景里的一组 CG,单独挂到卡上:谁挂了它,谁才会出这些 CG(借别人的场景当背景,不会连她的 CG
+          一起借来)。一张卡可以挂几个,按顺序叠,几个包里有同名的 CG 时用排前面的。点包名切换下面编辑的是哪一个。
+        </span>
+      </div>
+      {!card ? (
+        <div className="sp-empty">先在右栏选一张角色卡。</div>
+      ) : (
+        <>
+          {cgPackIds.length > 0 && (
+            <div className="pl-row">
+              {cgPackIds.map((id) => {
+                const p = byId.get(id);
+                const on = id === editing;
+                return (
+                  <button
+                    key={id}
+                    className={`btn small${on ? ' accent' : ''}`}
+                    aria-pressed={on}
+                    disabled={!!busy}
+                    onClick={() => onEdit(id)}
+                    title={on ? '下面编辑的是这个包' : '编辑这个包'}
+                  >
+                    {p ? `${p.name} · ${p.cg_count} 张` : '…'}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          <div className="pl-row">
+            <select
+              className="text-input pl-pack-select"
+              value=""
+              disabled={!!busy || loose.length === 0}
+              onChange={(e) => {
+                if (e.target.value) void act('挂上', () => attach(e.target.value));
+              }}
+            >
+              <option value="">{loose.length ? '挂一个已有的 CG 包…' : '没有别的 CG 包了'}</option>
+              {loose.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}({p.cg_count} 张 · {p.card_count ? `${p.card_count} 张卡在用` : '没有卡在用'})
+                </option>
+              ))}
+            </select>
+            {busy && (
+              <span className="sp-group-note">
+                <span className="spinner tiny" /> {busy}…
+              </span>
+            )}
+          </div>
+          {naming ? (
+            <div className="pl-row">
+              <input
+                className="text-input pl-pack-name"
+                value={draft}
+                autoFocus
+                placeholder="CG 包名字,比如 同居日常 · CG"
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.nativeEvent.isComposing) submitName();
+                  if (e.key === 'Escape') setNaming(null);
+                }}
+              />
+              <button className="btn small accent" disabled={!draft.trim()} onClick={submitName}>
+                {naming === 'new' ? '新建并挂上' : '改名'}
+              </button>
+              <button className="btn small" onClick={() => setNaming(null)}>
+                取消
+              </button>
+            </div>
+          ) : (
+            <div className="pl-row">
+              <button
+                className="btn small"
+                disabled={!!busy}
+                onClick={() => {
+                  setDraft('');
+                  setNaming('new');
+                }}
+              >
+                + 新建 CG 包
+              </button>
+              {pack && (
+                <>
+                  <button
+                    className="btn small"
+                    disabled={!!busy}
+                    onClick={() => {
+                      setDraft(pack.name);
+                      setNaming('rename');
+                    }}
+                  >
+                    重命名
+                  </button>
+                  <button
+                    className="btn small"
+                    disabled={!!busy}
+                    title="只是这张卡不再用它,包和里面的 CG 都留着"
+                    onClick={() => void act('拿掉', () => scene.bindCgPacks(cgPackIds.filter((id) => id !== pack.id)))}
+                  >
+                    从这张卡拿掉
+                  </button>
+                  <DeleteButton
+                    disabled={!!busy}
+                    label={pack.card_count > 1 ? `删除这个包(${pack.card_count} 张卡在用)` : '删除这个包'}
+                    onConfirm={() =>
+                      void act('删除', async () => {
+                        await debugApi.deleteCgPack(pack.id);
+                        scene.forgetCgPack(pack.id);
+                        notify(
+                          'ok',
+                          pack.card_count > 1
+                            ? `已删除「${pack.name}」,另外 ${pack.card_count - 1} 张卡也不再用它`
+                            : `已删除「${pack.name}」`,
+                        );
+                      })
+                    }
+                  />
+                </>
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </div>
   );
 }
 
@@ -1532,7 +1782,7 @@ function PackBar({
       <div className="sp-group-head">
         <span className="sp-group-title">场景包{card ? ` · ${card.name || '(未命名)'}` : ''}</span>
         <span className="sp-group-note">
-          一组背景 + 音乐 + CG。每张卡绑一个包,同一个世界观的几张卡可以绑同一个;背景、BGM、CG 三页共用。
+          一组背景 + 音乐。每张卡绑一个包,同一个世界观的几张卡可以绑同一个;背景、BGM 两页共用。CG 在 CG 页单独挂 CG 包。
         </span>
       </div>
       {!card ? (
@@ -1549,7 +1799,8 @@ function PackBar({
               <option value="">不使用场景包</option>
               {scene.packs.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.name}({p.bg_count} 个场景 · {p.bgm_count} 首音乐{p.cg_count ? ` · ${p.cg_count} 张 CG` : ''})
+                  {p.name}({p.bg_count} 个场景 · {p.bgm_count} 首音乐
+                  {p.cg_count && !p.cg_pack_id ? ` · ${p.cg_count} 张 CG` : ''})
                 </option>
               ))}
             </select>
@@ -1638,12 +1889,47 @@ function PackBar({
 }
 
 /** 背景表、音乐表、CG 表共用的增删改(CG 只管构图,差分见 CgVariants) */
+/** 场景包和 CG 包(第 4 期)的素材各走各的接口,参数一样;CG 包不分类别 */
+interface AssetApi {
+  list: (packId: string) => Promise<SceneAsset[]>;
+  create: (
+    packId: string,
+    payload: { kind: SceneKind; label: string; aliases?: string[]; description?: string; parent_id?: string },
+  ) => Promise<SceneAsset>;
+  update: (packId: string, assetId: string, patch: SceneAssetPatch) => Promise<SceneAsset>;
+  remove: (packId: string, assetId: string) => Promise<void>;
+  reorder: (packId: string, kind: SceneKind, ids: string[]) => Promise<SceneAsset[]>;
+  upload: (packId: string, assetId: string, file: Blob) => Promise<SceneAsset>;
+}
+
+const SCENE_ASSET_API: AssetApi = {
+  list: debugApi.listSceneAssets,
+  create: debugApi.createSceneAsset,
+  update: debugApi.updateSceneAsset,
+  remove: debugApi.deleteSceneAsset,
+  reorder: debugApi.reorderSceneAssets,
+  upload: debugApi.uploadSceneFile,
+};
+
+const CG_ASSET_API: AssetApi = {
+  list: debugApi.listCgAssets,
+  create: (packId, { kind: _kind, ...payload }) => debugApi.createCgAsset(packId, payload),
+  update: debugApi.updateCgAsset,
+  remove: debugApi.deleteCgAsset,
+  reorder: (packId, _kind, ids) => debugApi.reorderCgAssets(packId, ids),
+  upload: debugApi.uploadCgFile,
+};
+
+/** CG 在 CG 包里(packId 是 CG 包),背景、音乐在场景包里 */
+const assetApi = (kind: SceneKind) => (kind === 'cg' ? CG_ASSET_API : SCENE_ASSET_API);
+
 function useAssetOps(packId: string, kind: SceneKind, scene: ScenePluginState, notify: Props['notify']) {
+  const api = assetApi(kind);
   const [busy, run] = useRunner(notify, async () => {
-    scene.changeAssets(packId, await debugApi.listSceneAssets(packId));
-    await scene.refreshPacks();
+    scene.changeAssets(packId, await api.list(packId));
+    await (kind === 'cg' ? scene.refreshCgPacks() : scene.refreshPacks());
   });
-  const mine = scene.assets.filter((a) => a.kind === kind && !a.parent_id);
+  const mine = scene.assets.filter((a) => a.kind === kind && !a.parent_id && a.pack_id === packId);
   const takenNames = () =>
     new Set(mine.flatMap((a) => [a.label, ...a.aliases]).map((n) => n.toLowerCase()));
   const fallback = kind === 'bg' ? '场景' : kind === 'cg' ? 'CG' : '音乐';
@@ -1654,7 +1940,7 @@ function useAssetOps(packId: string, kind: SceneKind, scene: ScenePluginState, n
     mine,
     addEmpty: () =>
       run('新建', async () => {
-        await debugApi.createSceneAsset(packId, {
+        await api.create(packId, {
           kind,
           label: uniqueLabel(kind === 'bg' ? '新场景' : kind === 'cg' ? '新CG' : '新音乐', fallback, takenNames()),
         });
@@ -1663,38 +1949,35 @@ function useAssetOps(packId: string, kind: SceneKind, scene: ScenePluginState, n
       run(`上传 ${files.length} 个文件`, async () => {
         const taken = takenNames();
         for (const f of files) {
-          const created = await debugApi.createSceneAsset(packId, {
+          const created = await api.create(packId, {
             kind,
             label: uniqueLabel(labelFromFile(f.name), fallback, taken),
           });
-          await debugApi.uploadSceneFile(packId, created.id, f);
+          await api.upload(packId, created.id, f);
         }
         notify('ok', `已添加 ${files.length} 个${fallback},记得把名字改成 AI 好理解的词`);
       }),
     replaceFile: (assetId: string, file: File) =>
       run('换文件', async () => {
-        await debugApi.uploadSceneFile(packId, assetId, file);
+        await api.upload(packId, assetId, file);
       }),
-    update: (assetId: string, patch: Parameters<typeof debugApi.updateSceneAsset>[2]) =>
+    update: (assetId: string, patch: SceneAssetPatch) =>
       run('保存', async () => {
-        await debugApi.updateSceneAsset(packId, assetId, patch);
+        await api.update(packId, assetId, patch);
       }),
     remove: (assetId: string) =>
       run('删除', async () => {
-        await debugApi.deleteSceneAsset(packId, assetId);
+        await api.remove(packId, assetId);
       }),
     setEnabled: (assetId: string, enabled: boolean) =>
       run(enabled ? '启用' : '禁用', async () => {
-        await debugApi.updateSceneAsset(packId, assetId, { enabled });
+        await api.update(packId, assetId, { enabled });
       }),
     /** 默认 = 排在最前面的、没禁用的那个 */
     defaultId: mine.find((a) => a.enabled)?.id ?? null,
     makeDefault: (assetId: string) =>
       run('排序', async () => {
-        await debugApi.reorderSceneAssets(packId, kind, [
-          assetId,
-          ...mine.map((a) => a.id).filter((id) => id !== assetId),
-        ]);
+        await api.reorder(packId, kind, [assetId, ...mine.map((a) => a.id).filter((id) => id !== assetId)]);
       }),
   };
 }
@@ -1848,6 +2131,11 @@ function CgTable({
 }) {
   const ops = useAssetOps(packId, 'cg', scene, notify);
   const { busy } = ops;
+  // 形态(plugins/forms.ts):装了形态卡带,而且立绘包看起来用得上、或者已经有 CG 标过,才出「在哪些形态出」
+  const forms = cgForms();
+  const FormsEditor = forms?.Editor ?? null;
+  const showForms =
+    forms !== null && (forms.relevant(emotions) || ops.mine.some((a) => (a.forms ?? []).length > 0));
   const batchRef = useRef<HTMLInputElement>(null);
   const replaceRef = useRef<HTMLInputElement>(null);
   const replaceTarget = useRef<string | null>(null);
@@ -1893,7 +2181,7 @@ function CgTable({
 
       {ops.mine.length === 0 ? (
         <div className="sp-empty">
-          还没有 CG。批量上传时文件名就是 CG 名;横图(16:9)效果最好。上传后把名字和说明改成 AI 看得懂的:先写场面和在做什么,地点、衣着放最后当参考。
+          还没有 CG。批量上传时文件名就是 CG 名;横图(16:9)效果最好。上传后把名字和说明改成 AI 看得懂的:先写{defaultText('cg.describeFirst', '场面')}和在做什么,地点、衣着放最后当参考。
         </div>
       ) : (
         <div className="pl-sprite-list">
@@ -1916,9 +2204,16 @@ function CgTable({
                   noun="CG 名"
                   item={a}
                   isDefault={false}
-                  descPlaceholder="给 AI / Jev 看的:场面|在做什么|不算|场景参考"
+                  descPlaceholder={defaultText('cg.descPlaceholder', '给 AI / Jev 看的:场面|在做什么|不算|场景参考')}
                   onCommit={(patch) => ops.update(a.id, patch)}
                 >
+                  {showForms && FormsEditor && (
+                    <FormsEditor
+                      forms={a.forms ?? []}
+                      disabled={!!busy}
+                      onChange={(forms) => void ops.update(a.id, { forms })}
+                    />
+                  )}
                   {url && (
                     <FocusSlider
                       url={url}
@@ -2003,7 +2298,7 @@ function CgVariants({
                 disabled={!!busy}
                 onConfirm={() =>
                   void run('删除差分', async () => {
-                    await debugApi.deleteSceneAsset(packId, v.id);
+                    await CG_ASSET_API.remove(packId, v.id);
                   })
                 }
               />
@@ -2045,8 +2340,8 @@ function CgVariants({
           e.target.value = '';
           if (!f || !label) return;
           void run('上传差分', async () => {
-            const created = await debugApi.createSceneAsset(packId, { kind: 'cg', label, parent_id: cg.id });
-            await debugApi.uploadSceneFile(packId, created.id, f);
+            const created = await CG_ASSET_API.create(packId, { kind: 'cg', label, parent_id: cg.id });
+            await CG_ASSET_API.upload(packId, created.id, f);
           });
         }}
       />
@@ -2061,7 +2356,7 @@ function CgVariants({
           const target = replaceTarget.current;
           if (f && target)
             void run('换图', async () => {
-              await debugApi.uploadSceneFile(packId, target, f);
+              await CG_ASSET_API.upload(packId, target, f);
             });
         }}
       />

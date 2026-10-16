@@ -1,0 +1,333 @@
+/* ══════════ 卡编辑器「AI 生成」那一栏(StudioAlbum.tsx) ══════════
+   格局照 V4AttachCg.png:顶上筛选、舞台、相册网格(☆ / ★)、设置摘要;右栏照卡编辑器的 st-inspector。
+   颜色只用 debug.css 的 :root 变量(中性灰)。窄屏见文件末尾。 */
+
+/* 主区多宽看它自己(左右栏都在时主区也窄),不看窗口 */
+.sa-main {
+  container-type: inline-size;
+}
+
+/* ── 顶上的筛选:全部 / 手动 / 自动 / 已收藏 ── */
+
+.sa-bar {
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+.sa-seg {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg-raised);
+}
+.sa-seg-btn {
+  height: 24px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.sa-seg-btn:hover {
+  color: var(--text);
+}
+.sa-seg-btn.on {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.sa-seg-btn:focus-visible {
+  outline: 1.5px solid var(--text-dim);
+  outline-offset: 1px;
+}
+
+/* ── 舞台 ── */
+
+.sa-stage-note {
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  transform: translate(-50%, -50%);
+  max-width: 80%;
+  color: var(--text-faint);
+  font-size: 13px;
+  text-align: center;
+}
+
+/* ── 相册 ── */
+
+.sa-album-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.sa-album-head > .st-grid-note {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sa-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 8px;
+}
+.sa-tile {
+  position: relative;
+  min-width: 0;
+}
+.sa-tile-main {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 5px 5px 6px;
+  border: 0;
+  border-radius: 11px;
+  background: var(--bg-panel);
+  box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.sa-tile-main:hover {
+  background: var(--bg-raised);
+}
+.sa-tile.selected .sa-tile-main {
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+  color: var(--text);
+}
+.sa-tile.selected .sa-tile-name {
+  font-weight: 500;
+}
+.sa-tile-main:focus-visible {
+  outline: 1.5px solid var(--text-dim);
+  outline-offset: 2px;
+}
+.sa-thumb {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 1216 / 832;
+  border-radius: 7px;
+  overflow: hidden;
+  background: var(--bg-hover);
+}
+.sa-thumb > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.sa-thumb-none {
+  position: absolute;
+  inset: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+}
+.sa-tile-name,
+.sa-tile-sub {
+  min-width: 0;
+  padding: 0 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sa-tile-sub {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+/* 右上角的 ☆ / ★:没收藏的点了就收藏;收藏过的实心、点不了 */
+.sa-star {
+  position: absolute;
+  right: 9px;
+  top: 9px;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(14, 14, 14, 0.7);
+  color: var(--text);
+  cursor: pointer;
+}
+.sa-star:hover:not(:disabled) {
+  background: rgba(14, 14, 14, 0.9);
+}
+.sa-star:disabled {
+  cursor: default;
+}
+.sa-star:disabled:not(.on) {
+  opacity: 0.55;
+}
+.sa-star:focus-visible {
+  outline: 1.5px solid var(--text-dim);
+  outline-offset: 1px;
+}
+
+.sa-grid-empty {
+  padding: 22px 16px;
+  border: 1.5px dashed var(--border-strong);
+  border-radius: 11px;
+  color: var(--text-faint);
+  font-size: 12.5px;
+  text-align: center;
+}
+
+/* ── 设置摘要:角色名、画风、参考图、自动出图 ── */
+
+.sa-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: auto;
+}
+.sa-cell {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-panel);
+}
+.sa-cell-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-faint);
+  font-size: 11.5px;
+}
+.sa-cell-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+}
+
+/* ── 右栏 ── */
+
+.sa-ihead-media {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+.sa-desc {
+  margin: 0 0 12px;
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1.65;
+}
+/* 收藏状态:没收藏是虚线框,收藏了是实线框 + 实心星 */
+.sa-kept {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 10px;
+  color: var(--text-dim);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.sa-kept > .st-icon {
+  color: var(--text-faint);
+}
+.sa-kept.on {
+  border-style: solid;
+  border-color: var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+}
+.sa-kept.on > .st-icon {
+  color: var(--text);
+}
+.sa-kept-text {
+  flex: 1;
+  min-width: 0;
+}
+.sa-params {
+  margin-bottom: 12px;
+}
+.sa-param {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-height: 25px;
+  font-size: 12.5px;
+}
+.sa-param-k {
+  width: 74px;
+  flex: none;
+  color: var(--text-faint);
+}
+.sa-param-v {
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.sa-prompt {
+  max-height: 240px;
+  margin: 0;
+  padding: 9px 11px;
+  overflow-y: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  background: var(--bg-raised);
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.st-inspector-hint.sa-intro {
+  margin-top: 6px;
+}
+
+/* ══════════ 主区窄(左右栏都在的小窗口、手机) ══════════ */
+
+@container (max-width: 620px) {
+  /* 筛选另起一行(「生图设置」留在类型小牌子那一行) */
+  .sa-bar > .sa-seg {
+    order: 1;
+  }
+  .sa-grid {
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  }
+  .sa-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* 窄屏(< 900px)整页滚:提示词不用自己再滚 */
+@media (max-width: 899px) {
+  .sa-prompt {
+    max-height: none;
+  }
+}

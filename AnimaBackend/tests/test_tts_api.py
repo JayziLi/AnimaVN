@@ -205,6 +205,16 @@ def test_speak_rejects_missing_refs_and_empty_text(client: TestClient, gsv):
     assert gsv.calls == []
 
 
+def test_speak_refuses_a_gsv_voice_without_weights(client: TestClient, gsv):
+    """权重留空不再沿用语音服务上一次加载的模型(那是别的角色的声音),也不进缓存"""
+    _, voice = setup_voice(client)
+    client.put(f"/api/voices/{voice['id']}", json={"sovits_weights": ""})
+    r = speak(client, voice["id"])
+    assert r.status_code == 400
+    assert r.json()["detail"].startswith("声音「阿米娅」没填 GPT / SoVITS 权重")
+    assert gsv.calls == []
+
+
 def test_speak_rejects_punctuation_only_text(client: TestClient, gsv):
     _, voice = setup_voice(client)
     r = speak(client, voice["id"], text="……！")
@@ -254,7 +264,7 @@ def test_cache_stats_and_clear(client: TestClient, gsv):
     speak(client, voice["id"], text="一")
     stats = client.get("/api/tts/cache").json()
     assert stats["count"] == 1 and stats["bytes"] > 0
-    assert stats["limit_bytes"] == 500 * 1024 * 1024
+    assert stats["limit_bytes"] == 2 * 1024 * 1024 * 1024
     assert client.delete("/api/tts/cache").status_code == 204
     assert client.get("/api/tts/cache").json()["count"] == 0
 
@@ -422,8 +432,17 @@ def test_indextts_voice_can_override_emotion_strength(client: TestClient, index_
     assert index_tts.bodies()[-1]["emo_alpha"] == 1.0
 
 
-def explain(client: TestClient, profile_id: str, text: str = "博士，早上好。", emotion: str | None = None):
-    return client.post("/api/tts/explain", json={"profile_id": profile_id, "emotion": emotion, "text": text})
+def explain(
+    client: TestClient,
+    profile_id: str,
+    text: str = "博士，早上好。",
+    emotion: str | None = None,
+    emotion_id: str | None = None,
+):
+    body = {"profile_id": profile_id, "emotion": emotion, "text": text}
+    if emotion_id is not None:
+        body["emotion_id"] = emotion_id
+    return client.post("/api/tts/explain", json=body)
 
 
 def test_explain_reports_the_row_how_it_was_picked_and_the_exact_request(client: TestClient, gsv, monkeypatch):
@@ -489,6 +508,77 @@ def test_explain_shows_the_indextts_request(client: TestClient, index_tts):
     assert (out["request"]["spk_audio_path"], out["request"]["emo_vector"]) == (SPK, HAPPY)
     assert (out["gpt_weights"], out["sovits_weights"]) == ("", "")
     assert index_tts.bodies() == []
+
+
+# ── 配对表挑好的那一行(表情认法 = 认词记录) ──────────
+
+
+def emotion_ids(client: TestClient, profile_id: str) -> dict[str, str]:
+    voice = next(v for v in client.get("/api/voices").json() if v["id"] == profile_id)
+    return {e["label"]: e["id"] for e in voice["emotions"]}
+
+
+def test_a_pairing_row_is_spoken_as_is_whatever_the_name_says(client: TestClient, gsv):
+    _, voice = setup_voice(client, emotions=(("平静", []), ("疑惑", []), ("开心", ["Happy"])))
+    rows = emotion_ids(client, voice["id"])
+
+    out = explain(client, voice["id"], emotion="开心", emotion_id=rows["疑惑"]).json()
+    assert (out["wanted"], out["emotion"], out["how"], out["via"], out["score"]) == ("开心", "疑惑", "pairing", None, None)
+    assert out["request"]["ref_audio_path"] == "D:/refs/疑惑.wav"
+    # 没传名字也照这一行念
+    bare = explain(client, voice["id"], emotion_id=rows["开心"]).json()
+    assert (bare["wanted"], bare["emotion"], bare["how"]) == (None, "开心", "pairing")
+
+    r = client.post(
+        "/api/tts/speak",
+        json={"profile_id": voice["id"], "emotion": "开心", "emotion_id": rows["疑惑"], "text": "一"},
+    )
+    assert r.status_code == 200, r.text
+    assert unquote(r.headers["x-tts-emotion"]) == "疑惑"
+    assert gsv.calls[-1][1]["ref_audio_path"] == "D:/refs/疑惑.wav"
+    # 同一行、同一句:和按名字挑到这一行时是同一段缓存
+    assert explain(client, voice["id"], text="一", emotion="疑惑").json()["cached"] is True
+
+
+def test_a_row_of_another_voice_falls_back_to_the_name(client: TestClient, gsv):
+    conn, voice = setup_voice(client)
+    other = client.post("/api/voices", json={"name": "琴柳", "connection_id": conn["id"]}).json()
+    others_row = client.post(
+        f"/api/voices/{other['id']}/emotions",
+        json={"label": "难过", "ref_path": "D:/refs/琴柳/难过.wav", "prompt_text": "难过的原文"},
+    ).json()["id"]
+
+    out = explain(client, voice["id"], emotion="happy", emotion_id=others_row).json()
+    assert (out["emotion"], out["how"], out["via"]) == ("开心", "alias", "Happy")
+    gone = explain(client, voice["id"], emotion="开心", emotion_id="nope").json()
+    assert (gone["emotion"], gone["how"]) == ("开心", "exact")
+    assert explain(client, voice["id"], emotion_id="nope").json()["how"] == "default"
+
+
+class SinglesOnlyMatcher:
+    """只许用固定算法(match_singles):拼批的 match 一调就报错"""
+
+    def __init__(self):
+        from app.emotion.matcher import EmotionMatcher
+
+        self.inner = EmotionMatcher(FakeEmotionEncoder())
+
+    def match(self, tags, candidates):
+        raise AssertionError("按名字挑语气要用固定算法 match_singles")
+
+    def match_singles(self, tags, candidates):
+        return self.inner.match_singles(tags, candidates)
+
+
+def test_the_nearest_row_is_picked_by_the_fixed_algorithm(client: TestClient, gsv, monkeypatch):
+    from app.api import tts
+
+    monkeypatch.setattr(tts, "get_matcher", SinglesOnlyMatcher)
+    _, voice = setup_voice(client, emotions=(("平静", []), ("疑惑", []), ("害羞", [])))
+
+    near = explain(client, voice["id"], emotion="惊讶").json()
+    assert (near["emotion"], near["how"], near["via"]) == ("疑惑", "nearest", "疑惑")
+    assert unquote(speak(client, voice["id"], emotion="惊讶").headers["x-tts-emotion"]) == "疑惑"
 
 
 # ── 参考音频试听 ──────────────────────────────────────

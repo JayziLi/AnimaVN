@@ -1,0 +1,555 @@
+/* ══════════ 声音编辑器(卡编辑器「声音」栏 / 素材管理页的声音) ══════════
+   照 V4AttachVoice.png(v4_boards.py 的 board_attach_voice、wave、round_play):
+   主区「试听」台 + 「情绪参考」表,右栏 st-inspector 里的参考音频卡片。
+   颜色只用 debug.css 的 :root 变量;例句选中的边框 #5a5a5a 是图里的原值。窄屏见文件末尾。 */
+
+.vo-panel {
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg-panel);
+}
+.vo-title {
+  flex: none;
+  font-size: 13.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.vo-note {
+  min-width: 0;
+  color: var(--text-faint);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── 圆的 ▶(试听台 34、表里每行 24、右栏头 48) ── */
+
+.vo-play {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0 0 2px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--bg);
+  cursor: pointer;
+}
+.vo-play.on {
+  padding: 0;
+}
+.vo-play.muted {
+  background: var(--bg-hover);
+  color: var(--text-dim);
+}
+.vo-play:hover:not(:disabled) {
+  filter: brightness(1.12);
+}
+.vo-play:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.vo-play:focus-visible {
+  outline: 1.5px solid var(--text-dim);
+  outline-offset: 2px;
+}
+.vo-stop {
+  width: 32%;
+  height: 32%;
+  border-radius: 2px;
+  background: currentColor;
+}
+.vo-spin {
+  width: 42%;
+  height: 42%;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: vo-spin 0.8s linear infinite;
+}
+@keyframes vo-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ── 波形(放过的那段浅色) ── */
+
+.vo-wave {
+  display: block;
+  width: 100%;
+}
+.vo-wave rect {
+  fill: rgba(255, 255, 255, 0.22);
+}
+.vo-wave rect.on {
+  fill: var(--accent);
+}
+
+.vo-time {
+  flex: none;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.vo-time.small {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+/* ── 试听 ── */
+
+.vo-bench {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 18px;
+}
+.vo-bench-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  row-gap: 8px;
+}
+.vo-samples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.vo-sample {
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 13px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.vo-sample:hover {
+  color: var(--text);
+}
+.vo-sample.on {
+  border-color: #5a5a5a;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+}
+.vo-sample:focus-visible {
+  outline: 1.5px solid var(--text-dim);
+  outline-offset: 2px;
+}
+.vo-bench-text {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 54px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 11px;
+  background: var(--bg-raised);
+  color: var(--text);
+  font: inherit;
+  font-size: 17px;
+  line-height: 1.6;
+  resize: vertical;
+  outline: none;
+  field-sizing: content;
+}
+.vo-bench-text:focus {
+  border-color: var(--text-faint);
+}
+.vo-bench-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.vo-label {
+  flex: none;
+  color: var(--text-dim);
+  font-size: 12.5px;
+}
+/* 情绪下拉不占满一行(st-select 默认 flex: 1;两个类压过它,不管哪份样式先加载) */
+.st-select.vo-emo {
+  flex: 0 1 auto;
+  min-width: 100px;
+  max-width: 240px;
+}
+.vo-player {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 11px;
+  background: rgba(0, 0, 0, 0.22);
+}
+.vo-player-wave {
+  flex: 1;
+  min-width: 0;
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+}
+.vo-player-hint {
+  color: var(--text-faint);
+  font-size: 12px;
+}
+.vo-bench-foot {
+  margin-top: -4px;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+.vo-bench-foot.error {
+  color: var(--danger);
+}
+
+/* ── 情绪参考表 ── */
+
+.vo-table {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  /* 别名那一列看表本身多宽(左右栏都在时主区也窄),不看窗口 */
+  container-type: inline-size;
+}
+.vo-table-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  row-gap: 6px;
+  padding: 10px 12px 10px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.vo-match {
+  flex: none;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-body);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.vo-match.warn {
+  color: var(--st-amber);
+  cursor: help;
+}
+.vo-row {
+  display: flex;
+  align-items: center;
+  height: 34px;
+  padding-left: 12px;
+  border-top: 1px solid var(--border);
+}
+.vo-row:first-child {
+  border-top: 0;
+}
+.vo-row.selected {
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.vo-row:hover:not(.selected) {
+  background: rgba(255, 255, 255, 0.025);
+}
+.vo-row-play {
+  width: 34px;
+  flex: none;
+  display: flex;
+  align-items: center;
+}
+.vo-row-main {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: grid;
+  grid-template-columns: 64px 150px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px 0 10px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.vo-row-main:focus-visible {
+  outline: 1.5px solid var(--text-dim);
+  outline-offset: -2px;
+}
+.vo-row-label {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.vo-row.selected .vo-row-label {
+  font-weight: 500;
+}
+.vo-row-alias {
+  min-width: 0;
+  display: flex;
+  gap: 4px;
+  overflow: hidden;
+}
+.vo-alias {
+  flex: none;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 7px;
+  border-radius: 6px;
+  background: var(--bg-hover);
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.vo-dash {
+  color: var(--text-faint);
+  font-size: 12px;
+}
+.vo-row-text {
+  min-width: 0;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.vo-row-text.faint {
+  color: var(--text-faint);
+}
+.vo-table-empty {
+  padding: 28px 16px;
+  color: var(--text-faint);
+  font-size: 12.5px;
+  text-align: center;
+}
+
+/* ── 右栏 ── */
+
+.vo-ihead-name {
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: text;
+}
+.vo-ihead-name:hover {
+  text-decoration: underline dotted var(--text-faint);
+  text-underline-offset: 4px;
+}
+.vo-ihead-name:focus-visible {
+  outline: 1.5px solid var(--text-dim);
+  outline-offset: 2px;
+}
+.vo-field {
+  margin-bottom: 14px;
+}
+.vo-refcard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 11px;
+  background: var(--bg-raised);
+}
+.vo-refwave {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.vo-refwave:disabled {
+  cursor: default;
+}
+.vo-refwave:focus-visible {
+  outline: 1.5px solid var(--text-dim);
+  outline-offset: 2px;
+}
+.vo-refwave .vo-wave {
+  flex: 1;
+  min-width: 0;
+}
+.st-input.vo-path {
+  height: 30px;
+  background: var(--bg-panel);
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+.vo-refnote {
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.vo-refnote.error {
+  color: var(--danger);
+  font-family: var(--sans);
+  white-space: normal;
+}
+.vo-aux-count {
+  color: var(--text-faint);
+}
+.vo-aux {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.vo-aux-item {
+  height: 28px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px 0 10px;
+  border-radius: 7px;
+  background: var(--bg-hover);
+}
+.vo-aux-name {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-body);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.vo-foot-note {
+  min-width: 0;
+  color: var(--text-faint);
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── 卡编辑器「声音」栏:没有声音时、「＋」弹出来的声音列表 ── */
+
+.vo-empty {
+  gap: 14px;
+}
+.vo-empty-title {
+  color: var(--text-dim);
+  font-size: 13.5px;
+}
+.vo-help {
+  margin: 0 0 12px;
+  color: var(--text-dim);
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+.vo-pick-note {
+  margin: 0 0 12px;
+  color: var(--text-dim);
+  font-size: 12.5px;
+}
+.vo-pick-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.vo-pick {
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px 6px 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-raised);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.vo-pick:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+.vo-pick:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.vo-pick:focus-visible {
+  outline: 1.5px solid var(--text-dim);
+  outline-offset: 2px;
+}
+.vo-pick-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.35;
+}
+.vo-pick-name {
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.vo-pick-sub {
+  color: var(--text-faint);
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.vo-pick-empty {
+  padding: 18px 0 6px;
+  color: var(--text-faint);
+  font-size: 12.5px;
+}
+
+/* ══════════ 窄屏 ══════════ */
+
+/* 表窄的时候别名那一列让给参考文本(别名在右栏看得到) */
+@container (max-width: 600px) {
+  .vo-row-main {
+    grid-template-columns: 64px minmax(0, 1fr);
+  }
+  .vo-row-alias {
+    display: none;
+  }
+}
+
+@media (max-width: 520px) {
+  .vo-bench {
+    padding: 12px;
+  }
+  .vo-bench-head .vo-note {
+    display: none;
+  }
+  .vo-bench-text {
+    font-size: 15px;
+  }
+  .st-select.vo-emo {
+    flex: 1;
+    max-width: none;
+  }
+  .vo-table-head .vo-note {
+    flex-basis: 100%;
+    order: 1;
+    white-space: normal;
+  }
+}

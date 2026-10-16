@@ -7,7 +7,7 @@ OpenCV 的级联分类器跑一张图几十毫秒。只在上传立绘时跑一�
 OpenCV 5 把级联分类器挪出了主包,所以依赖钉在 4.x。
 """
 
-from functools import lru_cache
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -18,9 +18,18 @@ CASCADE = Path(__file__).parent / "assets" / "lbpcascade_animeface.xml"
 # 大图缩到这个边长再找:脸在立绘里占一成以上,缩小不影响结果,速度快好几倍
 MAX_SIDE = 1024
 
+_local = threading.local()
 
-@lru_cache(maxsize=1)
+
 def _detector():
+    """这个线程的分类器。级联分类器不能几个线程同时用(上传接口在线程池里找脸,导入时一包立绘一起找;
+    共用一个会报 scaleIdx 的断言错),「不用 OpenCL」的开关 OpenCV 也是按线程记的:所以每个线程各建一个、各关一次"""
+    if not hasattr(_local, "detector"):
+        _local.detector = _new_detector()
+    return _local.detector
+
+
+def _new_detector():
     try:
         import cv2
     except ImportError:

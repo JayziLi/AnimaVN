@@ -19,9 +19,10 @@
 import type { PresetOrderEntry, TavernPreset } from '../lib/presetParser';
 import { extractTags, parseReply, type ParsedReply, type TagKind, type VNLine } from '../vn/script';
 import { insertPluginBlock, pluginBlockState, type BlockState } from './common';
+import { PLUGIN } from './registry';
 
-export const LANG_SETTING_KEY = 'plugin.lang';
-export const LANG_BLOCK_ID = 'anima_lang';
+export const LANG_SETTING_KEY = PLUGIN.lang.settingKey;
+export const LANG_BLOCK_ID = PLUGIN.lang.blockId;
 
 export const DEFAULT_LANG_BLOCK_PROMPT = `[双语输出]
 这是日语配音、中文字幕的视觉小说。整条回复（旁白和台词）都要日中对照着写：
@@ -62,11 +63,14 @@ export interface LangPluginConfig {
   blockPrompt: string;
   /** 视觉小说里在中文上方显示日语 */
   showJa: boolean;
+  /** 预设里完全没有外语块时,组装这次自动补上(core/assembly.ts)。按卡设,默认关(设计稿 2.7、3.9) */
+  autoFill: boolean;
 }
 
 export const DEFAULT_LANG_CONFIG: LangPluginConfig = {
   blockPrompt: DEFAULT_LANG_BLOCK_PROMPT,
   showJa: true,
+  autoFill: false,
 };
 
 /** 后端存的是任意 JSON —— 缺字段或类型不对的就退回默认值 */
@@ -76,6 +80,7 @@ export function normalizeLangConfig(raw: unknown): LangPluginConfig {
   return {
     blockPrompt: typeof r.blockPrompt === 'string' ? r.blockPrompt : d.blockPrompt,
     showJa: typeof r.showJa === 'boolean' ? r.showJa : d.showJa,
+    autoFill: typeof r.autoFill === 'boolean' ? r.autoFill : d.autoFill,
   };
 }
 
@@ -84,11 +89,14 @@ export const langBlockState = (
   order: readonly PresetOrderEntry[],
 ): BlockState => pluginBlockState(preset, order, LANG_BLOCK_ID);
 
+/** 外语块在预设里的名字 */
+export const LANG_BLOCK_NAME = '外语指令 · 插件';
+
 /** 把外语块加进预设(插在哪见 insertPluginBlock) */
 export const insertLangBlock = (preset: TavernPreset, groupIndex: number, content: string) =>
   insertPluginBlock(preset, groupIndex, {
     identifier: LANG_BLOCK_ID,
-    name: '外语指令 · 插件',
+    name: LANG_BLOCK_NAME,
     content,
   });
 

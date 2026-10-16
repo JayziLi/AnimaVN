@@ -24,6 +24,9 @@ from threading import Lock
 
 import numpy as np
 
+# 前端会要的宽度(lib/api.ts):立绘 电脑 1280 / 触屏 1024;背景、CG 电脑 1920 / 触屏 1280。前后端共用,值在 app/contracts.py
+from app.contracts import SCENE_WIDTHS, SPRITE_WIDTHS
+
 try:
     import cv2
 except ImportError:  # 没装 OpenCV:一律发原图
@@ -33,10 +36,6 @@ except ImportError:  # 没装 OpenCV:一律发原图
 MIN_WIDTH = 16
 MAX_WIDTH = 2048
 WEBP_QUALITY = 85
-
-# 前端会要的宽度(lib/api.ts):立绘 电脑 1280 / 触屏 1024;背景、CG 电脑 1920 / 触屏 1280
-SPRITE_WIDTHS = (1280, 1024)
-SCENE_WIDTHS = (1920, 1280)
 
 # 转好的图存在硬盘上,文件名 = 原图内容的哈希 + 宽度;转不小的记一个空的 .none
 DISK_DIR = Path(__file__).resolve().parent.parent / "data" / "image-cache"
@@ -119,29 +118,31 @@ def prewarm(session_factory) -> None:
 
     def run() -> None:
         from sqlalchemy import select
-        from sqlalchemy.orm import undefer
 
         from app.models import PackSprite, SceneAsset
+        from app.storage import refs
 
         done = 0
         try:
             with session_factory() as db:
                 ids = db.scalars(select(PackSprite.id).where(PackSprite.mime.is_not(None))).all()
                 for sid in ids:
-                    row = db.scalar(select(PackSprite).options(undefer(PackSprite.image)).where(PackSprite.id == sid))
-                    if row is not None and row.image:
-                        for w in SPRITE_WIDTHS:
-                            shrink_image(row.image, w)
+                    row = db.get(PackSprite, sid)
+                    data = refs.read_bytes(refs.SPRITE, row) if row is not None else None
+                    if data:
+                        for w in SPRITE_WIDTHS.values():
+                            shrink_image(data, w)
                         done += 1
                     db.expunge_all()
                 ids = db.scalars(
                     select(SceneAsset.id).where(SceneAsset.kind.in_(("bg", "cg")), SceneAsset.mime.is_not(None))
                 ).all()
                 for aid in ids:
-                    row = db.scalar(select(SceneAsset).options(undefer(SceneAsset.data)).where(SceneAsset.id == aid))
-                    if row is not None and row.data:
-                        for w in SCENE_WIDTHS:
-                            shrink_image(row.data, w)
+                    row = db.get(SceneAsset, aid)
+                    data = refs.read_bytes(refs.SCENE_ASSET, row) if row is not None else None
+                    if data:
+                        for w in SCENE_WIDTHS.values():
+                            shrink_image(data, w)
                         done += 1
                     db.expunge_all()
             log.info("图片预转完成:%d 张", done)

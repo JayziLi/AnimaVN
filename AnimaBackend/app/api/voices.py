@@ -8,14 +8,18 @@
 """
 
 import re
+from collections.abc import Callable
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from app.api.sprites import clean_aliases, clean_label, current_sprites
+from app import bindings
+from app.api.sprites import current_sprites
+from app.assets.common import clean_aliases, clean_label
+from app.contracts import REF_NAME_PATTERN
 from app.db import get_db
-from app.models import CardVoice, TavernCard, TtsConnection, VoiceEmotion, VoiceProfile
+from app.models import TavernCard, TtsConnection, VoiceEmotion, VoiceProfile
 from app.schemas import (
     CardVoicesIn,
     CardVoicesOut,
@@ -36,8 +40,8 @@ router = APIRouter(tags=["voices"])
 PROFILES = "/api/voices"
 CARD_VOICES = "/api/tavern/cards/{card_id}/voices"
 
-# 语音服务那台机器上参考音频的命名:【情绪】原文.wav
-_REF_NAME = re.compile(r"^【([^】]+)】(.+)\.[A-Za-z0-9]+$")
+# 语音服务那台机器上参考音频的命名:【情绪】原文.wav(格式前后端共用,在 app/contracts.py)
+_REF_NAME = re.compile(REF_NAME_PATTERN)
 
 
 def clean_path(raw: str) -> str:
@@ -111,6 +115,14 @@ def _find_profile(name: str, db: Session, exclude_id: str | None = None) -> Voic
     return None
 
 
+def _free_name(name: str, db: Session) -> str:
+    """「名字 2」「名字 3」……里第一个没人用的"""
+    n = 2
+    while _find_profile(f"{name} {n}", db):
+        n += 1
+    return f"{name} {n}"
+
+
 def _check_emotion_names(
     profile_id: str, names: list[str], db: Session, exclude_id: str | None = None
 ) -> None:
@@ -142,10 +154,6 @@ def _emotion_out(e: VoiceEmotion) -> VoiceEmotionOut:
 
 
 def _profile_out(p: VoiceProfile, db: Session) -> VoiceProfileOut:
-    cards = (
-        db.scalar(select(func.count()).select_from(CardVoice).where(CardVoice.profile_id == p.id))
-        or 0
-    )
     return VoiceProfileOut(
         id=p.id,
         name=p.name,
@@ -158,7 +166,7 @@ def _profile_out(p: VoiceProfile, db: Session) -> VoiceProfileOut:
         speed=p.speed,
         params=dict(p.params or {}),
         emotions=[_emotion_out(e) for e in list_emotions(p.id, db)],
-        card_count=cards,
+        card_count=bindings.count_cards(db, bindings.VOICE, p.id),
     )
 
 
@@ -167,7 +175,9 @@ def _profile_out(p: VoiceProfile, db: Session) -> VoiceProfileOut:
 
 @router.post(PROFILES + "/import", response_model=VoiceProfileOut)
 def import_refs(req: VoiceImportIn, db: Session = Depends(get_db)):
-    """导入一份 refs.json。同名的声音更新权重路径和同名情绪,新情绪加在最后,不会重复添加。"""
+    """导入一份 refs.json:更新权重路径和同名情绪,新情绪加在最后,不会重复添加。
+    清单带着 id(这里的声音编号)就合到那个声音里;没带、又已经有同名的声音时不再悄悄覆盖,
+    回 409 问一句,按 on_conflict 更新那个或者另建一个(P21)。"""
     conn = db.get(TtsConnection, req.connection_id)
     if conn is None:
         raise HTTPException(400, "语音服务不存在")
@@ -213,7 +223,15 @@ def import_refs(req: VoiceImportIn, db: Session = Depends(get_db)):
             aux = clean_aux_refs([str(a) for a in items if a], path)
         rows.append((clean_label(label, "情绪名"), path, text, "emo_vector" in r, vector, aux))
 
-    profile = _find_profile(name, db)
+    raw_id = data.get("id")
+    profile = db.get(VoiceProfile, raw_id) if isinstance(raw_id, str) and raw_id else None
+    if profile is None and (same := _find_profile(name, db)) is not None:
+        if req.on_conflict is None:
+            raise HTTPException(409, f"已经有叫「{name}」的声音了:更新它,还是另建一个?")
+        if req.on_conflict == "update":
+            profile = same
+        else:
+            name = _free_name(name, db)
     if profile is None:
         profile = VoiceProfile(name=name, aliases=[], connection_id=req.connection_id)
         db.add(profile)
@@ -309,12 +327,24 @@ def update_profile(profile_id: str, req: VoiceProfileUpdate, db: Session = Depen
     return _profile_out(profile, db)
 
 
+# 删声音时卡带要一起删的东西(卡带自己的表里挂在这个声音上的行);卡带加载时登记
+_profile_cleanups: list[Callable[[str, Session], None]] = []
+
+
+def register_profile_cleanup(fn: Callable[[str, Session], None]) -> None:
+    """卡带加载时调;同一个函数登记几次也只跑一次"""
+    if fn not in _profile_cleanups:
+        _profile_cleanups.append(fn)
+
+
 @router.delete(PROFILES + "/{profile_id}", status_code=204)
 def delete_profile(profile_id: str, db: Session = Depends(get_db)):
     profile = _load_profile(profile_id, db)
-    # SQLite 默认不开外键约束,不会自动级联,手动删情绪行和卡的绑定
+    # SQLite 默认不开外键约束,不会自动级联,手动删情绪行和卡的绑定(卡带的由它们登记的清理函数删)
     db.execute(delete(VoiceEmotion).where(VoiceEmotion.profile_id == profile_id))
-    db.execute(delete(CardVoice).where(CardVoice.profile_id == profile_id))
+    bindings.remove_target(db, bindings.VOICE, profile_id)
+    for cleanup in _profile_cleanups:
+        cleanup(profile_id, db)
     db.delete(profile)
     db.commit()
 
@@ -441,11 +471,11 @@ def emotions_from_sprites(profile_id: str, req: VoiceFromSpritesIn, db: Session 
 
 
 def _card_voices(card_id: str, db: Session) -> CardVoicesOut:
-    rows = db.scalars(select(CardVoice).where(CardVoice.card_id == card_id)).all()
+    rows = bindings.bound(db, card_id, bindings.VOICE)
     return CardVoicesOut(
         card_id=card_id,
-        main=next((r.profile_id for r in rows if r.is_main), None),
-        extras=[r.profile_id for r in rows if not r.is_main],
+        main=next((pid for pid, main in rows if main), None),
+        extras=[pid for pid, main in rows if not main],
     )
 
 
@@ -467,19 +497,7 @@ def set_card_voices(card_id: str, req: CardVoicesIn, db: Session = Depends(get_d
     ids = ([req.main] if req.main else []) + extras
     for pid in ids:
         _load_profile(pid, db)
-    db.execute(delete(CardVoice).where(CardVoice.card_id == card_id))
-    for pid in ids:
-        db.add(CardVoice(card_id=card_id, profile_id=pid, is_main=pid == req.main))
+    bindings.replace(db, card_id, bindings.VOICE, ids, req.main)
     db.commit()
     return _card_voices(card_id, db)
 
-
-def delete_card_voices(card_id: str, db: Session) -> None:
-    """删卡时由 tavern.delete_card 调用。声音本身是共用的,不跟着删。"""
-    db.execute(delete(CardVoice).where(CardVoice.card_id == card_id))
-
-
-def copy_card_voices(src_id: str, dst_id: str, db: Session) -> None:
-    """复制卡时用同样的声音(声音是共用的,不复制声音本身)。"""
-    for r in db.scalars(select(CardVoice).where(CardVoice.card_id == src_id)).all():
-        db.add(CardVoice(card_id=dst_id, profile_id=r.profile_id, is_main=r.is_main))

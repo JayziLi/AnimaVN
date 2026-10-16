@@ -1,20 +1,14 @@
-"""One-off dev migration: api_connections.thinking (how hard the model thinks).
+"""(留一期)这一步现在由迁移器做:core.2026_09_connection_thinking —— 连接:思考深浅。
 
-NULL means "send nothing, use the service default" — exactly what every
-existing connection did before, so old profiles behave the same.
-Safe to run twice.
+后端启动时会自动检查(设置 MIGRATIONS_MODE=apply 时自动升级),一般不用手动跑。手动跑:在 AnimaBackend 目录下
+python scripts/migrate_connection_thinking_column.py,改的是 data/animabackend.db,只做这一步(连同它依赖的步骤),可以重复跑。
 """
 
-import sqlite3
+import sys
+from pathlib import Path
 
-db = sqlite3.connect("data/animabackend.db")
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-cols = {r[1] for r in db.execute("PRAGMA table_info(api_connections)")}
-if not cols:
-    print("api_connections missing, skipped (create_all will build it)")
-elif "thinking" in cols:
-    print("api_connections.thinking already present")
-else:
-    db.execute("ALTER TABLE api_connections ADD COLUMN thinking VARCHAR(16)")
-    print("added api_connections.thinking")
-db.commit()
+from app.migrations.legacy_script import run_step  # noqa: E402
+
+run_step("core.2026_09_connection_thinking")

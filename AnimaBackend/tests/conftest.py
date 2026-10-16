@@ -22,6 +22,35 @@ from app.main import app
 
 
 @pytest.fixture(autouse=True)
+def migrations_off(monkeypatch):
+    """测试里关掉迁移器:test_startup.py 会真的进 lifespan,不关的话 report 模式会去只读打开
+    settings 里那个真库。前后都把迁移结果清掉,免得一个测试留下的「升级失败」让守卫挡住后面的测试"""
+    from app.config import settings
+    from app.migrations import state
+
+    monkeypatch.setattr(settings, "migrations_mode", "off")
+    state.set_report(None)
+    yield
+    state.set_report(None)
+
+
+@pytest.fixture
+def old_db(tmp_path):
+    """一个还没升级过的老库文件 <tmp>/data/animabackend.db:连接表缺了后来加的几列"""
+    import sqlite3
+
+    data = tmp_path / "data"
+    data.mkdir()
+    path = data / "animabackend.db"
+    db = sqlite3.connect(path)
+    db.execute("CREATE TABLE api_connections (id TEXT PRIMARY KEY, name TEXT NOT NULL)")
+    db.execute("INSERT INTO api_connections (id, name) VALUES ('a1', '旧连接')")
+    db.commit()
+    db.close()
+    return path
+
+
+@pytest.fixture(autouse=True)
 def emotion_model_missing(tmp_path_factory, monkeypatch):
     """情绪识别模型默认当作没装:测试结果不能取决于本机有没有下载模型。
     要测匹配的测试自己换一个假 matcher(或者把目录指回真模型)"""
@@ -44,6 +73,19 @@ def image_cache_isolated(tmp_path_factory, monkeypatch):
     images.clear_cache()
     yield
     images.clear_cache()
+
+
+@pytest.fixture(autouse=True)
+def blob_store_isolated(tmp_path_factory, monkeypatch):
+    """文件仓库(app/storage)换成临时目录:测试不往真实的 data/blobs/ 里写"""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "blob_dir", str(tmp_path_factory.mktemp("blobs")))
+    monkeypatch.setattr(settings, "storage_files", True)
+    # 语音缓存的单独文件(app/tts/cache_file.py)也放临时目录:测试启动流程时不在真实的 data/ 旁边建 tts-cache.db
+    monkeypatch.setattr(settings, "tts_cache_path", str(tmp_path_factory.mktemp("tts") / "tts-cache.db"))
+    # 导入的暂存目录(app/importer/staging.py)同理
+    monkeypatch.setattr(settings, "import_staging_dir", str(tmp_path_factory.mktemp("import-staging")))
 
 
 @pytest.fixture

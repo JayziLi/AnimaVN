@@ -1,13 +1,14 @@
 /**
- * 插件抽屉的「语音」页:插件设置、这张卡用哪些声音、试音台(VoiceBench:试听、调参数)、
- * 语音服务、声音(权重 + 情绪表)、缓存。视觉小说菜单的插件页里也是这一份。
+ * 插件抽屉的「语音」页:插件设置、这张卡用哪些声音、配对表(PairingGroup:每张立绘念哪段语气)、
+ * 试音台(VoiceBench:试听、调参数)、语音服务、声音(权重 + 情绪表)、缓存。视觉小说菜单的插件页里也是这一份。
  *
  * 路径都是语音服务那台机器上的(GPT-SoVITS api_v2 只认服务端本地路径)。那边每个角色
- * 目录里有一份 refs.json,整份贴进来就能导入一个角色。环境见 docs/voice-server.md。
+ * 目录里有一份 refs.json,整份贴进来就能导入一个角色。接法见 docs/plugins/voice.md。
  */
 
 import { useCallback, useEffect, useState } from 'react';
 import {
+  ApiError,
   debugApi,
   type PackSprite,
   type TtsApiType,
@@ -32,10 +33,12 @@ import {
   parseRefFileName,
   sampleIn,
   sampleLangOf,
+  switchMainVoice,
 } from '../plugins/voice';
-import { bgmPlayer } from '../vn/bgm';
+import { audioBus } from '../vn/audioBus';
 import { voicePlayer } from '../vn/voice';
 import { EmotionVectorEditor } from './EmotionVectorEditor';
+import { VoicePairingGroup } from './PairingGroup';
 import { CommitField, DeleteButton } from './pluginFields';
 import { errText, formatSize, useRunner, type Notify, type Runner } from './pluginRunner';
 import { VoiceBench } from './VoiceBench';
@@ -64,10 +67,14 @@ interface Props {
   voice: VoicePluginState;
   card: CardRef;
   sprites: PackSprite[];
+  /** 当前立绘包的名字(配对表的表头);没挂包是 null */
+  packName: string | null;
+  /** 全部角色卡:配对表写「被哪些卡用」 */
+  cards: readonly { id: string; name: string }[];
   notify: Notify;
 }
 
-export function VoicePanel({ voice, card, sprites, notify }: Props) {
+export function VoicePanel({ voice, card, sprites, packName, cards, notify }: Props) {
   const { refresh } = voice;
   // 别的设备也可能改过,进语音页时刷新一次
   useEffect(() => {
@@ -80,6 +87,7 @@ export function VoicePanel({ voice, card, sprites, notify }: Props) {
     <>
       <SettingsGroup voice={voice} />
       <CardGroup voice={voice} card={card} sprites={sprites} />
+      <VoicePairingGroup voice={voice} card={card} sprites={sprites} packName={packName} cards={cards} />
       <VoiceBench voice={voice} card={card} sample={sample} onSample={setSample} notify={notify} />
       <ConnectionsGroup voice={voice} notify={notify} />
       <ProfilesGroup voice={voice} card={card} notify={notify} sample={sample} />
@@ -225,7 +233,7 @@ function ConnectionsGroup({ voice, notify }: { voice: VoicePluginState; notify: 
       <div className="sp-group-head">
         <span className="sp-group-title">语音服务</span>
         <span className="sp-group-note">
-          跑语音合成的机器:GPT-SoVITS api_v2(默认 9880),或者台式机上的 IndexTTS 小服务(默认 9890)。开发时经 SSH 隧道,地址就是 http://127.0.0.1:端口。
+          跑语音合成的机器:GPT-SoVITS api_v2(默认 9880),或者 IndexTTS 小服务(默认 9890)。在这台电脑上就填 http://127.0.0.1:端口;在别的电脑上填它的 Tailscale / 局域网地址,或者用 SSH 隧道转到本机。
         </span>
       </div>
       <div className="pl-row">
@@ -311,6 +319,8 @@ function ProfilesGroup({
   /** null = 导入框收着 */
   const [importText, setImportText] = useState<string | null>(null);
   const [importConn, setImportConn] = useState('');
+  /** 导入时撞上同名的声音:后端的提问,等你选更新它还是另建一个 */
+  const [conflict, setConflict] = useState<string | null>(null);
   const connId = importConn || voice.connections[0]?.id || '';
 
   const add = () =>
@@ -321,7 +331,7 @@ function ProfilesGroup({
       setOpen(p.id);
     });
 
-  const doImport = () =>
+  const doImport = (onConflict?: 'update' | 'new') =>
     run('导入中', async () => {
       if (!connId) throw new Error('先在上面添加一个语音服务');
       let refs: unknown;
@@ -330,7 +340,18 @@ function ProfilesGroup({
       } catch {
         throw new Error('不是合法的 JSON —— 把 refs.json 的全部内容贴进来');
       }
-      const p = await debugApi.importVoice(connId, refs);
+      let p: VoiceProfile;
+      try {
+        p = await debugApi.importVoice(connId, refs, onConflict);
+      } catch (e) {
+        // 有同名的声音、清单又没带编号:不悄悄覆盖,问你更新它还是另建一个
+        if (e instanceof ApiError && e.status === 409) {
+          setConflict(e.message);
+          return;
+        }
+        throw e;
+      }
+      setConflict(null);
       setImportText(null);
       setOpen(p.id);
       notify('ok', `已导入「${p.name}」,${p.emotions.length} 种情绪`);
@@ -369,7 +390,10 @@ function ProfilesGroup({
             spellCheck={false}
             placeholder="把语音服务那台机器上 refs\<角色>\refs.json 的全部内容贴进来"
             value={importText}
-            onChange={(e) => setImportText(e.target.value)}
+            onChange={(e) => {
+              setImportText(e.target.value);
+              setConflict(null);
+            }}
           />
           <div className="pl-row">
             {voice.connections.length > 1 && (
@@ -381,14 +405,30 @@ function ProfilesGroup({
                 ))}
               </select>
             )}
-            <button
-              className="btn small accent"
-              disabled={!!busy || !importText.trim()}
-              onClick={() => void doImport()}
-            >
-              导入
-            </button>
-            <span className="sp-group-note">同名的声音会更新权重路径和同名情绪,不会重复添加</span>
+            {conflict === null ? (
+              <>
+                <button
+                  className="btn small accent"
+                  disabled={!!busy || !importText.trim()}
+                  onClick={() => void doImport()}
+                >
+                  导入
+                </button>
+                <span className="sp-group-note">
+                  已经有同名的声音时会先问你:更新它(权重路径和同名情绪),还是另建一个
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="sp-group-note">{conflict}</span>
+                <button className="btn small accent" disabled={!!busy} onClick={() => void doImport('update')}>
+                  更新它
+                </button>
+                <button className="btn small" disabled={!!busy} onClick={() => void doImport('new')}>
+                  另建一个
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -661,7 +701,7 @@ function EmotionTable({
 
   const listen = async (e: VoiceEmotion) => {
     // 在点击里解锁:合成要几秒,等回来就不算用户手势了
-    bgmPlayer.unlock();
+    audioBus.unlock();
     setPreview((s) => ({ ...s, [e.id]: '合成中…' }));
     try {
       const r = await debugApi.speak({
@@ -833,12 +873,7 @@ function CardGroup({
         <select
           className="text-input"
           value={binding.main ?? ''}
-          onChange={(e) =>
-            void bind({
-              main: e.target.value || null,
-              extras: binding.extras.filter((x) => x !== e.target.value),
-            })
-          }
+          onChange={(e) => void bind(switchMainVoice(binding, e.target.value || null))}
         >
           <option value="">不念</option>
           {profiles.map((p) => (

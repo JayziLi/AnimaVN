@@ -4,10 +4,10 @@
 接口不查库。判断逻辑在 app/annotate/judge.py,设计见 docs/superpowers/specs/2026-10-01-jev-director-design.md
 """
 
-from typing import Annotated, Literal
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response
-from pydantic import BaseModel, BeforeValidator, Field, StringConstraints, model_validator
+from pydantic import AfterValidator, BaseModel, BeforeValidator, Field, StringConstraints, model_validator
 from sqlalchemy.orm import Session
 
 from app.annotate import client as jev
@@ -24,11 +24,12 @@ from app.annotate.judge import (
     build_request,
     decide,
 )
+from app.contracts import LABEL_MAX, SPEAKER_THRESHOLD, SWITCH_THRESHOLD
 from app.db import get_db
 
 router = APIRouter(prefix="/api/annotate", tags=["annotate"])
 
-Label = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
+Label = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=LABEL_MAX)]
 
 
 def _clip(n: int):
@@ -67,17 +68,26 @@ class SceneIn(BaseModel):
     place: Clipped(400) = ""
 
 
+def _threshold(t: dict[str, float]):
+    """门槛的默认值和可调范围:前后端共用,在 app/contracts.py"""
+    return Field(t["default"], ge=t["min"], le=t["max"])
+
+
 class ThresholdsIn(BaseModel):
-    speaker: float = Field(0.8, ge=0.5, le=0.95)
-    bg: float = Field(0.6, ge=0.3, le=0.95)
-    bgm: float = Field(0.6, ge=0.3, le=0.95)
-    cg: float = Field(0.6, ge=0.3, le=0.95)
+    speaker: float = _threshold(SPEAKER_THRESHOLD)
+    bg: float = _threshold(SWITCH_THRESHOLD)
+    bgm: float = _threshold(SWITCH_THRESHOLD)
+    cg: float = _threshold(SWITCH_THRESHOLD)
 
 
-PromptKey = Literal[
-    "state", "speaker", "speaker_char", "speaker_user", "speaker_other", "speaker_none",
-    "emotion", "bg", "bg_keep", "bgm", "bgm_keep", "cg", "cg_keep", "cg_off",
-]
+def _known_prompt(key: str) -> str:
+    """问法的键要是 DEFAULT_PROMPTS 里有的(内核的,加上卡带登记的)"""
+    if key not in DEFAULT_PROMPTS:
+        raise ValueError(f"没有这个问法:{key}")
+    return key
+
+
+PromptKey = Annotated[str, AfterValidator(_known_prompt)]
 
 
 class AnnotateRequest(BaseModel):
@@ -100,6 +110,8 @@ class AnnotateRequest(BaseModel):
     scene: SceneIn = Field(default_factory=SceneIn)
     # 立绘或玩家台词是 Jev 时问「谁说的」
     ask_speaker: bool = True
+    # 角色的台词多问一道「这句的档」(卡带登记了才问,见 judge.register_tone)
+    ask_tone: bool = False
     thresholds: ThresholdsIn = Field(default_factory=ThresholdsIn)
     # 插件页里改过的问法;没改的不传,用默认
     prompts: dict[PromptKey, Annotated[str, StringConstraints(max_length=PROMPT_MAX)]] = Field(
@@ -121,6 +133,7 @@ class LineDecisionOut(BaseModel):
     bgm: str | None
     cg: str | None = None
     cg_off: bool = False
+    tone: str | None = None
     confidence: dict[str, float]
 
 
@@ -168,6 +181,7 @@ async def annotate_lines(req: AnnotateRequest, db: Session = Depends(get_db)):
             req.scene.place,
         ),
         ask_speaker=req.ask_speaker,
+        ask_tone=req.ask_tone,
         thresholds=Thresholds(
             req.thresholds.speaker, req.thresholds.bg, req.thresholds.bgm, req.thresholds.cg
         ),

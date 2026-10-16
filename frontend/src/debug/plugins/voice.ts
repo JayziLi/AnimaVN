@@ -7,7 +7,14 @@
  * 规则见 docs/superpowers/specs/2026-09-24-vn-voice-design.md。
  */
 
+import {
+  EMO_DIM_MAX,
+  EMO_DIMS as EMO_DIM_NAMES,
+  EMO_SUM_MAX,
+  REF_NAME_PATTERN,
+} from '../generated/contracts';
 import type {
+  CardVoices,
   EmoMode,
   SpeakRequest,
   TextSplitMethod,
@@ -17,10 +24,13 @@ import type {
   VoiceProfile,
 } from '../lib/api';
 import type { TagHit, VNLine } from '../vn/script';
-import { isNpcHit, type EmotionContext } from './emotionMatch';
+import { isNpcHit, isRecognized, type EmotionContext } from './emotionMatch';
 import { isJaLang, speechText } from './lang';
+import type { VoiceVersion } from './cartridges';
+import { PLUGIN } from './registry';
+import { voiceVersion } from './voiceExtensions';
 
-export const VOICE_SETTING_KEY = 'plugin.voice';
+export const VOICE_SETTING_KEY = PLUGIN.voice.settingKey;
 
 export interface VoicePluginConfig {
   /** 总开关 */
@@ -77,6 +87,17 @@ export function castOf(
 }
 
 /**
+ * 换主声音:旧的主声音降成备用声音(排到其他声音最后),不再直接解绑 —— 同一个人换一种语言或版本时,
+ * 换回来不用再找(P21)。选「不念」就只是不念,旧的也不留
+ */
+export function switchMainVoice(binding: CardVoices, next: string | null): CardVoices {
+  const extras = binding.extras.filter((x) => x !== next);
+  const old = binding.main;
+  if (next && old && old !== next && !extras.includes(old)) extras.push(old);
+  return { main: next, extras };
+}
+
+/**
  * 说话人 → 声音。旁白(null)不念;说话人就是这张卡的角色名(切句没认出「名字：」时
  * 用的就是它)→ 主声音;否则按名字 / 别名找,不分大小写,找不到不念
  */
@@ -110,7 +131,7 @@ export const hasSpeakable = (text: string) => /[\p{L}\p{N}]/u.test(text);
 
 /**
  * 和立绘层同一套算法:从 start 开始,一串立绘标签依次生效之后是哪个表情名。
- * 匹配到的(精确或模型)就切;还在问、模型不可用的保持上一个 —— 这张卡没立绘时,
+ * 匹配到的(精确、认词记录或模型)就切;还在问、模型不可用的保持上一个 —— 这张卡没立绘时,
  * 模型不可用就用标签里的原词。NPC 台词前的标签不算
  */
 export function spriteLabelAfter(
@@ -122,7 +143,7 @@ export function spriteLabelAfter(
   for (const h of hits) {
     if (h.kind !== 'sprite' || isNpcHit(h, ctx.charName)) continue;
     const m = ctx.resolve(h.label);
-    if (m.state === 'exact' || m.state === 'model') label = m.label;
+    if (isRecognized(m)) label = m.label;
     else if (m.state === 'failed' && ctx.rawOnFail) label = h.label;
   }
   return label;
@@ -148,7 +169,32 @@ export function planVoiceLines(o: {
   fixedEmotion: boolean;
   /** Jev 还在判的第一句:从它起先不念,判完知道是谁说的、什么表情再念 */
   jevPendingFrom?: number;
+  /** 形态切换(BETA):第 i 句生效的表情 → 实际显示的表情(不属于这句的形态时换成那个形态的默认表情) */
+  mapEmotion?: (label: string | null, lineIndex: number) => string | null;
+  /** 拆句拼接开着(卡带的 useSplice,plugins/voiceExtensions.ts):请求带 sfx,后端有登记拼接的卡带时拼着念 */
+  sfx?: boolean;
+  /** 第 i 句 Jev 判的档(请求里问了 ask_tone 才有);没判的是 null。语音按它换版本(version) */
+  tone?: (lineIndex: number) => string | null;
+  /** 挑好语气以后换成某个版本(卡带的 versionOf);不传用装着的卡带的(plugins/voiceExtensions.ts),null = 不换 */
+  version?: VoiceVersion | null;
+  /**
+   * 表情认法 = 认词记录时按配对表挑的那一行(主声音这句显示的表情 → 一行语气的 id,plugins/pairings.ts 的 voiceRowFromPairs);
+   * undefined 交给后端按名字挑。旧算法时不传,请求和以前一模一样(不带 emotion_id)
+   */
+  pickRow?: (emotion: string | null) => string | undefined;
+  /**
+   * 表情认法还没读到、或者选了认词记录但配对表还没读到:主声音带表情的台词先不念(和表情还在认时一样),
+   * 读到以后按表念 —— 免得同一句先按名字请求一遍、读到表以后又按行号请求一遍
+   */
+  waitRows?: boolean;
+  /**
+   * 检查器里手改了表情的句子(plugins/manualMarks.ts 的 manualEmotions):第 i 句玩家选的表情名,没改的是 undefined。
+   * 有的话这句的表情就是它:不等模型、不做形态换算(玩家明说的),再照常查配对表、换版本
+   */
+  manual?: (lineIndex: number) => string | undefined;
 }): (SpeakRequest | null)[] {
+  const sfx = o.sfx ? { sfx: true } : {};
+  const version = o.version === undefined ? voiceVersion() : o.version;
   return o.lines.map((ln, i) => {
     if (o.streaming && i === o.lines.length - 1) return null;
     if (o.jevPendingFrom !== undefined && i >= o.jevPendingFrom) return null;
@@ -161,10 +207,20 @@ export function planVoiceLines(o: {
     if (said === null) return null;
     const text = cleanSpeech(said);
     if (!hasSpeakable(text)) return null;
-    if (o.fixedEmotion || profile.id !== o.cast.main?.id) return { profile_id: profile.id, emotion: null, text };
-    const upTo = spriteHitsUpTo(o.hits, i, o.ctx.charName);
-    if (upTo.some((h) => o.ctx.resolve(h.label).state === 'pending')) return null;
-    return { profile_id: profile.id, emotion: spriteLabelAfter(upTo, o.ctx, o.emotionBefore), text };
+    if (o.fixedEmotion || profile.id !== o.cast.main?.id) return { profile_id: profile.id, emotion: null, text, ...sfx };
+    if (o.waitRows) return null;
+    let emotion: string | null | undefined = o.manual?.(i);
+    if (emotion === undefined) {
+      const upTo = spriteHitsUpTo(o.hits, i, o.ctx.charName);
+      if (upTo.some((h) => o.ctx.resolve(h.label).state === 'pending')) return null;
+      const label = spriteLabelAfter(upTo, o.ctx, o.emotionBefore);
+      emotion = o.mapEmotion ? o.mapEmotion(label, i) : label;
+    }
+    const tone = o.tone?.(i) ?? null;
+    // 配对表挑好的那一行一起发(emotion 照旧填名字,老后端、语音详情还看它);查不到的不带
+    const row = o.pickRow?.(emotion);
+    const paired = row === undefined ? {} : { emotion_id: version ? version.row(row, tone, profile) : row };
+    return { profile_id: profile.id, emotion: version ? version.name(emotion, tone, profile) : emotion, ...paired, text, ...sfx };
   });
 }
 
@@ -195,13 +251,17 @@ export function voiceSkipReason(
   return '没有可念的字';
 }
 
-/** 同样的声音 + 情绪 + 文字就是同一段语音(后端也按这些缓存) */
-export const voiceKey = (r: SpeakRequest) => `${r.profile_id}\u0000${r.emotion ?? ''}\u0000${r.text}`;
+/**
+ * 同样的声音 + 情绪 + 配对表挑的那一行(没有是空的)+ 文字就是同一段语音(后端按挑中的那一行和文字缓存)。
+ * 只是这次打开页面时内存里的键,不存
+ */
+export const voiceKey = (r: SpeakRequest) =>
+  `${r.profile_id}\u0000${r.emotion ?? ''}\u0000${r.emotion_id ?? ''}\u0000${r.text}${r.sfx ? '\u0000sfx' : ''}`;
 
-/** 参考音频按「【情绪】原文.wav」命名时,取出情绪名和原文 */
+/** 参考音频按「【情绪】原文.wav」命名时,取出情绪名和原文(格式前后端共用:REF_NAME_PATTERN) */
 export function parseRefFileName(path: string): { label: string; text: string } | null {
   const name = path.trim().replace(/^"|"$/g, '').split(/[\\/]/).pop() ?? '';
-  const m = /^【([^】]+)】(.+)\.[A-Za-z0-9]+$/.exec(name);
+  const m = new RegExp(REF_NAME_PATTERN).exec(name);
   return m ? { label: m[1].trim(), text: m[2].trim() } : null;
 }
 
@@ -216,19 +276,23 @@ export function missingEmotions(labels: readonly string[], profile: VoiceProfile
 
 // ---- IndexTTS 的情绪向量 ----
 
-/** 8 维的顺序是 IndexTTS 官方定的;short 用在编辑器的小标签上 */
-export const EMO_DIMS = [
-  { short: '喜', name: '高兴' },
-  { short: '怒', name: '愤怒' },
-  { short: '哀', name: '悲伤' },
-  { short: '惧', name: '害怕' },
-  { short: '厌', name: '厌恶' },
-  { short: '郁', name: '忧郁' },
-  { short: '惊', name: '惊讶' },
-  { short: '平', name: '平静' },
-] as const;
-export const EMO_DIM_MAX = 1.2;
-export const EMO_SUM_MAX = 1.5;
+/** 编辑器小标签上的单字;每一维都得有(contracts 里加了维度这里不补,类型检查就过不去) */
+const EMO_DIM_SHORT: Record<(typeof EMO_DIM_NAMES)[number], string> = {
+  高兴: '喜',
+  愤怒: '怒',
+  悲伤: '哀',
+  害怕: '惧',
+  厌恶: '厌',
+  忧郁: '郁',
+  惊讶: '惊',
+  平静: '平',
+};
+/** 8 维的顺序是 IndexTTS 官方定的(维度和上限前后端共用,定义在 AnimaBackend/app/contracts.py);short 用在编辑器的小标签上 */
+export const EMO_DIMS: readonly { short: string; name: string }[] = EMO_DIM_NAMES.map((name) => ({
+  short: EMO_DIM_SHORT[name],
+  name,
+}));
+export { EMO_DIM_MAX, EMO_SUM_MAX };
 
 /** 和后端 clean_emo_vector 同一套规则;没问题返回 null */
 export function emoVectorProblem(v: readonly number[]): string | null {
@@ -444,8 +508,11 @@ export const VOICE_SAMPLES: Record<SampleLang, { name: string; text: string }[]>
 
 export const DEFAULT_VOICE_SAMPLE = VOICE_SAMPLES.zh[0].text;
 
-/** 声音念的语言 → 用哪套例句:日语用日文的,其他(中文、自动……)用中文的 */
-export const sampleLangOf = (textLang: string): SampleLang => (textLang === 'ja' ? 'ja' : 'zh');
+/**
+ * 声音念的语言 → 用哪套例句:日语(ja / all_ja,和念台词时同一个判断 isJaLang)用日文的,
+ * 其他(中文、自动……)用中文的
+ */
+export const sampleLangOf = (textLang: string): SampleLang => (isJaLang(textLang) ? 'ja' : 'zh');
 
 /**
  * 文本是内置例句的话,换成同一句的另一种语言;自己写的句子原样返回。

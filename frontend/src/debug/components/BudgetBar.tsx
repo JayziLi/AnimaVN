@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { BudgetReport } from '../lib/assembler';
-import { RANGE_STEPS, stepRange } from '../lib/budget';
+import { MIN_BUDGET, RANGE_STEPS, parseBudgetInput, stepRange } from '../lib/budget';
 import { formatTokens } from '../lib/tokens';
 
 interface Props {
@@ -12,9 +12,6 @@ interface Props {
   range: number;
   onRange: (r: number) => void;
 }
-
-const MIN_BUDGET = 256;
-const MAX_BUDGET = 2_000_000;
 
 /** 占满刻度的百分比,超过量程就钉在 100 —— 轨道不撑破 */
 const pct = (n: number, range: number) => Math.min(100, (n / range) * 100);
@@ -31,17 +28,10 @@ export function BudgetBar({ report, value, onChange, range, onRange }: Props) {
 
   const commit = () => {
     focused.current = false;
-    const t = text.trim();
-    if (t === '' || t === '0') {
-      onChange(null); // 逃生门:关掉截断
-      return;
-    }
-    const n = Number(t.replace(/[,_\s]/g, ''));
-    if (Number.isFinite(n) && n >= MIN_BUDGET) {
-      onChange(Math.min(MAX_BUDGET, Math.floor(n)));
-    } else {
-      setText(value === null ? '' : String(value)); // 非法输入弹回原值
-    }
+    // 空或 0 = 逃生门:关掉截断
+    const next = parseBudgetInput(text);
+    if (next !== undefined) onChange(next);
+    else setText(value === null ? '' : String(value)); // 非法输入弹回原值
   };
 
   const sum = report.fixedTokens + report.historyTokens;

@@ -20,7 +20,7 @@ def test_reports_columns_an_existing_table_lacks_but_not_missing_tables():
     assert missing_columns(engine, _metadata()) == [("pack_sprites", "effect")]
 
 
-def test_warning_names_the_migration_script(caplog):
+def test_warning_says_how_to_fix_it(caplog):
     engine = create_engine("sqlite://")
     with engine.begin() as conn:
         conn.execute(text("CREATE TABLE pack_sprites (id INTEGER PRIMARY KEY)"))
@@ -29,7 +29,7 @@ def test_warning_names_the_migration_script(caplog):
         warn_missing_columns(engine, _metadata())
 
     assert "pack_sprites.effect" in caplog.text
-    assert "migrate_sprite_effect_column.py" in caplog.text
+    assert "python -m app.migrations apply" in caplog.text
 
 
 def test_up_to_date_schema_is_quiet(caplog):

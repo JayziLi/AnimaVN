@@ -8,6 +8,53 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 
+class ServerState:
+    """一台语音服务(按地址)自己的状态:同一时刻只合成一句的锁、现在加载着哪组权重、热没热。
+    几个连接指向同一台服务时共用这一份(素材架构设计 5.10 P21):不然各记各的「已加载」,会把别人刚换上的权重当成自己的"""
+
+    def __init__(self) -> None:
+        import asyncio
+
+        self.lock = asyncio.Lock()
+        self.loaded_gpt: str | None = None
+        self.loaded_sovits: str | None = None
+        self.warm = False
+
+
+class SharedServer:
+    """引擎类混入:lock / loaded_* / warm 读写的都是 state 里那份(引擎代码照旧写 self.lock 这些)"""
+
+    state: ServerState
+
+    @property
+    def lock(self):
+        return self.state.lock
+
+    @property
+    def loaded_gpt(self) -> str | None:
+        return self.state.loaded_gpt
+
+    @loaded_gpt.setter
+    def loaded_gpt(self, value: str | None) -> None:
+        self.state.loaded_gpt = value
+
+    @property
+    def loaded_sovits(self) -> str | None:
+        return self.state.loaded_sovits
+
+    @loaded_sovits.setter
+    def loaded_sovits(self, value: str | None) -> None:
+        self.state.loaded_sovits = value
+
+    @property
+    def warm(self) -> bool:
+        return self.state.warm
+
+    @warm.setter
+    def warm(self, value: bool) -> None:
+        self.state.warm = value
+
+
 class TTSError(Exception):
     """合成失败。status 是回给前端的 HTTP 状态码,message 原样显示给人看。"""
 

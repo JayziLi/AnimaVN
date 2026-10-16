@@ -36,9 +36,10 @@ import {
   type TagMode,
 } from './common';
 import { BUILTIN_EMOTIONS } from './emotions';
+import { PLUGIN } from './registry';
 
-export const SPRITE_BLOCK_ID = 'anima_sprite';
-export const SPRITE_SETTING_KEY = 'plugin.sprite';
+export const SPRITE_BLOCK_ID = PLUGIN.sprite.blockId;
+export const SPRITE_SETTING_KEY = PLUGIN.sprite.settingKey;
 /** 标签模板里代表表情名的占位符 */
 export const PLACEHOLDER = '{表情}';
 
@@ -140,10 +141,13 @@ export function spriteMacros(
 export const spriteBlockState = (preset: TavernPreset | null, order: readonly PresetOrderEntry[]) =>
   pluginBlockState(preset, order, SPRITE_BLOCK_ID);
 
+/** 立绘块在预设里的名字 */
+export const SPRITE_BLOCK_NAME = '立绘指令 · 插件';
+
 /** 把立绘块加进预设(插在哪见 insertPluginBlock) */
 export const insertSpriteBlock = (preset: TavernPreset, groupIndex: number, content: string) =>
   insertPluginBlock(preset, groupIndex, {
     identifier: SPRITE_BLOCK_ID,
-    name: '立绘指令 · 插件',
+    name: SPRITE_BLOCK_NAME,
     content,
   });

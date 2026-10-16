@@ -431,6 +431,11 @@
   .vn-row-hint {
     padding-left: 10px;
   }
+  /* 插图卡带的小按钮跟在发送右边,和输入同一行:输入让出按钮那 44px(不能更小,不然会挤到快捷按钮那一行去) */
+  .vn-row.has-illus .vn-input,
+  .vn-row.has-illus .vn-row-hint {
+    flex: 1 1 calc(100% - 44px);
+  }
   .vn-row .vn-input textarea {
     height: 40px !important;
     max-height: 40px;

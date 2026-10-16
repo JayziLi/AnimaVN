@@ -24,6 +24,7 @@ export type AnimaIconName =
   | 'panel-right'
   | 'vn'
   | 'plugin'
+  | 'library'
 
 type AnimaIconProps = Omit<SVGProps<SVGSVGElement>, 'children'> & {
   name: AnimaIconName

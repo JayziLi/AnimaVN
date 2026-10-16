@@ -1,0 +1,180 @@
+/* ══════════ 资料页 · 预设 · 右栏的块编辑(BlockEditorSide) ══════════
+   照 V4CardPreset.png 的右栏:上面块名 + 角色徽章 + token,中间字段竖排、可滚,
+   底下块编号 + 删除块。字段本身还是弹窗那套 .bm-* 类,这里只在 .bes 里改排法。 */
+
+.bes {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-panel);
+}
+
+.bes-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 18px 12px;
+}
+.bes-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+}
+/* 角色徽章:灰底小牌子、不描边,和中间块列表(presetView.css 的 .pp-list)一个样子 */
+.bes-head .block-badge {
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 7px;
+  border-color: transparent;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-dim);
+  font-size: 11px;
+  opacity: 1;
+}
+.bes-spacer {
+  flex: 1;
+}
+.bes-tok {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.bes-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 18px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.bes-note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.bes-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+}
+/* 块编号多半是 uuid,截一截,悬停看全的 */
+.bes-id {
+  min-width: 0;
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+/* 没选块 */
+.bes-empty {
+  justify-content: center;
+  gap: 8px;
+  padding: 24px 22px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--text-faint);
+}
+.bes-empty p {
+  margin: 0;
+}
+
+/* —— 字段竖排:一个字段占一行 —— */
+.bes .bm-props {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 12px;
+}
+.bes .bm-name {
+  flex: none;
+}
+.bes .bm-label {
+  font-size: 12px;
+  letter-spacing: 0;
+}
+.bes .bm-field .text-input:not(.bm-num) {
+  height: 36px;
+  padding: 0 11px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+/* 分段按钮(角色 / 位置 / 原文·预览):一条底板,选中的那格亮起来 */
+.bes .bm-roles,
+.bes-seg {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-raised);
+}
+/* 位置那一行:分段按钮独占一整行,深度 / 顺序折到下一行 */
+.bes .bm-depth-row .bm-roles {
+  flex: 1 0 100%;
+}
+.bes .bm-roles .bm-role,
+.bes-seg button {
+  height: 28px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 12px;
+}
+.bes .bm-roles .bm-role {
+  flex: 1;
+}
+.bes .bm-roles .bm-role:hover,
+.bes-seg button:hover {
+  color: var(--text);
+}
+.bes .bm-roles .bm-role.on,
+.bes-seg button.on {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+/* —— 原文 / 预览:页签切换,编辑框吃掉剩下的高度 —— */
+.bes-content {
+  flex: 1;
+  min-height: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.bes-seg {
+  align-self: flex-start;
+}
+.bes-seg button {
+  height: 26px;
+}
+.bes-content .bm-pane {
+  flex: 1;
+}
+/* 选择器多带一层 .bm-pane:要压过 debug.css 里同样两层的 .bm-pane .ct-input(两边加载顺序不保证) */
+.bes-content .bm-pane .ct-input,
+.bes-content .bm-pane .bm-textarea,
+.bes-content .bm-pane .bm-preview {
+  min-height: 260px;
+}

@@ -3,9 +3,11 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.config import settings
 
+# SQLite:后台复制、语音缓存、请求可能同时写,别人正写着时等一会儿(最多 30 秒)再报「库被锁」。
+# 瘦身以后库是 WAL 模式(app/storage/slim.py),读写互不挡
 engine = create_engine(
     settings.database_url,
-    connect_args={"check_same_thread": False} if settings.database_url.startswith("sqlite") else {},
+    connect_args={"check_same_thread": False, "timeout": 30} if settings.database_url.startswith("sqlite") else {},
 )
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 

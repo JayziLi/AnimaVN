@@ -30,6 +30,7 @@ def start_app(monkeypatch) -> Iterator[Callable[[], TestClient]]:
     monkeypatch.setattr(main_module.settings, "openai_base_url", None)
     # 自带角色有立绘,预转 WebP 的后台线程会在测试拆掉内存库之后还在读它
     monkeypatch.setattr(main_module, "prewarm", lambda session_factory: None)
+    monkeypatch.setattr(main_module, "start_blob_copy", lambda session_factory: None)
     main_module.app.dependency_overrides.clear()
 
     yield lambda: TestClient(main_module.app)
@@ -88,6 +89,18 @@ def test_bundled_card_comes_with_its_sprite_pack(start_app):
     # 默认预设带着世界书和立绘指令,自带角色开箱就能换表情
     enabled = [o["identifier"] for o in preset["prompt_order"][0]["order"] if o["enabled"]]
     assert {"worldInfoBefore", "worldInfoAfter", "anima_sprite"} <= set(enabled)
+
+
+def test_bundled_sprites_go_only_into_the_file_store(start_app):
+    """自带角色的立绘和上传的一样,只进文件仓库,库里的原件列留空"""
+    from sqlalchemy import text
+
+    with start_app() as client:
+        client.get("/api/health")
+    with db_module.SessionLocal() as s:
+        rows = s.execute(text("SELECT image IS NULL, image_sha FROM pack_sprites")).all()
+    assert len(rows) == 16
+    assert all(empty and sha for empty, sha in rows)
 
 
 def test_restarting_app_is_idempotent_and_preserves_user_edits(start_app):

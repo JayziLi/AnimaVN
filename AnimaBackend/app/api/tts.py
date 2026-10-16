@@ -6,7 +6,8 @@
 import dataclasses
 import re
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from typing import Protocol
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Response
@@ -14,11 +15,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.voices import list_emotions
+from app.contracts import LABEL_MAX
 from app.db import get_db
-from app.emotion.matcher import Candidate
+from app.emotion.matcher import Candidate, Match
 from app.emotion.service import EmotionUnavailable, get_matcher
 from app.models import TtsConnection, VoiceEmotion, VoiceProfile
 from app.schemas import (
+    SpliceSegmentOut,
     TtsCacheOut,
     TtsConnectionIn,
     TtsConnectionOut,
@@ -165,7 +168,8 @@ class EmotionPick:
     """情绪表里挑中的那一行,以及怎么挑中的(/explain 给人排查语音用)"""
 
     row: VoiceEmotion | None
-    # exact 名字对上 / alias 别名对上 / nearest 模型挑的最像的 / default 没传或对不上,用排第一的
+    # exact 名字对上 / alias 别名对上 / nearest 模型挑的最像的 / default 没传或对不上,用排第一的 /
+    # pairing 配对表挑好的那一行(表情认法 = 认词记录时前端带来的行号)
     how: str
     # alias:对上的别名;nearest:模型认为最像的那个名字(可能是别名)
     via: str | None = None
@@ -196,32 +200,57 @@ def pick_emotion(
     return EmotionPick(emotions[0], "default")
 
 
-# 和 /api/emotion/match 的限制一致
-_MAX_WORD = 40
+# 和 /api/emotion/match 的限制一致(名字的长度上限,app/contracts.py)
+_MAX_WORD = LABEL_MAX
 
 
-def nearest_emotion(wanted: str, emotions: list[VoiceEmotion]) -> EmotionPick | None:
-    """情绪识别模型挑最像的一行(名字和别名都算);模型没装或出错返回 None,由调用方用默认"""
-    if not wanted or len(wanted) > _MAX_WORD:
-        return None
-    candidates = []
+def voice_candidates(emotions: Sequence[VoiceEmotion]) -> list[Candidate]:
+    """给认词模型比的候选:每行语气的名字和别名(去首尾空白,去掉空的和超过 40 字的)。
+    填配对表(app/replay/seed.py)也用它,两边挑出来的一样"""
+    out = []
     for e in emotions:
         names = tuple(n.strip() for n in (e.label, *(e.aliases or [])) if 0 < len(n.strip()) <= _MAX_WORD)
         if names:
-            candidates.append(Candidate(e.id, names))
+            out.append(Candidate(e.id, names))
+    return out
+
+
+def nearest_with(
+    match: Callable[[list[str], list[Candidate]], list[Match]], wanted: str, emotions: Sequence[VoiceEmotion]
+) -> EmotionPick | None:
+    """用 match(认词模型的一种算法)挑最像的一行;wanted 不合法、没有候选时是 None"""
+    if not wanted or len(wanted) > _MAX_WORD:
+        return None
+    candidates = voice_candidates(emotions)
     if not candidates:
+        return None
+    m = match([wanted], candidates)[0]
+    row = next((e for e in emotions if e.id == m.key), None)
+    return EmotionPick(row, "nearest", via=m.name, score=m.score) if row else None
+
+
+def nearest_emotion(wanted: str, emotions: list[VoiceEmotion]) -> EmotionPick | None:
+    """情绪识别模型挑最像的一行(名字和别名都算);模型没装或出错返回 None,由调用方用默认。
+    用固定算法(每个词单独算),结果不随后端先算过什么变"""
+    if not wanted or len(wanted) > _MAX_WORD or not voice_candidates(emotions):
         return None
     try:
         matcher = get_matcher()
     except EmotionUnavailable:
         return None
-    m = matcher.match([wanted], candidates)[0]
-    row = next((e for e in emotions if e.id == m.key), None)
-    return EmotionPick(row, "nearest", via=m.name, score=m.score) if row else None
+    return nearest_with(matcher.match_singles, wanted, emotions)
 
 
 def _gsv_spec(profile: VoiceProfile, row: VoiceEmotion | None) -> tuple[VoiceSpec, str, str]:
-    """GSV 的情绪就是参考音频:这一行必须有参考和原文。"""
+    """GSV 的情绪就是参考音频:这一行必须有参考和原文。
+    两个权重都得填:留空时语音服务沿用上一次加载的模型,念出来是上一个角色的声音,
+    还会按「没填权重」进缓存,以后换了模型也命中这份错的(P21)。零样本就填底模的路径"""
+    if not (profile.gpt_weights and profile.sovits_weights):
+        raise HTTPException(
+            400,
+            f"声音「{profile.name}」没填 GPT / SoVITS 权重:留空会沿用语音服务上一次加载的模型,"
+            "念出来是别的角色的声音。想用零样本就填底模的路径(GPT_SoVITS/pretrained_models 里的)",
+        )
     if row is None:
         raise HTTPException(400, f"声音「{profile.name}」还没有参考音频")
     if not row.ref_path:
@@ -272,9 +301,15 @@ class VoiceChoice:
 
 
 def _voice_for(
-    profile_id: str, emotion: str | None, db: Session, tuning: VoiceTuning | None = None
+    profile_id: str,
+    emotion: str | None,
+    db: Session,
+    tuning: VoiceTuning | None = None,
+    emotion_id: str | None = None,
 ) -> VoiceChoice:
     """声音 + 想要的情绪 → 这句怎么念。
+    emotion_id(配对表挑好的那一行)是这个声音自己的一行就直接用;不是、找不到,照旧按名字挑
+    (老客户端、配对表没覆盖到的立绘)。
     tuning(试音台)整组替换声音存着的语速、语言和参数,只用于这一次"""
     profile = db.get(VoiceProfile, profile_id)
     if profile is None:
@@ -282,7 +317,9 @@ def _voice_for(
     conn = db.get(TtsConnection, profile.connection_id)
     if conn is None:
         raise HTTPException(400, f"声音「{profile.name}」没有选语音服务")
-    pick = pick_emotion(list_emotions(profile.id, db), emotion, nearest_emotion)
+    emotions = list_emotions(profile.id, db)
+    paired = next((e for e in emotions if e.id == emotion_id), None)
+    pick = EmotionPick(paired, "pairing") if paired else pick_emotion(emotions, emotion, nearest_emotion)
     build = _indextts_spec if conn.api_type == "indextts" else _gsv_spec
     spec, label, mode = build(profile, pick.row)
     if tuning is not None:
@@ -315,11 +352,66 @@ def _speakable(raw: str) -> str:
     return text
 
 
+class SplicePlan(Protocol):
+    """拼着念的那一版(卡带登记的拼接器给的):一句拆成几段,有的交给模型念、有的换成素材里的片段"""
+
+    @property
+    def label(self) -> str:
+        """用的素材的名字(/explain 的 sfx_pack)"""
+        ...
+
+    def material(self, base: dict) -> dict:
+        """缓存键的材料:把不拼时的那份包一层,拼的和不拼的各存各的"""
+        ...
+
+    async def synthesize(self, spec: VoiceSpec, engine: TTSEngine, db: Session) -> tuple[bytes, str]: ...
+
+    def describe(self) -> list[dict]:
+        """拆成的几段(/explain 的 sfx,字段见 SpliceSegmentOut)"""
+        ...
+
+
+# 卡带登记的拼接器:这句、这个声音拼不拼,拼的话怎么拼;不拼返回 None。没有卡带登记时请求里的 sfx 当没传
+Splicer = Callable[[str, "VoiceChoice", Session], SplicePlan | None]
+_splicer: Splicer | None = None
+
+
+def register_splicer(splicer: Splicer | None) -> None:
+    """卡带加载时调;可以重复调"""
+    global _splicer
+    _splicer = splicer
+
+
+def _splice_plan(wanted: bool, text: str, v: VoiceChoice, db: Session) -> SplicePlan | None:
+    """请求要了拼接、有卡带登记了拼接器、它也说这句拼,才拼"""
+    if not wanted or _splicer is None:
+        return None
+    return _splicer(text, v, db)
+
+
+def _material(text: str, v: VoiceChoice, engine: TTSEngine, plan: SplicePlan | None) -> dict:
+    """缓存键的材料:不拼时是引擎自己的那份,拼时由拼接的那一版包一层"""
+    base = engine.cache_material(text, v.spec)
+    return plan.material(base) if plan is not None else base
+
+
 @router.post("/speak")
 async def speak(req: TtsSpeakIn, db: Session = Depends(get_db)):
     text = _speakable(req.text)
-    v = _voice_for(req.profile_id, req.emotion, db, req.tuning)
+    v = _voice_for(req.profile_id, req.emotion, db, req.tuning, req.emotion_id)
     engine = _engine(v.conn)
+    plan = _splice_plan(req.sfx, text, v, db)
+    if plan is not None:
+        key = tts_cache.cache_key(_material(text, v, engine, plan))
+        hit = None if req.fresh else tts_cache.cache_get(db, key)
+        if hit is not None:
+            return _audio(*hit, cache="hit", emotion=v.label, mode=v.mode)
+        try:
+            data, mime = await plan.synthesize(v.spec, engine, db)
+        except TTSError as e:
+            raise HTTPException(e.status, e.message) from e
+        tts_cache.cache_put(db, key, data, mime)
+        return _audio(data, mime, cache="miss", emotion=v.label, mode=v.mode)
     key = tts_cache.cache_key(engine.cache_material(text, v.spec))
     # 每次合成的随机种子不同,重新生成就是换一种念法
     hit = None if req.fresh else tts_cache.cache_get(db, key)
@@ -338,8 +430,10 @@ def explain(req: TtsExplainIn, db: Session = Depends(get_db)):
     """这句会怎么念:和 /speak 同一套挑法,但不合成、不碰语音服务。
     挑中哪一行情绪、怎么挑中的、发给语音服务的原样请求、缓存里有没有 —— 视觉小说「历史」排查语音用"""
     text = _speakable(req.text)
-    v = _voice_for(req.profile_id, req.emotion, db)
+    v = _voice_for(req.profile_id, req.emotion, db, emotion_id=req.emotion_id)
     engine = _engine(v.conn)
+    plan = _splice_plan(req.sfx, text, v, db)
+    material = _material(text, v, engine, plan)
     return TtsExplainOut(
         profile_name=v.profile.name,
         connection_name=v.conn.name,
@@ -353,7 +447,9 @@ def explain(req: TtsExplainIn, db: Session = Depends(get_db)):
         gpt_weights=v.spec.gpt_weights,
         sovits_weights=v.spec.sovits_weights,
         request=engine.request_body(text, v.spec),
-        cached=tts_cache.cache_has(db, tts_cache.cache_key(engine.cache_material(text, v.spec))),
+        cached=tts_cache.cache_has(db, tts_cache.cache_key(material)),
+        sfx=[SpliceSegmentOut(**d) for d in plan.describe()] if plan else None,
+        sfx_pack=plan.label if plan else None,
     )
 
 

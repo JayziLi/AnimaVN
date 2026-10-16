@@ -1,16 +1,14 @@
-"""One-off dev migration: add cached_models/cached_models_at to api_connections."""
+"""(留一期)这一步现在由迁移器做:core.2026_07_connection_cache —— 连接:记住模型列表。
 
-import sqlite3
+后端启动时会自动检查(设置 MIGRATIONS_MODE=apply 时自动升级),一般不用手动跑。手动跑:在 AnimaBackend 目录下
+python scripts/migrate_connection_cache_columns.py,改的是 data/animabackend.db,只做这一步(连同它依赖的步骤),可以重复跑。
+"""
 
-db = sqlite3.connect("data/animabackend.db")
-cols = {r[1] for r in db.execute("PRAGMA table_info(api_connections)")}
-for name, ddl in [
-    ("cached_models", "ALTER TABLE api_connections ADD COLUMN cached_models TEXT NOT NULL DEFAULT '[]'"),
-    ("cached_models_at", "ALTER TABLE api_connections ADD COLUMN cached_models_at DATETIME"),
-]:
-    if name not in cols:
-        db.execute(ddl)
-        print("added", name)
+import sys
+from pathlib import Path
 
-db.commit()
-print([r[1] for r in db.execute("PRAGMA table_info(api_connections)")])
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from app.migrations.legacy_script import run_step  # noqa: E402
+
+run_step("core.2026_07_connection_cache")

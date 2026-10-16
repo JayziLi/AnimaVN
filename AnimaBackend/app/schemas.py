@@ -156,6 +156,8 @@ class TavernCardOut(TavernCardBase):
     # avatar itself is fetched from /avatar so listing many cards stays cheap
     has_avatar: bool
     last_chat_id: str | None = None
+    # 是哪张主卡的状态卡(素材架构 3.5);主卡和普通的卡是 null。选角页、卡列表先不单独列状态卡
+    state_of: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -289,6 +291,12 @@ class SpritePackOut(BaseModel):
     card_count: int
 
 
+class PackDuplicateIn(BaseModel):
+    """复制立绘包 / 场景包 / CG 包(素材管理页「创建副本」):不给名字就叫「X 副本」(撞了加「 2」);给了名字照建包的规矩查"""
+
+    name: str | None = None
+
+
 class SpriteCreate(BaseModel):
     label: str
     aliases: list[str] = []
@@ -325,6 +333,8 @@ class SpriteOut(BaseModel):
     # 图的版本号(毫秒时间戳),前端拼进图片 URL 当缓存键 —— 换图后 URL 变了,
     # 浏览器就不会继续用缓存里的旧图
     image_version: int
+    # 图在文件仓库里的指纹(第 3 期);有它时前端用 /api/blobs/<指纹> 取图,还没复制进去是 null
+    image_sha: str | None = None
     sort: int
     # 禁用的立绘游戏里不用,但留在表里
     enabled: bool
@@ -402,6 +412,8 @@ class ScenePackOut(BaseModel):
     card_count: int
     # 标题画面放的那首;null = 放排第一的
     title_bgm_id: str | None = None
+    # 这个包里的 CG 拆成了哪个 CG 包(第 4 期);null = 没拆过,包里的 CG 照旧跟着场景包走
+    cg_pack_id: str | None = None
 
 
 # cg:CG 插件的事件插图。一张 CG(构图)下面可以挂几张差分(parent_id 指向它),
@@ -427,6 +439,8 @@ class SceneAssetUpdate(BaseModel):
     focus_x: int | None = Field(default=None, ge=0, le=100)
     bgm_id: str | None = None
     enabled: bool | None = None
+    # 仅 CG 构图:在哪些状态里出;[] = 不限
+    forms: list[str] | None = None
 
 
 class SceneAssetOut(BaseModel):
@@ -441,6 +455,8 @@ class SceneAssetOut(BaseModel):
     size: int
     # 文件版本号(毫秒时间戳),拼进 URL 当缓存键,和立绘的 image_version 一样
     file_version: int
+    # 同 SpriteOut.image_sha
+    data_sha: str | None = None
     focus_x: int
     bgm_id: str | None
     sort: int
@@ -448,6 +464,10 @@ class SceneAssetOut(BaseModel):
     enabled: bool
     # CG 差分:它属于哪张 CG;其余素材是 null
     parent_id: str | None = None
+    # CG 构图:在哪些状态里出(状态名);[] = 不限。其余素材都是 []
+    forms: list[str] = []
+    # 从哪来:scene 场景包 / cg CG 包(第 4 期;前端按它拼文件地址)
+    source: Literal["scene", "cg"] = "scene"
 
 
 class SceneAssetReorder(BaseModel):
@@ -459,6 +479,78 @@ class SceneAssetReorder(BaseModel):
 
 class CardScenePackIn(BaseModel):
     pack_id: str | None
+
+
+class CardScenePartsIn(BaseModel):
+    """这张卡的场景包分两栏绑:bg 出背景、bgm 出曲子,各按顺序;一个包可以两边都在。两样都要传"""
+
+    bg: list[str]
+    bgm: list[str]
+
+
+class CardScenePartsOut(BaseModel):
+    card_id: str
+    bg: list[str]
+    bgm: list[str]
+
+
+# ── CG 包(素材架构设计 3.4,第 4 期)。包里的 CG 用和场景素材同一个形状(SceneAssetOut,kind = cg,source = cg) ──
+
+
+class CgPackIn(BaseModel):
+    name: str
+    description: str = ""
+
+
+class CgPackUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+
+
+class CgPackOut(BaseModel):
+    id: str
+    name: str
+    description: str
+    # 构图的张数(不算差分)
+    cg_count: int
+    card_count: int
+    # 从哪个场景包拆出来的(迁移时拆的才有)
+    source_scene_pack_id: str | None = None
+    # 生图里点「收藏」建出来的包(AI 生成的 CG);false = 导入的现成 CG
+    generated: bool = False
+
+
+class CgAssetCreate(BaseModel):
+    label: str
+    aliases: list[str] = []
+    description: str = ""
+    # 差分带:它属于哪张构图
+    parent_id: str | None = None
+
+
+class CgAssetUpdate(BaseModel):
+    label: str | None = None
+    aliases: list[str] | None = None
+    description: str | None = None
+    focus_x: int | None = Field(default=None, ge=0, le=100)
+    enabled: bool | None = None
+    # 仅构图:旧形态卡带用的「在哪些形态出」
+    forms: list[str] | None = None
+
+
+class CgAssetReorder(BaseModel):
+    """一个 CG 包里全部构图的 id,按新顺序排(差分不在里面)"""
+
+    ids: list[str]
+
+
+class CardCgPacksIn(BaseModel):
+    pack_ids: list[str]
+
+
+class CardCgPacksOut(BaseModel):
+    card_id: str
+    pack_ids: list[str]
 
 
 class CardScenePackOut(BaseModel):
@@ -473,6 +565,17 @@ class AppSettingOut(BaseModel):
 
 class AppSettingIn(BaseModel):
     value: Any
+
+
+class CardPrefIn(BaseModel):
+    """按卡设置:只放这张卡改了的那几个字段,所以一定是个对象(不是整份插件配置)"""
+
+    value: dict[str, Any]
+
+
+class CardPrefOut(BaseModel):
+    key: str
+    value: dict[str, Any]
 
 
 # ── 语音插件 ──────────────────────────────────────────────
@@ -618,10 +721,13 @@ class VoiceReorder(BaseModel):
 
 
 class VoiceImportIn(BaseModel):
-    """语音服务那台机器上每个角色目录里的 refs.json,整份贴进来。格式见 docs/voice-server.md。"""
+    """语音服务那台机器上每个角色目录里的 refs.json,整份贴进来。格式见 docs/plugins/voice.md。"""
 
     connection_id: str
     refs: dict[str, Any]
+    # 清单没带这里的声音编号、又已经有同名的声音时怎么办:不填 = 回 409 让前端问;
+    # update = 更新那个;new = 另建一个(名字后面加数字)
+    on_conflict: Literal["update", "new"] | None = None
 
 
 class VoiceFromSpritesIn(BaseModel):
@@ -659,6 +765,10 @@ class TtsSpeakIn(BaseModel):
     # 重新生成:不看缓存,再合成一遍,新的这版替换缓存里的旧版
     fresh: bool = False
     tuning: VoiceTuning | None = None
+    # 拆句拼接开着:登记了拼接的卡带(register_splicer)、这个声音也用得上时拼着念;没有卡带时忽略
+    sfx: bool = False
+    # 表情认法 = 认词记录时,前端按配对表挑好的那一行;不是这个声音的行就当没传
+    emotion_id: str | None = None
 
 
 class TtsExplainIn(BaseModel):
@@ -667,6 +777,20 @@ class TtsExplainIn(BaseModel):
     profile_id: str
     emotion: str | None = None
     text: str = Field(min_length=1, max_length=500)
+    sfx: bool = False
+    # 表情认法 = 认词记录时,前端按配对表挑好的那一行;不是这个声音的行就当没传
+    emotion_id: str | None = None
+
+
+class SpliceSegmentOut(BaseModel):
+    """拼接时一句拆成的一段(登记了拼接的卡带给的,见 app/api/tts.py 的 register_splicer):
+    speech 交给模型念 / sfx 换成素材里的片段"""
+
+    kind: Literal["speech", "sfx"]
+    text: str
+    category: str | None = None
+    clip_id: str | None = None
+    clip_text: str | None = None
 
 
 class TtsExplainOut(BaseModel):
@@ -679,8 +803,9 @@ class TtsExplainOut(BaseModel):
     wanted: str | None
     # 实际用的情绪行;IndexTTS 没有情绪行时是空串
     emotion: str
-    # exact 名字对上 / alias 别名对上 / nearest 模型挑的最像的 / default 没传或对不上,用排第一的
-    how: Literal["exact", "alias", "nearest", "default"]
+    # exact 名字对上 / alias 别名对上 / nearest 模型挑的最像的 / default 没传或对不上,用排第一的 /
+    # pairing 配对表挑好的那一行
+    how: Literal["exact", "alias", "nearest", "default", "pairing"]
     # alias:对上的别名;nearest:模型认为最像的那个名字(可能是别名)
     via: str | None = None
     # nearest:相似度
@@ -694,6 +819,10 @@ class TtsExplainOut(BaseModel):
     request: dict[str, Any]
     # 缓存里已经有这句(合成过,重播直接出)
     cached: bool
+    # 拼接时的拆分(片段是这次 explain 现挑的,真正合成时会再挑一次);不拼时是 None
+    sfx: list[SpliceSegmentOut] | None = None
+    # 拼接用的素材的名字
+    sfx_pack: str | None = None
 
 
 class TtsWarmupIn(BaseModel):
@@ -706,3 +835,57 @@ class TtsCacheOut(BaseModel):
     count: int
     bytes: int
     limit_bytes: int
+
+
+# ── 素材管理页(素材架构第 1 步 B6,app/api/library.py) ──────────────────
+
+
+class LibraryItemOut(BaseModel):
+    """素材管理页列表里的一行:一个包(背景页 / BGM 页是场景包的那一边)或一个声音"""
+
+    id: str
+    name: str
+    # 立绘张数 / 背景张数 / 曲子首数 / CG 构图数(差分不算)/ 声音的情绪数
+    count: int
+    # 这一类文件占的地方:同一个文件只算一次(blobs 表的大小,没登记的用行里记的大小);声音是 0(参考在语音机上)
+    bytes: int
+    # 绑了它的卡:背景页只算出背景的绑定、BGM 页只算出曲子的;声音主的备用的都算。按卡的编号排
+    card_ids: list[str]
+    # 列表缩略图:排第一的、启用的、有文件的立绘 / 背景 / 构图的指纹(/api/blobs/<sha>?w=);没有、曲子、声音是 null
+    cover_sha: str | None
+    # 找重复用:这一类文件的指纹排好序的哈希,一样就是重复的包(声音按服务、权重、参考音频的路径算);没文件是 null
+    content_key: str | None
+    # 来自哪次导入(还没撤销的导入记录里最新的那条);手建的、声音是 null
+    import_job_id: str | None
+    created_at: datetime
+    # 包本身和这一类素材里最后改的那次
+    updated_at: datetime
+    # 只有 CG 有:生图里收藏建出来的(AI 生成的 CG)
+    generated: bool | None = None
+
+
+class LibraryCardUseOut(BaseModel):
+    id: str
+    name: str
+    # 删了这个包这张卡会怎样,一句话
+    effect: str
+    # 只有背景 / BGM 页有:这张卡用这个场景包的哪几边(bg / bgm)
+    parts: list[str] | None = None
+
+
+class LibraryFilesOut(BaseModel):
+    files: int
+    bytes: int
+
+
+class LibraryUsageOut(BaseModel):
+    """删之前问一句用的(设计稿 12.1 10-15:列出还有哪些卡在用、删了它们会怎样,然后直接删)"""
+
+    cards: list[LibraryCardUseOut]
+    # 删掉会一起删的文件(场景包是整个包:背景、曲子,还有没拆出去的 CG;声音是情绪的行数,参考音频在语音机上不删)
+    files: int
+    bytes: int
+    # 上面两个数按类分:{bg: {files, bytes}, bgm: {...}} 一类
+    by_kind: dict[str, LibraryFilesOut]
+    # 场景包另一边也有东西(在背景页删,曲子也一起删):bg / bgm / cg
+    other_kinds: list[str]

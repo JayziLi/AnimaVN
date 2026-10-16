@@ -46,6 +46,38 @@ describe('script-style lines without quotes', () => {
   });
 });
 
+// 句检查器靠它写「台词前没写名字,默认是她」
+describe('named: the speaker came from a 名字： prefix', () => {
+  const named = (raw: string) => parseReply(raw, opts).lines.map((l) => [l.speaker, l.named]);
+
+  it('set on quotes after a name (bold too) and on script lines; not on default quotes or narration', () => {
+    expect(named('**星绘**：「欢迎回来。」\n店员：「两位里面请。」\n「快进来。」\n她说：「好。」\n星绘：去热饭。')).toEqual([
+      ['星绘', true],
+      ['店员', true],
+      ['星绘', undefined],
+      [null, undefined],
+      ['星绘', undefined],
+      ['星绘', true],
+    ]);
+  });
+
+  it('every chunk of a long named line carries it', () => {
+    const long = `「${'今天也辛苦了。'.repeat(20)}」`;
+    const withName = named(`星绘：${long}`);
+    expect(withName.length).toBeGreaterThan(1);
+    expect(withName.every(([, n]) => n === true)).toBe(true);
+    const script = named(`星绘：${'今天也辛苦了。'.repeat(20)}`);
+    expect(script.length).toBeGreaterThan(1);
+    expect(script.every(([, n]) => n === true)).toBe(true);
+    expect(named(long).every(([, n]) => n === undefined)).toBe(true);
+  });
+
+  it('leaves the key out when not named (lines look exactly as before)', () => {
+    const [line] = parseReply('「你好。」', opts).lines;
+    expect('named' in line).toBe(false);
+  });
+});
+
 // 2026-10-06:真实回复里还没碰到过,但会出空台词 / 只有标点的一句
 describe('no empty or punctuation-only lines', () => {
   it('a bold name alone on its line gives no empty line', () => {

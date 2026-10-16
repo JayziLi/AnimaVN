@@ -31,6 +31,23 @@ export function paramsWithBudget<T extends Record<string, unknown>>(params: T, v
   return next as T;
 }
 
+/** 手填预算的上下限:太小连固定开销都放不下,太大没意义 */
+export const MIN_BUDGET = 256;
+export const MAX_BUDGET = 2_000_000;
+
+/**
+ * 预算输入框里的字 → 预算。空、0 = 不截断(null);千分位逗号、下划线、空格都认;
+ * 超上限夹到上限;不是数、或小于下限返回 undefined(输入框弹回原值)。
+ * 左栏的预算条和资料页右栏共用
+ */
+export function parseBudgetInput(text: string): number | null | undefined {
+  const t = text.trim();
+  if (t === '' || t === '0') return null;
+  const n = Number(t.replace(/[,_\s]/g, ''));
+  if (!Number.isFinite(n) || n < MIN_BUDGET) return undefined;
+  return Math.min(MAX_BUDGET, Math.floor(n));
+}
+
 /** 量程阶梯。挡距在小值处密、大值处疏,和常用上下文长度对齐 */
 export const RANGE_STEPS = [8192, 16384, 32768, 65536, 131072, 204800];
 

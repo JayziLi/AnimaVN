@@ -1,20 +1,14 @@
-"""One-off dev migration: scene_assets.parent_id (CG variants point at their CG).
+"""(留一期)这一步现在由迁移器做:core.2026_10_scene_parent —— CG:差分挂在构图下面。
 
-NULL for every existing row — backgrounds, music and CG set-ups have no parent.
-Safe to run twice.
+后端启动时会自动检查(设置 MIGRATIONS_MODE=apply 时自动升级),一般不用手动跑。手动跑:在 AnimaBackend 目录下
+python scripts/migrate_scene_asset_parent_column.py,改的是 data/animabackend.db,只做这一步(连同它依赖的步骤),可以重复跑。
 """
 
-import sqlite3
+import sys
+from pathlib import Path
 
-db = sqlite3.connect("data/animabackend.db")
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-cols = {r[1] for r in db.execute("PRAGMA table_info(scene_assets)")}
-if not cols:
-    print("scene_assets missing, skipped (create_all will build it)")
-elif "parent_id" in cols:
-    print("scene_assets.parent_id already present")
-else:
-    db.execute("ALTER TABLE scene_assets ADD COLUMN parent_id VARCHAR(32)")
-    db.execute("CREATE INDEX IF NOT EXISTS ix_scene_assets_parent_id ON scene_assets (parent_id)")
-    print("added scene_assets.parent_id")
-db.commit()
+from app.migrations.legacy_script import run_step  # noqa: E402
+
+run_step("core.2026_10_scene_parent")

@@ -117,3 +117,27 @@ def test_import_rebuilds_the_db_and_keeps_the_old_one(tmp_path: Path):
     backups = list((backend / "data").glob("animabackend.db.bak-*"))
     assert len(backups) == 1
     assert rows(backups[0], "api_connections") == [("c1", "deepseek", "sk-secret")]
+
+
+def test_files_in_the_store_travel_with_the_snapshot_after_slimming(tmp_path: Path):
+    """瘦身以后原件只在文件仓库里(库里那一列是空的,只剩指纹):导出带上文件,导入放回仓库"""
+    import hashlib
+
+    backend = make_backend(tmp_path)
+    db_path = backend / "data" / "animabackend.db"
+    sha = hashlib.sha256(PNG).hexdigest()
+    with opened(db_path) as db:
+        db.execute("CREATE TABLE pack_sprites (id TEXT PRIMARY KEY, image BLOB, mime TEXT, image_sha TEXT)")
+        db.execute("INSERT INTO pack_sprites VALUES ('a', NULL, 'image/png', ?)", (sha,))
+    store_file = backend / "data" / "blobs" / sha[:2] / f"{sha}.png"
+    store_file.parent.mkdir(parents=True)
+    store_file.write_bytes(PNG)
+
+    run_script(backend, "export_userdata.py")
+    out = tmp_path / "userdata"
+    assert (out / "blobs" / sha[:2] / f"{sha}.png").read_bytes() == PNG
+
+    store_file.unlink()
+    run_script(backend, "import_userdata.py")
+    assert store_file.read_bytes() == PNG
+    assert rows(db_path, "pack_sprites") == [("a", None, "image/png", sha)]

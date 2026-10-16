@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.annotate import client as jev_client
+from app.annotate import judge
 from app.config import settings
 
 
@@ -99,9 +100,9 @@ def test_annotate_returns_one_decision_per_target(client: TestClient, jev, with_
     body = r.json()
     assert body["lines"] == [
         {"index": 0, "speaker": None, "emotion": None, "bg": "食堂", "bgm": None, "cg": None, "cg_off": False,
-         "confidence": {"bg": 0.95}},
+         "tone": None, "confidence": {"bg": 0.95}},
         {"index": 1, "speaker": "char", "emotion": "微笑", "bg": None, "bgm": None, "cg": None, "cg_off": False,
-         "confidence": {"speaker": 0.97, "emotion": 0.6}},
+         "tone": None, "confidence": {"speaker": 0.97, "emotion": 0.6}},
     ]
     assert body["tokens"] == 1234
     assert body["ms"] >= 0
@@ -143,6 +144,28 @@ def test_annotate_follows_the_modes_thresholds_and_edited_prompts(client: TestCl
     assert no_speaker.json()["lines"][0]["speaker"] is None
 
 
+def test_annotate_asks_the_registered_tone_only_when_told(client: TestClient, jev, with_key, monkeypatch):
+    # 「这句的档」题由卡带登记;这里登记一道中性的假题(真的在声线卡带里)
+    monkeypatch.setattr(judge, "_tone", judge.TwoLevel("高", "低", 0.3, "lv", "lv_hi", "lv_lo"))
+    for key in ("lv", "lv_hi", "lv_lo"):
+        monkeypatch.setitem(judge.DEFAULT_PROMPTS, key, key)
+    jev.answers = {"s2": choice("char", 0.97), "e2": choice("害羞", 0.8), "t2": choice("高", 0.7)}
+    payload = {**PAYLOAD, "targets": [1], "ask_tone": True, "prompts": {"lv": "改过的"}}
+    r = client.post("/api/annotate/lines", json=payload)
+    assert r.status_code == 200, r.text
+    (line,) = r.json()["lines"]
+    assert (line["emotion"], line["tone"]) == ("害羞", "高")
+    assert line["confidence"]["tone"] == 0.7
+    sent = jev.bodies()[-1]["questions"]
+    assert set(sent) == {"s2", "e2", "t2"}
+    assert sent["t2"]["instructions"] == "改过的"
+    assert set(sent["t2"]["criteria"]) == {"高", "低"}
+
+    plain = client.post("/api/annotate/lines", json={**PAYLOAD, "targets": [1]})
+    assert set(jev.bodies()[-1]["questions"]) == {"s2", "e2"}
+    assert plain.json()["lines"][0]["tone"] is None
+
+
 def test_a_slow_answer_is_raced_by_a_second_request(client: TestClient, jev, with_key, monkeypatch):
     monkeypatch.setattr(jev_client, "HEDGE_AFTER", 0.05)
     jev.answers = {"s2": choice("char"), "e2": choice("害羞")}
@@ -167,7 +190,7 @@ def test_annotate_does_not_call_jev_when_nothing_is_asked(client: TestClient, je
     assert r.status_code == 200, r.text
     assert r.json()["lines"] == [
         {"index": 2, "speaker": None, "emotion": None, "bg": None, "bgm": None, "cg": None, "cg_off": False,
-         "confidence": {}}
+         "tone": None, "confidence": {}}
     ]
     assert r.json()["tokens"] == 0
     assert jev.requests == []
@@ -215,10 +238,17 @@ def test_defaults_come_from_the_backend(client: TestClient):
     assert body["keep"] == "不换"
     assert body["thresholds"] == {"speaker": 0.8, "bg": 0.6, "bgm": 0.6, "cg": 0.6}
     assert body["cg_off"] == "不显示CG"
-    assert set(body["prompts"]) == {
+    # 内核的问法,加上卡带登记的(公开版没有卡带)
+    assert set(body["prompts"]) >= {
         "state", "speaker", "speaker_char", "speaker_user", "speaker_other", "speaker_none",
         "emotion", "bg", "bg_keep", "bgm", "bgm_keep", "cg", "cg_keep", "cg_off",
     }
+    assert set(body["prompts"]) == set(judge.DEFAULT_PROMPTS)
+
+
+def test_unknown_prompt_keys_are_rejected(client: TestClient, jev, with_key):
+    r = client.post("/api/annotate/lines", json={**PAYLOAD, "prompts": {"no_such_prompt": "x"}})
+    assert r.status_code == 422
 
 
 def test_key_test_asks_jev_one_small_question(client: TestClient, jev):

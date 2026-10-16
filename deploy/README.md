@@ -93,10 +93,13 @@ docker compose up -d --build        # 改了代码后重新部署
 docker compose down                 # 停(数据留着)
 ```
 
-**备份/取回数据库**（卡、预设、对话、连接全在这一个文件里）：
+**备份/取回数据**：卡、预设、对话、连接在数据库里，图、曲子在 `data/blobs/` 里（按内容指纹存，放进去就不再改）。
+数据库用在线备份（库开着 WAL，直接拷 .db 会漏掉最近的改动），再把整个 `blobs/` 拷出来：
 
 ```bash
-docker compose cp backend:/app/data/animabackend.db ./animabackend.db
+docker compose exec backend python -m app.storage backup      # 备份进 /app/data/backups/
+docker compose cp backend:/app/data/backups ./backups
+docker compose cp backend:/app/data/blobs ./blobs
 ```
 
 **换密码**：重跑第 1 步，然后 `docker compose restart web`。
@@ -106,19 +109,8 @@ docker compose cp backend:/app/data/animabackend.db ./animabackend.db
 
 ## 已知限制
 
-**数据库迁移要手跑。** 启动时跑的是 `Base.metadata.create_all`，它只**建**表，
-不会 `ALTER` 已有的表。新加的列靠 `AnimaBackend/scripts/migrate_*.py`（都能重复跑）。
-升级流程：
-
-```bash
-git pull
-docker compose up -d --build
-docker compose logs backend | grep 缺列     # 启动时会检查,缺了哪一列、该跑哪个脚本都写在这里
-docker compose exec backend python scripts/migrate_xxx.py   # 按日志里说的跑
-docker compose restart backend
-```
-
-真要长期跑得引入 alembic（或者启动时自动补列）。
+**数据库升级是自动的**:后端启动时迁移器(`AnimaBackend/app/migrations`)先整库备份到 `data/backups/`,再一步一步升级;
+升级失败会挡住写入、日志里写清楚原因。`python -m app.migrations report` 只看不改。
 
 **HTTP，不是 HTTPS。** Basic Auth 的密码是 base64 编码后明文过网的，
 中间人能看到。所以：**别用你在别处用过的密码。**

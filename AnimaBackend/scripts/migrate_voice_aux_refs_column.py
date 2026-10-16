@@ -1,19 +1,14 @@
-"""One-off dev migration: voice_emotions.aux_refs (GSV auxiliary reference paths; [] = none).
+"""(留一期)这一步现在由迁移器做:core.2026_10_voice_aux_refs —— 声音:辅助参考。
 
-Empty list for every existing row. Safe to run twice.
+后端启动时会自动检查(设置 MIGRATIONS_MODE=apply 时自动升级),一般不用手动跑。手动跑:在 AnimaBackend 目录下
+python scripts/migrate_voice_aux_refs_column.py,改的是 data/animabackend.db,只做这一步(连同它依赖的步骤),可以重复跑。
 """
 
-import sqlite3
 import sys
+from pathlib import Path
 
-db = sqlite3.connect(sys.argv[1] if len(sys.argv) > 1 else "data/animabackend.db")
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-cols = {r[1] for r in db.execute("PRAGMA table_info(voice_emotions)")}
-if not cols:
-    print("voice_emotions missing, skipped (create_all will build it)")
-elif "aux_refs" in cols:
-    print("voice_emotions.aux_refs already present")
-else:
-    db.execute("ALTER TABLE voice_emotions ADD COLUMN aux_refs JSON NOT NULL DEFAULT '[]'")
-    print("added voice_emotions.aux_refs")
-db.commit()
+from app.migrations.legacy_script import run_step  # noqa: E402
+
+run_step("core.2026_10_voice_aux_refs")

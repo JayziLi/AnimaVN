@@ -1,19 +1,14 @@
-"""One-off dev migration: scene_packs.title_bgm_id (which BGM the title screen plays).
+"""(留一期)这一步现在由迁移器做:core.2026_09_scene_title_bgm —— 场景包:封面曲。
 
-NULL means "play the pack's first BGM" — the default, so existing packs need no
-value. Safe to run twice.
+后端启动时会自动检查(设置 MIGRATIONS_MODE=apply 时自动升级),一般不用手动跑。手动跑:在 AnimaBackend 目录下
+python scripts/migrate_scene_pack_title_bgm_column.py,改的是 data/animabackend.db,只做这一步(连同它依赖的步骤),可以重复跑。
 """
 
-import sqlite3
+import sys
+from pathlib import Path
 
-db = sqlite3.connect("data/animabackend.db")
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-cols = {r[1] for r in db.execute("PRAGMA table_info(scene_packs)")}
-if not cols:
-    print("scene_packs missing, skipped (create_all will build it)")
-elif "title_bgm_id" in cols:
-    print("scene_packs.title_bgm_id already present")
-else:
-    db.execute("ALTER TABLE scene_packs ADD COLUMN title_bgm_id VARCHAR(32)")
-    print("added scene_packs.title_bgm_id")
-db.commit()
+from app.migrations.legacy_script import run_step  # noqa: E402
+
+run_step("core.2026_09_scene_title_bgm")

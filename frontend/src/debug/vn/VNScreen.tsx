@@ -11,6 +11,7 @@
 
 import {
   Fragment,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -22,6 +23,8 @@ import {
 } from 'react';
 import './vn.css';
 import './vnSkins.css';
+import { newBeatCache, parseBeats, type Beat } from '../core/beats';
+import { buildTimeline, stateAt, type TimelineCtx } from '../core/timeline';
 import {
   cardFaceUrl,
   sceneImageUrl,
@@ -34,24 +37,32 @@ import {
 } from '../lib/api';
 import { currentInfo, currentText, type ChatEntry } from '../lib/chatEntry';
 import { enterHint, enterShouldSend, type EnterKeyMode } from '../lib/chatSettings';
-import { substituteMacros, type MacroContext } from '../lib/macros';
+import type { MacroContext } from '../lib/macros';
 import { useCoarsePointer, useIsMobile } from '../lib/useIsMobile';
 import { resolveByLabel } from '../plugins/common';
-import { emotionCandidates, isNpcHit, type EmotionContext, type TagMatch } from '../plugins/emotionMatch';
-import { SYNC_MAX_WAIT_MS, jevKindsOf, jevMayTag, NO_KINDS, voiceWaitsForJev } from '../plugins/jev';
-import { entryView, looseLines } from '../plugins/jevNotes';
-import { parseBilingual } from '../plugins/lang';
-import { bubbleStyle, facesByCanvas, spriteStyle, type SpriteStage } from '../plugins/spriteLayout';
-import { MOTION_FRAMES, normalizeEffect, playFxSound, playTypeSound, preloadSfx, preloadTypeSound, soundFile } from '../plugins/spriteFx';
-import { SpriteBubble } from './SpriteBubble';
 import {
-  applySceneTag,
+  emotionCandidates,
+  emotionListRef,
+  isNpcHit,
+  RECORD_SOURCE_NAME,
+  type EmotionContext,
+  type TagMatch,
+} from '../plugins/emotionMatch';
+import { SYNC_MAX_WAIT_MS, jevKindsOf, jevMayTag, NO_KINDS, voiceWaitsForJev } from '../plugins/jev';
+import { entryView } from '../plugins/jevNotes';
+import { parseBilingual } from '../plugins/lang';
+import { manualEmotions, manualOf } from '../plugins/manualMarks';
+import { cgFrameFromPairs, missingCell, voiceRowFromPairs } from '../plugins/pairings';
+import { kindName } from '../plugins/registry';
+import { bubbleStyle, facesByCanvas, spriteStyle, type SpriteStage } from '../plugins/spriteLayout';
+import { fxStep, MOTION_FRAMES, normalizeEffect, playFxSound, preloadSfx, soundFile } from '../plugins/spriteFx';
+import { SpriteBubble } from './SpriteBubble';
+import { playTypeSound, preloadTypeSound } from './typeSound';
+import {
   backgroundsOf,
   bgmsOf,
-  cgFrameFor,
   cgsOf,
   cgVariantsOf,
-  initialScene,
   isCgOff,
   titleBgmOf,
   type SceneState,
@@ -60,30 +71,38 @@ import {
   EMO_MODE_TEXT,
   planVoiceLines,
   spriteHitsUpTo,
-  spriteLabelAfter,
   voiceForSpeaker,
   voiceKey,
   voiceSkipReason,
   type VoiceCast,
   type VoicePluginConfig,
 } from '../plugins/voice';
+import { audioBus } from './audioBus';
 import { bgmPlayer } from './bgm';
 import { AnimaLogo } from './AnimaLogo';
 import { Feather } from './Feather';
-import type { ParsedReply, TagHit, TagKind, VNLine } from './script';
+import type { ParsedReply, TagKind, VNLine } from './script';
 import { vnTagKinds } from './tags';
 import { useEmotionMatches } from './useEmotionMatches';
+import { fillMissingCell, usePairings } from './usePairings';
+import { useTimelineEngine } from './useTimelineEngine';
+import { useWordRecords } from './useWordRecords';
 import { useVoiceLine } from './useVoiceLine';
 import type { ClipState } from './voice';
 import { VoiceButtons } from './VoiceButtons';
-import { VoiceDetail } from './VoiceDetail';
+import { LineInspector } from './LineInspector';
 import type { PluginFocus, PluginSection } from '../components/PluginsDrawer';
 import { VNMenu, type MenuPage } from './VNMenu';
 import { VNSettingsPage, type SettingsTab } from './VNSettingsPage';
 import { VoiceQuick } from './VoiceQuick';
 import { useVNAccent } from './accent';
+import { FALLBACK_BACKGROUND } from './fallbacks';
 import { imageRatio, isSettled, loadImage, useAssetGate, useSettledView, type GateItem } from './assetGate';
 import { spriteForMood, titleSpriteStyle, type TitleMood } from './titleArt';
+import type { FormsState, VnIllustrationContext, VnIllustrations } from '../plugins/cartridges';
+import { DEFAULT_SWITCHES, type PluginSwitches } from '../plugins/switches';
+import { formButton } from '../plugins/forms';
+import { StateToggle } from './StateToggle';
 import { VNLoading } from './VNLoading';
 import { VNTitle, type TitleCard, type TitleScene } from './VNTitle';
 import { VNPick } from './VNPick';
@@ -95,10 +114,6 @@ import {
   TYPE_SOUND_OFF,
   type VNSettings,
 } from './vnSettings';
-
-/** 卡没绑场景包、或者包里的背景还没传图时用的默认背景 */
-// 背景没加载出来 / 这张卡没背景时垫的默认背景(白昼:白到淡紫的渐变 + 星图线,10-04 定稿)
-const FALLBACK_BACKGROUND = '/vn/bg/default.svg';
 
 /** 玻璃皮肤的发送 / 停止:和对话框底行一样的小图标,不要大按钮 */
 function SendIcon() {
@@ -125,6 +140,10 @@ const TITLE_FIRST: TitleMood[] = ['idle', 'ghost'];
 const TITLE_LATER: TitleMood[] = ['continue', 'new', 'load', 'config', 'exit', 'poke'];
 /** 进之前必须下好往后几句要用的表情和背景(用户:「封面和前几个对话的素材要准备好」) */
 const AHEAD_LINES = 4;
+// 设置页里插图卡带那一页的 key
+const ILLUS_TAB = 'illus';
+/** 对话框上的检查器浮在对话框上方;上面的地方不够时至少留这么高(像素),压住对话框上沿 */
+const INSPECT_MIN_ROOM = 240;
 
 /** 调试台拼好传进来的那几页 */
 export type HostPage = Exclude<MenuPage, 'config' | 'dev'>;
@@ -157,6 +176,8 @@ interface Props {
   charName: string;
   userName: string;
   sprites: PackSprite[];
+  /** 形态(plugins/forms.ts):没开的卡 enabled 是 false、lens 是 null,顶栏不出按钮、表情不换 */
+  forms?: FormsState;
   /** 立绘怎么摆:所有角色共用的构图 + 这张卡的微调 */
   spriteStage: SpriteStage;
   spriteLayout: SpriteLayout;
@@ -173,6 +194,8 @@ interface Props {
   /** 语音插件的配置,以及这张卡用哪些声音 */
   voiceConfig: VoicePluginConfig;
   voiceCast: VoiceCast;
+  /** 拆句拼接开着(卡带的 useSplice):合成请求带 sfx */
+  sfxEnabled: boolean;
   /** 设置页里改语音开关 / 等不等语音:改的是插件配置,和调试台插件抽屉同一份 */
   onChangeVoiceConfig: (next: VoicePluginConfig) => void;
   /** 外语插件:在中文上方显示这句的日语 */
@@ -224,14 +247,17 @@ interface Props {
   onImportCard?: () => void;
   currentCardId: string | null;
   onPickCard: (id: string, fresh: boolean) => void;
-}
-
-interface Beat {
-  entry: ChatEntry;
-  /** 用户消息为 null */
-  parsed: ParsedReply | null;
-  /** 展开宏之后、切句之前的原文 —— 插话截断按它算位置 */
-  raw: string;
+  /**
+   * 检查器里只改这一句的表情(plugins/manualMarks.ts):记在 entryId 这条当前分支的第 line 句上;
+   * pick 是 null 改回去。DebugApp 改条目、照常存盘
+   */
+  onSetManual?: (entryId: string, line: number, pick: { item: string; label: string } | null) => void;
+  /** 生成的插图(生图卡带,plugins/illustrations.ts):没装是 null */
+  illustrations?: VnIllustrations | null;
+  /** 插件开关(plugins/switches.ts,插件页右上角):关掉的立绘 / 背景 / 音乐 / CG / AI 出图不显示、不干活 */
+  switches?: PluginSwitches;
+  /** 菜单里的「素材」:打开素材管理页(调试台的全屏页,盖在菜单上面);不给就没有这一项 */
+  onOpenLibrary?: () => void;
 }
 
 interface Cursor {
@@ -255,6 +281,10 @@ interface CgView {
   group: string | null;
   /** 竖屏时对准横图的哪儿 */
   focus: number;
+  /** 整张都看得到(生成的插图):不裁,空出来的地方垫一层模糊放大的同一张。10-12 用户:手机上横图默认超出画面 */
+  whole?: boolean;
+  /** 整张放在对话框上面那一块里(--vn-window-h 是对话框量出来的高) */
+  above?: boolean;
 }
 
 const NO_CG: CgView = { key: 'none', src: null, group: null, focus: 50 };
@@ -372,11 +402,14 @@ function SpriteLayer({
   charName,
   fx,
   fxVolume,
+  covered,
 }: {
   view: SpriteView;
   charName: string;
   fx: SpriteFxCue | null;
   fxVolume: number;
+  /** 这一句有 CG 显示、把立绘盖住了(立绘层透明):切换特效的动作、气泡、音效都不放 */
+  covered: boolean;
 }) {
   // 新表情整张下载完了才换上,没好之前留着旧的 —— 不会看到只画了一半的图
   const view = useSettledView(next);
@@ -399,19 +432,22 @@ function SpriteLayer({
     return () => window.clearTimeout(t);
   }, [layers.prev]);
 
-  // 切换特效:等要的那张图换上来再放 —— 动作、气泡和音效一起出
+  // 切换特效:等要的那张图换上来再放 —— 动作、气泡和音效一起出。
+  // 这句有 CG 盖着立绘时看不见,这次就不放(也不留到 CG 收起再补),规则见 spriteFx.ts 的 fxStep
   const [playing, setPlaying] = useState<(SpriteFxCue & { bubbleAt?: CSSProperties }) | null>(null);
   const played = useRef(0);
   const fxRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (!fx || fx.id === played.current || layers.cur.key !== fx.target) return;
+    const step = fxStep(fx, played.current, layers.cur.key, covered);
+    if (!fx || step === 'wait') return;
     played.current = fx.id;
+    if (step === 'skip') return;
     setPlaying({ ...fx, bubbleAt: layers.cur.bubble });
     playFxSound(fx.effect.sound, fxVolume);
     // 动作用 Web Animations 直接播:连着两次同一个动作也会重来,图也不用重新挂一遍
     const motion = fx.effect.motion ? MOTION_FRAMES[fx.effect.motion] : undefined;
     if (motion && !reduceMotion) fxRef.current?.animate(motion.frames, motion.timing);
-  }, [fx, layers.cur, fxVolume]);
+  }, [fx, layers.cur, fxVolume, covered]);
   useEffect(() => {
     if (!playing) return;
     const t = window.setTimeout(() => setPlaying(null), 1500);
@@ -535,6 +571,14 @@ function CgImage({ view, cls, panFrom }: { view: CgView; cls: string; panFrom: n
   const tall = view.src !== null && (imageRatio(view.src) ?? 0) > 1;
   // 挂上时定一次:之后 panFrom 变了(换成别的 CG)这张也快摘了,不用跟着改
   const [delay] = useState(() => `${-((Date.now() - panFrom) % (CG_PAN_MS * 2))}ms`);
+  if (view.whole) {
+    return (
+      <>
+        <img className={`vn-cg vn-cg-backdrop ${cls}`} src={view.src ?? undefined} alt="" draggable={false} />
+        <img className={`vn-cg whole${view.above ? ' above' : ''} ${cls}`} src={view.src ?? undefined} alt="" draggable={false} />
+      </>
+    );
+  }
   const style: CSSProperties = tall
     ? ({ '--cg-pan-delay': delay, '--cg-pan-ms': `${CG_PAN_MS}ms` } as CSSProperties)
     : { objectPosition: `${view.focus}% 50%` };
@@ -572,6 +616,7 @@ export function VNScreen({
   charName,
   userName,
   sprites,
+  forms,
   spriteStage,
   spriteLayout,
   tagTemplate,
@@ -582,6 +627,7 @@ export function VNScreen({
   bgmTemplate,
   cgTemplate,
   voiceConfig,
+  sfxEnabled,
   voiceCast,
   onChangeVoiceConfig,
   showJa,
@@ -611,7 +657,13 @@ export function VNScreen({
   onImportCard,
   currentCardId,
   onPickCard,
+  onSetManual,
+  illustrations: illustrationsInstalled = null,
+  switches = DEFAULT_SWITCHES,
+  onOpenLibrary,
 }: Props) {
+  // AI 出图关了:不画、不显示、画笔收起;设置里那一页照旧在(插件页能再打开)
+  const illustrations = switches.illustrations ? illustrationsInstalled : null;
   // ---- 偏好 ----
 
   const [settings, setSettings] = useState<VNSettings>(loadVNSettings);
@@ -626,43 +678,12 @@ export function VNScreen({
     () => vnTagKinds(tagTemplate, bgTemplate, bgmTemplate, cgTemplate),
     [tagTemplate, bgTemplate, bgmTemplate, cgTemplate],
   );
-  // 流式时每来一个字 entries 就变一次;没变的条目直接用缓存,只重切正在写的那条
-  const cacheRef = useRef(
-    new Map<
-      string,
-      { raw: string; judged: readonly number[] | null; cfg: string; parsed: ParsedReply }
-    >(),
+  // 流式时每来一个字 entries 就变一次;没变的条目直接用缓存,只重切正在写的那条(core/beats.ts)
+  const beatCache = useRef(newBeatCache());
+  const beats: Beat[] = useMemo(
+    () => parseBeats({ entries, tagKinds, macros, charName, userName, cache: beatCache.current }),
+    [entries, tagKinds, macros, charName, userName],
   );
-  const beats: Beat[] = useMemo(() => {
-    const cfg = [charName, userName, tagTemplate, bgTemplate, bgmTemplate, cgTemplate].join('\u0000');
-    const cache = cacheRef.current;
-    return entries.map((entry) => {
-      if (entry.role === 'user') return { entry, parsed: null, raw: currentText(entry) };
-      // 原文 + Jev 另外存的标注(plugins/jevNotes.ts)
-      const view = entryView(entry, tagKinds);
-      const raw = substituteMacros(view.text, macros, {
-        seed: `${entry.id}:${entry.swipeIndex}`,
-      });
-      const key = `${entry.id}:${entry.swipeIndex}:${entry.streaming ? 1 : 0}`;
-      const hit = cache.get(key);
-      if (hit && hit.raw === raw && hit.judged === view.judged && hit.cfg === cfg) {
-        return { entry, parsed: hit.parsed, raw };
-      }
-      // 外语插件:日中交替写的回复,日语挂到它下面那句中文上;没有日语的和原来一样
-      const opts = { charName, userName, tags: tagKinds, streaming: Boolean(entry.streaming) };
-      // 立绘是 Jev 标的分支按严格规则认说话人;Jev 没判过的句子(还在判、原文改过)照切句的认法。
-      // 哪几句没判过按合并后的原文算(宏展开前):切句的边界不看说话人,先切一遍拿句尾
-      const strict = view.kinds.includes('sprite');
-      let parsed = parseBilingual(raw, { ...opts, strict });
-      if (strict) {
-        const ends = raw === view.text ? parsed.ends : parseBilingual(view.text, opts).ends;
-        const loose = looseLines(view, ends);
-        if (loose.size > 0) parsed = parseBilingual(raw, { ...opts, strict, loose });
-      }
-      cache.set(key, { raw, judged: view.judged, cfg, parsed });
-      return { entry, parsed, raw };
-    });
-  }, [entries, macros, charName, userName, tagTemplate, bgTemplate, bgmTemplate, cgTemplate, tagKinds]);
 
   // ---- 播放位置 ----
 
@@ -763,22 +784,8 @@ export function VNScreen({
 
   // ---- 立绘 / 背景 / 音乐:从第一条回复一路累计到当前这句 ----
 
-  // 到当前这句为止已经生效的标签,按出现顺序。当前这条只算到正在播的这句为止;
-  // 写在末尾的(-1)要等下一条回复才生效
-  const hitsSoFar: TagHit[] = useMemo(() => {
-    const out: TagHit[] = [];
-    for (let i = 0; i <= beatIndex; i++) {
-      const p = beats[i].parsed;
-      if (!p) continue;
-      for (const h of p.hits) {
-        if (i === beatIndex && (h.lineIndex === -1 || h.lineIndex > line)) continue;
-        out.push(h);
-      }
-    }
-    return out;
-  }, [beats, beatIndex, line]);
-
-  // ---- 立绘标签 → 表情:先精确匹配,对不上的问后端模型 ----
+  // ---- 立绘标签 → 表情:先精确匹配,对不上的按设置 → 数据「表情认法」:旧算法问后端模型(结果只记在这个页面),
+  // 认词记录先查记录、没记过的让模型认一次并记下来。开关还没读到时两边都先不问 ----
 
   const candidates = useMemo(() => emotionCandidates(sprites), [sprites]);
   const spriteLabels = useMemo(
@@ -789,10 +796,27 @@ export function VNScreen({
         .map((h) => h.label),
     [beats, charName],
   );
-  const resolveTag = useEmotionMatches(spriteLabels, candidates);
+  const engine = useTimelineEngine();
+  const listRef = useMemo(() => emotionListRef(sprites), [sprites]);
+  const legacyResolve = useEmotionMatches(spriteLabels, candidates, engine === 'legacy');
+  const recordsResolve = useWordRecords(listRef, spriteLabels, candidates, engine === 'records');
+  const resolveTag = engine === 'records' ? recordsResolve : legacyResolve;
   const emotionCtx: EmotionContext = useMemo(
     () => ({ resolve: resolveTag, rawOnFail: sprites.length === 0, charName }),
     [resolveTag, sprites.length, charName],
+  );
+  // 形态:规则在形态卡带里,这里只通过 lens 问;没开(或者没装)时是 null。顶栏按钮也是卡带给的
+  const FormButton = formButton();
+  const lens = forms?.lens ?? null;
+  // 表情认法 = 认词记录时 CG 那一帧查配对表(这张立绘配的是哪张差分);旧算法、表还没读到时不传,照旧按名字找
+  const cgPairs = usePairings('cg', listRef, engine === 'records');
+  const pickCgFrame = useMemo(
+    () => (engine === 'records' && cgPairs ? cgFrameFromPairs(cgPairs, sprites, sceneAssets) : undefined),
+    [engine, cgPairs, sprites, sceneAssets],
+  );
+  const tctx: TimelineCtx = useMemo(
+    () => ({ sprites, sceneAssets, emotion: emotionCtx, forms: lens, ...(pickCgFrame ? { cgFrame: pickCgFrame } : {}) }),
+    [sprites, sceneAssets, emotionCtx, lens, pickCgFrame],
   );
 
   const faces = useMemo(() => facesByCanvas(sprites), [sprites]);
@@ -806,16 +830,26 @@ export function VNScreen({
       style: titleSpriteStyle(faces.get(s.id) ?? null, s.face_scan?.height ?? null, { faceSize: 0.2, faceTop: 0.12, cx: 0.32 }, 0),
     };
   }, [sprites, faces]);
+  const beatId = beat?.entry.id ?? null;
+  // 时间线(core/timeline.ts):每条回复每一句的画面,从第一条回复一路累计;每条回复按内容缓存,流式时只重算正在写的那条
+  const timeline = useMemo(() => buildTimeline(beats, tctx), [beats, tctx]);
+  // 光标这句的画面
+  const cursorState = stateAt(timeline, beatIndex, line);
   // 对不上、还在问模型的标签不切图,保持上一张 —— 控制台里会写原因。
-  // 先算出表情名再算 view:流式时每来一段字 hitsSoFar 都是新数组,view 要是跟着变成新对象,
-  // 立绘层的 effect 每次都会改一次状态,一条长回复写下来就撞上 React 的「更新太深」(2026-10-01)
-  const spriteLabel = useMemo(
-    () => spriteLabelAfter(hitsSoFar, emotionCtx, sprites[0]?.label ?? null),
-    [hitsSoFar, emotionCtx, sprites],
+  // 先取成字符串:view 只在表情名真变了时才换新对象 —— 流式时每来一段字都会重算一遍,view 要是跟着变成新对象,
+  // 立绘层的 effect 每次都会改一次状态,一条长回复写下来就撞上 React 的「更新太深」(2026-10-01)。
+  // 换算前的表情名(cursorState.spriteLabel)这里不用了:CG 那一帧已经在 cursorState.cgFrame 里挑好
+  const shownLabel = cursorState.shownLabel;
+  const formCurrent = forms?.current ?? null;
+  // 形态换算(语音、历史按句用):第 ln 句生效的表情放到那句的形态里看
+  const inForm = useMemo(
+    () =>
+      lens ? (label: string | null, entryId: string, ln: number) => lens.labelIn(label, lens.formFor(entryId, ln)) : null,
+    [lens],
   );
 
   const spriteView: SpriteView = useMemo(() => {
-    const label = spriteLabel;
+    const label = shownLabel;
     const matched = sprites.find((s) => s.label === label) ?? sprites[0] ?? null;
     if (matched) {
       return {
@@ -828,13 +862,17 @@ export function VNScreen({
     }
     // 这张卡一张立绘都没配:占位长方形上写匹配到的内置表情(模型不可用时是 AI 的原词)
     return { key: `ph:${label ?? ''}`, src: null, label: label ?? '未配置立绘' };
-  }, [spriteLabel, sprites, faces, spriteLayout, spriteStage]);
+  }, [shownLabel, sprites, faces, spriteLayout, spriteStage]);
 
-  const scene: SceneState = useMemo(() => {
-    let state = initialScene(sceneAssets);
-    for (const h of hitsSoFar) state = applySceneTag(state, h, sceneAssets);
-    return state;
-  }, [hitsSoFar, sceneAssets]);
+  const scene: SceneState = cursorState.scene;
+  // 这句的形态里不能出的 CG 不预取
+  const formHere = cursorState.form;
+  // 只依赖 lens.cgOk(形态卡带给的是固定的一个函数):lens 每来一条消息都换新的,预取不用跟着重跑
+  const lensCgOk = lens?.cgOk ?? null;
+  const cgOkHere = useCallback(
+    (cg: SceneAsset) => formHere === null || lensCgOk === null || lensCgOk(cg, formHere),
+    [formHere, lensCgOk],
+  );
 
   const bgUrl = scene.bg ? sceneImageUrl(scene.bg) : null;
   // 同上:只在换了背景时才是新对象
@@ -850,18 +888,73 @@ export function VNScreen({
 
   // CG:画面上那张跟着当前这句的表情换(构图下面挂的差分,名字是表情名);没有对应的用构图本身那张。
   // 同上:先算出用哪张,只在换图时才生成新的 view
-  const cgFrame = useMemo(
-    () => (scene.cg ? cgFrameFor(scene.cg, sceneAssets, spriteLabel) : null),
-    [scene.cg, sceneAssets, spriteLabel],
-  );
+  const cgFrame = cursorState.cgFrame;
   const cgUrl = cgFrame ? sceneImageUrl(cgFrame) : null;
   const cgKey = cgFrame && cgUrl ? `${cgFrame.id}:${cgFrame.file_version}` : null;
   const cgGroup = scene.cg?.id ?? null;
   const cgFocus = scene.cg?.focus_x ?? 50;
   const cgView: CgView = useMemo(
-    () => (cgKey && cgUrl ? { key: cgKey, src: cgUrl, group: cgGroup, focus: cgFocus } : NO_CG),
-    [cgKey, cgUrl, cgGroup, cgFocus],
+    () => (switches.cg && cgKey && cgUrl ? { key: cgKey, src: cgUrl, group: cgGroup, focus: cgFocus } : NO_CG),
+    [switches.cg, cgKey, cgUrl, cgGroup, cgFocus],
   );
+  // 这一句有 CG:CG 层盖住立绘(vn.css 的 .cg-on 把立绘层调透明),立绘切换特效也跟着不放
+  // 生成的插图(卡带):这句有就盖在 CG 层上显示它,立绘照样淡出
+  const illusView = beat && illustrations ? illustrations.viewAt(beat.entry, line) : null;
+  const illusKey = illusView ? `illus:${illusView.key}` : null;
+  const illusSrc = illusView?.src ?? null;
+  const illusFocus = illusView?.focus ?? 50;
+  const illusAbove = illusView?.place === 'above';
+  const shownCg: CgView = useMemo(
+    () =>
+      illusKey && illusSrc
+        ? { key: illusKey, src: illusSrc, group: illusKey, focus: illusFocus, whole: true, above: illusAbove }
+        : cgView,
+    [illusKey, illusSrc, illusFocus, illusAbove, cgView],
+  );
+  const cgOn = Boolean(shownCg.src);
+  // 对话框有多高(含底下的留白):写到 .vn-root 的 --vn-window-h,插图「放在对话框上面」时让开这一块
+  const windowObserver = useRef<ResizeObserver | null>(null);
+  const measureWindow = useCallback((el: HTMLDivElement | null) => {
+    windowObserver.current?.disconnect();
+    windowObserver.current = null;
+    const root = el?.closest<HTMLElement>('.vn-root');
+    if (!el || !root) return;
+    const measure = () => {
+      const r = root.getBoundingClientRect();
+      root.style.setProperty('--vn-window-h', `${Math.max(0, r.bottom - el.getBoundingClientRect().top)}px`);
+    };
+    measure();
+    windowObserver.current = new ResizeObserver(measure);
+    windowObserver.current.observe(el);
+    windowObserver.current.observe(root);
+  }, []);
+  // 给插图卡带的「现在在哪」:光标这条回复、这一句、这里的背景
+  const illusCtx: VnIllustrationContext = {
+    entry: beat?.entry ?? null,
+    line,
+    lines,
+    place: scene.bg ? { label: scene.bg.label, description: scene.bg.description } : null,
+    streaming,
+    openSettings: () => {
+      setSettingsTab(ILLUS_TAB);
+      openMenu('config');
+    },
+  };
+  // 插图卡带的自动出图:最新一条回复在这次打开以后写完、Jev 也判完时告诉它一次(读档、换对话不算)
+  const latestBeat = lastAssistantIndex >= 0 ? beats[lastAssistantIndex] : null;
+  const writingRef = useRef(new Set<string>());
+  useEffect(() => {
+    const e = latestBeat?.entry;
+    if (!e || !illustrations) return;
+    const k = `${e.id}:${e.swipeIndex}`;
+    if (e.streaming || e.jevPending !== undefined) {
+      writingRef.current.add(k);
+      return;
+    }
+    if (!writingRef.current.delete(k)) return;
+    const bg = stateAt(timeline, lastAssistantIndex, Number.MAX_SAFE_INTEGER).scene.bg;
+    illustrations.onReplyDone(e, latestBeat?.parsed?.lines ?? [], bg ? { label: bg.label, description: bg.description } : null);
+  }, [latestBeat, illustrations, timeline, lastAssistantIndex]);
 
   // ---- 标题画面:最后一句、上次停下的地方、场景包里的背景 ----
 
@@ -911,31 +1004,21 @@ export function VNScreen({
     add(must, bgView.src, '背景');
     add(must, spriteView.src, '立绘');
     add(must, cgView.src, 'CG');
-    // 往后 AHEAD_LINES 句点到的表情和背景:这条回复剩的不够,接着算下一条回复的开头。
+    // 往后 AHEAD_LINES 句的画面直接读时间线(表情形态换算过、CG 过了形态门、那一帧挑好了):
+    // 这条回复剩的不够,接着读下一条回复(和 between.next 是同一条)开头那几句。
     // 更远的不等(开场白里常常换七八种表情,一张就上 MB),排在「尽量等」里
+    const look = (index: number, ln: number) => {
+      const st = stateAt(timeline, index, ln);
+      add(must, spriteSrc(sprites.find((s) => s.label === st.shownLabel)), '立绘');
+      add(must, st.scene.bg ? sceneImageUrl(st.scene.bg) : null, '背景');
+      // 只等这句显示的那一帧;同一张构图的其余差分换表情时才用,在「尽量等」里
+      add(must, st.cgFrame ? sceneImageUrl(st.cgFrame) : null, 'CG');
+      for (const v of st.scene.cg ? cgVariantsOf(sceneAssets, st.scene.cg.id) : []) add(nice, sceneImageUrl(v), 'CG');
+    };
+    for (let ln = line + 1; ln < lines.length && ln <= line + AHEAD_LINES; ln++) look(beatIndex, ln);
     const left = Math.max(0, lines.length - 1 - line);
-    const ahead = [
-      ...(beat?.parsed?.hits.filter(
-        (h) => (h.lineIndex > line && h.lineIndex <= line + AHEAD_LINES) || (h.lineIndex === -1 && left < AHEAD_LINES),
-      ) ?? []),
-      ...(left < AHEAD_LINES
-        ? (between.next?.parsed?.hits.filter((h) => h.lineIndex >= 0 && h.lineIndex < AHEAD_LINES - left) ?? [])
-        : []),
-    ];
-    for (const h of ahead) {
-      if (h.kind === 'sprite' && !isNpcHit(h, charName)) {
-        const label = spriteLabelAfter([h], emotionCtx, null);
-        add(must, spriteSrc(sprites.find((s) => s.label === label)), '立绘');
-      } else if (h.kind === 'bg') {
-        const bg = resolveByLabel(h.label, backgroundsOf(sceneAssets));
-        add(must, bg ? sceneImageUrl(bg) : null, '背景');
-      } else if (h.kind === 'cg') {
-        // 只等构图本身那张;差分跟着表情换,在「尽量等」里
-        const cg = resolveByLabel(h.label, cgsOf(sceneAssets));
-        add(must, cg ? sceneImageUrl(cgFrameFor(cg, sceneAssets, null)) : null, 'CG');
-        for (const v of cg ? cgVariantsOf(sceneAssets, cg.id) : []) add(nice, sceneImageUrl(v), 'CG');
-      }
-    }
+    const nextIndex = left < AHEAD_LINES && between.next ? beats.indexOf(between.next, beatIndex + 1) : -1;
+    for (let ln = 0; nextIndex >= 0 && ln < AHEAD_LINES - left; ln++) look(nextIndex, ln);
     // 封面第一眼就看得到的表情;悬停、点一下才换的排在「尽量等」最前面
     if (title) {
       for (const mood of TITLE_FIRST) add(must, spriteSrc(spriteForMood(sprites, mood)), '立绘');
@@ -945,7 +1028,7 @@ export function VNScreen({
     for (const s of sprites) add(nice, spriteSrc(s), '立绘');
     for (const a of backgroundsOf(sceneAssets)) add(nice, sceneImageUrl(a), '背景');
     return { must: [...must.values()], nice: [...nice.values()] };
-  }, [bgView.src, spriteView.src, cgView.src, beat, line, lines.length, between.next, charName, emotionCtx, sprites, sceneAssets, title, cards, currentCardId, packId]);
+  }, [bgView.src, spriteView.src, cgView.src, timeline, beats, beatIndex, line, lines.length, between.next, sprites, sceneAssets, title, cards, currentCardId, packId]);
   const gate = useAssetGate(`${currentCardId ?? ''}|${packId ?? ''}`, assetsReady && !loading, gateItems.must, gateItems.nice);
   // 等待页:没到齐 180ms 以后才露(有缓存时不闪),露了至少停 0.7 秒(一闪而过像出错)
   const gateVeil = useLoadingVeil(!gate.ready);
@@ -960,7 +1043,8 @@ export function VNScreen({
   }
   const firstLoad = shownCard !== currentCardId;
 
-  const playing = title ? titleBgm : scene.bgm;
+  // 音乐关了:标题画面和剧情里都不放
+  const playing = !switches.bgm ? null : title ? titleBgm : scene.bgm;
   const bgmUrl = playing ? sceneImageUrl(playing) : null;
   useEffect(() => {
     bgmPlayer.setActive(true);
@@ -987,14 +1071,15 @@ export function VNScreen({
         if (url) bgmPlayer.prefetch(url);
       } else if (h.kind === 'cg') {
         // CG 和它的差分都先下:翻到那句、换表情时直接切
-        const cg = resolveByLabel(h.label, cgsOf(sceneAssets));
+        const found = resolveByLabel(h.label, cgsOf(sceneAssets));
+        const cg = found && cgOkHere(found) ? found : null;
         for (const a of cg ? [cg, ...cgVariantsOf(sceneAssets, cg.id)] : []) {
           const url = sceneImageUrl(a);
           if (url) void loadImage(url);
         }
       }
     }
-  }, [upcoming, sceneAssets]);
+  }, [upcoming, sceneAssets, cgOkHere]);
 
   // 立绘预加载在上面的等待页里:眼下要用的先下,其余的排在后面
   // ---- 界面状态 ----
@@ -1003,16 +1088,18 @@ export function VNScreen({
   // 菜单上次停在哪一页,Esc 再打开时回到那儿
   const [lastPage, setLastPage] = useState<MenuPage>('log');
   // 设置页这次打开停在哪一栏(语音面板点「完整语音设置」= 声音);菜单关了就忘掉
-  const [settingsTab, setSettingsTab] = useState<SettingsTab | undefined>(undefined);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab | string | undefined>(undefined);
   useEffect(() => {
     if (!menu) setSettingsTab(undefined);
   }, [menu]);
   const [rawLog, setRawLog] = useState(false);
-  // 历史页:鼠标移上去(手机上点一下)的那句露出「回到这里」「语音详情」;展开了详情的那句
+  // 历史页:鼠标移上去(手机上点一下)的那句露出「回到这里」「详情」;展开了详情的那句
   const [pickedLine, setPickedLine] = useState<string | null>(null);
   const [detailKey, setDetailKey] = useState<string | null>(null);
   const [pluginFocus, setPluginFocus] = useState<PluginFocus | null>(null);
   const [uiHidden, setUiHidden] = useState(false);
+  // 对话框上右键 / 长按打开的句检查器:记着是在哪一句打开的(光标一动就收起);bottom 是浮层底边离画面底部多远(贴在对话框上方)
+  const [inspect, setInspect] = useState<{ key: string; bottom: number } | null>(null);
   const [draft, setDraft] = useState('');
   const [auto, setAuto] = useState(false);
   // 玻璃皮肤:读到最后一句先只亮右下角的小方块,玩家再点一下才弹出正中的输入条(记下是在哪一句点的)
@@ -1027,17 +1114,49 @@ export function VNScreen({
 
   // ---- 语音:说话人对得上声音的台词才念,情绪跟着这句生效的立绘表情 ----
 
-  // 这条回复第一句之前生效的表情(和立绘层同一套累计算法)
-  const emotionBefore = useMemo(() => {
-    const prior: TagHit[] = [];
-    for (let i = 0; i < beatIndex; i++) prior.push(...(beats[i].parsed?.hits ?? []));
-    return spriteLabelAfter(prior, emotionCtx, sprites[0]?.label ?? null);
-  }, [beats, beatIndex, sprites, emotionCtx]);
+  // 这条回复第一句之前生效的表情:时间线里这条的开头(和立绘层同一份)
+  const emotionBefore = beatIndex >= 0 ? timeline.entries[beatIndex].start.spriteLabel : timeline.initial.spriteLabel;
   // 切好的句子是按条目缓存的,流式时只有正在写的那条会变
   const beatParsed = beat?.parsed;
+  const beatTones = beat?.tones;
   // 谁说的 / 什么表情由 Jev 判时,还在判的句子先不念(只有背景、音乐是 Jev 时不用等)
   const beatJevKinds = beat ? jevKindsOf(beat.entry) : NO_KINDS;
-  const jevPendingFrom = voiceWaitsForJev(beatJevKinds) ? beat?.entry.jevPending : undefined;
+  // 语音只等它要的那几题(说话人、表情、声线):两条队列时 CG 还在判也不用等(jevVoicePending)
+  const jevPendingFrom = voiceWaitsForJev(beatJevKinds)
+    ? (beat?.entry.jevVoicePending ?? beat?.entry.jevPending)
+    : undefined;
+  // 表情认法 = 认词记录时按配对表念:这句显示的表情 → 包里那张立绘 → 配给主声音的那一行语气。
+  // 旧算法、表还没读到、主声音没有表时不传,后端照旧按名字挑
+  const voicePairs = usePairings('voice', listRef, engine === 'records');
+  const mainVoiceId = voiceCast.main?.id ?? null;
+  const pickRow = useMemo(() => {
+    const table = engine === 'records' && mainVoiceId ? voicePairs?.get(mainVoiceId) : undefined;
+    return table ? voiceRowFromPairs(table, sprites) : undefined;
+  }, [engine, mainVoiceId, voicePairs, sprites]);
+  // 开关还没读到、或者表还没读到:主声音带表情的台词先等一下,免得同一句先按名字请求、再按行号请求一遍
+  const waitRows = engine === null || (engine === 'records' && voicePairs === null);
+  // 缺格补配(设计 1.6.5 第 3 步):表读到了、这句显示的立绘在表里还没有格子(后加的立绘)时当场补一次;
+  // 补回来之前语音照旧按名字挑、CG 照旧按名字找。同一张表一次只发一个请求,没补上的过一分钟再试(usePairings.ts)
+  const voiceGap =
+    engine === 'records' && voiceConfig.enabled && !voiceConfig.fixedEmotion && mainVoiceId && voicePairs
+      ? missingCell(voicePairs.get(mainVoiceId), sprites, shownLabel)
+      : null;
+  // CG 按换算前的表情找差分(和 cgFrameFromPairs 一样);没有差分的构图不用配
+  const cgId = scene.cg?.id ?? null;
+  const cgGap =
+    engine === 'records' && cgPairs && cgId && cgVariantsOf(sceneAssets, cgId).length > 0
+      ? missingCell(cgPairs.get(cgId), sprites, cursorState.spriteLabel)
+      : null;
+  // typeKey:每翻一句再看一次(失败过的过了一分钟才会真的再发)
+  useEffect(() => {
+    if (voiceGap && mainVoiceId) fillMissingCell('voice', listRef, mainVoiceId, voiceGap);
+  }, [voiceGap, mainVoiceId, listRef, typeKey]);
+  useEffect(() => {
+    if (cgGap && cgId) fillMissingCell('cg', listRef, cgId, cgGap);
+  }, [cgGap, cgId, listRef, typeKey]);
+  // 检查器里手改了表情的句子:语音也念玩家选的那个(和画面一样按立绘 id 找名字,找不到当没改)
+  const beatMarks = beat ? manualOf(beat.entry) : undefined;
+  const beatManual = useMemo(() => manualEmotions(beatMarks, sprites), [beatMarks, sprites]);
   const voicePlans = useMemo(
     () =>
       planVoiceLines({
@@ -1049,8 +1168,14 @@ export function VNScreen({
         streaming,
         fixedEmotion: voiceConfig.fixedEmotion,
         jevPendingFrom,
+        mapEmotion: inForm && beatId ? (label, i) => inForm(label, beatId, i) : undefined,
+        sfx: sfxEnabled,
+        tone: beatTones ? (i) => beatTones[i] ?? null : undefined,
+        pickRow,
+        waitRows,
+        manual: beatManual,
       }),
-    [beatParsed, emotionBefore, emotionCtx, voiceCast, streaming, voiceConfig.fixedEmotion, jevPendingFrom],
+    [beatParsed, emotionBefore, emotionCtx, voiceCast, streaming, voiceConfig.fixedEmotion, jevPendingFrom, inForm, beatId, sfxEnabled, beatTones, pickRow, waitRows, beatManual],
   );
   const voice = useVoiceLine({
     config: voiceConfig,
@@ -1066,9 +1191,9 @@ export function VNScreen({
   const showVoiceChip =
     settings.showVoice && currentCardId !== null && (voiceCast.main !== null || voiceCast.extras.length > 0);
 
-  // 念台词时 BGM 压到多少,跟着设置走
+  // 念台词时 BGM 压到多少,跟着设置走(压低由音频总线做)
   useEffect(() => {
-    bgmPlayer.setDuckLevel(settings.duckLevel);
+    audioBus.setDuckLevel(settings.duckLevel);
   }, [settings.duckLevel]);
 
   // 立绘和文字同步(Jev 通用设置):正在显示的这句 Jev 还在判、判完可能换立绘 / 背景时,先不出字,
@@ -1102,19 +1227,19 @@ export function VNScreen({
   const [fxCue, setFxCue] = useState<(SpriteFxCue & { typeKey: string }) | null>(null);
   const fxSeq = useRef(0);
   const arrived = useRef({ key: typeKey, forward: false });
-  const prevLabel = useRef(spriteLabel);
+  const prevLabel = useRef(shownLabel);
   useEffect(() => {
     if (arrived.current.key !== typeKey) {
       arrived.current = { key: typeKey, forward: forwardRef.current };
       forwardRef.current = false;
     }
-    const changed = prevLabel.current !== spriteLabel;
-    prevLabel.current = spriteLabel;
+    const changed = prevLabel.current !== shownLabel;
+    prevLabel.current = shownLabel;
     // 同一句里表情后来才定下来(问模型、Jev 判完)也算:只要这句是往下读到的
     if (!changed || !arrived.current.forward || !settings.spriteFx || skipping || title) return;
-    const effect = normalizeEffect(sprites.find((sp) => sp.label === spriteLabel)?.effect);
+    const effect = normalizeEffect(sprites.find((sp) => sp.label === shownLabel)?.effect);
     if (effect) setFxCue({ id: ++fxSeq.current, target: spriteView.key, effect, typeKey });
-  }, [typeKey, spriteLabel, settings.spriteFx, skipping, title, sprites, spriteView.key]);
+  }, [typeKey, shownLabel, settings.spriteFx, skipping, title, sprites, spriteView.key]);
   // 光标挪走了(哪怕又挪回来)就不再放这一次
   const spriteFx = fxCue && fxCue.typeKey === typeKey ? fxCue : null;
 
@@ -1154,36 +1279,86 @@ export function VNScreen({
       {
         lines: VNLine[];
         plans: (SpeakRequest | null)[];
-        hits: TagHit[];
-        /** 这条回复第一句之前生效的表情 —— 语音详情要看 */
-        before: string | null;
         streaming: boolean;
+        /** 在对话(beats)里是第几条:检查器按它查时间线 */
+        index: number;
       }
     >();
     if (!logOpen) return out;
-    // 和 emotionBefore 同一套累计:每条回复开头的表情 = 之前所有立绘标签依次生效的结果
-    let label: string | null = sprites[0]?.label ?? null;
-    for (const b of beats) {
+    // 每条回复开头的表情:时间线里这条的开头(之前所有立绘标签依次生效的结果,和语音用的同一份)
+    beats.forEach((b, i) => {
       const p = b.parsed;
-      if (!p) continue;
+      if (!p) return;
+      const before = timeline.entries[i].start.spriteLabel;
       const streaming = Boolean(b.entry.streaming);
       const plans = voiceConfig.enabled
         ? planVoiceLines({
             lines: p.lines,
             hits: p.hits,
-            emotionBefore: label,
+            emotionBefore: before,
             ctx: emotionCtx,
             cast: voiceCast,
             streaming,
             fixedEmotion: voiceConfig.fixedEmotion,
-            jevPendingFrom: voiceWaitsForJev(jevKindsOf(b.entry)) ? b.entry.jevPending : undefined,
+            jevPendingFrom: voiceWaitsForJev(jevKindsOf(b.entry)) ? (b.entry.jevVoicePending ?? b.entry.jevPending) : undefined,
+            mapEmotion: inForm ? (lb, li) => inForm(lb, b.entry.id, li) : undefined,
+            sfx: sfxEnabled,
+            tone: b.tones ? (li) => b.tones?.[li] ?? null : undefined,
+            pickRow,
+            waitRows,
+            manual: manualEmotions(manualOf(b.entry), sprites),
           })
         : [];
-      out.set(b.entry.id, { lines: p.lines, plans, hits: p.hits, before: label, streaming });
-      label = spriteLabelAfter(p.hits, emotionCtx, label);
-    }
+      out.set(b.entry.id, { lines: p.lines, plans, streaming, index: i });
+    });
     return out;
-  }, [logOpen, beats, sprites, emotionCtx, voiceCast, voiceConfig.enabled, voiceConfig.fixedEmotion]);
+  }, [logOpen, beats, timeline, emotionCtx, voiceCast, voiceConfig.enabled, voiceConfig.fixedEmotion, inForm, sfxEnabled, pickRow, waitRows, sprites]);
+
+  // ---- 句检查器(LineInspector.tsx):历史页每句的「详情」和对话框上右键 / 长按打开的浮层用同一个 ----
+
+  /** 第 bi 条回复第 i 句的检查器;plan 是这句怎么念(不念是 null) */
+  const inspectorFor = (
+    bi: number,
+    i: number,
+    plan: SpeakRequest | null,
+    o: { streaming: boolean; onJump?: () => void; onClose?: () => void },
+  ): ReactNode => {
+    const b = beats[bi];
+    const p = b?.parsed;
+    const ln = p?.lines[i];
+    if (!b || !p || !ln) return null;
+    const entry = b.entry;
+    const profile = ln.player ? null : voiceForSpeaker(ln.speaker, charName, voiceCast);
+    // 主声音、情绪跟着表情走:按配对表挑那一行(表情认法是认词记录时)
+    const main = profile !== null && profile.id === mainVoiceId && !voiceConfig.fixedEmotion;
+    const mainTable = engine === 'records' && mainVoiceId ? (voicePairs?.get(mainVoiceId) ?? null) : null;
+    return (
+      <LineInspector
+        entry={entry}
+        entryIndex={bi}
+        timeline={timeline}
+        line={ln}
+        index={i}
+        hits={p.hits}
+        sprites={sprites}
+        listRef={listRef}
+        records={engine === 'records'}
+        voicePairs={main ? { table: mainTable } : undefined}
+        onSetManual={onSetManual ? (pick) => onSetManual(entry.id, i, pick) : undefined}
+        emotionBefore={timeline.entries[bi].start.spriteLabel}
+        plan={plan}
+        profile={profile}
+        ctx={emotionCtx}
+        voiceEnabled={voiceConfig.enabled}
+        fixedEmotion={voiceConfig.fixedEmotion}
+        streamingLast={o.streaming && i === p.lines.length - 1}
+        jev={jevKindsOf(entry).includes('sprite')}
+        jevPending={entry.jevPending !== undefined && i >= entry.jevPending}
+        onJump={o.onJump}
+        onClose={o.onClose}
+      />
+    );
+  };
 
   const lineView = (entry: ChatEntry): ReactNode | null => {
     const b = backlog.get(entry.id);
@@ -1226,29 +1401,13 @@ export function VNScreen({
                     className={open ? 'on' : ''}
                     aria-expanded={open}
                     onClick={() => setDetailKey(open ? null : key)}
-                    title="这句的情绪、参考音频、发给语音服务的请求 —— 排查语音用"
+                    title="这句为什么这样:表情怎么认的、背景、CG、语音怎么挑的;能只改这一句的表情"
                   >
-                    语音详情
+                    详情
                   </button>
                 </span>
               </div>
-              {open && (
-                <VoiceDetail
-                  line={ln}
-                  index={i}
-                  hits={b.hits}
-                  emotionBefore={b.before}
-                  plan={plan}
-                  profile={ln.player ? null : voiceForSpeaker(ln.speaker, charName, voiceCast)}
-                  ctx={emotionCtx}
-                  voiceEnabled={voiceConfig.enabled}
-                  fixedEmotion={voiceConfig.fixedEmotion}
-                  streamingLast={b.streaming && i === b.lines.length - 1}
-                  jev={jevKindsOf(entry).includes('sprite')}
-                  jevPending={entry.jevPending !== undefined && i >= entry.jevPending}
-                  onJump={() => jumpTo(entry.id, i)}
-                />
-              )}
+              {open && inspectorFor(b.index, i, plan, { streaming: b.streaming, onJump: () => jumpTo(entry.id, i) })}
             </Fragment>
           );
         })}
@@ -1262,6 +1421,7 @@ export function VNScreen({
     setLastPage(p);
     setAuto(false);
     setSkip(false);
+    setInspect(null);
   };
   const closeMenu = () => setMenu(null);
   const openPlugin = (section: PluginSection) => {
@@ -1315,6 +1475,8 @@ export function VNScreen({
   advanceRef.current = advance;
 
   const busyOverlay = title || menu !== null;
+  // 对话框上的检查器开着(在眼下这一句上打开的;光标挪走了就不算)
+  const inspecting = inspect !== null && inspect.key === typeKey && current !== null;
 
   // 自动播放:一句打完停一会儿翻下一句;流式时等下一句写完再翻。
   // 设置里开着「等语音」时,这句的语音还在合成或正在念就先不翻(合成失败了照常翻)。
@@ -1366,6 +1528,10 @@ export function VNScreen({
       if (e.ctrlKey) setCtrlHeld(false);
       if (e.key === 'Escape') {
         if (title || e.isComposing) return;
+        if (inspecting) {
+          setInspect(null);
+          return;
+        }
         if (menu) {
           // 菜单里的输入框:Esc 先只是退出输入框,再按一次才关菜单
           if (isTextField(e.target)) (e.target as HTMLElement).blur();
@@ -1379,12 +1545,13 @@ export function VNScreen({
         }
         return;
       }
-      if (isField(e.target) || busyOverlay || veiled) return;
+      // 检查器开着:看的是这一句,不翻页(点外面或 Esc 关掉再接着读)
+      if (isField(e.target) || busyOverlay || veiled || inspecting) return;
       // 带修饰键的是浏览器 / 系统快捷键(Alt+→ 前进、Ctrl+A 全选),不归游戏管
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.key === ' ' || e.key === 'Enter' || e.key === 'ArrowRight' || e.key === 'PageDown') {
         e.preventDefault();
-        bgmPlayer.unlock();
+        audioBus.unlock();
         advanceRef.current();
       } else if ((e.key === 'a' || e.key === 'A') && !e.repeat) {
         setAuto((a) => !a);
@@ -1402,9 +1569,9 @@ export function VNScreen({
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('blur', onBlur);
     };
-  }, [busyOverlay, veiled, title, menu, uiHidden, lastPage]);
+  }, [busyOverlay, veiled, title, menu, uiHidden, lastPage, inspecting]);
 
-  // 滚轮往上 = 看历史;右键 = 隐藏界面(galgame 玩家的习惯)
+  // 滚轮往上 = 看历史;右键 = 隐藏界面(galgame 玩家的习惯);对话框上右键是这句的检查器(onBoxContextMenu)
   const onWheel = (e: React.WheelEvent) => {
     if (busyOverlay || veiled || e.deltaY > -8) return;
     // 思考过程、输入框自己能滚:还没滚到顶就是在滚它们,不是要看历史
@@ -1417,6 +1584,23 @@ export function VNScreen({
     e.preventDefault();
     setUiHidden((h) => !h);
   };
+  // 对话框上右键 / 长按:打开这一句的检查器,浮在对话框上方,不翻下一句;还没有句子时照旧隐藏界面
+  const onBoxContextMenu = (e: React.MouseEvent<HTMLElement>) => {
+    if (isField(e.target)) return;
+    if (!beat || !current) {
+      onContextMenu(e);
+      return;
+    }
+    e.preventDefault();
+    const box = e.currentTarget.getBoundingClientRect();
+    const root = e.currentTarget.closest('.vn-root')?.getBoundingClientRect();
+    const bottom = root ? root.bottom - box.top + 8 : 0;
+    // 对话框占了大半屏(手机横屏)时,上面至少留 INSPECT_MIN_ROOM 给检查器,压住对话框上沿也行
+    setInspect({ key: typeKey, bottom: Math.round(Math.max(8, Math.min(bottom, (root?.height ?? 0) - INSPECT_MIN_ROOM))) });
+    setAuto(false);
+    setSkip(false);
+  };
+  const closeInspect = () => setInspect(null);
 
   // ---- 输入:一直在,随时插话 ----
 
@@ -1424,7 +1608,7 @@ export function VNScreen({
     const text = draft.trim();
     if (!text || !canSend) return;
     setDraft('');
-    bgmPlayer.unlock();
+    audioBus.unlock();
     // 自动留着:开着自动发出去,新回复写出来就接着一句句往下翻;跳过要停,不然一路跳过新回复
     setSkip(false);
     const latest = lastAssistantIndex >= 0 ? beats[lastAssistantIndex] : null;
@@ -1613,6 +1797,12 @@ export function VNScreen({
       <button onClick={() => openMenu()}>菜单</button>
     </>
   );
+  // 插图卡带的小按钮:玻璃皮肤放在发送右边,经典皮肤放在快捷按钮一排的最前面
+  const illusButton = illustrations ? (
+    <div className="vn-illus-btn" onClick={stop}>
+      {illustrations.button(illusCtx)}
+    </div>
+  ) : null;
   const inputForm = (
       <form className="vn-input" onSubmit={submit}>
         <textarea
@@ -1654,7 +1844,7 @@ export function VNScreen({
               e.keyCode !== 229
             ) {
               e.preventDefault();
-              bgmPlayer.unlock();
+              audioBus.unlock();
               advanceRef.current();
               return;
             }
@@ -1692,18 +1882,27 @@ export function VNScreen({
         } as React.CSSProperties
       }
       // 浏览器要用户点过才让网页出声;界面里任何一次点击都顺手解锁一下
-      onPointerDown={() => bgmPlayer.unlock()}
+      onPointerDown={() => audioBus.unlock()}
     >
       <div
-        className={`vn-stage${cgView.src ? ' cg-on' : ''}`}
+        className={`vn-stage${cgOn ? ' cg-on' : ''}`}
         inert={covered}
         onClick={advance}
         onWheel={onWheel}
         onContextMenu={onContextMenu}
       >
-        <BackgroundLayer view={bgView} />
-        <SpriteLayer view={spriteView} charName={charName} fx={spriteFx} fxVolume={settings.spriteFxVolume} />
-        <CgLayer view={cgView} />
+        {/* 背景 / 立绘在开关里关了:不画(背景留黑) */}
+        {switches.bg && <BackgroundLayer view={bgView} />}
+        {switches.sprite && (
+          <SpriteLayer
+            view={spriteView}
+            charName={charName}
+            fx={spriteFx}
+            fxVolume={settings.spriteFxVolume}
+            covered={cgOn}
+          />
+        )}
+        <CgLayer view={shownCg} />
       </div>
 
       {/* 翻回历史往下看:当时玩家发的话弹成选项,点哪里都接着往下 */}
@@ -1731,7 +1930,7 @@ export function VNScreen({
         </div>
       )}
 
-      {((settings.showModel && modelLabel) || voice.paused || showVoiceChip) && (
+      {((settings.showModel && modelLabel) || voice.paused || showVoiceChip || lens) && (
         <div className="vn-topbar" inert={covered}>
           {showVoiceChip && (
             <VoiceQuick
@@ -1759,11 +1958,37 @@ export function VNScreen({
               {modelLabel}
             </span>
           )}
+          {lens && forms?.stateNames && forms.stateNames.length >= 2 ? (
+            <StateToggle
+              names={forms.stateNames}
+              current={cursorState.form ?? formCurrent ?? forms.stateNames[0]}
+              onPick={(next) => {
+                // 记号插在正在看的这句上;还没有句子时插在最后一条后面
+                const at = beatId ?? entries[entries.length - 1]?.id;
+                if (at) forms.switchAt(at, beatId ? line : Number.MAX_SAFE_INTEGER, next);
+              }}
+            />
+          ) : lens && forms && FormButton && (
+            <FormButton
+              form={cursorState.form ?? formCurrent ?? ''}
+              onToggle={(next) => {
+                // 记号插在正在看的这句上;还没有句子时插在最后一条后面
+                const at = beatId ?? entries[entries.length - 1]?.id;
+                if (at) forms.switchAt(at, beatId ? line : Number.MAX_SAFE_INTEGER, next);
+              }}
+            />
+          )}
         </div>
       )}
 
-      <div className="vn-window" onWheel={onWheel} inert={covered}>
-        <div className="vn-box" onClick={advance} onContextMenu={onContextMenu}>
+      {illustrations && (
+        <div className="vn-illus" inert={covered}>
+          {illustrations.stage(illusCtx)}
+        </div>
+      )}
+
+      <div className="vn-window" ref={measureWindow} onWheel={onWheel} inert={covered}>
+        <div className="vn-box" onClick={advance} onContextMenu={onBoxContextMenu}>
           {speaker && <div className={`vn-name${shown?.player ? ' player' : ''}`}>{speaker}</div>}
           {sending &&
             (glass ? (
@@ -1831,8 +2056,9 @@ export function VNScreen({
                   <VoiceButtons req={voice.request} onAction={voice.release} />
                 </div>
               )}
-              <div className="vn-row" onClick={stop}>
+              <div className={`vn-row${illusButton ? ' has-illus' : ''}`} onClick={stop}>
                 {myTurn || pastInput ? <span className="vn-row-hint">说点什么 · 随时可以插话</span> : inputForm}
+                {illusButton}
                 <span className="vn-row-sep" aria-hidden="true" />
                 <div className="vn-quick">{quickButtons}</div>
               </div>
@@ -1840,6 +2066,7 @@ export function VNScreen({
           ) : (
             <div className="vn-quick" onClick={stop}>
             {voice.request && <VoiceButtons req={voice.request} onAction={voice.release} className="lead" />}
+              {illusButton}
               {quickButtons}
             </div>
           )}
@@ -1866,6 +2093,30 @@ export function VNScreen({
         </div>
       )}
 
+      {/* 对话框上右键 / 长按打开的句检查器:整层接住点击,点外面只是关掉、不翻下一句 */}
+      {inspecting && inspect && (
+        <div
+          className="vn-insp-layer"
+          inert={covered}
+          onClick={closeInspect}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            closeInspect();
+          }}
+        >
+          <div
+            className="vn-insp"
+            role="dialog"
+            aria-label="这一句的详情"
+            style={{ '--vn-insp-bottom': `${inspect.bottom}px` } as CSSProperties}
+            onClick={stop}
+            onContextMenu={stop}
+          >
+            {inspectorFor(beatIndex, line, voicePlans[line] ?? null, { streaming, onClose: closeInspect })}
+          </div>
+        </div>
+      )}
+
       {menu && (
         <VNMenu
           page={menu}
@@ -1888,6 +2139,7 @@ export function VNScreen({
             ) : null
           }
           onClose={closeMenu}
+          onLibrary={onOpenLibrary}
           onTitle={() => {
             setMenu(null);
             setTitleCold(false);
@@ -1909,11 +2161,24 @@ export function VNScreen({
               showJa={showJa}
               onChangeShowJa={onChangeShowJa}
               initialTab={settingsTab}
+              extraTabs={
+                illustrationsInstalled
+                  ? [
+                      {
+                        key: ILLUS_TAB,
+                        name: illustrationsInstalled.settingsName,
+                        beta: true,
+                        render: illustrationsInstalled.settings,
+                      },
+                    ]
+                  : undefined
+              }
               titleMusic={
                 currentCardId
                   ? { bgms: bgmsOf(sceneAssets), value: titleBgmId, onChange: onChangeTitleBgm }
                   : null
               }
+              onUploadMarks={forms?.uploadMarks}
             />
           ) : menu === 'dev' ? (
             <div className="vn-dev">
@@ -2048,8 +2313,6 @@ export function VNScreen({
   );
 }
 
-const KIND_NAME: Record<string, string> = { sprite: '立绘', bg: '场景', bgm: '音乐', cg: 'CG', player: '玩家' };
-
 const BGM_FROM: Record<NonNullable<SceneState['bgmFrom']>, string> = {
   initial: '开场默认',
   scene: '场景默认曲',
@@ -2066,6 +2329,8 @@ function describeMatch(m: TagMatch, sprites: readonly PackSprite[]): { ok: boole
   switch (m.state) {
     case 'exact':
       return { ok: true, text: `✓ ${where}${m.label}${noImage(m.label)}` };
+    case 'record':
+      return { ok: true, text: `✓ ${where}${m.label}(认词记录 · ${RECORD_SOURCE_NAME[m.source]})${noImage(m.label)}` };
     case 'model':
       return { ok: true, text: `≈ ${where}${m.label}(模型 ${m.score.toFixed(2)})${noImage(m.label)}` };
     case 'pending':
@@ -2125,7 +2390,7 @@ function ConsoleView({
         const a = resolveByLabel(label, pool);
         if (a) return { ok: true, text: `✓ ${a.label}${a.has_file ? '' : '(还没传文件)'}` };
         if (sceneAssets.length === 0) return { ok: false, text: '✗ 这张卡没有绑定场景包' };
-        return { ok: false, text: `✗ 场景包里没有这个${KIND_NAME[kind]},保持不变` };
+        return { ok: false, text: `✗ 场景包里没有这个${kindName(kind)},保持不变` };
       },
     [sprites, sceneAssets, emotion],
   );
@@ -2157,7 +2422,7 @@ function ConsoleView({
     return out;
   }, [raw, tagKinds, resolve]);
 
-  const broken = tagKinds.filter((k) => !k.pattern).map((k) => KIND_NAME[k.kind]);
+  const broken = tagKinds.filter((k) => !k.pattern).map((k) => kindName(k.kind));
   const jev = beat ? currentInfo(beat.entry)?.jev : undefined;
   const jevDropped = beat && jev ? entryView(beat.entry, tagKinds).dropped : 0;
   const jevPending = beat?.entry.jevPending;
@@ -2190,7 +2455,7 @@ function ConsoleView({
         </div>
         {jev && (
           <p className={`vn-console-note${jev.failed ? ' miss' : ''}`}>
-            这条的{(jev.kinds ?? []).map((k) => KIND_NAME[k]).join('、')}标签是 Jev 标的:判了 {jev.lines} 句、{jev.requests} 次请求、最慢 {(jev.maxMs / 1000).toFixed(2)} 秒、
+            这条的{(jev.kinds ?? []).map((k) => kindName(k)).join('、')}标签是 Jev 标的:判了 {jev.lines} 句、{jev.requests} 次请求、最慢 {(jev.maxMs / 1000).toFixed(2)} 秒、
             {jev.tokens.toLocaleString()} token(约 ${((jev.tokens * 0.042) / 1e6).toFixed(4)})
             {jevPending !== undefined ? ` · 第 ${jevPending + 1} 句起还在判` : ''}
             {jev.failed ? ` · ${jev.failed} 句没判成(照没标处理):${jev.error ?? ''}` : ''}
@@ -2223,7 +2488,7 @@ function ConsoleView({
                   return (
                     <tr key={i}>
                       <td>{i + 1}</td>
-                      <td>{KIND_NAME[h.kind] ?? h.kind}</td>
+                      <td>{kindName(h.kind)}</td>
                       <td>
                         <code>{h.raw}</code>
                       </td>

@@ -121,16 +121,16 @@ def test_transport_error_tells_tunnel_service_and_network_apart():
     from app.tts.http import transport_error
 
     tunnel = "http://127.0.0.1:9880"
-    # 本机地址连接被拒:语音隧道没开
+    # 本机地址连接被拒:服务没开,或者语音隧道没开
     assert transport_error(tunnel, "GPT-SoVITS", httpx.ConnectError("refused")) == (
         503,
-        f"连不上语音服务 {tunnel}(本机地址要靠 SSH 隧道转到台式机,隧道没开。"
-        "建议把地址换成台式机的 Tailscale 地址,见 docs/voice-server.md)",
+        f"连不上语音服务 {tunnel}(GPT-SoVITS 没启动,或者端口不对;"
+        "语音服务在另一台电脑上、靠 SSH 隧道转到本机的话,也可能是隧道没开)",
     )
     # 连得上但对方一个字没回就断开:隧道通了,台式机上的服务没启动
     assert transport_error(tunnel, "GPT-SoVITS", httpx.RemoteProtocolError("disconnected")) == (
         503,
-        f"语音服务没回应 {tunnel}(连接是通的,但台式机上的 GPT-SoVITS 没启动,用台式机桌面上的快捷方式启动它)",
+        f"语音服务没回应 {tunnel}(连接是通的,但那边的 GPT-SoVITS 没启动,或者还没加载完)",
     )
     # 直连台式机时连接超时:多半没开机或者不在一个网络
     assert transport_error("http://100.64.1.2:9880", "IndexTTS", httpx.ConnectTimeout("slow")) == (
@@ -275,3 +275,21 @@ def test_voice_params_reach_the_request_and_the_cache_key(gsv):
     # IndexTTS 的参数混进来也不发给 GSV
     odd = replace(AMIYA, params={"emo_alpha": 0.5})
     assert engine.request_body("博士。", odd) == plain
+
+
+def test_connections_to_the_same_server_share_its_lock_and_loaded_weights():
+    """素材架构设计 5.10 P21:锁和「加载着哪组权重」是那台服务的,不是某个连接的"""
+    from types import SimpleNamespace
+
+    from app.tts.registry import engine_for, reset_engines
+
+    reset_engines()
+    a = SimpleNamespace(id="c1", api_type="gpt_sovits", base_url="http://gsv:9880/", sample_steps=32, options={})
+    b = SimpleNamespace(id="c2", api_type="gpt_sovits", base_url="http://GSV:9880", sample_steps=64, options={})
+    other = SimpleNamespace(id="c3", api_type="gpt_sovits", base_url="http://other:9880", sample_steps=32, options={})
+    ea, eb, eo = engine_for(a), engine_for(b), engine_for(other)
+    assert ea is not eb and ea.state is eb.state and ea.lock is eb.lock
+    ea.loaded_gpt = "D:/x.ckpt"
+    assert eb.loaded_gpt == "D:/x.ckpt"
+    assert eo.state is not ea.state
+    reset_engines()

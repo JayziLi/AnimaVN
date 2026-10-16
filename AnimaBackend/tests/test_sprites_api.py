@@ -238,13 +238,14 @@ def test_upload_records_the_face_and_scan_fills_sprites_that_missed_it(
     assert (scan["width"], scan["height"]) == (334, 700)
     assert scan["face"] is not None
 
-    # 服务器上没装 OpenCV 时上传照样成功,只是先不记;装上之后由 scan-faces 补上
-    monkeypatch.setattr(sprites_api, "scan", lambda data: None)
-    second = client.post(base, json={"label": "微笑"}).json()
-    missed = client.put(f"{base}/{second['id']}/image", files={"file": ("b.png", image, "image/png")})
-    assert missed.status_code == 200
-    assert missed.json()["face_scan"] is None
-    monkeypatch.undo()
+    # 服务器上没装 OpenCV 时上传照样成功,只是先不记;装上之后由 scan-faces 补上。
+    # 用 context 只还原 scan:undo() 会把 conftest 换掉的文件仓库目录也一起还原
+    with monkeypatch.context() as m:
+        m.setattr(sprites_api, "scan", lambda data: None)
+        second = client.post(base, json={"label": "微笑"}).json()
+        missed = client.put(f"{base}/{second['id']}/image", files={"file": ("b.png", image, "image/png")})
+        assert missed.status_code == 200
+        assert missed.json()["face_scan"] is None
 
     scanned = client.post(f"{base}/scan-faces")
     assert scanned.status_code == 200

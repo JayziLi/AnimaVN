@@ -27,6 +27,7 @@ import {
   type FaceBox,
 } from '../plugins/spriteLayout';
 import type { SpriteLayoutState } from '../plugins/useSpriteLayout';
+import { POSITION_EDITOR_BACKGROUND } from '../vn/fallbacks';
 
 type Mode = 'wide' | 'tall';
 
@@ -34,7 +35,6 @@ type Mode = 'wide' | 'tall';
 const STAGE_TOP: Record<Mode, number> = { wide: 0.07, tall: 0.11 };
 /** 对话框(连同下面的输入框)大概盖住屏幕底部多少,只是给个参照 */
 const BOX_HEIGHT: Record<Mode, number> = { wide: 0.31, tall: 0.27 };
-const FALLBACK_BG = '/vn/bg/uni.jpg';
 /** 和后端 SpriteLayoutUpdate 的范围一致 */
 const OFFSET_MAX = 2;
 
@@ -109,7 +109,7 @@ export function SpritePosition({
   const ref = useReference(refId);
 
   const bg = enabledOnly(backgroundsOf(sceneAssets)).find((a) => a.has_file) ?? null;
-  const bgUrl = (bg && sceneFileUrl(bg)) ?? FALLBACK_BG;
+  const bgUrl = (bg && sceneFileUrl(bg)) ?? POSITION_EDITOR_BACKGROUND;
 
   const found = usable.filter((s) => faces.has(s.id)).length;
   const unscanned = usable.filter((s) => s.face_scan === null).length;

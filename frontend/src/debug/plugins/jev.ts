@@ -16,23 +16,23 @@
  * 设计见 docs/superpowers/specs/2026-10-01-jev-director-design.md
  */
 
+import { SPEAKER_THRESHOLD } from '../generated/contracts';
 import type { AssemblyResult } from '../lib/assembler';
-import type { ChatEntry } from '../lib/chatEntry';
 import type { PresetOrderEntry } from '../lib/presetParser';
-import { extractTags, type TagKind, type VNLine } from '../vn/script';
-import { objectOf, promptOf, resolveByLabel, thresholdOf, type Labeled } from './common';
-import { jevText, stripReplyTags } from './jevNotes';
+import type { TagKind, VNLine } from '../vn/script';
+import { objectOf, promptOf, thresholdOf } from './common';
+import { stripReplyTags } from './jevNotes';
 import { DEFAULT_LANG_BLOCK_PROMPT, DEFAULT_LANG_BLOCK_PROMPT_JEV } from './lang';
-import { PLAYER_BLOCK_ID } from './player';
+import { BLOCK_OF, JEV_KINDS, type JevKind } from './registry';
 import { CG_OFF_WORD, SCENE, type ScenePluginConfig } from './scene';
-import { PLACEHOLDER, SPRITE_BLOCK_ID, type SpritePluginConfig } from './sprite';
+import { PLACEHOLDER, type SpritePluginConfig } from './sprite';
 
 export { insertionPoint, jevKindsOf, NO_KINDS, stripReplyTags } from './jevNotes';
 
 export const JEV_SETTING_KEY = 'plugin.jev';
 
-/** 说话人门槛:默认、可调范围(和后端 ThresholdsIn 一致) */
-export const SPEAKER_THRESHOLD = { def: 0.8, min: 0.5, max: 0.95 };
+/** 说话人门槛:默认、可调范围(前后端共用,定义在 AnimaBackend/app/contracts.py) */
+export { SPEAKER_THRESHOLD };
 /** 「立绘和文字同步」最多等 Jev 这么久,还没判完就先出字 */
 export const SYNC_MAX_WAIT_MS = 2000;
 
@@ -55,11 +55,14 @@ export interface JevPluginConfig {
   speakerThreshold: number;
   /** 改过的通用问法;null = 用后端默认 */
   prompts: Record<SharedPromptKey, string | null>;
+  /** 两条队列(试用,plugins/jevRun.ts):CG 是 Jev 时别的题不再一句一句等;默认关 */
+  twoQueues: boolean;
 }
 
 export const DEFAULT_JEV_CONFIG: JevPluginConfig = {
   syncText: true,
-  speakerThreshold: SPEAKER_THRESHOLD.def,
+  speakerThreshold: SPEAKER_THRESHOLD.default,
+  twoQueues: false,
   prompts: Object.fromEntries(SHARED_PROMPT_KEYS.map((k) => [k, null])) as Record<SharedPromptKey, null>,
 };
 
@@ -68,24 +71,20 @@ export function normalizeJevConfig(raw: unknown): JevPluginConfig {
   const p = objectOf(r.prompts);
   return {
     syncText: typeof r.syncText === 'boolean' ? r.syncText : DEFAULT_JEV_CONFIG.syncText,
-    speakerThreshold: thresholdOf(r.speakerThreshold, SPEAKER_THRESHOLD.def, SPEAKER_THRESHOLD.min, SPEAKER_THRESHOLD.max),
+    speakerThreshold: thresholdOf(r.speakerThreshold, SPEAKER_THRESHOLD.default, SPEAKER_THRESHOLD.min, SPEAKER_THRESHOLD.max),
     prompts: Object.fromEntries(SHARED_PROMPT_KEYS.map((k) => [k, promptOf(p[k])])) as Record<SharedPromptKey, string | null>,
+    twoQueues: typeof r.twoQueues === 'boolean' ? r.twoQueues : DEFAULT_JEV_CONFIG.twoQueues,
   };
 }
 
 // ---- 哪几类在用 Jev ----
 
+/** 能让 Jev 标的几类(sprite / bg / bgm / cg / player),登记在插件总表 plugins/registry.ts */
+export type { JevKind };
+
 /** 每类标签在不在用 Jev:模式是 jev、而且后端有 key(没 key 时照旧由 AI 写) */
-export interface JevKinds {
-  sprite: boolean;
-  bg: boolean;
-  bgm: boolean;
-  cg: boolean;
-  player: boolean;
-}
-export type JevKind = keyof JevKinds;
-export const JEV_KINDS: readonly JevKind[] = ['sprite', 'bg', 'bgm', 'cg', 'player'];
-export const NO_JEV: JevKinds = { sprite: false, bg: false, bgm: false, cg: false, player: false };
+export type JevKinds = Record<JevKind, boolean>;
+export const NO_JEV: JevKinds = Object.fromEntries(JEV_KINDS.map((k) => [k, false])) as JevKinds;
 
 export const anyJev = (k: JevKinds) => JEV_KINDS.some((x) => k[x]);
 export const jevKindList = (k: JevKinds): JevKind[] => JEV_KINDS.filter((x) => k[x]);
@@ -110,14 +109,6 @@ export function jevMayTag(line: VNLine, index: number, charName: string, kinds: 
 export const jevTagKinds = (k: JevKinds, kinds: readonly TagKind[]): TagKind[] =>
   kinds.filter((t) => (JEV_KINDS as readonly string[]).includes(t.kind) && k[t.kind as JevKind]);
 
-const BLOCK_OF: Record<JevKind, string> = {
-  sprite: SPRITE_BLOCK_ID,
-  bg: SCENE.bg.blockId,
-  bgm: SCENE.bgm.blockId,
-  cg: SCENE.cg.blockId,
-  player: PLAYER_BLOCK_ID,
-};
-
 // ---- 组装提示词 ----
 
 /** 编排里关掉在用 Jev 的那几块(预设本身不动,只影响这次组装) */
@@ -125,6 +116,9 @@ export const jevOrder = (order: readonly PresetOrderEntry[], k: JevKinds): Prese
   order.map((o) =>
     o.enabled && JEV_KINDS.some((x) => k[x] && BLOCK_OF[x] === o.identifier) ? { ...o, enabled: false } : o,
   );
+
+/** 在用 Jev 的那几路的插件块 identifier(组装时不发;左栏显示成关着) */
+export const jevBlockIds = (k: JevKinds): Set<string> => new Set(jevKindList(k).map((x) => BLOCK_OF[x]));
 
 /**
  * 外语块要不要换成不提标签的版本:有在用 Jev 的,而且开着的标签插件块全是 Jev 的。
@@ -180,6 +174,8 @@ export interface JevDecision {
   /** 换成这张 CG;cg_off = 收起 CG。后端是旧版时没有 */
   cg?: string | null;
   cg_off?: boolean;
+  /** 这句判的档(卡带登记的两档题)。问了(ask_tone)才有 */
+  tone?: string | null;
   confidence: Record<string, number>;
 }
 
@@ -218,25 +214,4 @@ export function decisionTags(
     if (emotion) out.push(fillTag(t.sprite, PLACEHOLDER, emotion));
   }
   return out;
-}
-
-/**
- * 这条回复之前生效的表情:之前各条回复里(合并了 Jev 的标注)最后一个对得上的立绘标签
- * (对不上的跳过 —— Jev 只会从列表里挑,以前 AI 写的可能对不上)。一个都没有就是排第一的那个
- */
-export function emotionBefore(
-  entries: readonly ChatEntry[],
-  kinds: readonly TagKind[],
-  candidates: readonly Labeled[],
-): string | null {
-  let label: string | null = candidates[0]?.label ?? null;
-  for (const e of entries) {
-    if (e.role !== 'assistant') continue;
-    for (const t of extractTags(jevText(e, kinds), kinds, false).tags) {
-      if (t.kind !== 'sprite') continue;
-      const hit = resolveByLabel(t.label, candidates);
-      if (hit) label = hit.label;
-    }
-  }
-  return label;
 }

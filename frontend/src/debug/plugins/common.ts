@@ -5,20 +5,19 @@
  *   往预设里插一个插件块、查这块的状态
  */
 
+import { LABEL_FORBIDDEN, LABEL_MAX } from '../generated/contracts';
 import type { PresetOrderEntry, PresetPrompt, TavernPreset } from '../lib/presetParser';
+import { PLUGIN_BLOCK_IDS } from './registry';
 
-/** 名字的长度上限,和后端 LABEL_MAX 一致 */
-export const LABEL_MAX = 40;
+/** 名字的长度上限:前后端共用,定义在 AnimaBackend/app/contracts.py */
+export { LABEL_MAX };
 
-/** 所有插件块的 identifier。新的插件块插在已有插件块后面,几块挨在一起 */
-export const PLUGIN_BLOCK_IDS = [
-  'anima_sprite',
-  'anima_bg',
-  'anima_bgm',
-  'anima_cg',
-  'anima_lang',
-  'anima_player',
-] as const;
+/**
+ * 去掉名字里不许用的字符(LABEL_FORBIDDEN:换行和 <>[]{}【】「」 这些括号,和后端 clean_label 拒收的是同一批)。
+ * 表情名会被塞进标签模板里,带括号解析器就分不清标签在哪里结束了
+ */
+export const stripLabelForbidden = (s: string) =>
+  s.replace(new RegExp(`[${escapeRe(LABEL_FORBIDDEN)}]`, 'g'), '');
 
 export interface PluginConfig {
   /** 标签格式,必须恰好包含一个占位符 */
@@ -189,6 +188,7 @@ export function insertPluginBlock(
   const groups =
     preset.orderGroups.length > 0 ? preset.orderGroups : [{ characterId: 100000, order: [] }];
   const target = groups[groupIndex] ? groupIndex : 0;
+  // 所有插件块(plugins/registry.ts);新的插件块插在已有插件块后面,几块挨在一起
   const siblings = new Set<string>(PLUGIN_BLOCK_IDS);
 
   return {
@@ -216,8 +216,7 @@ export function insertPluginBlock(
   };
 }
 
-export const isPluginBlock = (identifier: string) =>
-  (PLUGIN_BLOCK_IDS as readonly string[]).includes(identifier);
+export const isPluginBlock = (identifier: string) => PLUGIN_BLOCK_IDS.includes(identifier);
 
 /**
  * 插件块的正文只认插件里的提示词模板,预设里存的那份只是副本:读预设时一律换成

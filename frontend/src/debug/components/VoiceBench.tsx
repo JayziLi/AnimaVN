@@ -32,7 +32,7 @@ import {
   type SampleLang,
   type VoiceDraft,
 } from '../plugins/voice';
-import { bgmPlayer } from '../vn/bgm';
+import { audioBus } from '../vn/audioBus';
 import { useVoice, voicePlayer } from '../vn/voice';
 import { errText, type Notify } from './pluginRunner';
 
@@ -185,7 +185,7 @@ export function VoiceBench({ voice, card, sample, onSample, notify }: Props) {
   const generate = async (fresh: boolean) => {
     if (!canRun) return;
     // 在点击里解锁:合成要一两秒,回来就不算用户手势了
-    bgmPlayer.unlock();
+    audioBus.unlock();
     setAutoQueue([]);
     setError(null);
     setBusy(fresh ? '换一种念法' : '合成中');
@@ -200,7 +200,7 @@ export function VoiceBench({ voice, card, sample, onSample, notify }: Props) {
 
   const everyEmotion = async () => {
     if (!canRun || !profile) return;
-    bgmPlayer.unlock();
+    audioBus.unlock();
     stop();
     setError(null);
     const rows = profile.emotions;
@@ -453,7 +453,7 @@ export function VoiceBench({ voice, card, sample, onSample, notify }: Props) {
                   setAutoQueue([]);
                   if (playingId === t.id) voicePlayer.stop();
                   else {
-                    bgmPlayer.unlock();
+                    audioBus.unlock();
                     void play(t);
                   }
                 }}

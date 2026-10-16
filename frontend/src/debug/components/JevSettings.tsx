@@ -14,7 +14,8 @@ import { DeleteButton } from './pluginFields';
 
 /**
  * 插件页里 Jev 标注的几块(设计见 docs/superpowers/specs/2026-10-01-jev-director-design.md 第三节):
- *   ModeBar        立绘 / 背景 / BGM / CG / 玩家台词每页最上面:二选一「AI 写标签 | Jev 标注」+ 一行说明
+ *   ModeBar        立绘 / 背景 / BGM / CG / 玩家台词每页最上面:二选一「AI 写标签 | Jev 标注」+ 一行说明;
+ *                  有开关的(plugins/switches.ts)右上角再放一个总开关(PowerSwitch)
  *   JevCommon      几个插件共用的设置:key 和测试、立绘和文字同步、说话人门槛、通用问法、试判
  *   PromptField    一道题的问法:显示默认、改了存下来、能恢复默认
  *   ThresholdField 门槛滑条
@@ -43,6 +44,31 @@ const usd = (tokens: number) => `$${((tokens * 0.042) / 1e6).toFixed(4)}`;
 
 // ─────────────────────────── 标题栏 ───────────────────────────
 
+/** 插件的总开关(plugins/switches.ts):关掉 = 这个功能整个不用 */
+export interface Power {
+  on: boolean;
+  onChange: (on: boolean) => void;
+}
+
+export const OFF_NOTE = '已关闭:提示词里不提、Jev 不判、游戏里不用这个功能。插件设置和预设都不动,打开就照旧';
+
+/** 插件页右上角的小开关 */
+export function PowerSwitch({ name, on, onChange }: Power & { name: string }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label={`${name}开关`}
+      className={`pl-power${on ? ' on' : ''}`}
+      onClick={() => onChange(!on)}
+      title={on ? `关掉${name}` : `打开${name}`}
+    >
+      <span className="knob" />
+    </button>
+  );
+}
+
 export function ModeBar({
   name,
   kind,
@@ -51,6 +77,7 @@ export function ModeBar({
   jev,
   aiNote,
   jevNote,
+  power,
 }: {
   name: string;
   kind: JevKind;
@@ -59,11 +86,15 @@ export function ModeBar({
   jev: JevControls;
   aiNote: string;
   jevNote: string;
+  /** 这个插件的总开关(右上角);不给 = 没有开关 */
+  power?: Power;
 }) {
   const s = jev.lastStats;
   let note: ReactNode = aiNote;
   let warn = false;
-  if (mode === 'jev') {
+  if (power && !power.on) {
+    note = OFF_NOTE;
+  } else if (mode === 'jev') {
     if (jev.defaults === null) {
       note = '后端还是旧版,不认 Jev 标注 —— 重启后端。现在照旧由 AI 写标签';
       warn = true;
@@ -82,7 +113,7 @@ export function ModeBar({
     <div className="pl-modebar">
       <div className="pl-modebar-head">
         <span className="pl-modebar-name">{name}</span>
-        <div className="pl-mode" role="radiogroup" aria-label={`${name}的标签由谁写`}>
+        <div className={`pl-mode${power && !power.on ? ' dim' : ''}`} role="radiogroup" aria-label={`${name}的标签由谁写`}>
           {(['ai', 'jev'] as const).map((m) => (
             <button
               key={m}
@@ -96,6 +127,7 @@ export function ModeBar({
             </button>
           ))}
         </div>
+        {power && <PowerSwitch name={name} {...power} />}
       </div>
       <span className={warn ? 'pl-error' : 'sp-group-note'}>{note}</span>
     </div>
@@ -368,10 +400,25 @@ export function JevCommon({ jev, notify }: { jev: JevControls; notify: Notify })
           </div>
 
           <div className="pl-sub">
+            <label className="vp-check">
+              <input
+                type="checkbox"
+                checked={config.twoQueues}
+                onChange={(e) => onChangeConfig({ ...config, twoQueues: e.target.checked })}
+              />
+              两条队列(试用)
+            </label>
+            <span className="sp-group-note">
+              只在 CG 由 Jev 标时有区别。关着(和以前一样):每句的题(说话人、表情、背景、音乐、CG)一起问,一句一句排队。
+              开着:CG 单独一句一句问,别的题多句一批先判完,立绘和语音不再跟着 CG 排队;请求数大约多 1/16。
+            </span>
+          </div>
+
+          <div className="pl-sub">
             <ThresholdField
               label="说话人门槛"
               value={config.speakerThreshold}
-              def={SPEAKER_THRESHOLD.def}
+              def={SPEAKER_THRESHOLD.default}
               min={SPEAKER_THRESHOLD.min}
               max={SPEAKER_THRESHOLD.max}
               low="更敢判成别人"

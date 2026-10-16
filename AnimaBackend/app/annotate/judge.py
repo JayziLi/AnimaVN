@@ -6,20 +6,23 @@ LLM 不再写标签;前端每写完一句就把它(连同这条回复前面的�
 设计见 docs/superpowers/specs/2026-10-01-jev-director-design.md
 
 每句问什么看句子类型和哪些插件是 Jev 模式:
-  切句认成主角的引号台词  s 谁说的(立绘或玩家台词是 Jev)、e 什么表情(立绘是 Jev)
+  切句认成主角的引号台词  s 谁说的(立绘或玩家台词是 Jev)、e 什么表情(立绘是 Jev)、
+                          t 这句的档(ask_tone,卡带登记的两档门槛题,见 register_tone)
   第一句和旁白            bg 现在在哪个场景(背景是 Jev)、bgm 放哪首(BGM 是 Jev),选项里都有「不换」
   每一句                  cg 画面上该是哪张 CG(CG 是 Jev),选项有「不换」「不显示CG」和每张 CG
 「名字:」开头的别人的台词不问。一条回复里场景、音乐各最多换一次:换过以后前端会带上
 bg_changed / bgm_changed,就不再问了(逐句问气氛会在几首之间来回跳)。CG 不限次数:
-一条回复里画面可能换好几回。
+姿势、玩法一条回复里可能换好几回。
 
-CG 的判法是拿一部原作游戏的 CG 时间线(4847 句)测出来的:给 Jev 当前地点、
+CG 的判法是 2026-10-03 拿一部原作游戏的 CG 时间线(4847 句)测出来的:给 Jev 当前地点、
 问「这一刻的整体情况」而不是「这一句」、几张相似的 CG 把握加起来算,严格准确率 74.5%。
 
 问法(提示词)可以在插件页改,这里存默认的;门槛也可以调。
 """
 
 from dataclasses import dataclass, field
+
+from app.contracts import SPEAKER_THRESHOLD, SWITCH_THRESHOLD
 
 # 「不换」选项的名字。场景包里真有叫这个名字的,换成 KEEP_FALLBACK
 KEEP = "不换"
@@ -50,7 +53,8 @@ DEFAULT_PROMPTS: dict[str, str] = {
     "bg_keep": "还在「{{current}}」{{current_desc}}:没换地方,白天夜晚也没变",
     "bgm": "第 {{n}} 句这一刻的气氛,最适合放哪首背景音乐?和现在这首「{{current}}」还搭就选「不换」;气氛只是稍有起伏也选「不换」,明显转变(比如闲聊转为紧张、热闹转为伤感)才换。",
     "bgm_keep": "现在这首「{{current}}」{{current_desc}}还合适",
-    # CG 看的是这一刻的整体情况:场面还在进行时,这句只是在说话也照样显示;先对正在发生的事,细节只作参考
+    # CG 看的是这一刻的整体情况:场面还在进行时,这句只是在说话也照样显示;先对正在发生的事,细节只作参考。
+    # 私有版的说法在 private-defaults 卡带里(app/plugins/private_defaults.py)
     "cg": "写到第 {{n}} 句时,{{char}}和{{user}}在哪里、正在做什么?画面上应该显示哪张 CG?看的是这一刻的整体情况,"
     "不是只看这一句:CG 里的场面(比如一起看烟花、在海边散步)还在进行时,即使这一句只是在说话、在想事情,也照样显示对应的 CG。"
     "先对场面和动作:在哪里、在做什么、有谁在场、人物是什么姿势。"
@@ -58,20 +62,56 @@ DEFAULT_PROMPTS: dict[str, str] = {
     "只是说要去做、还在准备还不算;事情已经开始了,就选场面最接近的那张。"
     "现在的画面还对得上就选「不换」;场面变了、动作变了才换别的 CG;"
     "这段场面结束了、回到日常了,或者正在发生的事和哪张 CG 都对不上,才选「不显示CG」。",
-    "cg_keep": "现在的画面「{{current}}」还对得上:还是这个场面、还在做这件事",
-    "cg_off": "不显示 CG,回到立绘和背景:这段场面结束了、回到日常了,或者正在发生的事和哪张 CG 都对不上",
+    "cg_keep": "现在的画面「{{current}}」还对得上",
+    "cg_off": "不显示 CG,回到立绘和背景:这段场面结束了,或者正在发生的事和哪张 CG 都对不上",
 }
 
 
 @dataclass(frozen=True)
+class TwoLevel:
+    """「两档门槛」题(素材架构设计 2.2 的通用题型):每句二选一,第一档的把握到 min_first 就算第一档(不用过半);
+    没给概率时只信选中的那项。问法、两档的说明都是 DEFAULT_PROMPTS 里的键,插件页能改"""
+
+    first: str
+    second: str
+    min_first: float
+    # 问法的键:题目、第一档的说明、第二档的说明
+    prompt: str
+    first_prompt: str
+    second_prompt: str
+
+
+# 卡带登记的「这句的档」题:请求里 ask_tone、而且是角色的台词时才问,答案写进 LineDecision.tone。
+# 没有卡带登记时不问(ask_tone 当没传)
+_tone: TwoLevel | None = None
+
+
+def register_prompts(prompts: dict[str, str]) -> None:
+    """卡带加载时调:加几段默认问法,或者换掉内核的(私有版的说法);键的先后不变。可以重复调"""
+    DEFAULT_PROMPTS.update(prompts)
+
+
+def register_tone(question: TwoLevel | None, prompts: dict[str, str] | None = None) -> None:
+    """卡带加载时调:登记「这句的档」题,连同它的默认问法(加进 DEFAULT_PROMPTS)。可以重复调"""
+    global _tone
+    _tone = question
+    register_prompts(prompts or {})
+
+
+def tone_question() -> TwoLevel | None:
+    return _tone
+
+
+@dataclass(frozen=True)
 class Thresholds:
+    # 默认值(0.8 / 0.6)和可调范围前后端共用,在 app/contracts.py
     # 判成「不是主角说的」要有这么大把握,否则还算主角的(实测判错的置信度大多 ≤0.6,判对的 ≥0.9)
-    speaker: float = 0.8
+    speaker: float = SPEAKER_THRESHOLD["default"]
     # 选了「不换」以外的场景 / 曲子,把握到这么大才换(实测 0.6 时换得勤又不太乱跳)
-    bg: float = 0.6
-    bgm: float = 0.6
+    bg: float = SWITCH_THRESHOLD["default"]
+    bgm: float = SWITCH_THRESHOLD["default"]
     # CG:几张 CG 的把握加起来到这么多才换 / 「不显示CG」到这么多才收起(见 _cg_decision)
-    cg: float = 0.6
+    cg: float = SWITCH_THRESHOLD["default"]
 
 
 @dataclass(frozen=True)
@@ -121,6 +161,8 @@ class AnnotateInput:
     scene: SceneState = field(default_factory=SceneState)
     # 立绘或玩家台词是 Jev 时问「谁说的」
     ask_speaker: bool = True
+    # 角色的台词多问一道「这句的档」(卡带登记了才问,见 register_tone)
+    ask_tone: bool = False
     thresholds: Thresholds = field(default_factory=Thresholds)
     # 改过的问法(键见 DEFAULT_PROMPTS);没有的用默认
     prompts: dict[str, str] = field(default_factory=dict)
@@ -138,6 +180,8 @@ class LineDecision:
     # 换成这张 CG / 收起 CG;都没有 = 画面不变
     cg: str | None = None
     cg_off: bool = False
+    # 问了才有:登记的那道题的第一档 / 第二档
+    tone: str | None = None
     confidence: dict[str, float] = field(default_factory=dict)
 
 
@@ -278,6 +322,15 @@ def build_request(inp: AnnotateInput) -> tuple[dict, dict]:
                     "instructions": _prompt(inp, "emotion", n=str(n), line=line),
                     "criteria": _criteria(inp.emotions),
                 }
+            if inp.ask_tone and _tone is not None:
+                questions[f"t{n}"] = {
+                    "type": "choice",
+                    "instructions": _prompt(inp, _tone.prompt, n=str(n), line=line),
+                    "criteria": {
+                        _tone.first: _prompt(inp, _tone.first_prompt),
+                        _tone.second: _prompt(inp, _tone.second_prompt),
+                    },
+                }
         if inp.cgs:
             questions[f"cg{n}"] = _cg_question(inp, n, line)
         if not _asks_scene(inp, i):
@@ -305,12 +358,26 @@ def _choice(answers: dict, name: str, allowed: set[str]) -> tuple[str | None, fl
     return c, _num(probs.get(c, a.get("confidence")))
 
 
+def _two_level_decision(q: TwoLevel, answers: dict, name: str) -> tuple[str | None, float]:
+    """(第一档 / 第二档, 第一档的把握)。第一档的把握到 q.min_first 就算第一档;没给概率时只信选中的那项"""
+    choice, p = _choice(answers, name, {q.first, q.second})
+    if choice is None:
+        return None, 0.0
+    a = answers[name]
+    probs = a.get("probabilities") if isinstance(a.get("probabilities"), dict) else {}
+    first = probs.get(q.first)
+    if not isinstance(first, (int, float)):
+        first = p if choice == q.first else 1.0 - p
+    first = float(first)
+    return (q.first if first >= q.min_first else q.second), first
+
+
 def _cg_decision(inp: AnnotateInput, answers: dict, name: str) -> tuple[str | None, bool, float]:
     """(换成哪张, 要不要收起, 把握)。
 
     几张相似的 CG(海边散步 / 海边烟花)会把把握分掉:Jev 明明选对了,每张却只有 0.4,
     单看一张永远过不了门槛。所以「换」看所有别的 CG 的把握加起来,够了就换成其中最高的那张;
-    「收起」看「不显示CG」一项。实测这样比只看选中那张多对 2.6 个点"""
+    「收起」看「不显示CG」一项。实测这样比只看选中那张多对 2.6 个点(设计文档第五节)"""
     a = answers.get(name)
     if not isinstance(a, dict):
         return None, False, 0.0
@@ -342,7 +409,7 @@ def decide(inp: AnnotateInput, answers: dict) -> list[LineDecision]:
     out: list[LineDecision] = []
     for i in sorted(inp.targets):
         n = i + 1
-        speaker = emotion = bg = bgm = cg = None
+        speaker = emotion = bg = bgm = cg = tone = None
         cg_off = False
         conf: dict[str, float] = {}
         if _is_dialogue(inp, i):
@@ -355,6 +422,10 @@ def decide(inp: AnnotateInput, answers: dict) -> list[LineDecision]:
                 emotion, e_conf = _choice(answers, f"e{n}", emotions)
                 if emotion:
                     conf["emotion"] = e_conf
+            if inp.ask_tone and _tone is not None and speaker in ("char", None):
+                tone, t_conf = _two_level_decision(_tone, answers, f"t{n}")
+                if tone:
+                    conf["tone"] = t_conf
         if _asks_scene(inp, i):
             if not bg_done:
                 where, p = _choice(answers, f"bg{n}", bgs)
@@ -370,5 +441,5 @@ def decide(inp: AnnotateInput, answers: dict) -> list[LineDecision]:
             cg, cg_off, p = _cg_decision(inp, answers, f"cg{n}")
             if cg or cg_off:
                 conf["cg"] = p
-        out.append(LineDecision(i, speaker, emotion, bg, bgm, cg, cg_off, conf))
+        out.append(LineDecision(i, speaker, emotion, bg, bgm, cg, cg_off, tone, conf))
     return out

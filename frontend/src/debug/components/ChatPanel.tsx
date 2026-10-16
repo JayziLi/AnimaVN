@@ -16,12 +16,10 @@ import { substituteMacros, type MacroContext } from '../lib/macros';
 import { renderMarked } from '../lib/richText';
 import { useCoarsePointer, useIsMobile } from '../lib/useIsMobile';
 import { useSwipeGesture } from '../lib/useSwipeGesture';
-import type { JevKind } from '../plugins/jev';
 import { entryView } from '../plugins/jevNotes';
+import { kindName } from '../plugins/registry';
 import type { TagKind } from '../vn/script';
 import { AnimaIcon } from './AnimaIcon';
-
-const JEV_KIND_NAME: Record<JevKind, string> = { sprite: '立绘', bg: '背景', bgm: '音乐', cg: 'CG', player: '玩家台词' };
 
 interface Props {
   entries: ChatEntry[];
@@ -299,7 +297,7 @@ function MessageRow({
   const shown = displayText ? displayText(text, expanded) : expanded;
   // Jev 加的标签单独标出来;宏展开改了长度时位置对不上,就不标
   const jevMarks = view && !displayText && !original && expanded === view.text ? view.marks : [];
-  const jevNames = jevKinds.map((k) => JEV_KIND_NAME[k]).join('、');
+  const jevNames = jevKinds.map((k) => kindName(k)).join('、');
   const streaming = Boolean(entry.streaming);
   const behavior = overswipeOf(entry, index, total, tainted);
   const many = entry.swipes.length > 1;

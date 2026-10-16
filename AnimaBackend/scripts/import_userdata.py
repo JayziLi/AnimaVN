@@ -5,13 +5,25 @@
 An existing DB is not overwritten: it is renamed to <db>.bak-<time> first.
 API keys come back blank (the export leaves them out); fill them in again under
 连接. The TTS cache starts empty and refills as lines are voiced.
+
+Files that *_sha columns point at are copied back into the file store next to the
+DB (data/blobs, or BLOB_DIR); files already there are left alone.
 """
 
 import json
+import os
+import re
+import shutil
 import sqlite3
 import sys
 import time
 from pathlib import Path
+
+SHA = re.compile(r"^[0-9a-f]{64}$")
+
+
+def store_root(db_path: Path) -> Path:
+    return Path(os.environ["BLOB_DIR"]) if os.environ.get("BLOB_DIR") else db_path.parent / "blobs"
 
 
 def restore(src: Path, db_path: Path) -> None:
@@ -22,6 +34,7 @@ def restore(src: Path, db_path: Path) -> None:
     db.executescript((src / "schema.sql").read_text(encoding="utf-8"))
     tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
     counts: dict[str, int] = {}
+    shas: set[str] = set()
     # tables/<表>.jsonl，或者拆开的大表 tables/<表>/<key>.jsonl
     for path in sorted((src / "tables").glob("*.jsonl")) + sorted((src / "tables").glob("*/*.jsonl")):
         table = path.stem if path.parent.name == "tables" else path.parent.name
@@ -34,6 +47,7 @@ def restore(src: Path, db_path: Path) -> None:
                     (src / "blobs" / v["$blob"]).read_bytes() if isinstance(v, dict) else v
                     for v in row.values()
                 ]
+                shas.update(v for c, v in row.items() if c.endswith("_sha") and isinstance(v, str) and SHA.match(v))
                 cols = ", ".join(f'"{c}"' for c in row)
                 db.execute(f'INSERT INTO "{table}" ({cols}) VALUES ({", ".join("?" * len(row))})', values)
                 counts[table] = counts.get(table, 0) + 1
@@ -48,6 +62,17 @@ def restore(src: Path, db_path: Path) -> None:
         print(f"old DB kept as {backup}")
     tmp.rename(db_path)
     print(f"restored -> {db_path}")
+    # 文件仓库:指纹列指着的文件放回去(已经在的不动)
+    store = store_root(db_path)
+    placed = 0
+    for sha in sorted(shas):
+        for f in (src / "blobs" / sha[:2]).glob(f"{sha}.*"):
+            target = store / sha[:2] / f.name
+            if not target.exists():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(f, target)
+                placed += 1
+    print(f"{placed} files -> {store}")
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ rem Opening the page before the backend is up would load it with empty lists,
 rem so poll both servers first (1s apart, give up after 90s).
 echo Waiting for AnimaBackend and the frontend to come up...
 set tries=0
+set waited=0
 :wait
 set /a tries+=1
 if %tries% gtr 90 (
@@ -23,5 +24,14 @@ start "" http://localhost:5173/debug.html
 exit /b 0
 
 :retry
+rem The backend backs up and upgrades the database before it answers (AnimaBackend/app/migrations);
+rem on a big database that can take longer than 90s. Keep waiting, up to 30 minutes, while it
+rem leaves its flag file next to the database.
+if exist "%~dp0AnimaBackend\data\animabackend.db.migrating" if %waited% lss 1800 (
+  if not defined upgrading echo Upgrading the database - this can take a few minutes, please wait...
+  set upgrading=1
+  set tries=0
+  set /a waited+=1
+)
 ping -n 2 127.0.0.1 >nul
 goto wait

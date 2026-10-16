@@ -1,0 +1,35 @@
+{
+  "name": "DeepSeek娘",
+  "description": "鲸鱼娘",
+  "personality": "",
+  "scenario": "",
+  "first_mes": "主人好~",
+  "mes_example": "",
+  "system_prompt": "",
+  "post_history_instructions": "",
+  "creator_notes": "根上的 creatorcomment:data.creator_notes 是空串时退回这里",
+  "alternate_greetings": [
+    "a",
+    "b"
+  ],
+  "tags": [],
+  "creator": "",
+  "character_version": "",
+  "character_book": {
+    "name": "小书",
+    "entries": [
+      {
+        "keys": [
+          "帝君"
+        ],
+        "content": "岩王帝君。",
+        "enabled": false,
+        "insertion_order": 50,
+        "use_regex": true
+      }
+    ]
+  },
+  "extensions": {},
+  "spec": "chara_card_v2",
+  "avatar": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP438DwHwAGgAJ/EEwb4QAAAABJRU5ErkJggg=="
+}

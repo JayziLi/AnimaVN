@@ -10,6 +10,7 @@
 
 import { useEffect, useState } from 'react';
 import { spriteImageUrl, type PackSprite } from '../lib/api';
+import { VN_ACCENT_MONO, VN_ACCENT_PINK } from './fallbacks';
 import { accentOf, spriteForMood, type Accent } from './titleArt';
 
 export type VNAccent = 'mono' | 'character' | 'pink';
@@ -26,9 +27,6 @@ export interface AccentVars {
   ink: string;
   rgb: string;
 }
-
-const MONO: AccentVars = { accent: '#e4e4ea', ink: '#17181f', rgb: '228, 228, 234' };
-const PINK: AccentVars = { accent: '#f4a9c4', ink: '#2b1420', rgb: '244, 169, 196' };
 
 const fromAccent = (a: Accent): AccentVars => ({ accent: a.acc, ink: a.ink, rgb: a.rgb });
 
@@ -48,7 +46,7 @@ export function useVNAccent(mode: VNAccent, sprites: readonly PackSprite[]): Acc
       alive = false;
     };
   }, [src]);
-  if (mode === 'pink') return PINK;
+  if (mode === 'pink') return VN_ACCENT_PINK;
   if (mode === 'character' && src && got) return fromAccent(got);
-  return MONO;
+  return VN_ACCENT_MONO;
 }

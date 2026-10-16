@@ -1,22 +1,14 @@
-"""One-off dev migration: card_sprites.enabled and scene_assets.enabled.
+"""(留一期)这一步现在由迁移器做:core.2026_09_asset_enabled —— 立绘和场景素材:可以停用、不用删。
 
-A disabled sprite / background / BGM stays in the table but the game treats it
-as missing. Existing rows start enabled. A fresh database gets the columns from
-create_all; this only patches databases that already have the tables. Safe to
-run twice.
+后端启动时会自动检查(设置 MIGRATIONS_MODE=apply 时自动升级),一般不用手动跑。手动跑:在 AnimaBackend 目录下
+python scripts/migrate_asset_enabled_columns.py,改的是 data/animabackend.db,只做这一步(连同它依赖的步骤),可以重复跑。
 """
 
-import sqlite3
+import sys
+from pathlib import Path
 
-db = sqlite3.connect("data/animabackend.db")
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-for table in ("card_sprites", "scene_assets"):
-    cols = {r[1] for r in db.execute(f"PRAGMA table_info({table})")}
-    if not cols:
-        print(f"{table} missing, skipped (create_all will build it)")
-    elif "enabled" in cols:
-        print(f"{table}.enabled already present")
-    else:
-        db.execute(f"ALTER TABLE {table} ADD COLUMN enabled BOOLEAN NOT NULL DEFAULT 1")
-        print(f"added {table}.enabled")
-db.commit()
+from app.migrations.legacy_script import run_step  # noqa: E402
+
+run_step("core.2026_09_asset_enabled")

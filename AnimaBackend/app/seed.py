@@ -5,16 +5,17 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app import bindings
 from app.config import settings
 from app.models import (
     ApiConnection,
-    CardSpritePack,
     PackSprite,
     Persona,
     PromptPreset,
     SpritePack,
     TavernCard,
 )
+from app.storage import refs
 
 _SEED_DATA = Path(__file__).resolve().parent / "seed_data"
 # 自带的角色:卡 + 头像 + 一个立绘包,素材授权见目录里的 CREDITS.txt
@@ -105,20 +106,21 @@ def _seed_default_sprites(db: Session, card: TavernCard) -> None:
         db.flush()
         rows = json.loads((_DEFAULT_CHAR / "sprites.json").read_text(encoding="utf-8"))
         for i, row in enumerate(rows):
-            db.add(
-                PackSprite(
-                    pack_id=pack.id,
-                    label=row["label"],
-                    aliases=row.get("aliases", []),
-                    description=row.get("description", ""),
-                    image=(_DEFAULT_CHAR / "sprites" / row["file"]).read_bytes(),
-                    mime="image/webp",
-                    sort=i,
-                    face_scan=row.get("face_scan"),
-                    effect=row.get("effect"),
-                )
+            sprite = PackSprite(
+                pack_id=pack.id,
+                label=row["label"],
+                aliases=row.get("aliases", []),
+                description=row.get("description", ""),
+                mime="image/webp",
+                sort=i,
+                face_scan=row.get("face_scan"),
+                effect=row.get("effect"),
             )
-    db.add(CardSpritePack(card_id=card.id, pack_id=pack.id, sort=0, is_current=True))
+            # 和上传的立绘一样走 refs.save:文件仓库开着时只进仓库,库里不存原件
+            refs.save(refs.SPRITE, sprite, (_DEFAULT_CHAR / "sprites" / row["file"]).read_bytes(), "image/webp", db)
+            db.add(sprite)
+    db.flush()
+    bindings.replace(db, card.id, bindings.SPRITE, [pack.id], pack.id)
 
 
 def seed_default_tavern_data(db: Session) -> None:

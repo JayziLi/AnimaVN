@@ -1,11 +1,8 @@
-import re
-from pathlib import Path
-
-import pytest
-
+from app import contracts
 from app.tts.emotion_presets import (
     BUILTIN_EMOTIONS,
     PRESETS,
+    _VECTORS,
     clean_emo_vector,
     dims_to_vector,
     preset_vector,
@@ -31,17 +28,14 @@ def test_every_preset_passes_validation():
             assert clean_emo_vector(vec) == vec
 
 
-FRONTEND_COPY = Path(__file__).resolve().parents[2] / "frontend/src/debug/plugins/emotions.ts"
-
-
 def test_builtin_emotions_are_the_preset_groups():
     assert [label for label, _ in BUILTIN_EMOTIONS] == [names[0] for names, _ in PRESETS]
     assert BUILTIN_EMOTIONS[2] == ("开心", ("高兴", "happy"))
 
 
-@pytest.mark.skipif(not FRONTEND_COPY.is_file(), reason="没有前端代码(比如在 Docker 里)")
-def test_frontend_copy_matches():
-    text = FRONTEND_COPY.read_text(encoding="utf-8")
-    rows = re.findall(r"\{ label: '([^']+)', aliases: \[([^\]]*)\] \}", text)
-    parsed = [(label, tuple(re.findall(r"'([^']+)'", aliases))) for label, aliases in rows]
-    assert parsed == BUILTIN_EMOTIONS
+def test_presets_cover_the_contract_emotions():
+    """名字和别名只在 app/contracts.py 写一份(前端那份是生成的,tests/test_contracts.py 管它是不是最新的);
+    这里的默认向量要一项不多一项不少地对上"""
+    assert BUILTIN_EMOTIONS == contracts.BUILTIN_EMOTIONS
+    assert [names for names, _ in PRESETS] == [(label, *aliases) for label, aliases in contracts.BUILTIN_EMOTIONS]
+    assert set(_VECTORS) == {label for label, _ in contracts.BUILTIN_EMOTIONS}

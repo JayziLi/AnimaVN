@@ -3,20 +3,30 @@
  * 合成请求(服务端本来就是串行的),合成好的音频留在内存里,翻到那句时播。
  * 玩家点的重播 / 重新生成插到最前面,换句也不丢。
  *
- * 和 BGM 共用一个 AudioContext(bgm.ts):iOS 只要解锁一次;念台词时顺手把 BGM 压低。
+ * 和 BGM 共用一个 AudioContext(音频总线 audioBus.ts 的 voice 声道):iOS 只要解锁一次;
+ * 念台词时由总线顺手把 BGM 压低。
  * 后端有缓存,这里只留最近几十句,重播时内存里没了也只是多一次命中缓存的请求。
  */
 
 import { useSyncExternalStore } from 'react';
-import { debugApi, type EmoMode, type SpeakRequest } from '../lib/api';
+import { ApiError, debugApi, type EmoMode, type SpeakRequest } from '../lib/api';
 import { voiceKey } from '../plugins/voice';
-import { bgmPlayer } from './bgm';
+import { audioBus } from './audioBus';
 
 const STORE_KEY = 'anima.vn.voice';
 /** 内存里最多留几句 */
 const MAX_CLIPS = 40;
 /** 连续失败几句就先停用语音(这次进视觉小说期间) */
 export const MAX_FAILURES = 3;
+
+/**
+ * 这次失败算不算「语音服务连不上」:连不上后端、超时、后端说连不上语音服务(503 / 504)才算,
+ * 计入连续失败。设置不对(没有参考、没选语音服务,4xx)和语音服务明确回了错(502,比如参考音频路径不对)
+ * 不算:服务是通的,停用了也会被探测马上恢复,只会连累别的声音一起不念(P21)
+ */
+export function isOutage(e: unknown): boolean {
+  return !(e instanceof ApiError) || e.status >= 503;
+}
 
 export type ClipState =
   | { state: 'queued' }
@@ -56,7 +66,6 @@ class VoicePlayer {
   /** 正在解码准备开播的那句,防止同一句被放两遍 */
   private starting: string | null = null;
   private current: { key: string; source: AudioBufferSourceNode } | null = null;
-  private out: GainNode | null = null;
   private listeners = new Set<() => void>();
   private snap: VoiceSnapshot = {
     volume: 0.9,
@@ -80,6 +89,7 @@ class VoicePlayer {
     } catch {
       // 隐私模式等拿不到 localStorage,用默认音量
     }
+    audioBus.setLevel('voice', this.level());
   }
 
   // ---- 给 React 订阅 ----
@@ -215,9 +225,9 @@ class VoicePlayer {
     this.want([]);
   }
 
-  /** 直接放一段音频(插件页的试听)。调用方要先在点击里 bgmPlayer.unlock() */
+  /** 直接放一段音频(插件页的试听)。调用方要先在点击里 audioBus.unlock() */
   async playBuffer(audio: ArrayBuffer) {
-    const ctx = bgmPlayer.context;
+    const ctx = audioBus.context;
     if (!ctx) throw new Error('浏览器还没允许出声,先点一下页面再试');
     if (ctx.state !== 'running') await ctx.resume();
     const buffer = await ctx.decodeAudioData(audio.slice(0));
@@ -267,7 +277,7 @@ class VoicePlayer {
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       clip.status = { state: 'error', message };
-      this.set({ failures: this.snap.failures + 1, lastError: message });
+      this.set({ failures: this.snap.failures + (isOutage(e) ? 1 : 0), lastError: message });
       if (this.disabled) {
         this.queue = [];
         this.pinned.clear();
@@ -285,7 +295,7 @@ class VoicePlayer {
 
   private async startIfReady() {
     const key = this.wanted;
-    const ctx = bgmPlayer.context;
+    const ctx = audioBus.context;
     if (!key || !ctx || this.starting === key || this.current?.key === key) return;
     const clip = this.clips.get(key);
     if (!clip?.audio) return;
@@ -307,21 +317,22 @@ class VoicePlayer {
   }
 
   private startBuffer(key: string, buffer: AudioBuffer) {
-    const ctx = bgmPlayer.context;
-    if (!ctx) return;
+    const ctx = audioBus.context;
+    const out = audioBus.input('voice');
+    if (!ctx || !out) return;
     this.stopSource();
     const source = ctx.createBufferSource();
     source.buffer = buffer;
-    source.connect(this.output(ctx));
+    source.connect(out);
     source.onended = () => {
       if (this.current?.source !== source) return;
       this.current = null;
-      bgmPlayer.duck(false);
+      audioBus.duck('voice', false);
       this.set({ speaking: null });
     };
     source.start();
     this.current = { key, source };
-    bgmPlayer.duck(true);
+    audioBus.duck('voice', true);
     this.set({ speaking: key });
   }
 
@@ -336,17 +347,8 @@ class VoicePlayer {
       // 已经停了
     }
     cur.source.disconnect();
-    bgmPlayer.duck(false);
+    audioBus.duck('voice', false);
     this.set({ speaking: null });
-  }
-
-  private output(ctx: AudioContext): GainNode {
-    if (!this.out || this.out.context !== ctx) {
-      this.out = ctx.createGain();
-      this.out.gain.value = this.level();
-      this.out.connect(ctx.destination);
-    }
-    return this.out;
   }
 
   /** 和 BGM 一样:滑条线性,听感对数,平方一下 */
@@ -355,7 +357,7 @@ class VoicePlayer {
   }
 
   private applyLevel() {
-    if (this.out) this.out.gain.setTargetAtTime(this.level(), this.out.context.currentTime, 0.05);
+    audioBus.setLevel('voice', this.level());
     try {
       localStorage.setItem(STORE_KEY, JSON.stringify({ volume: this.snap.volume, muted: this.snap.muted }));
     } catch {

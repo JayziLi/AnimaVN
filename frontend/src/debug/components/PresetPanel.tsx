@@ -15,7 +15,25 @@ import { estimateTokens, formatTokens } from '../lib/tokens';
 import { BlockEditorModal } from './BlockEditorModal';
 import { AnimaIcon } from './AnimaIcon';
 
-interface Props {
+const NO_BLOCKS: ReadonlyMap<string, string> = new Map();
+
+/** 左栏里一块自动补的块 */
+export interface AutoBlockRow {
+  identifier: string;
+  name: string;
+  /** ai:那一路是 AI 写;no-key:选的是 Jev,但 Jev 没 key */
+  reason: 'ai' | 'no-key';
+  /** 它后面紧挨着的那一块;null = 排在最后 */
+  before: string | null;
+}
+
+export interface PresetPanelProps {
+  /**
+   * 怎么摆。panel(默认)= 调试台左栏 / 视觉小说菜单里那一整块:标题、预设行、绑定、编排、新建块、块列表。
+   * page = 资料页 · 预设(studio/profile/PresetView)里的块列表:只要表头和列表,
+   * 预设行、绑定、编排、新建块由 PresetView 摆在上面;不收起,没有预设时什么都不画
+   */
+  variant?: 'panel' | 'page';
   preset: TavernPreset | null;
   order: PresetOrderEntry[];
   activeGroupIndex: number;
@@ -42,6 +60,17 @@ interface Props {
    */
   isPluginBlock: (identifier: string) => boolean;
   onOpenPlugin: (identifier: string) => void;
+  /**
+   * 这次组装自动补上的插件块(core/assembly.ts):不在预设里,灰色显示在它实际的位置上,不能拖、不能开关。
+   * before = 它后面紧挨着的那一块(null = 排在最后)
+   */
+  autoBlocks?: readonly AutoBlockRow[];
+  /**
+   * 这次不发的插件块 → 标记上写的原因(Jev 标的、插件关掉的):这里显示成关着、开关点不动
+   */
+  skippedBlocks?: ReadonlyMap<string, string>;
+  /** 「固定到预设」:变成预设里的普通块(和插件页的「加入当前预设」一样,要保存) */
+  onPinAuto?: (identifier: string) => void;
   /** 正被角色卡顶替的块 identifier */
   overridden: Set<string>;
   /**
@@ -63,6 +92,13 @@ interface Props {
   onDelete: () => void;
   onImport: () => void;
   onExport: () => void;
+  /**
+   * 点块(行头、✎,还有新建块之后)交给外面,不开弹窗 —— 资料页把编辑放在右栏。
+   * 不传就照旧开 BlockEditorModal。插件块照旧走 onOpenPlugin
+   */
+  onOpenBlock?: (identifier: string) => void;
+  /** 外面正在编辑的那一块:这一行加亮 */
+  selectedIdentifier?: string | null;
   /** 「绑定到当前角色卡」的快捷勾选;没选卡、没选预设时不传 */
   cardBinding?: {
     cardName: string;
@@ -74,6 +110,15 @@ interface Props {
   };
 }
 
+/**
+ * 预设面板和资料页 · 预设共用的那一套:状态、块操作、预设增删改。
+ * 两处拿的是 DebugApp 同一份内存里的预设,哪边改了另一边跟着变
+ */
+export type PresetBaseProps = Omit<
+  PresetPanelProps,
+  'variant' | 'collapsed' | 'onToggleCollapse' | 'onOpenPlugin' | 'onOpenBlock' | 'selectedIdentifier'
+>;
+
 function badgeFor(prompt: PresetPrompt | undefined): { cls: string; text: string } {
   if (!prompt) return { cls: 'badge-missing', text: 'MISSING' };
   if (prompt.marker) return { cls: 'badge-marker', text: 'MARKER' };
@@ -81,6 +126,7 @@ function badgeFor(prompt: PresetPrompt | undefined): { cls: string; text: string
 }
 
 export function PresetPanel({
+  variant = 'panel',
   preset,
   order,
   activeGroupIndex,
@@ -98,6 +144,9 @@ export function PresetPanel({
   onDeleteBlock,
   isPluginBlock,
   onOpenPlugin,
+  autoBlocks = [],
+  skippedBlocks = NO_BLOCKS,
+  onPinAuto,
   overridden,
   resolveMarker,
   onUpdateCard,
@@ -111,8 +160,11 @@ export function PresetPanel({
   onDelete,
   onImport,
   onExport,
+  onOpenBlock,
+  selectedIdentifier = null,
   cardBinding,
-}: Props) {
+}: PresetPanelProps) {
+  const page = variant === 'page';
   /** 编辑弹窗开在哪个块上 —— 点行头或 ✎ 都开它 */
   const [detailOf, setDetailOf] = useState<string | null>(null);
   /** 预设行的 ⋯ 菜单 */
@@ -135,6 +187,12 @@ export function PresetPanel({
 
   useEffect(() => () => cancelAnimationFrame(scrollRaf.current), []);
 
+  /** 外面选中了哪一块(新建块之后也是):那一行在列表外面就滚进来,已经看得见就不动 */
+  useEffect(() => {
+    if (!selectedIdentifier) return;
+    bodyRef.current?.querySelector('.block-row.selected')?.scrollIntoView({ block: 'nearest' });
+  }, [selectedIdentifier]);
+
   /** 菜单开着时:点外面或 Esc 关掉 */
   useEffect(() => {
     if (!menuOpen) return;
@@ -152,13 +210,20 @@ export function PresetPanel({
     };
   }, [menuOpen]);
 
+  /** 打开块的编辑:外面接管了就交给外面,不然开弹窗 */
+  const openBlock = (identifier: string) => {
+    if (onOpenBlock) onOpenBlock(identifier);
+    else setDetailOf(identifier);
+  };
+
   /** 菜单项统一入口:先关菜单再干活 */
   const runMenu = (fn: () => void) => {
     setMenuOpen(false);
     fn();
   };
 
-  if (collapsed) {
+  if (page && !preset) return null;
+  if (collapsed && !page) {
     return (
       <div className="panel left">
         <button className="panel-rail" onClick={onToggleCollapse}>
@@ -171,10 +236,12 @@ export function PresetPanel({
   const byIdentifier = new Map(preset?.prompts.map((p) => [p.identifier, p]) ?? []);
   // 换预设时 detailOf 可能指向一个已经不存在的块 —— 查不到就当没开
   const detailPrompt = detailOf ? byIdentifier.get(detailOf) ?? null : null;
-  const enabledCount = order.filter((o) => o.enabled).length;
+  /** 这块这次发不发:开着、而且不在这次不发的插件块里 */
+  const sent = (o: PresetOrderEntry) => o.enabled && !skippedBlocks.has(o.identifier);
+  const enabledCount = order.filter(sent).length;
   // 只统计实际会进请求的文本块;marker 的内容来自卡和历史,这里算不出来
   const totalTokens = order
-    .filter((o) => o.enabled)
+    .filter(sent)
     .reduce((sum, o) => {
       const p = byIdentifier.get(o.identifier);
       return sum + (p && !p.marker ? estimateTokens(stripComments(p.content)) : 0);
@@ -238,8 +305,45 @@ export function PresetPanel({
     scrollRaf.current = requestAnimationFrame(touchScrollLoop);
   };
 
-  return (
-    <div className="panel left">
+  /** 排在 before 前面的那几块自动补的块;before 是 null 时是排在最后的 */
+  const autoRowsBefore = (before: string | null) =>
+    autoBlocks
+      .filter((a) => a.before === before)
+      .map((a) => (
+        <div key={`auto:${a.identifier}`} className="block-row auto">
+          <div
+            className="block-head"
+            onClick={() => onOpenPlugin(a.identifier)}
+            title="这次组装自动补上的插件块,不在预设里(不保存、不导出);点开去插件里看正文"
+          >
+            <span className="block-grip" aria-hidden>
+              ·
+            </span>
+            <span className="block-name" title={a.name}>
+              {a.name}
+            </span>
+            <span className="block-badge badge-auto">
+              {a.reason === 'no-key' ? 'Jev 没 key · 这次临时补块' : '自动补 · 不在预设里'}
+            </span>
+            {onPinAuto && (
+              <button
+                className="btn small"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onPinAuto(a.identifier);
+                }}
+                title="变成预设里的普通块,之后能拖能改;改完记得保存预设"
+              >
+                固定到预设
+              </button>
+            )}
+          </div>
+        </div>
+      ));
+
+  /** 左栏自己的那几行:标题、预设行、绑定、新建块、没预设时的提示。资料页这几样由 PresetView 摆 */
+  const chrome = (
+    <>
       {/* 标题行只留名字 —— 预设级操作全收进下面预设行的 ⋯ 菜单,
           不再单独摆一排导入/导出/删除 */}
       <div className="panel-head">
@@ -351,7 +455,7 @@ export function PresetPanel({
           className="block-add"
           onClick={() => {
             const identifier = onAddBlock();
-            if (identifier) setDetailOf(identifier);
+            if (identifier) openBlock(identifier);
           }}
           disabled={busy}
         >
@@ -370,10 +474,16 @@ export function PresetPanel({
           <span style={{ fontSize: 11 }}>生成酒馆默认的 10 个标准块;⋯ 菜单里也能导入现成的</span>
         </div>
       )}
+    </>
+  );
+
+  return (
+    <div className={page ? 'pp-list' : 'panel left'}>
+      {!page && chrome}
 
       {preset && (
         <>
-          {preset.orderGroups.length > 1 && (
+          {!page && preset.orderGroups.length > 1 && (
             <div className="order-picker">
               <span className="topbar-label">编排</span>
               <select
@@ -396,19 +506,36 @@ export function PresetPanel({
               名称 <span className="block-header-count">{enabledCount}/{order.length}</span>
             </span>
             <span className="block-header-token">
-              {totalTokens ? `~${formatTokens(totalTokens)}` : 'Token'}
+              {page ? (
+                <>
+                  Token
+                  {totalTokens > 0 && <span className="block-header-sum">~{formatTokens(totalTokens)}</span>}
+                </>
+              ) : totalTokens ? (
+                `~${formatTokens(totalTokens)}`
+              ) : (
+                'Token'
+              )}
             </span>
           </div>
 
           <div className="panel-body" ref={bodyRef}>
-            {order.map((entry, i) => {
+            {order.flatMap((entry, i) => [...autoRowsBefore(entry.identifier), (() => {
               const prompt = byIdentifier.get(entry.identifier);
               const plugin = Boolean(prompt) && isPluginBlock(entry.identifier);
-              const badge = plugin ? { cls: 'badge-plugin', text: '插件' } : badgeFor(prompt);
+              // Jev 标的、插件关掉的那几路:块不发,显示成关着
+              const skipped = plugin ? skippedBlocks.get(entry.identifier) : undefined;
+              const skippedNow = skipped !== undefined;
+              const on = entry.enabled && !skippedNow;
+              const badge = skipped
+                ? { cls: 'badge-auto', text: skipped }
+                : plugin
+                  ? { cls: 'badge-plugin', text: '插件' }
+                  : badgeFor(prompt);
               const open = () => {
                 if (!prompt) return;
                 if (plugin) onOpenPlugin(entry.identifier);
-                else setDetailOf(entry.identifier);
+                else openBlock(entry.identifier);
               };
               const key = `${entry.identifier}:${i}`;
               const label =
@@ -417,12 +544,14 @@ export function PresetPanel({
                   : prompt?.name ?? entry.identifier;
               // 注释不发出去,自然也不该计进 token
               const tokens =
-                prompt && !prompt.marker ? estimateTokens(stripComments(prompt.content)) : 0;
+                prompt && !prompt.marker && !skippedNow ? estimateTokens(stripComments(prompt.content)) : 0;
 
               return (
                 <div
                   key={key}
-                  className={`block-row ${entry.enabled ? 'on' : 'off'}${plugin ? ' plugin' : ''}${
+                  className={`block-row ${on ? 'on' : 'off'}${plugin ? ' plugin' : ''}${
+                    selectedIdentifier === entry.identifier ? ' selected' : ''
+                  }${
                     dragFrom === i ? ' dragging' : ''
                   }${
                     dropAt?.index === i ? (dropAt.before ? ' drop-before' : ' drop-after') : ''
@@ -535,12 +664,19 @@ export function PresetPanel({
                     )}
 
                     <button
-                      className={`block-toggle${entry.enabled ? ' on' : ''}`}
+                      className={`block-toggle${on ? ' on' : ''}`}
                       onClick={(e) => {
                         e.stopPropagation();
                         onToggleBlock(entry.identifier);
                       }}
-                      title={entry.enabled ? '关闭这一块' : '启用这一块'}
+                      disabled={skippedNow}
+                      title={
+                        skippedNow
+                          ? '这一路是 Jev 标的或者插件关了,这块不发;要发得在插件页改回「AI 写」、右上角打开'
+                          : entry.enabled
+                            ? '关闭这一块'
+                            : '启用这一块'
+                      }
                     >
                       <span className="knob" />
                     </button>
@@ -549,7 +685,8 @@ export function PresetPanel({
                   </div>
                 </div>
               );
-            })}
+            })()])}
+            {autoRowsBefore(null)}
           </div>
         </>
       )}

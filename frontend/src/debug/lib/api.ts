@@ -1,3 +1,4 @@
+import { SCENE_WIDTHS, SPRITE_WIDTHS } from '../generated/contracts';
 import type { AnnotateRequest, AnnotateResponse } from '../plugins/jevRun';
 import type { AssemblyResult } from './assembler';
 import type { StoredChatMessage } from './chatEntry';
@@ -19,12 +20,29 @@ export interface JevDefaults {
 }
 
 // 没配置时跟着地址栏走:本机开就连 localhost,手机用局域网 IP 开就连那个 IP,
-// 换网络不用改配置。部署时配成空串 = 同源,走 nginx 反代
-const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? `http://${location.hostname}:8000`;
+// 换网络不用改配置。部署时配成空串 = 同源,走 nginx 反代。
+// 没有地址栏(node 里跑测试)时当作 localhost:卡带会在加载时 import 这里,测试 import 登记处时不能崩
+const BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ??
+  `http://${typeof location === 'undefined' ? 'localhost' : location.hostname}:8000`;
+
+/** 后端回的错:带着状态码,调用方能分「设置不对」(4xx)和「服务出了问题」(5xx) */
+export class ApiError extends Error {
+  readonly status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
 
 /** FastAPI 的错误体是 {detail: "..."},取出来当消息;取不到就退回状态码 */
-async function failure(res: Response): Promise<Error> {
-  const body = await res.text().catch(() => '');
+async function failure(res: Response): Promise<ApiError> {
+  return errorOf(res.status, res.statusText, await res.text().catch(() => ''));
+}
+
+/** failure 的本体:XMLHttpRequest 发的请求(要上传进度的导入)也用它 */
+function errorOf(status: number, statusText: string, body: string): ApiError {
   let detail = body;
   try {
     const parsed: unknown = JSON.parse(body);
@@ -39,8 +57,14 @@ async function failure(res: Response): Promise<Error> {
   } catch {
     // 不是 JSON,保留原始 body
   }
-  return new Error(detail || `${res.status} ${res.statusText}`);
+  return new ApiError(detail || `${status} ${statusText}`, status);
 }
+
+/**
+ * 合成一句最多等多久。冷启动(服务刚开、换权重)实测约 40 秒;卡住的那句到点就算失败,
+ * 不会让后面的句子一直排着(P21)。后端那边照常合成完、进缓存,重播时直接命中
+ */
+export const SPEAK_TIMEOUT_MS = 60_000;
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // 只有带 JSON 请求体的才标 Content-Type:后端在另一个端口(跨源),GET 带上它就不算「简单请求」,
@@ -53,6 +77,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
+
+/** 卡带自己的接口用它发请求:地址、出错时的消息和 debugApi 一样 */
+export const apiRequest = request;
+
+/** 后端的完整地址(卡带的音频链接一类) */
+export const apiUrl = (path: string) => `${BASE_URL}${path}`;
 
 /**
  * Content-Disposition 里的文件名。后端两个都给:filename*=UTF-8''… 是完整的(带中文),
@@ -86,6 +116,52 @@ async function downloadAttachment(url: string, fallbackName: string): Promise<vo
   a.click();
   a.remove();
   URL.revokeObjectURL(objectUrl);
+}
+
+/**
+ * 导入计划的上传。用 XMLHttpRequest 不用 fetch:fetch 报不了上传进度,一个文件夹 250 MB 要传好几秒。
+ * 出错和 request 一样抛 ApiError(连不上是状态码 0);取消抛 AbortError
+ */
+function uploadImport(
+  files: ImportUpload[],
+  opts: ImportPlanOptions,
+  onProgress?: (sent: number, total: number) => void,
+): Promise<ImportPlan> {
+  const form = new FormData();
+  for (const f of files) form.append('files', f.file, f.file.name);
+  form.append('paths', JSON.stringify(files.map((f) => f.path)));
+  if (opts.targetCardId) form.append('target_card_id', opts.targetCardId);
+  if (opts.kind) form.append('kind', opts.kind);
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const aborted = () => reject(new DOMException('导入已取消', 'AbortError'));
+    if (opts.signal?.aborted) {
+      aborted();
+      return;
+    }
+    opts.signal?.addEventListener('abort', () => xhr.abort(), { once: true });
+    xhr.open('POST', `${BASE_URL}/api/import/plan`);
+    if (onProgress) {
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) onProgress(e.loaded, e.total);
+      };
+      xhr.upload.onload = (e) => onProgress(e.total || e.loaded, e.total || e.loaded);
+    }
+    xhr.onload = () => {
+      if (xhr.status < 200 || xhr.status >= 300) {
+        reject(errorOf(xhr.status, xhr.statusText, xhr.responseText));
+        return;
+      }
+      try {
+        resolve(JSON.parse(xhr.responseText) as ImportPlan);
+      } catch {
+        reject(new ApiError('后端回的导入计划读不出来', xhr.status));
+      }
+    };
+    xhr.onerror = () => reject(new ApiError('连不上后端', 0));
+    xhr.onabort = aborted;
+    xhr.send(form);
+  });
 }
 
 export type ApiType = 'openai_compatible' | 'anthropic' | 'mock';
@@ -220,6 +296,62 @@ async function streamComplete(
 export interface HealthResult {
   status: string;
   version: string;
+  /** 迁移器这次启动的结果(app/migrations);老后端没有这个字段 */
+  db?: string;
+}
+
+/** 设置页「数据」一栏:迁移器这次启动的结果、上次整库备份(GET /api/meta/migrations) */
+export interface MigrationStatus {
+  app_version: string;
+  mode: 'report' | 'apply' | 'off';
+  status: 'ok' | 'pending' | 'blocked' | 'failed' | 'skipped';
+  message: string;
+  applied: number;
+  detected: number;
+  pending: { id: string; title: string }[];
+  unknown: { id: string; title: string; compat: string }[];
+  last_backup: BackupInfo | null;
+}
+
+export interface BackupInfo {
+  name: string;
+  at: string;
+  size: number;
+}
+
+/** 设置页「数据」一栏:文件仓库(AnimaBackend/app/storage)的概况(GET /api/meta/storage) */
+export interface StorageStatus {
+  /** 开关 storage_files:关着时一律从库里读 */
+  enabled: boolean;
+  files: number;
+  bytes: number;
+  /** 库里有原件、还没复制进仓库的 */
+  pending: number;
+  trash_bytes: number;
+  /** 库文件多大;不是文件库时 null */
+  db_bytes: number | null;
+  /** 后台复制任务;还没跑过是 null */
+  copy: { state: 'pending' | 'running' | 'done' | 'failed'; done: number; total: number; message: string } | null;
+}
+
+export interface StorageCleanResult {
+  kept: number;
+  moved: number;
+  moved_bytes: number;
+  /** 没人用、但放进来不到 24 小时的 */
+  young: number;
+  /** 回收区里过了 30 天删掉的 */
+  purged: number;
+}
+
+export interface StorageCheckResult {
+  ok: boolean;
+  checked: number;
+  /** 「表名 id」 */
+  missing: string[];
+  /** missing 里库中还有原件、下次启动会补回的个数 */
+  restorable: number;
+  damaged: string[];
 }
 
 /** 后端存的预设 —— 字段和酒馆预设 JSON 一一对应,原样进出 */
@@ -305,6 +437,15 @@ export interface StoredCard extends Omit<StoredCardPayload, 'avatar'> {
   has_avatar: boolean;
   created_at: string;
   updated_at: string;
+  /** 是哪张主卡的状态卡(素材架构 3.5);主卡和普通的卡是 null。旧后端没有 */
+  state_of?: string | null;
+}
+
+/** 状态组(GET /api/tavern/cards/{id}/states):主卡、各状态卡的名字和顺序;不在组里时 group_id 是 null */
+export interface StateGroup {
+  group_id: string | null;
+  main_card_id: string | null;
+  states: { card_id: string; name: string; sort: number; show_in_pick: boolean }[];
 }
 
 
@@ -325,6 +466,12 @@ function parseEmoMode(v: string | null): EmoMode {
 
 export const debugApi = {
   health: () => request<HealthResult>('/api/health'),
+  migrations: () => request<MigrationStatus>('/api/meta/migrations'),
+  storage: () => request<StorageStatus>('/api/meta/storage'),
+  backupNow: () => request<BackupInfo>('/api/meta/backup', { method: 'POST' }),
+  cleanStorage: () => request<StorageCleanResult>('/api/meta/storage/clean', { method: 'POST' }),
+  checkStorage: (deep = false) =>
+    request<StorageCheckResult>(`/api/meta/storage/check${deep ? '?deep=true' : ''}`, { method: 'POST' }),
 
   // --- 玩家人设 ---
   listPersonas: () => request<DebugPersona[]>('/api/personas'),
@@ -548,6 +695,62 @@ export const debugApi = {
 
   emotionStatus: () => request<EmotionStatus>('/api/emotion/status'),
 
+  // ---- 认词记录(素材架构第 1b 期;设置 → 数据「表情认法」选了认词记录时用) ----
+
+  emotionRecords: (listRef: string) =>
+    request<{ list_ref: string; records: WordRecordOut[] }>(
+      `/api/emotion/records?list_ref=${encodeURIComponent(listRef)}`,
+    ),
+
+  emotionResolve: (payload: { list_ref: string; words: string[] }) =>
+    request<{ model: string | null; results: ResolveResult[] }>('/api/emotion/resolve', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  emotionRecordsSummary: () => request<RecordsSummary>('/api/emotion/records/summary'),
+
+  /** 以后这个词都认成名单里的这一项(第 1d 期,检查器、认词记录页):有就改、没有就新加,来源记「你改的」 */
+  putWordRecord: (payload: { list_ref: string; word: string; item: string }) =>
+    request<WordRecordOut>('/api/emotion/records', { method: 'PUT', body: JSON.stringify(payload) }),
+
+  /** 删一条认词记录:这个词下次出现时重新认;没有这一条是 404 */
+  deleteWordRecord: (listRef: string, word: string) =>
+    request<void>(
+      `/api/emotion/records?list_ref=${encodeURIComponent(listRef)}&word=${encodeURIComponent(word)}`,
+      { method: 'DELETE' },
+    ),
+
+  // ---- 配对表(素材架构第 1c 期;「表情认法」选了认词记录时,语音按它挑那一行语气、CG 按它挑那一帧) ----
+
+  /** 一份名单的共用配对表(只给某张卡另存的表不回),按 target 排;给了 target 只回那一张 */
+  pairings: (follower: PairingFollower, listRef: string, target?: string) =>
+    request<PairingTableOut[]>(
+      `/api/pairings?follower=${follower}&list_ref=${encodeURIComponent(listRef)}` +
+        (target === undefined ? '' : `&target=${encodeURIComponent(target)}`),
+    ),
+
+  /** 改配对表的一格(第 1d 期;没有就新加):来源默认「你改的」,采纳聊天模型的建议时传 chat */
+  putPairingCell: (pairingId: string, item: string, payload: PairingCellIn) =>
+    request<PairingCellOut>(`/api/pairings/${pairingId}/cells/${encodeURIComponent(item)}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
+
+  /** 缺格补配:名单里这张表还没有的项当场补上(表不在先建),已有的格子一条不动 */
+  fillPairings: (payload: { follower: PairingFollower; list_ref: string; target: string }) =>
+    request<PairingFillOut>('/api/pairings/fill', { method: 'POST', body: JSON.stringify(payload) }),
+
+  /** 「让模型重配」会发出去什么:字数和原文。不发请求、不花钱 */
+  pairingEstimate: (pairingId: string) => request<PairingEstimate>(`/api/pairings/${pairingId}/estimate`),
+
+  /** 让聊天模型把这张表重配一遍(花钱:只在玩家点了按钮以后调)。只回建议、不改表;不给连接用当前的聊天连接 */
+  suggestPairings: (pairingId: string, connectionId?: string) =>
+    request<PairingSuggestOut>(`/api/pairings/${pairingId}/suggest`, {
+      method: 'POST',
+      body: JSON.stringify(connectionId ? { connection_id: connectionId } : {}),
+    }),
+
   // ---- Jev 标注(plugins/jev.ts) ----
 
   annotateLines: (req: AnnotateRequest, signal?: AbortSignal) =>
@@ -739,6 +942,121 @@ export const debugApi = {
       body: JSON.stringify({ pack_id: packId }),
     }),
 
+  /**
+   * 这张卡的场景包分两栏(第 1 步):出背景的、出曲子的,各按顺序;一个包可能两边都在。
+   * 旧后端没有这个接口:读旧接口那一个包,两边都用它
+   */
+  getCardScenePacks: async (cardId: string): Promise<CardSceneParts> => {
+    try {
+      const r = await request<CardSceneParts>(`/api/tavern/cards/${cardId}/scene-packs`);
+      return { bg: r.bg, bgm: r.bgm };
+    } catch (e) {
+      const old = await request<{ pack_id: string | null }>(`/api/tavern/cards/${cardId}/scene-pack`).catch(() => {
+        throw e;
+      });
+      return old.pack_id ? { bg: [old.pack_id], bgm: [old.pack_id] } : { bg: [], bgm: [] };
+    }
+  },
+
+  /** 整组替换两栏;返回读回来的样子(两栏共用一个先后:背景的在前,只出曲子的接在后面) */
+  setCardScenePacks: async (cardId: string, v: CardSceneParts): Promise<CardSceneParts> => {
+    const r = await request<CardSceneParts>(`/api/tavern/cards/${cardId}/scene-packs`, {
+      method: 'PUT',
+      body: JSON.stringify({ bg: v.bg, bgm: v.bgm }),
+    });
+    return { bg: r.bg, bgm: r.bgm };
+  },
+
+  /** 这张卡所在的状态组(素材架构 3.5);不在组里时 group_id 是 null */
+  cardStates: (cardId: string) => request<StateGroup>(`/api/tavern/cards/${cardId}/states`),
+
+  // ---- CG 包(素材架构第 4 期;包里的 CG 和场景素材同一个形状,kind = cg、source = cg) ----
+
+  listCgPacks: async () => (await request<CgPack[]>('/api/cg-packs')).map(cgPackOf),
+
+  createCgPack: async (name: string, description = '') =>
+    cgPackOf(await request<CgPack>('/api/cg-packs', { method: 'POST', body: JSON.stringify({ name, description }) })),
+
+  updateCgPack: async (packId: string, patch: { name?: string; description?: string }) =>
+    cgPackOf(await request<CgPack>(`/api/cg-packs/${packId}`, { method: 'PUT', body: JSON.stringify(patch) })),
+
+  deleteCgPack: (packId: string) => request<void>(`/api/cg-packs/${packId}`, { method: 'DELETE' }),
+
+  listCgAssets: (packId: string) => request<SceneAsset[]>(`/api/cg-packs/${packId}/assets`),
+
+  createCgAsset: (
+    packId: string,
+    payload: { label: string; aliases?: string[]; description?: string; /** 差分带:挂在哪张构图下面 */ parent_id?: string },
+  ) => request<SceneAsset>(`/api/cg-packs/${packId}/assets`, { method: 'POST', body: JSON.stringify(payload) }),
+
+  updateCgAsset: (packId: string, assetId: string, patch: SceneAssetPatch) =>
+    request<SceneAsset>(`/api/cg-packs/${packId}/assets/${assetId}`, { method: 'PUT', body: JSON.stringify(patch) }),
+
+  deleteCgAsset: (packId: string, assetId: string) =>
+    request<void>(`/api/cg-packs/${packId}/assets/${assetId}`, { method: 'DELETE' }),
+
+  /** 一个 CG 包里全部构图的新顺序(差分不在里面) */
+  reorderCgAssets: (packId: string, ids: string[]) =>
+    request<SceneAsset[]>(`/api/cg-packs/${packId}/assets/reorder`, { method: 'POST', body: JSON.stringify({ ids }) }),
+
+  uploadCgFile: async (packId: string, assetId: string, file: Blob): Promise<SceneAsset> => {
+    const form = new FormData();
+    form.append('file', file);
+    const res = await fetch(`${BASE_URL}/api/cg-packs/${packId}/assets/${assetId}/file`, { method: 'PUT', body: form });
+    if (!res.ok) throw await failure(res);
+    return res.json() as Promise<SceneAsset>;
+  },
+
+  /** 这张卡绑的 CG 包,按顺序(构图重名时取排前面的) */
+  getCardCgPacks: async (cardId: string): Promise<string[]> =>
+    (await request<{ pack_ids: string[] }>(`/api/tavern/cards/${cardId}/cg-packs`)).pack_ids,
+
+  setCardCgPacks: (cardId: string, packIds: string[]) =>
+    request<{ pack_ids: string[] }>(`/api/tavern/cards/${cardId}/cg-packs`, {
+      method: 'PUT',
+      body: JSON.stringify({ pack_ids: packIds }),
+    }),
+
+  // ---- 导入(素材架构第 1 步第 3 段):拖进来就认,先出计划、确认以后执行,能撤销 ----
+
+  /**
+   * 上传拖进来的文件、出导入计划。paths 和文件一一对应(带最上面那层文件夹名);
+   * 拖到某张卡上给 targetCardId,拖到素材页的某一栏给 kind。onProgress 报上传了多少字节(传完那一下 sent = total)
+   */
+  importPlan: (files: ImportUpload[], opts: ImportPlanOptions = {}, onProgress?: (sent: number, total: number) => void) =>
+    uploadImport(files, opts, onProgress),
+
+  /** 照计划执行:decisions 只给重复的那几组,classify 只给选了类型的文件 */
+  importApply: (planId: string, body: ImportApplyBody) =>
+    request<ImportResult>(`/api/import/${encodeURIComponent(planId)}/apply`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  /**
+   * 不导了(确认框点取消、什么都没认出来):后端马上删掉这次的暂存文件(一个角色文件夹几百 MB,不然要放 7 天)。
+   * 204;计划不在了 404、已经执行过了 409
+   */
+  importDiscard: (planId: string) =>
+    request<void>(`/api/import/${encodeURIComponent(planId)}`, { method: 'DELETE' }),
+
+  /** 导完以后在提示条里认领一个没认出来的文件(暂存路径);返回更新过的提示 */
+  importClassify: (jobId: string, path: string, kind: ClassifyKind) =>
+    request<ImportResult>(`/api/import/jobs/${encodeURIComponent(jobId)}/classify`, {
+      method: 'POST',
+      body: JSON.stringify({ path, kind }),
+    }),
+
+  /** 最近 50 次导入,新的在前 */
+  importJobs: () => request<ImportJobSummary[]>('/api/import/jobs'),
+
+  /** 撤销会删 / 拿掉 / 改回什么(确认框用) */
+  importUndoPreview: (jobId: string) =>
+    request<ImportUndoPreview>(`/api/import/jobs/${encodeURIComponent(jobId)}/undo-preview`),
+
+  importUndo: (jobId: string) =>
+    request<ImportUndoPreview>(`/api/import/jobs/${encodeURIComponent(jobId)}/undo`, { method: 'POST' }),
+
   // ---- 全局设置(插件配置) ----
 
   /** 没存过返回 null,由调用方用默认值 */
@@ -750,6 +1068,22 @@ export const debugApi = {
       method: 'PUT',
       body: JSON.stringify({ value }),
     }),
+
+  // ---- 按卡设置(一张卡在全局插件设置之上另外改的几项,合并见 plugins/cardPrefs.ts) ----
+
+  /** 这张卡另设过的全部项:{设置的键: 改了的字段};一项都没设过是 {} */
+  cardPrefs: (cardId: string) => request<CardPrefs>(`/api/tavern/cards/${cardId}/prefs`),
+
+  /** 整份换掉这一项改了的字段(后端不和上次存的合并):每次都发这张卡现在改了的全部字段 */
+  putCardPref: (cardId: string, key: string, value: CardPrefValue) =>
+    request<{ key: string; value: CardPrefValue }>(`/api/tavern/cards/${cardId}/prefs/${key}`, {
+      method: 'PUT',
+      body: JSON.stringify({ value }),
+    }),
+
+  /** 这一项不再另设,回到全局;这张卡本来就没另设这一项时后端回 404 */
+  deleteCardPref: (cardId: string, key: string) =>
+    request<void>(`/api/tavern/cards/${cardId}/prefs/${key}`, { method: 'DELETE' }),
 
   // ---- 语音插件 ----
 
@@ -807,11 +1141,14 @@ export const debugApi = {
 
   deleteVoice: (id: string) => request<void>(`/api/voices/${id}`, { method: 'DELETE' }),
 
-  /** 贴进来的 refs.json(已经 JSON.parse 过);同名声音会更新而不是重复添加 */
-  importVoice: (connectionId: string, refs: unknown) =>
+  /**
+   * 贴进来的 refs.json(已经 JSON.parse 过)。清单带着声音编号就合进那个声音;
+   * 没带、又有同名的声音时后端回 409(ApiError),按 onConflict 再发一次:更新那个 / 另建一个
+   */
+  importVoice: (connectionId: string, refs: unknown, onConflict?: 'update' | 'new') =>
     request<VoiceProfile>('/api/voices/import', {
       method: 'POST',
-      body: JSON.stringify({ connection_id: connectionId, refs }),
+      body: JSON.stringify({ connection_id: connectionId, refs, ...(onConflict && { on_conflict: onConflict }) }),
     }),
 
   createVoiceEmotion: (profileId: string, payload: { label: string } & VoiceEmotionPatch) =>
@@ -867,20 +1204,28 @@ export const debugApi = {
    */
   speak: async (body: SpeakRequest, fresh = false, tuning?: VoiceTuning): Promise<SpeakResult> => {
     const t0 = performance.now();
-    const res = await fetch(`${BASE_URL}/api/tts/speak`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...body, ...(fresh && { fresh }), ...(tuning && { tuning }) }),
-    });
-    if (!res.ok) throw await failure(res);
-    const audio = await res.arrayBuffer();
-    return {
-      audio,
-      cache: res.headers.get('X-TTS-Cache') === 'hit' ? 'hit' : 'miss',
-      emotion: decodeURIComponent(res.headers.get('X-TTS-Emotion') ?? ''),
-      mode: parseEmoMode(res.headers.get('X-TTS-Emo-Mode')),
-      ms: Math.round(performance.now() - t0),
-    };
+    try {
+      const res = await fetch(`${BASE_URL}/api/tts/speak`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...body, ...(fresh && { fresh }), ...(tuning && { tuning }) }),
+        signal: AbortSignal.timeout(SPEAK_TIMEOUT_MS),
+      });
+      if (!res.ok) throw await failure(res);
+      const audio = await res.arrayBuffer();
+      return {
+        audio,
+        cache: res.headers.get('X-TTS-Cache') === 'hit' ? 'hit' : 'miss',
+        emotion: decodeURIComponent(res.headers.get('X-TTS-Emotion') ?? ''),
+        mode: parseEmoMode(res.headers.get('X-TTS-Emo-Mode')),
+        ms: Math.round(performance.now() - t0),
+      };
+    } catch (e) {
+      if (e instanceof Error && e.name === 'TimeoutError') {
+        throw new Error(`语音合成超过 ${SPEAK_TIMEOUT_MS / 1000} 秒没回来,这句先跳过`);
+      }
+      throw e;
+    }
   },
 };
 
@@ -914,6 +1259,8 @@ export interface PackSprite {
   has_image: boolean;
   /** 图的版本号,拼进 URL 当缓存键 */
   image_version: number;
+  /** 图在文件仓库里的指纹;有它时从 /api/blobs/<指纹> 取图(见 blobUrl)。还没复制进去、旧后端是 null / 没有 */
+  image_sha?: string | null;
   /** 排第一的是默认表情 */
   sort: number;
   /** 关掉 = 游戏里当它不存在,行和图留着 */
@@ -964,6 +1311,111 @@ export interface EmotionStatus {
   detail: string | null;
 }
 
+/** 认词记录里的一条(GET /api/emotion/records) */
+export interface WordRecordOut {
+  word: string;
+  /** 名单里的哪一项:立绘的 id / 内置表情的名字 */
+  item: string;
+  /** migrated 迁移时按旧结果 / model 模型认过一次 / rename 改名留下的 / player 你改的 */
+  source: string;
+  guessed: boolean;
+  unstable: boolean;
+  score: number | null;
+}
+
+/** POST /api/emotion/resolve 的一条结果 */
+export interface ResolveResult {
+  word: string;
+  key: string;
+  label: string;
+  /** name 名字或别名对上 / record 认词记录 / model 模型这次认的(后端已经记进认词记录) */
+  how: 'name' | 'record' | 'model';
+  source: string | null;
+  score: number | null;
+}
+
+/** 设置 → 数据:认词记录一共几条、各来源几条 */
+export interface RecordsSummary {
+  total: number;
+  /** 来自几份表情名单 */
+  lists: number;
+  by_source: Record<string, number>;
+}
+
+/** 配对表跟着谁:voice 声音的一行语气 / cg CG 构图的一张差分 */
+export type PairingFollower = 'voice' | 'cg';
+
+/** 配对表的一格(GET /api/pairings) */
+export interface PairingCellOut {
+  /** 名单里的一项(立绘的 id) */
+  item: string;
+  /** 声音的一行语气 / CG 的一张差分;CG 是 null = 用构图本身那张 */
+  value: string | null;
+  /** migrated 迁移时按旧结果 / name 名字对上 / chat 聊天模型配的 / jev / local 本地模型 / player 你改的 */
+  source: string;
+  /** 今天是认词模型猜的 / 待重配 / 今天的结果本来就随批次变 */
+  guessed: boolean;
+  pending: boolean;
+  unstable: boolean;
+}
+
+/** 一张共用的配对表:一份表情名单(立绘包)→ 一个声音 / 一张 CG 构图 */
+export interface PairingTableOut {
+  id: string;
+  follower: PairingFollower;
+  list_ref: string;
+  /** 声音的 id / CG 构图的 id */
+  target: string;
+  /** 用这张表的卡(按卡 id 排) */
+  cards: string[];
+  /** 按名单项排 */
+  cells: PairingCellOut[];
+}
+
+/** PUT /api/pairings/{id}/cells/{item} 的请求体 */
+export interface PairingCellIn {
+  /** voice:这个声音的一行语气(不能空);cg:这张构图的一张差分,null = 用构图本身那张 */
+  value: string | null;
+  /** player 你改的(不传就是它) / chat 采纳了聊天模型的建议 */
+  source?: 'player' | 'chat';
+}
+
+/** POST /api/pairings/fill 的结果 */
+export interface PairingFillOut {
+  table_id: string;
+  /** 这次新加的格子,按名单的顺序 */
+  added: PairingCellOut[];
+  /** 没补上的(本地认词模型用不了等),下次再补 */
+  skipped: { item: string; reason: string }[];
+}
+
+/** GET /api/pairings/{id}/estimate:「让模型重配」会发出去的 */
+export interface PairingEstimate {
+  /** 发出去的字数(就是 prompt 的长度) */
+  chars: number;
+  /** 发给模型的原文 */
+  prompt: string;
+}
+
+/** 聊天模型建议改的一格 */
+export interface PairingSuggestion {
+  item: string;
+  /** 表里现在配的;new 时是 null */
+  current: string | null;
+  /** 模型建议的;CG 是 null = 用构图本身那张 */
+  suggested: string | null;
+  /** 表里还没有这一格:采纳就是新加 */
+  new: boolean;
+}
+
+/** POST /api/pairings/{id}/suggest 的结果 */
+export interface PairingSuggestOut {
+  /** 只列和现在不一样的(表里还没有的格子也列),按名单的顺序 */
+  suggestions: PairingSuggestion[];
+  /** 模型漏了没配的项 */
+  unanswered: string[];
+}
+
 export interface SpritePayload {
   label?: string;
   aliases?: string[];
@@ -977,15 +1429,30 @@ export interface SpritePayload {
  * 立绘请求后端转好的 WebP:原图 PNG 一张动辄近 1 MB(星绘一张 1058 KB → 126 KB),一个角色十几张,
  * 进游戏要等很久。立绘原图大多就 800–1000 宽,比这窄的后端不放大、只换格式,分辨率不丢。
  * 手机、平板(触屏)最宽 1024;电脑最宽 1280(10-04 起电脑也压,之前电脑用原图)。见 AnimaBackend/app/images.py
+ * 宽度前后端共用(后端按这几个宽度预先转好),定义在 AnimaBackend/app/contracts.py
  */
 const COARSE = typeof window !== 'undefined' && Boolean(window.matchMedia?.('(pointer: coarse)').matches);
-const SPRITE_WIDTH = COARSE ? 1024 : 1280;
+const SPRITE_WIDTH = COARSE ? SPRITE_WIDTHS.touch : SPRITE_WIDTHS.desktop;
 /** 背景 / CG:游戏里铺满屏幕,电脑 1920、手机 1280 宽就够 */
-const SCENE_WIDTH = COARSE ? 1280 : 1920;
+const SCENE_WIDTH = COARSE ? SCENE_WIDTHS.touch : SCENE_WIDTHS.desktop;
 
-/** <img src> 直接用的地址。带版本号:换图后 URL 变,浏览器就不会继续显示缓存里的旧图 */
+/**
+ * 文件仓库里的文件按指纹取(AnimaBackend/app/api/blobs.py):内容不变地址就不变,
+ * 同一张图挂在几个包里也只下一次。w:图片缩到这个宽度的 WebP
+ */
+function blobUrl(sha: string, w?: number): string {
+  return `${BASE_URL}/api/blobs/${sha}${w ? `?w=${w}` : ''}`;
+}
+
+/** 在已有的地址后面接一个查询参数(地址本身可能带 ? 也可能不带) */
+function withParam(url: string, param: string): string {
+  return `${url}${url.includes('?') ? '&' : '?'}${param}`;
+}
+
+/** <img src> 直接用的地址。有指纹走文件仓库;没有时带版本号:换图后 URL 变,浏览器就不会继续显示缓存里的旧图 */
 export function spriteImageUrl(s: PackSprite): string | null {
   if (!s.has_image) return null;
+  if (s.image_sha) return blobUrl(s.image_sha, SPRITE_WIDTH);
   return `${BASE_URL}/api/sprite-packs/${s.pack_id}/sprites/${s.id}/image?v=${s.image_version}&w=${SPRITE_WIDTH}`;
 }
 
@@ -1016,6 +1483,33 @@ export interface ScenePack {
   card_count: number;
   /** 标题画面(封面)放的那首 BGM;null = 放排第一的 */
   title_bgm_id: string | null;
+  /** 包里的 CG 拆成了哪个 CG 包(第 4 期);null / 没有 = 没拆过,包里的 CG 照旧跟着场景包走 */
+  cg_pack_id?: string | null;
+}
+
+/** 一张卡的场景包分两栏(第 1 步):bg 出背景、bgm 出曲子,各按顺序;一个包可能两边都在 */
+export interface CardSceneParts {
+  bg: string[];
+  bgm: string[];
+}
+
+/** CG 包(第 4 期):一个角色在一个场景里的一组 CG,单独绑到卡上,可以叠几个 */
+export interface CgPack {
+  id: string;
+  name: string;
+  description: string;
+  /** 构图的张数(不算差分) */
+  cg_count: number;
+  card_count: number;
+  /** 从哪个场景包拆出来的;改动会同步回那个场景包 */
+  source_scene_pack_id: string | null;
+  /** true = 生图收藏建的「AI 生图 · 卡名」包(卡编辑器里归「AI 生成」那一栏);旧后端没有这个字段,读进来时补成 false */
+  generated: boolean;
+}
+
+/** 旧后端的 CG 包没有 generated:当导入的 */
+function cgPackOf(p: CgPack): CgPack {
+  return { ...p, generated: p.generated === true };
 }
 
 export interface SceneAsset {
@@ -1033,6 +1527,8 @@ export interface SceneAsset {
   size: number;
   /** 文件版本号,拼进 URL 当缓存键 */
   file_version: number;
+  /** 同 PackSprite.image_sha */
+  data_sha?: string | null;
   /** 仅背景:竖屏时对准横图的哪儿,0 最左 100 最右 */
   focus_x: number;
   /** 仅背景:换到这个场景时自动换上的 BGM(CG 不带曲子) */
@@ -1043,6 +1539,10 @@ export interface SceneAsset {
   enabled: boolean;
   /** CG 差分:它属于哪张 CG(名字是立绘的表情名);其余素材是 null。后端是旧版时没有 */
   parent_id?: string | null;
+  /** 仅 CG 构图:在哪些形态里出(存形态的名字,由形态卡带定;没装形态卡带时不显示、不读);空 = 不限。后端是旧版时没有 */
+  forms?: string[];
+  /** 从哪来:scene 场景包 / cg CG 包(第 4 期);没有 = 场景包 */
+  source?: 'scene' | 'cg';
 }
 
 export interface SceneAssetPatch {
@@ -1053,12 +1553,16 @@ export interface SceneAssetPatch {
   /** null = 不要默认曲 */
   bgm_id?: string | null;
   enabled?: boolean;
+  /** 仅 CG 构图;[] = 不限 */
+  forms?: string[];
 }
 
 /** 素材文件的地址;还没传文件时返回 null */
 export function sceneFileUrl(a: SceneAsset): string | null {
   if (!a.has_file) return null;
-  return `${BASE_URL}/api/scene-packs/${a.pack_id}/assets/${a.id}/file?v=${a.file_version}`;
+  if (a.data_sha) return blobUrl(a.data_sha);
+  const packs = a.source === 'cg' ? 'cg-packs' : 'scene-packs';
+  return `${BASE_URL}/api/${packs}/${a.pack_id}/assets/${a.id}/file?v=${a.file_version}`;
 }
 
 /** 游戏里显示的背景 / CG:压成 WebP(见 SCENE_WIDTH);BGM 原样 */
@@ -1069,7 +1573,7 @@ export function sceneImageUrl(a: SceneAsset): string | null {
 /** 背景 / CG 缩到 w 宽的 WebP(插件页缩略图用;后端 16–1024) */
 export function sceneThumbUrl(a: SceneAsset, w: number): string | null {
   const url = sceneFileUrl(a);
-  return url && `${url}&w=${w}`;
+  return url && withParam(url, `w=${w}`);
 }
 
 // ---- 语音插件 ----
@@ -1179,11 +1683,24 @@ export interface CardVoices {
   extras: string[];
 }
 
+/** 按卡设置的一项:只放这张卡改了的那几个字段,比如 plugin.cg 的 {"jev": {"threshold": 0.75}} */
+export type CardPrefValue = Record<string, unknown>;
+
+/** 一张卡另设过的全部项:设置的键(plugin.cg 这类,和全局设置同一套) → 改了的字段 */
+export type CardPrefs = Record<string, CardPrefValue>;
+
 export interface SpeakRequest {
   profile_id: string;
   /** 这句生效的立绘表情名;null = 默认情绪 */
   emotion: string | null;
   text: string;
+  /**
+   * 表情认法 = 认词记录时,配对表挑好的那一行(声音的一行语气的 id);后端有它就直接用,不是这个声音的行当没传。
+   * emotion 照旧填表情名(老后端、语音详情还看它)。旧算法时不带这个键
+   */
+  emotion_id?: string;
+  /** 拆句拼接开着(卡带的 useSplice):后端有登记拼接的卡带、这个声音也用得上时,拼着念 */
+  sfx?: boolean;
 }
 
 /** 这句的情绪从哪来:ref = 参考音频,vector = 向量,none = 沿用音色参考的语气 */
@@ -1209,8 +1726,11 @@ export interface VoiceExplain {
   wanted: string | null;
   /** 实际用的情绪行;IndexTTS 没有情绪行时是空串 */
   emotion: string;
-  /** exact 名字对上 / alias 别名对上 / nearest 模型挑的最像的 / default 没传或对不上,用排第一的 */
-  how: 'exact' | 'alias' | 'nearest' | 'default';
+  /**
+   * exact 名字对上 / alias 别名对上 / nearest 模型挑的最像的 / default 没传或对不上,用排第一的 /
+   * pairing 配对表挑好的那一行(表情认法 = 认词记录时)
+   */
+  how: 'exact' | 'alias' | 'nearest' | 'default' | 'pairing';
   /** alias:对上的别名;nearest:模型认为最像的那个名字 */
   via: string | null;
   /** nearest:相似度 */
@@ -1223,4 +1743,151 @@ export interface VoiceExplain {
   request: Record<string, unknown>;
   /** 缓存里已经有这句 */
   cached: boolean;
+  /** 拼接时的拆分(片段是这次现挑的,真正合成时会再挑一次);不拼时是 null。怎么显示由拼接的卡带定 */
+  sfx?: SpliceSegment[] | null;
+  /** 拼接用的素材的名字 */
+  sfx_pack?: string | null;
+}
+
+/** 拼接时一句拆成的一段 */
+export interface SpliceSegment {
+  /** speech 交给模型念 / sfx 换成素材里的片段 */
+  kind: 'speech' | 'sfx';
+  text: string;
+  category: string | null;
+  clip_id: string | null;
+  clip_text: string | null;
+}
+
+// ---- 导入(素材架构第 1 步第 3 段;后端 app/api/importer.py) ----
+
+/** 拖到素材页的哪一栏:导入时一律按这一类认。声音、AI 生成那两栏不能拖文件进来 */
+export type ImportKind = 'sprite' | 'bg' | 'bgm' | 'cg';
+/** 没认出来的文件选成什么;skip = 不要了 */
+export type ClassifyKind = ImportKind | 'skip';
+/** 和库里一样的那几组怎么办:new 另存一份 / share 共用库里那份 / update 更新库里那张卡(只对卡) */
+export type ImportDecision = 'new' | 'share' | 'update';
+
+export interface ImportUpload {
+  file: File;
+  /** 相对路径,带最上面那层文件夹名(collectDrop 给的);单个文件就是文件名 */
+  path: string;
+}
+
+export interface ImportPlanOptions {
+  /** 拖到的那张卡 */
+  targetCardId?: string | null;
+  kind?: ImportKind | null;
+  /** 上传中途取消 */
+  signal?: AbortSignal;
+}
+
+/** 导入以后会建出来的一样东西 */
+export interface ImportGroup {
+  key: string;
+  type: 'card' | 'sprite_pack' | 'scene_pack' | 'cg_pack';
+  /** 建议的名字(撞名时执行那一步再加「 2」) */
+  name: string;
+  /** 卡 1;立绘张数;背景 + 曲子的数目;CG 构图数 */
+  count: number;
+  /** 绑到哪张卡:'card:N' = 这次一起导进来的卡(另一组的 key)、'target' = 拖到的那张卡、null = 不绑 */
+  owner: string | null;
+  /** 库里有一模一样的:包带上被几张卡用着(card_count),卡没有 */
+  duplicate_of: { id: string; name: string; card_count?: number } | null;
+  bg_count?: number;
+  bgm_count?: number;
+  /** CG 包:差分一共几张 */
+  variant_count?: number;
+}
+
+export interface ImportPlan {
+  plan_id: string;
+  groups: ImportGroup[];
+  /** 没认出来的文件(暂存目录里的路径,zip 已经解开) */
+  unknown: string[];
+  /** 跳过了什么,一句一条 */
+  skipped: string[];
+  /** 拖到了某张卡上、或者有和库里一样的:先弹确认框 */
+  needs_confirm: boolean;
+}
+
+export interface ImportApplyBody {
+  decisions?: Record<string, ImportDecision>;
+  classify?: Record<string, ClassifyKind>;
+  /** 拖到原有的卡上时,挂上以后直接换成这次的第一套立绘 */
+  make_current?: boolean;
+}
+
+/** 素材页顶上那一行提示 */
+export interface ImportNoticeData {
+  title: string;
+  detail: string;
+  unknown: string[];
+}
+
+/** 一次导入新建的卡和包的编号,按建的先后(共用库里的不算;认领时新建的「补充」包也在里面) */
+export interface ImportCreated {
+  cards: string[];
+  sprite_packs: string[];
+  scene_packs: string[];
+  cg_packs: string[];
+}
+
+export interface ImportResult {
+  job_id: string;
+  /** 导完要打开的卡:新建的第一张,没有就是拖到的那张;都没有是 null */
+  card_id: string | null;
+  notice: ImportNoticeData;
+  /** 一句一条的报告 */
+  report: string[];
+  /** 没有卡可开时照它打开素材管理页、选中第一个新建的包;后端是旧版时没有 */
+  created?: ImportCreated;
+}
+
+/** 导入记录的数(后端 counts_of) */
+export interface ImportJobCounts {
+  cards: number;
+  sprite_packs: number;
+  scene_packs: number;
+  cg_packs: number;
+  /** 加到原有卡上的绑定 */
+  bound: number;
+  /** 资料被这次导入改过的原有卡 */
+  updated_cards: number;
+  /** 没认出来的文件 */
+  unknown: number;
+}
+
+/** 导入记录一条(GET /api/import/jobs,最近 50 条,新的在前) */
+export interface ImportJobSummary {
+  id: string;
+  created_at: string;
+  /** 「刻晴.png + 3 个文件夹」 */
+  title: string;
+  status: 'done' | 'undone';
+  /** 这次导入的主角卡(新建的或导进去的那张);没有是 null */
+  card_id: string | null;
+  counts: ImportJobCounts;
+}
+
+/** 撤销一次导入会做什么;撤销接口返回同样的东西(status 变成 undone) */
+export interface ImportUndoPreview {
+  job_id: string;
+  title: string;
+  status: 'done' | 'undone';
+  /** 这次新建、撤销时要删的卡 */
+  cards: { id: string; name: string }[];
+  packs: { kind: 'sprite' | 'scene' | 'cg'; id: string; name: string; other_cards: { id: string; name: string }[] }[];
+  unbind: {
+    card_id: string;
+    card_name: string;
+    kind: string;
+    target_id: string;
+    target_name: string;
+    parts: string | null;
+  }[];
+  /** 资料要改回导入前的原有卡 */
+  restore_cards: { id: string; name: string }[];
+  /** 一句一条,确认框照着列 */
+  lines: string[];
 }

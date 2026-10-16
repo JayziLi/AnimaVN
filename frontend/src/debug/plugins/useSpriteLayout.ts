@@ -15,10 +15,14 @@ import {
   normalizeSpriteStage,
   type SpriteStage,
 } from './spriteLayout';
+import { usePluginConfig } from './usePluginConfig';
 
 type Notify = (kind: 'ok' | 'error', message: string) => void;
 
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+/** 全局构图出错时的说法(照原文) */
+const STAGE_MESSAGES = { load: '立绘构图读取失败', save: '立绘构图保存失败' };
 
 export interface SpriteLayoutState {
   stage: SpriteStage;
@@ -26,6 +30,11 @@ export interface SpriteLayoutState {
   /** 当前包的微调;没有包时是默认值 */
   layout: SpriteLayout;
   changeLayout: (patch: Partial<SpriteLayout>) => void;
+  /**
+   * 别处(卡编辑器、素材管理的立绘编辑器)改了某个包的微调、自己写了库,把新值交过来:
+   * 是当前包就换上,只改内存、不写库;这边还没写出去的那一下作废,免得拿旧值盖掉
+   */
+  adopt: (packId: string, layout: SpriteLayout) => void;
   /** 整套重新找一遍脸 */
   rescan: () => Promise<void>;
   scanning: boolean;
@@ -40,26 +49,13 @@ export function useSpriteLayout(
   notify: Notify,
 ): SpriteLayoutState {
   // ---- 全局构图 ----
-  const [stage, setStage] = useState<SpriteStage>(DEFAULT_SPRITE_STAGE);
-  const stageTimer = useRef<number | undefined>(undefined);
-  const changeStage = (next: SpriteStage) => {
-    setStage(next);
-    window.clearTimeout(stageTimer.current);
-    stageTimer.current = window.setTimeout(() => {
-      debugApi
-        .putSetting(SPRITE_STAGE_KEY, next)
-        .catch((e: unknown) => notify('error', `立绘构图保存失败: ${errText(e)}`));
-    }, 500);
-  };
-  useEffect(() => {
-    debugApi
-      .getSetting(SPRITE_STAGE_KEY)
-      .then((v) => {
-        if (v !== null) setStage(normalizeSpriteStage(v));
-      })
-      .catch((e: unknown) => notify('error', `立绘构图读取失败: ${errText(e)}`));
-    return () => window.clearTimeout(stageTimer.current);
-  }, [notify]);
+  const { config: stage, change: changeStage } = usePluginConfig<SpriteStage>(
+    SPRITE_STAGE_KEY,
+    normalizeSpriteStage,
+    DEFAULT_SPRITE_STAGE,
+    notify,
+    STAGE_MESSAGES,
+  );
 
   // ---- 当前包的微调 ----
   const [layout, setLayout] = useState<SpriteLayout>(DEFAULT_SPRITE_LAYOUT);
@@ -104,6 +100,16 @@ export function useSpriteLayout(
     pending.current = { packId, layout: next, timer: window.setTimeout(flush, 400) };
   };
 
+  const adopt = useCallback((forPack: string, next: SpriteLayout) => {
+    if (packRef.current !== forPack) return;
+    if (pending.current?.packId === forPack) {
+      window.clearTimeout(pending.current.timer);
+      pending.current = null;
+    }
+    latest.current = next;
+    setLayout(next);
+  }, []);
+
   // ---- 补识别 ----
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
@@ -138,5 +144,5 @@ export function useSpriteLayout(
 
   const rescan = () => (packId ? runScan(packId, true) : Promise.resolve());
 
-  return { stage, changeStage, layout, changeLayout, rescan, scanning, scanError };
+  return { stage, changeStage, layout, changeLayout, adopt, rescan, scanning, scanError };
 }

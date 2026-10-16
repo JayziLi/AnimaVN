@@ -13,10 +13,17 @@ Same content → same file name, so an unchanged sprite never becomes a new git
 object and a new message only touches its own chat's file. The TTS cache is left
 out (it is rebuilt on demand) and API keys are blanked. Restore with
 import_userdata.py.
+
+Since the asset-architecture phase 3 the originals also live in the file store
+(data/blobs/ab/<sha256>.<ext>, or BLOB_DIR) and rows keep the fingerprint in a
+*_sha column; after the database is slimmed the BLOB column is empty. Every file
+a *_sha column points at is copied into blobs/ with the store's own name (same
+layout), so the snapshot stays complete either way.
 """
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import sqlite3
@@ -44,6 +51,27 @@ EXT = {
 }
 
 
+SHA = re.compile(r"^[0-9a-f]{64}$")
+
+
+def store_root(db_path: Path) -> Path:
+    """文件仓库:设了 BLOB_DIR 就是它,不设是库旁边的 blobs/(和后端 app/storage/blobs.py 一样)"""
+    return Path(os.environ["BLOB_DIR"]) if os.environ.get("BLOB_DIR") else db_path.parent / "blobs"
+
+
+def copy_store_file(store: Path, out: Path, sha: str) -> str | None:
+    """仓库里这个指纹的文件拷进 blobs/(名字不变);仓库里没有返回 None"""
+    for f in sorted((store / sha[:2]).glob(f"{sha}.*")):
+        if ".tmp-" in f.name:
+            continue
+        target = out / "blobs" / sha[:2] / f.name
+        if not target.exists():
+            target.parent.mkdir(exist_ok=True)
+            shutil.copyfile(f, target)
+        return f"{sha[:2]}/{f.name}"
+    return None
+
+
 def export(db_path: Path, out: Path) -> None:
     db = sqlite3.connect(f"file:{quote(db_path.as_posix())}?mode=ro", uri=True)
     db.execute("BEGIN")  # 一个读事务里导完，后端在写也拿到同一个时间点
@@ -62,6 +90,8 @@ def export(db_path: Path, out: Path) -> None:
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
     )]
     blobs: set[str] = set()
+    store = store_root(db_path)
+    missing = 0
     for table in tables:
         if table in SKIP_ROWS:
             continue
@@ -80,6 +110,12 @@ def export(db_path: Path, out: Path) -> None:
                 elif isinstance(row[col], bytes):
                     row[col] = {"$blob": save_blob(out, row[col], row.get("mime"))}
                     blobs.add(row[col]["$blob"])
+                elif col.endswith("_sha") and isinstance(row[col], str) and SHA.match(row[col]):
+                    rel = copy_store_file(store, out, row[col])
+                    if rel is None:
+                        missing += 1
+                    else:
+                        blobs.add(rel)
             path = tables_dir / f"{table}.jsonl"
             if table in SPLIT:
                 key = re.sub(r"[^\w-]", "_", str(row[SPLIT[table]]))
@@ -99,6 +135,8 @@ def export(db_path: Path, out: Path) -> None:
             d.rmdir()
     db.rollback()
     print(f"{len(blobs)} blobs -> {out}")
+    if missing:
+        print(f"warning: {missing} fingerprints have no file in {store}")
 
 
 def save_blob(out: Path, data: bytes, mime: object) -> str:

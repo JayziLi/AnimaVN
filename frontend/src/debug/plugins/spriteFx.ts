@@ -3,14 +3,15 @@
  *
  * 每张立绘单独设(PackSprite.effect,存在后端,三样都是这里清单的 id,后端不认识它们);
  * 不认识的 id 当作没设。什么时候放见 vn/VNScreen.tsx 的 useSpriteFx:只在往下读、
- * 表情真的换了的那一句放,往回翻、读档、跳过都不放。
+ * 表情真的换了的那一句放,往回翻、读档、跳过都不放;这句有 CG 盖着立绘时也不放(fxStep)。
  *
- * 音效文件在 public/vn/sfx/,出处见同目录 CREDITS.txt。跳字音效也在这里(设置里选)。
+ * 音效文件在 public/vn/sfx/,出处见同目录 CREDITS.txt,走音频总线(vn/audioBus.ts)的 fx 声道。
+ * 跳字音效在 vn/typeSound.ts(设置里选)。
  * 设计见 docs/superpowers/specs/2026-10-04-sprite-switch-effects-design.md
  */
 
 import type { SpriteEffect } from '../lib/api';
-import { bgmPlayer } from '../vn/bgm';
+import { audioBus } from '../vn/audioBus';
 
 export interface FxOption {
   id: string;
@@ -126,16 +127,6 @@ export const FX_SOUNDS: (FxOption & { file: string })[] = [
   { id: 'deflate', name: '泄气', file: 'deflate.mp3' },
 ];
 
-/** 跳字音效:前三个是现场合成的(没有文件),后三个来自効果音ラボ */
-export const TYPE_SOUNDS: (FxOption & { file?: string })[] = [
-  { id: 'soft', name: '柔和' },
-  { id: '8bit', name: '8-bit' },
-  { id: 'click', name: '轻点击' },
-  { id: 'cute', name: '可爱', file: 'type-cute.mp3' },
-  { id: 'pa', name: '啪', file: 'type-pa.mp3' },
-  { id: 'ko', name: '扣', file: 'type-ko.mp3' },
-];
-
 const known = (list: FxOption[], id: string | null | undefined) =>
   id && list.some((o) => o.id === id) ? id : null;
 
@@ -150,83 +141,11 @@ export function normalizeEffect(raw: SpriteEffect | null | undefined): SpriteEff
   return fx.motion || fx.bubble || fx.sound ? fx : null;
 }
 
-// ---- 播放:WebAudio,解码好的放缓存,跳字一秒几十下也不卡 ----
-
-const SFX_BASE = '/vn/sfx/';
-let ctx: AudioContext | null = null;
-const buffers = new Map<string, Promise<AudioBuffer | null>>();
-
-function audio(): AudioContext | null {
-  // 游戏里用 BGM 那个:它在玩家点击时解锁过(iOS 上 AudioContext 只能在手势里启动,自己建的
-  // 那个从没在手势里 resume 过,一直是哑的)。语音也是这么共用的。BGM 还没解锁时(插件页试听)
-  // 才用自己的 —— 试听是点按钮触发的,resume 在手势里
-  const shared = bgmPlayer.context;
-  if (shared) return shared;
-  if (ctx) return ctx;
-  const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-  if (!AC) return null;
-  ctx = new AC();
-  return ctx;
-}
-
-// 失败过的文件隔一会儿再试:跳字音每隔一个字就要放一次,文件真没有的话不能每个字都去下一遍
-const failedAt = new Map<string, number>();
-const RETRY_AFTER_MS = 30_000;
-
-/**
- * 挂起着的能不能叫醒。BGM 那个是切到后台时故意挂起的:后台里自动播放还在翻句,
- * 这时候放个音效把它叫醒,BGM 和语音就在后台接着响了 —— 后台不出音效
- */
-function mayResume(ac: AudioContext): boolean {
-  return !(ac === bgmPlayer.context && document.hidden);
-}
-
-function load(file: string): Promise<AudioBuffer | null> {
-  let p = buffers.get(file);
-  if (!p) {
-    const failed = failedAt.get(file);
-    if (failed !== undefined && Date.now() - failed < RETRY_AFTER_MS) return Promise.resolve(null);
-    const ac = audio();
-    p = ac
-      ? fetch(SFX_BASE + file)
-          .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(String(r.status)))))
-          .then((b) => ac.decodeAudioData(b))
-          .catch(() => null)
-      : Promise.resolve(null);
-    buffers.set(file, p);
-    // 没拿到(网络抖了一下、开发服务器在重启)不记:不然这个音效这次打开页面里一直是哑的
-    const mine = p;
-    void mine.then((buf) => {
-      if (buf !== null) failedAt.delete(file);
-      else if (buffers.get(file) === mine) {
-        buffers.delete(file);
-        failedAt.set(file, Date.now());
-      }
-    });
-  }
-  return p;
-}
+// ---- 播放:走音频总线的 fx 声道(解码好的放缓存,见 vn/audioBus.ts) ----
 
 /** 提前解码,第一次放的时候不用等下载 */
 export function preloadSfx(files: (string | undefined)[]): void {
-  for (const f of files) if (f) void load(f);
-}
-
-async function playFile(file: string, volume: number): Promise<void> {
-  const ac = audio();
-  if (!ac || volume <= 0) return;
-  if (ac.state === 'suspended') {
-    if (!mayResume(ac)) return;
-    await ac.resume().catch(() => undefined);
-  }
-  const buf = await load(file);
-  if (!buf) return;
-  const src = ac.createBufferSource();
-  src.buffer = buf;
-  const gain = ac.createGain();
-  gain.gain.value = volume;
-  src.connect(gain).connect(ac.destination);
-  src.start();
+  audioBus.preloadClips(files);
 }
 
 export function soundFile(id: string | null | undefined): string | undefined {
@@ -235,53 +154,23 @@ export function soundFile(id: string | null | undefined): string | undefined {
 
 export function playFxSound(id: string | null | undefined, volume: number): void {
   const file = soundFile(id);
-  if (file) void playFile(file, volume);
+  if (file) void audioBus.playClip('fx', file, volume);
 }
 
-/** 合成的跳字音:很短的一声,不要文件 */
-function synth(kind: string, volume: number): void {
-  const ac = audio();
-  if (!ac || volume <= 0) return;
-  if (ac.state === 'suspended') {
-    if (!mayResume(ac)) return;
-    void ac.resume().catch(() => undefined);
-  }
-  const t = ac.currentTime;
-  const gain = ac.createGain();
-  gain.connect(ac.destination);
-  if (kind === 'click') {
-    const noise = ac.createBuffer(1, 600, ac.sampleRate);
-    const d = noise.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 4);
-    const src = ac.createBufferSource();
-    src.buffer = noise;
-    const hp = ac.createBiquadFilter();
-    hp.type = 'highpass';
-    hp.frequency.value = 2000;
-    src.connect(hp).connect(gain);
-    gain.gain.value = volume * 0.8;
-    src.start(t);
-    return;
-  }
-  const osc = ac.createOscillator();
-  osc.type = kind === '8bit' ? 'square' : 'sine';
-  osc.frequency.setValueAtTime(kind === '8bit' ? 880 : 740, t);
-  osc.connect(gain);
-  const peak = volume * (kind === '8bit' ? 0.12 : 0.35);
-  gain.gain.setValueAtTime(0, t);
-  gain.gain.linearRampToValueAtTime(peak, t + 0.004);
-  gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
-  osc.start(t);
-  osc.stop(t + 0.07);
-}
+// ---- 什么时候放 ----
 
-export function playTypeSound(id: string, volume: number): void {
-  const s = TYPE_SOUNDS.find((x) => x.id === id);
-  if (!s) return;
-  if (s.file) void playFile(s.file, volume);
-  else synth(s.id, volume);
-}
-
-export function preloadTypeSound(id: string): void {
-  preloadSfx([TYPE_SOUNDS.find((x) => x.id === id)?.file]);
+/**
+ * 立绘层这一刻对排上的那次切换特效怎么办(VNScreen 的 SpriteLayer 用):
+ *   wait —— 没有要放的、这次已经处理过了、要的那张图还没换上来(新图下载完之前还留着旧图)
+ *   skip —— 轮到了,但这句有 CG 盖着立绘(立绘看不见):动作、气泡、音效都不放,CG 收起时也不补
+ *   play —— 放
+ */
+export function fxStep(
+  cue: { id: number; target: string } | null,
+  played: number,
+  shownKey: string,
+  covered: boolean,
+): 'wait' | 'skip' | 'play' {
+  if (!cue || cue.id === played || shownKey !== cue.target) return 'wait';
+  return covered ? 'skip' : 'play';
 }

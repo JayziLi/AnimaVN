@@ -1,0 +1,19 @@
+﻿{
+ "spec": "chara_card_v3",
+ "spec_version": "3.0",
+ "data": {
+  "name": "鴻さゆみ",
+  "description": "日语名字、文件带 BOM",
+  "first_mes": "おかえりなさい。",
+  "character_book": {
+   "entries": "坏掉的世界书"
+  },
+  "avatar": "none",
+  "extensions": {
+   "depth_prompt": {
+    "prompt": "",
+    "depth": 4
+   }
+  }
+ }
+}

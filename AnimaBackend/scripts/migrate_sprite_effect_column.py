@@ -1,19 +1,14 @@
-"""One-off dev migration: pack_sprites.effect (switch effect: motion / bubble / sound).
+"""(留一期)这一步现在由迁移器做:core.2026_10_sprite_effect —— 立绘:切换特效。
 
-NULL for every existing row — no effect, the sprite just fades in like before.
-Safe to run twice.
+后端启动时会自动检查(设置 MIGRATIONS_MODE=apply 时自动升级),一般不用手动跑。手动跑:在 AnimaBackend 目录下
+python scripts/migrate_sprite_effect_column.py,改的是 data/animabackend.db,只做这一步(连同它依赖的步骤),可以重复跑。
 """
 
-import sqlite3
+import sys
+from pathlib import Path
 
-db = sqlite3.connect("data/animabackend.db")
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-cols = {r[1] for r in db.execute("PRAGMA table_info(pack_sprites)")}
-if not cols:
-    print("pack_sprites missing, skipped (create_all will build it)")
-elif "effect" in cols:
-    print("pack_sprites.effect already present")
-else:
-    db.execute("ALTER TABLE pack_sprites ADD COLUMN effect JSON")
-    print("added pack_sprites.effect")
-db.commit()
+from app.migrations.legacy_script import run_step  # noqa: E402
+
+run_step("core.2026_10_sprite_effect")
