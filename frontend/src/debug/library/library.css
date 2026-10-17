@@ -92,16 +92,23 @@
   padding: 12px 14px 8px 18px;
 }
 .lib-aside-title {
+  flex: none;
   font-size: 13.5px;
   font-weight: 700;
+  white-space: nowrap;
 }
 .lib-aside-count {
+  flex: none;
   color: var(--text-faint);
   font-size: 12px;
+  white-space: nowrap;
 }
 /* 排序:看起来是「按占用空间 ⌄」,点开是系统自带的下拉 */
+/* 左栏拖窄了放不下:排序的字先变省略号,栏名、个数、收起按钮不挤 */
 .lib-sort {
   position: relative;
+  min-width: 0;
+  flex: 0 1 auto;
   height: 28px;
   display: flex;
   align-items: center;
@@ -116,7 +123,14 @@
 .lib-sort:focus-within {
   background: rgba(255, 255, 255, 0.05);
 }
+.lib-sort > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .lib-sort > .st-icon {
+  flex: none;
   color: var(--text-faint);
 }
 .lib-sort > select {
@@ -325,19 +339,15 @@
 
 /* ── 主区顶上那一行:包名、用量、绑定 ── */
 
+/* 包名 | 绑定到角色卡… | ⋯ 一行,下面那行小字占满整行:中间窄的时候小字不被按钮挤成一个字一行(10-16) */
 .lib-head {
   min-height: 50px;
   flex: none;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 12px;
-}
-.lib-head-text {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  column-gap: 10px;
+  row-gap: 2px;
 }
 .lib-head-name {
   min-width: 0;
@@ -353,6 +363,7 @@
   font-size: 17px;
 }
 .lib-head-sub {
+  grid-column: 1 / -1;
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -569,9 +580,35 @@
   margin-top: 4px;
 }
 
+/* ── 左右两栏能拖宽、能收起(studio/sidePanels.tsx,竖条 / 分隔线 / 收起按钮的样子在 studio.css)──
+   宽度来自根上的 --st-left / --st-right(窗口小时已经按比例收过);只在宽屏,窄屏是上下排、不拖不收 */
+
+@media (min-width: 900px) {
+  .st-panels > .st-body {
+    position: relative;
+  }
+  .st-panels .lib-aside {
+    width: var(--st-left, 264px);
+  }
+  .st-panels .st-inspector {
+    width: var(--st-right, 340px);
+  }
+  .st-panels.left-collapsed .lib-aside,
+  .st-panels.right-collapsed .st-inspector {
+    display: none;
+  }
+}
+
 /* ══════════ 窄屏(< 900px):左栏到顶上,包列表横着滚;整页滚(studio.css 的 .st-root) ══════════ */
 
 @media (max-width: 899px) {
+  .st-panels .st-rail,
+  .st-panels .st-resizer,
+  .st-panels .st-panel-collapse,
+  .st-panels .st-inspector-bar {
+    display: none;
+  }
+
   .lib-header {
     height: auto;
     min-height: 52px;
@@ -644,14 +681,6 @@
   .lib-foot {
     gap: 6px;
     padding: 8px 12px 10px;
-  }
-
-  .lib-head {
-    flex-wrap: wrap;
-    row-gap: 8px;
-  }
-  .lib-head-text {
-    flex: 1 1 100%;
   }
 
   .lib-job {

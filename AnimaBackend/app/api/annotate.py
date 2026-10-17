@@ -11,6 +11,7 @@ from pydantic import AfterValidator, BaseModel, BeforeValidator, Field, StringCo
 from sqlalchemy.orm import Session
 
 from app.annotate import client as jev
+from app.annotate import usage
 from app.annotate.judge import (
     CG_OFF,
     DEFAULT_PROMPTS,
@@ -24,7 +25,7 @@ from app.annotate.judge import (
     build_request,
     decide,
 )
-from app.contracts import LABEL_MAX, SPEAKER_THRESHOLD, SWITCH_THRESHOLD
+from app.contracts import JEV_BEFORE_LINES, LABEL_MAX, SPEAKER_THRESHOLD, SWITCH_THRESHOLD
 from app.db import get_db
 
 router = APIRouter(prefix="/api/annotate", tags=["annotate"])
@@ -54,6 +55,13 @@ class ChoiceIn(BaseModel):
 
 class LineIn(BaseModel):
     text: Annotated[str, StringConstraints(max_length=2000)]
+    speaker: Clipped(80) | None = None
+
+
+class BeforeLineIn(BaseModel):
+    """上一条回复的一句:只是前情,太长截掉,别让整批标注失败"""
+
+    text: Clipped(2000)
     speaker: Clipped(80) | None = None
 
 
@@ -117,6 +125,10 @@ class AnnotateRequest(BaseModel):
     prompts: dict[PromptKey, Annotated[str, StringConstraints(max_length=PROMPT_MAX)]] = Field(
         default_factory=dict
     )
+    # 上一条 AI 回复的最后几句(Jev 页「带上一条回复」);多了只留最后那几句
+    before: Annotated[
+        list[BeforeLineIn], BeforeValidator(lambda v: v[-JEV_BEFORE_LINES["max"] :] if isinstance(v, list) else v)
+    ] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _targets_in_range(self):
@@ -147,6 +159,19 @@ class AnnotateResponse(BaseModel):
 class StatusOut(BaseModel):
     has_key: bool
     source: str | None
+    # 连哪儿:地址、模型名,各自从哪来(env / settings / default);官方的是什么(「恢复官方」用)
+    url: str = jev.JEV_URL
+    model: str = jev.MODEL
+    url_source: str = "default"
+    model_source: str = "default"
+    default_url: str = jev.JEV_URL
+    default_model: str = jev.MODEL
+
+
+class EndpointIn(BaseModel):
+    # 空串 = 用官方的
+    url: Annotated[str, StringConstraints(max_length=500)] = ""
+    model: Annotated[str, StringConstraints(max_length=100)] = ""
 
 
 class KeyIn(BaseModel):
@@ -157,11 +182,25 @@ def _choices(items: list[ChoiceIn]) -> list[Choice]:
     return [Choice(c.label, tuple(c.aliases), c.description) for c in items]
 
 
+async def _ask(db: Session, state, questions: dict) -> jev.Answer:
+    """用 Jev 页里设的地址、模型名和 key 问一次,回来以后记用量;没 key 回 503,出错按 JevError 回"""
+    key, _ = jev.key_source(db)
+    if not key:
+        raise HTTPException(503, "还没设 Jev 的 key(插件抽屉「Jev 标注」页里填)")
+    ep = jev.endpoint(db)
+    try:
+        answer = await jev.ask(key, state, questions, ep.url, ep.model)
+    except jev.JevError as e:
+        raise HTTPException(e.status, e.message) from e
+    usage.record(db, answer.sent, answer.tokens * answer.sent)
+    return answer
+
+
 @router.post("/lines", response_model=AnnotateResponse)
 async def annotate_lines(req: AnnotateRequest, db: Session = Depends(get_db)):
     key, _ = jev.key_source(db)
     if not key:
-        raise HTTPException(503, "还没设 Jev 的 API key(插件页「Jev 标注」里填)")
+        raise HTTPException(503, "还没设 Jev 的 key(插件抽屉「Jev 标注」页里填)")
     inp = AnnotateInput(
         char=req.char,
         user=req.user,
@@ -186,14 +225,13 @@ async def annotate_lines(req: AnnotateRequest, db: Session = Depends(get_db)):
             req.thresholds.speaker, req.thresholds.bg, req.thresholds.bgm, req.thresholds.cg
         ),
         prompts={k: v for k, v in req.prompts.items() if v.strip()},
+        before=[Line(x.text, x.speaker) for x in req.before],
     )
     state, questions = build_request(inp)
     answers, tokens, ms = {}, 0, 0
     if questions:
-        try:
-            answers, tokens, ms = await jev.ask(key, state, questions)
-        except jev.JevError as e:
-            raise HTTPException(e.status, e.message) from e
+        answer = await _ask(db, state, questions)
+        answers, tokens, ms = answer.answers, answer.tokens, answer.ms
     return AnnotateResponse(
         lines=[LineDecisionOut(**d.__dict__) for d in decide(inp, answers)], ms=ms, tokens=tokens
     )
@@ -219,10 +257,7 @@ class TryOut(BaseModel):
 
 @router.post("/test", response_model=TryOut)
 async def try_key(db: Session = Depends(get_db)):
-    """用现在的 key 问 Jev 一道小题:通了回耗时,不通回原因"""
-    key, _ = jev.key_source(db)
-    if not key:
-        raise HTTPException(503, "还没设 Jev 的 key")
+    """用现在的地址和 key 问 Jev 一道小题:通了回耗时,不通回原因"""
     question = {
         "ok": {
             "type": "choice",
@@ -230,11 +265,8 @@ async def try_key(db: Session = Depends(get_db)):
             "criteria": {"yes": "是打招呼", "no": "不是"},
         }
     }
-    try:
-        _, _, ms = await jev.ask(key, "你好,欢迎回来!", question)
-    except jev.JevError as e:
-        raise HTTPException(e.status, e.message) from e
-    return TryOut(ms=ms)
+    answer = await _ask(db, "你好,欢迎回来!", question)
+    return TryOut(ms=answer.ms)
 
 
 @router.post("/warmup", status_code=204)
@@ -242,14 +274,22 @@ async def warmup(db: Session = Depends(get_db)):
     """玩家发消息时叫一声:LLM 还在想的时候先把到 Jev 的连接连好"""
     key, _ = jev.key_source(db)
     if key:
-        await jev.warmup()
+        await jev.warmup(jev.endpoint(db).url)
     return Response(status_code=204)
 
 
 @router.get("/status", response_model=StatusOut)
 def status(db: Session = Depends(get_db)):
     key, source = jev.key_source(db)
-    return StatusOut(has_key=key is not None, source=source)
+    ep = jev.endpoint(db)
+    return StatusOut(
+        has_key=key is not None,
+        source=source,
+        url=ep.url,
+        model=ep.model,
+        url_source=ep.url_source,
+        model_source=ep.model_source,
+    )
 
 
 @router.put("/key", status_code=204)
@@ -257,3 +297,31 @@ def put_key(req: KeyIn, db: Session = Depends(get_db)):
     """只能写、不能读;传空串就删掉"""
     jev.save_key(db, req.key)
     return Response(status_code=204)
+
+
+@router.put("/endpoint", status_code=204)
+def put_endpoint(req: EndpointIn, db: Session = Depends(get_db)):
+    """Jev 的地址和模型名(走中转时填);空串 = 用官方的。环境变量 JEV_BASE_URL / JEV_MODEL 设了的话以它为准"""
+    try:
+        jev.save_endpoint(db, req.url, req.model)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    return Response(status_code=204)
+
+
+class TotalOut(BaseModel):
+    requests: int
+    tokens: int
+
+
+class UsageOut(BaseModel):
+    today: TotalOut
+    week: TotalOut
+    month: TotalOut
+    all: TotalOut
+
+
+@router.get("/usage", response_model=UsageOut)
+def get_usage(db: Session = Depends(get_db)):
+    """用了多少 token:今天、这 7 天(含今天)、这个月、全部。只数 token 不算钱"""
+    return UsageOut(**{k: TotalOut(requests=v.requests, tokens=v.tokens) for k, v in usage.summary(db).items()})

@@ -176,6 +176,7 @@ import {
 import {
   JEV_SETTLE_MS,
   JevRun,
+  previousReplyLines,
   type AnnotateChoice,
   type JevSnapshot,
   type JevTrial,
@@ -620,6 +621,11 @@ export default function DebugApp() {
     await debugApi.setJevKey(key);
     setJevKey(await debugApi.annotateStatus());
   };
+  /** Jev 的地址和模型名(走中转时填);空串 = 用官方的 */
+  const saveJevEndpoint = async (url: string, model: string) => {
+    await debugApi.setJevEndpoint(url, model);
+    setJevKey(await debugApi.annotateStatus());
+  };
 
   /**
    * 按卡设置(plugins/cardPrefs.ts):当前这张卡在全局插件设置之上另外改的几项(Jev 标还是 AI 写、Jev 的门槛)。
@@ -773,10 +779,13 @@ export default function DebugApp() {
     return null;
   }, [entries]);
 
-  /** 插件抽屉要打开到哪个插件的提示词模板;nonce 让连点同一个也能再跳一次 */
-  const [pluginFocus, setPluginFocus] = useState<{ section: PluginKey; nonce: number } | null>(
-    null,
-  );
+  /** 插件抽屉要打开到哪一页(插件的提示词模板、「Jev 标注」页);nonce 让连点同一个也能再跳一次 */
+  const [pluginFocus, setPluginFocus] = useState<PluginFocus | null>(null);
+  /** 打开插件抽屉的某一页(API 抽屉里 Jev 那一行的「去设置 →」) */
+  const openPluginSection = (section: string) => {
+    setDrawer('plugins');
+    setPluginFocus({ section, nonce: Date.now() });
+  };
   /** 左栏点插件块:不在预设里改,跳到插件抽屉里它的提示词模板 */
   const openPluginEditor = (identifier: string) => {
     const section = pluginOfBlock(identifier);
@@ -2495,6 +2504,13 @@ export default function DebugApp() {
       annotate: (req, signal) => debugApi.annotateLines(req, signal),
       onChange,
       twoQueues: jevConfig.twoQueues,
+      // 上一条 AI 回复(卡的开场白也算)的最后几句,Jev 页「带上一条回复」定几句;0 = 不带
+      before: previousReplyLines(before, {
+        kinds: vnKinds,
+        charName: card?.name ?? '',
+        userName,
+        n: jevConfig.beforeLines,
+      }),
     });
   };
 
@@ -2993,6 +3009,7 @@ export default function DebugApp() {
         onChangeConfig: changeJevConfig,
         keyStatus: jevKey,
         onSaveKey: saveJevKey,
+        onSaveEndpoint: saveJevEndpoint,
         defaults: jevDefaults,
         onTest: () => debugApi.annotateTest(),
         onTrial: trialJev,
@@ -3799,6 +3816,7 @@ export default function DebugApp() {
                 notify={notify}
                 onClose={() => setDrawer(null)}
                 onChanged={refreshConnections}
+                jev={{ status: jevKey, onOpen: () => openPluginSection('jev') }}
               />
             )}
 
@@ -4151,6 +4169,7 @@ export default function DebugApp() {
                   notify={notify}
                   onClose={ctx.close}
                   onChanged={refreshConnections}
+                  jev={{ status: jevKey, onOpen: () => ctx.openPlugin('jev') }}
                 />
               </div>
             );

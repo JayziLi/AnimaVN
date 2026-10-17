@@ -3,10 +3,32 @@ import type { AnnotateRequest, AnnotateResponse } from '../plugins/jevRun';
 import type { AssemblyResult } from './assembler';
 import type { StoredChatMessage } from './chatEntry';
 
-/** Jev 的 key 设了没有、从哪来(环境变量 / 插件页) */
+/** 地址、模型名从哪来:环境变量 / Jev 页里填的 / 官方默认 */
+export type JevEndpointSource = 'env' | 'settings' | 'default';
+
+/** Jev 的 key 设了没有、从哪来(环境变量 / Jev 页),连的哪个地址、哪个模型名。后端是旧版时没有地址那几项 */
 export interface JevKeyStatus {
   has_key: boolean;
   source: 'env' | 'settings' | null;
+  url?: string;
+  model?: string;
+  url_source?: JevEndpointSource;
+  model_source?: JevEndpointSource;
+  default_url?: string;
+  default_model?: string;
+}
+
+/** Jev 用了多少:只数 token 不算钱(走中转的价格各不一样) */
+export interface JevUsageTotal {
+  requests: number;
+  tokens: number;
+}
+export interface JevUsage {
+  today: JevUsageTotal;
+  /** 这 7 天(含今天) */
+  week: JevUsageTotal;
+  month: JevUsageTotal;
+  all: JevUsageTotal;
 }
 
 /** 后端存的 Jev 默认问法和门槛(插件页显示、「恢复默认」用) */
@@ -773,6 +795,13 @@ export const debugApi = {
   /** 只能写、不能读;空串 = 删掉 */
   setJevKey: (key: string) =>
     request<void>('/api/annotate/key', { method: 'PUT', body: JSON.stringify({ key }) }),
+
+  /** Jev 的地址和模型名(走中转时填);空串 = 用官方的 */
+  setJevEndpoint: (url: string, model: string) =>
+    request<void>('/api/annotate/endpoint', { method: 'PUT', body: JSON.stringify({ url, model }) }),
+
+  /** 用了多少 token:今天、这 7 天、这个月、全部 */
+  annotateUsage: () => request<JevUsage>('/api/annotate/usage'),
 
   // ---- 立绘插件:立绘包、包里的表情映射、卡挂哪些包 ----
 

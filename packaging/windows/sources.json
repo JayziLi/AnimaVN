@@ -1,0 +1,15 @@
+{
+  "说明": "整合包里的「更新.bat」按顺序问这些地方有没有新版(base + latest.json),第一个答上来的算数。page 是要重下整合包时打开的下载页",
+  "sources": [
+    {
+      "name": "魔搭",
+      "base": "https://www.modelscope.cn/models/JayziLi/AnimaVN/resolve/master/",
+      "page": "https://www.modelscope.cn/models/JayziLi/AnimaVN/files"
+    },
+    {
+      "name": "GitHub",
+      "base": "https://github.com/JayziLi/AnimaVN-public/releases/latest/download/",
+      "page": "https://github.com/JayziLi/AnimaVN-public/releases/latest"
+    }
+  ]
+}

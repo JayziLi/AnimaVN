@@ -348,3 +348,19 @@ def test_cg_options_with_reserved_names_get_renamed():
     _, q = build_request(make_input(LINES, [0], emotions=[], bgs=[], bgms=[], cgs=cgs, ask_speaker=False,
                                     scene=SceneState(cg="看烟花")))
     assert list(q["cg1"]["criteria"])[:2] == [KEEP_FALLBACK, CG_OFF_FALLBACK]
+
+
+def test_the_previous_reply_sits_between_the_intro_and_the_players_line():
+    before = [Line("她把伞收了起来。", None), Line("「明天见。」", "星绘"), Line("「好。」", "店员")]
+    state, _ = build_request(make_input(LINES, [1], before=before))
+    assert list(state)[:4] == ["说明", "上一条回复的最后几句", "玩家上一句", "本条回复"]
+    assert state["说明"].endswith(DEFAULT_PROMPTS["before"])
+    assert [x["类型"] for x in state["上一条回复的最后几句"]] == ["旁白", "引号里的话", "店员的台词"]
+
+
+def test_no_previous_reply_leaves_the_state_as_it_was():
+    state, questions = build_request(make_input(LINES, [1]))
+    assert list(state) == ["说明", "玩家上一句", "本条回复", "现在的场景", "现在的背景音乐"]
+    assert DEFAULT_PROMPTS["before"] not in state["说明"]
+    assert build_request(make_input(LINES, [1], before=[])) == (state, questions)
+

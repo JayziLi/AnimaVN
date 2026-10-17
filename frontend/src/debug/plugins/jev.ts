@@ -16,11 +16,12 @@
  * 设计见 docs/superpowers/specs/2026-10-01-jev-director-design.md
  */
 
-import { SPEAKER_THRESHOLD } from '../generated/contracts';
+import { JEV_BEFORE_LINES, SPEAKER_THRESHOLD } from '../generated/contracts';
 import type { AssemblyResult } from '../lib/assembler';
 import type { PresetOrderEntry } from '../lib/presetParser';
 import type { TagKind, VNLine } from '../vn/script';
-import { objectOf, promptOf, thresholdOf } from './common';
+import { objectOf, promptOf, thresholdOf, type TagMode } from './common';
+import type { JevStats } from './jevRun';
 import { stripReplyTags } from './jevNotes';
 import { DEFAULT_LANG_BLOCK_PROMPT, DEFAULT_LANG_BLOCK_PROMPT_JEV } from './lang';
 import { BLOCK_OF, JEV_KINDS, type JevKind } from './registry';
@@ -31,14 +32,15 @@ export { insertionPoint, jevKindsOf, NO_KINDS, stripReplyTags } from './jevNotes
 
 export const JEV_SETTING_KEY = 'plugin.jev';
 
-/** 说话人门槛:默认、可调范围(前后端共用,定义在 AnimaBackend/app/contracts.py) */
-export { SPEAKER_THRESHOLD };
+/** 说话人门槛、带上一条回复几句:默认、可调范围(前后端共用,定义在 AnimaBackend/app/contracts.py) */
+export { JEV_BEFORE_LINES, SPEAKER_THRESHOLD };
 /** 「立绘和文字同步」最多等 Jev 这么久,还没判完就先出字 */
 export const SYNC_MAX_WAIT_MS = 2000;
 
 /** 几个插件共用的通用问法(键和后端 DEFAULT_PROMPTS 一致) */
 export const SHARED_PROMPT_KEYS = [
   'state',
+  'before',
   'speaker',
   'speaker_char',
   'speaker_user',
@@ -57,12 +59,18 @@ export interface JevPluginConfig {
   prompts: Record<SharedPromptKey, string | null>;
   /** 两条队列(试用,plugins/jevRun.ts):CG 是 Jev 时别的题不再一句一句等;默认关 */
   twoQueues: boolean;
+  /**
+   * 判每句时带上一条 AI 回复的最后几句(0 = 不带)。2026-10-15 在两个游戏 6 个角色的剧本上测:
+   * 「谁说的」判对 不带 59.6% / 8 句 64.9% / 24 句 68.8%(specs/2026-10-15-jev-previous-reply-ab.md)
+   */
+  beforeLines: number;
 }
 
 export const DEFAULT_JEV_CONFIG: JevPluginConfig = {
   syncText: true,
   speakerThreshold: SPEAKER_THRESHOLD.default,
   twoQueues: false,
+  beforeLines: JEV_BEFORE_LINES.default,
   prompts: Object.fromEntries(SHARED_PROMPT_KEYS.map((k) => [k, null])) as Record<SharedPromptKey, null>,
 };
 
@@ -74,7 +82,58 @@ export function normalizeJevConfig(raw: unknown): JevPluginConfig {
     speakerThreshold: thresholdOf(r.speakerThreshold, SPEAKER_THRESHOLD.default, SPEAKER_THRESHOLD.min, SPEAKER_THRESHOLD.max),
     prompts: Object.fromEntries(SHARED_PROMPT_KEYS.map((k) => [k, promptOf(p[k])])) as Record<SharedPromptKey, string | null>,
     twoQueues: typeof r.twoQueues === 'boolean' ? r.twoQueues : DEFAULT_JEV_CONFIG.twoQueues,
+    beforeLines: Math.round(thresholdOf(r.beforeLines, JEV_BEFORE_LINES.default, JEV_BEFORE_LINES.min, JEV_BEFORE_LINES.max)),
   };
+}
+
+// ---- Jev 页:连接好不好、每一路对这张卡在不在用、用了多少 ----
+
+/** token 数(只数 token 不算钱,走中转的价格各不一样):一万以上写成「2.9 万」「818 万」 */
+export function tokenText(n: number): string {
+  if (n < 10_000) return n.toLocaleString();
+  const wan = n / 10_000;
+  return `${wan >= 100 ? Math.round(wan).toLocaleString() : wan.toFixed(1)} 万`;
+}
+
+/** 左栏圆点 / 页头:ok 通了 · missing 没填 key(有插件选了 Jev)· error 上次出错 · idle 没 key 也没插件选 Jev */
+export type JevHealth = 'ok' | 'missing' | 'error' | 'idle';
+
+export function jevHealth(o: {
+  hasKey: boolean;
+  /** 有没有哪一路的模式选了 Jev(不管有没有 key) */
+  anyJevMode: boolean;
+  /** 这次打开页面以后测过没有:true 通了、false 没通、null 没测 */
+  testOk: boolean | null;
+  /** 最新一条 AI 回复的 Jev 统计 */
+  last: Pick<JevStats, 'lines' | 'failed'> | null;
+}): JevHealth {
+  if (!o.hasKey) return o.anyJevMode ? 'missing' : 'idle';
+  if (o.testOk === false) return 'error';
+  // 上一条回复一半以上没判成(偶尔一句等太久不算),而且之后没测通过
+  if (o.testOk !== true && o.last && o.last.lines > 0 && o.last.failed * 2 >= o.last.lines) return 'error';
+  return 'ok';
+}
+
+/**
+ * 「哪几路交给 Jev」那一列:这一路对当前这张卡实际在不在用、为什么。
+ * mode 是全局设的(Jev 页、插件页切的就是它);inUse 是这张卡实际在不在用 Jev(按卡设置叠过、有 key、插件开着)
+ */
+export function jevKindStatus(o: {
+  mode: TagMode;
+  inUse: boolean;
+  /** 插件开关(plugins/switches.ts);没有开关的一路算开着 */
+  powerOn: boolean;
+  hasKey: boolean;
+  /** CG:这张卡没有能出的 CG,Jev 不判 */
+  noAssets?: boolean;
+}): string {
+  if (!o.powerOn) return '插件关着';
+  if (o.inUse) {
+    const base = o.mode === 'jev' ? '在用' : '这张卡另设成 Jev 标 · 在用';
+    return o.noAssets ? `${base} · 这张卡没有能出的 CG,不判` : base;
+  }
+  if (o.mode === 'jev') return o.hasKey ? '这张卡另设成 AI 写' : '还没填 key,照旧由 AI 写';
+  return 'AI 写';
 }
 
 // ---- 哪几类在用 Jev ----

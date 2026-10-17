@@ -21,6 +21,9 @@ export const SPEAKER_THRESHOLD = { default: 0.8, min: 0.5, max: 0.95 } as const;
 /** Jev 换背景 / 音乐 / CG 的门槛:默认、可调范围 */
 export const SWITCH_THRESHOLD = { default: 0.6, min: 0.3, max: 0.95 } as const;
 
+/** Jev 判每句时带上一条回复的最后几句:默认、可调范围(0 = 不带;超过 24 没测过,见 specs/2026-10-15-jev-previous-reply-ab.md) */
+export const JEV_BEFORE_LINES = { default: 24, min: 0, max: 24 } as const;
+
 /** IndexTTS 情绪向量的 8 维,顺序是 IndexTTS 官方定的 */
 export const EMO_DIMS = ['高兴', '愤怒', '悲伤', '害怕', '厌恶', '忧郁', '惊讶', '平静'] as const;
 

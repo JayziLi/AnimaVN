@@ -34,6 +34,7 @@ def test_render_is_lf_and_stable():
         "SCENE_WIDTHS",
         "SPEAKER_THRESHOLD",
         "SWITCH_THRESHOLD",
+        "JEV_BEFORE_LINES",
         "EMO_DIMS",
         "EMO_DIM_MAX",
         "EMO_SUM_MAX",

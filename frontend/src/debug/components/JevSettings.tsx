@@ -1,24 +1,18 @@
 import { useState, type ReactNode } from 'react';
 import type { JevDefaults, JevKeyStatus } from '../lib/api';
 import type { TagMode } from '../plugins/common';
-import {
-  SHARED_PROMPT_KEYS,
-  SPEAKER_THRESHOLD,
-  type JevKind,
-  type JevKinds,
-  type JevPluginConfig,
-  type SharedPromptKey,
-} from '../plugins/jev';
+import type { JevKind, JevKinds, JevPluginConfig } from '../plugins/jev';
 import type { JevStats, JevTrial } from '../plugins/jevRun';
-import { DeleteButton } from './pluginFields';
 
 /**
- * 插件页里 Jev 标注的几块(设计见 docs/superpowers/specs/2026-10-01-jev-director-design.md 第三节):
+ * 插件页里 Jev 标注的几块(设计见 docs/superpowers/specs/2026-10-01-jev-director-design.md 第三节;
+ * 10-16 起几个插件共用的设置都搬到了插件抽屉单独的「Jev 标注」页,见 JevPage.tsx):
  *   ModeBar        立绘 / 背景 / BGM / CG / 玩家台词每页最上面:二选一「AI 写标签 | Jev 标注」+ 一行说明;
  *                  有开关的(plugins/switches.ts)右上角再放一个总开关(PowerSwitch)
- *   JevCommon      几个插件共用的设置:key 和测试、立绘和文字同步、说话人门槛、通用问法、试判
+ *   JevPointer     Jev 模式下模式条下面一行:连接和共用设置在「Jev 标注」页 →;没 key 时变黄「去填 →」
  *   PromptField    一道题的问法:显示默认、改了存下来、能恢复默认
  *   ThresholdField 门槛滑条
+ *   TrialTable     试判的结果表(Jev 页用)
  */
 
 /** 插件抽屉拿到的 Jev 相关的东西(DebugApp 拼好传进来) */
@@ -27,6 +21,8 @@ export interface JevControls {
   onChangeConfig: (next: JevPluginConfig) => void;
   keyStatus: JevKeyStatus | null;
   onSaveKey: (key: string) => Promise<void>;
+  /** 地址和模型名(走中转时填);空串 = 用官方的 */
+  onSaveEndpoint: (url: string, model: string) => Promise<void>;
   /** 后端的默认问法;后端还是旧版时为 null */
   defaults: JevDefaults | null;
   onTest: () => Promise<{ ms: number }>;
@@ -35,12 +31,9 @@ export interface JevControls {
   kinds: JevKinds;
   /** 最新一条 AI 回复的 Jev 统计 */
   lastStats: JevStats | null;
+  /** 切到「Jev 标注」页(插件抽屉给) */
+  openPage?: () => void;
 }
-
-type Notify = (kind: 'ok' | 'error', message: string) => void;
-
-const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
-const usd = (tokens: number) => `$${((tokens * 0.042) / 1e6).toFixed(4)}`;
 
 // ─────────────────────────── 标题栏 ───────────────────────────
 
@@ -99,7 +92,7 @@ export function ModeBar({
       note = '后端还是旧版,不认 Jev 标注 —— 重启后端。现在照旧由 AI 写标签';
       warn = true;
     } else if (!jev.keyStatus?.has_key) {
-      note = '还没设 Jev 的 key(下面「Jev 通用设置」里填)—— 现在照旧由 AI 写标签';
+      note = '还没填 Jev 的 key(在「Jev 标注」页填)—— 现在照旧由 AI 写标签';
       warn = true;
     } else {
       note = jevNote;
@@ -130,6 +123,25 @@ export function ModeBar({
         {power && <PowerSwitch name={name} {...power} />}
       </div>
       <span className={warn ? 'pl-error' : 'sp-group-note'}>{note}</span>
+    </div>
+  );
+}
+
+/** Jev 模式下模式条下面一行:几个插件共用的东西都在「Jev 标注」页 */
+export function JevPointer({ jev }: { jev: JevControls }) {
+  const missing = jev.keyStatus !== null && !jev.keyStatus.has_key;
+  return (
+    <div className={`pl-jev-pointer${missing ? ' warn' : ''}`}>
+      <span>
+        {missing
+          ? '还没填 Jev 的 key,现在照旧由 AI 写标签'
+          : 'Jev 的连接、用量和共用设置(带上一条回复、立绘和文字同步、说话人门槛、通用问法、试判)在「Jev 标注」页'}
+      </span>
+      {jev.openPage && (
+        <button type="button" className="btn small" onClick={jev.openPage}>
+          {missing ? '去填 →' : '去 Jev 页 →'}
+        </button>
+      )}
     </div>
   );
 }
@@ -261,219 +273,18 @@ export function ThresholdField({
   );
 }
 
-// ─────────────────────────── 几个插件共用的设置 ───────────────────────────
-
-const SHARED_LABELS: Record<SharedPromptKey, { label: string; placeholders: (keyof typeof PLACEHOLDER_HINT)[] }> = {
-  state: { label: '通用说明(每次放在最前面)', placeholders: ['char', 'user'] },
-  speaker: { label: '说话人题', placeholders: ['n', 'line', 'char', 'user'] },
-  speaker_char: { label: '　选项「角色」的说明', placeholders: ['char', 'user'] },
-  speaker_user: { label: '　选项「玩家」的说明', placeholders: ['char', 'user'] },
-  speaker_other: { label: '　选项「别人」的说明', placeholders: ['char', 'user'] },
-  speaker_none: { label: '　选项「不是说话」的说明', placeholders: ['char', 'user'] },
-};
+// ─────────────────────────── 试判的结果 ───────────────────────────
 
 const SPEAKER_NAME: Record<string, string> = { char: '角色', user: '玩家', other: '别人', none: '不是说话' };
 
-export function JevCommon({ jev, notify }: { jev: JevControls; notify: Notify }) {
-  const { config, onChangeConfig, keyStatus, defaults } = jev;
-  // 没 key 时默认展开,让人一眼看到要填什么
-  const [open, setOpen] = useState(!keyStatus?.has_key);
-  const [draft, setDraft] = useState('');
-  const [busy, setBusy] = useState<string | null>(null);
-  const [tested, setTested] = useState<{ ok: boolean; text: string } | null>(null);
-  const [trial, setTrial] = useState<JevTrial | null>(null);
-
-  const saveKey = async (key: string) => {
-    setBusy('key');
-    try {
-      await jev.onSaveKey(key);
-      setDraft('');
-      setTested(null);
-      notify('ok', key ? 'Jev 的 key 已保存' : 'Jev 的 key 已删除');
-    } catch (e) {
-      notify('error', `保存失败: ${errText(e)}`);
-    } finally {
-      setBusy(null);
-    }
-  };
-  const test = async () => {
-    setBusy('test');
-    try {
-      const { ms } = await jev.onTest();
-      setTested({ ok: true, text: `通了 · ${(ms / 1000).toFixed(2)} 秒` });
-    } catch (e) {
-      setTested({ ok: false, text: errText(e) });
-    } finally {
-      setBusy(null);
-    }
-  };
-  const runTrial = async () => {
-    setBusy('trial');
-    try {
-      setTrial(await jev.onTrial());
-    } catch (e) {
-      notify('error', `试判失败: ${errText(e)}`);
-    } finally {
-      setBusy(null);
-    }
-  };
-  const setPrompt = (k: SharedPromptKey, v: string | null) =>
-    onChangeConfig({ ...config, prompts: { ...config.prompts, [k]: v } });
-
-  const keyText =
-    keyStatus === null
-      ? '正在问后端…'
-      : keyStatus.has_key
-        ? keyStatus.source === 'env'
-          ? 'key 已设置(后端环境变量 JEV_API_KEY)'
-          : 'key 已设置'
-        : '还没设 key';
-  const s = jev.lastStats;
-
-  return (
-    <div className="sp-group pl-jev">
-      <div className="sp-group-head">
-        <span className="sp-group-title">Jev 通用设置</span>
-        <span className="sp-group-note">几个插件共用,在哪个插件里改都一样。</span>
-      </div>
-      <div className={`pl-status ${keyStatus?.has_key ? 'on' : 'missing'}`}>
-        <span className="pl-status-dot" />
-        <span className="pl-status-text">
-          {keyText}
-          {s && s.kinds.length > 0 &&
-            ` · 上一条回复:判了 ${s.lines} 句、${s.requests} 次请求,最慢 ${(s.maxMs / 1000).toFixed(2)} 秒,${s.tokens.toLocaleString()} token(约 ${usd(s.tokens)})${s.failed ? `,${s.failed} 句没判成:${s.error ?? ''}` : ''}`}
-        </span>
-        <button className="btn small" onClick={() => setOpen(!open)} aria-expanded={open}>
-          {open ? '收起' : '展开'}
-        </button>
-      </div>
-
-      {open && (
-        <>
-          <div className="pl-sub">
-            <span className="pl-prompt-label">Jev 的 key</span>
-            <span className="sp-group-note">
-              在 typesafe.ai 的控制台创建。只存在后端,填了以后这里读不回来;后端设了环境变量 JEV_API_KEY 时用环境变量的。
-            </span>
-            {keyStatus?.source !== 'env' && (
-              <div className="pl-row">
-                <input
-                  className="text-input"
-                  type="password"
-                  autoComplete="off"
-                  placeholder={keyStatus?.has_key ? '换一个 key' : '粘贴 Jev 的 API key'}
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                />
-                <button
-                  className="btn small accent"
-                  disabled={busy !== null || !draft.trim()}
-                  onClick={() => void saveKey(draft.trim())}
-                >
-                  保存
-                </button>
-                {/* key 只能写不能读,删了就找不回来:和别处的删除一样点两次 */}
-                {keyStatus?.has_key && <DeleteButton disabled={busy !== null} onConfirm={() => void saveKey('')} />}
-              </div>
-            )}
-            <div className="pl-row">
-              <button className="btn small" disabled={busy !== null || !keyStatus?.has_key} onClick={() => void test()}>
-                {busy === 'test' ? '测试中…' : '测试'}
-              </button>
-              {tested && <span className={tested.ok ? 'sp-group-note' : 'pl-error'}>{tested.text}</span>}
-            </div>
-          </div>
-
-          <div className="pl-sub">
-            <label className="vp-check">
-              <input
-                type="checkbox"
-                checked={config.syncText}
-                onChange={(e) => onChangeConfig({ ...config, syncText: e.target.checked })}
-              />
-              立绘和文字同步
-            </label>
-            <span className="sp-group-note">
-              开着:你追上生成进度的那句,等 Jev 判完立绘 / 背景再出字,画面和文字一起变;这句出字因此晚约 0.7 秒
-              (日中对照约 1.2 秒),最多等 2 秒。关着:文字照常边写边出,立绘 / 背景晚一点换。没追上的句子不受影响。
-            </span>
-          </div>
-
-          <div className="pl-sub">
-            <label className="vp-check">
-              <input
-                type="checkbox"
-                checked={config.twoQueues}
-                onChange={(e) => onChangeConfig({ ...config, twoQueues: e.target.checked })}
-              />
-              两条队列(试用)
-            </label>
-            <span className="sp-group-note">
-              只在 CG 由 Jev 标时有区别。关着(和以前一样):每句的题(说话人、表情、背景、音乐、CG)一起问,一句一句排队。
-              开着:CG 单独一句一句问,别的题多句一批先判完,立绘和语音不再跟着 CG 排队;请求数大约多 1/16。
-            </span>
-          </div>
-
-          <div className="pl-sub">
-            <ThresholdField
-              label="说话人门槛"
-              value={config.speakerThreshold}
-              def={SPEAKER_THRESHOLD.default}
-              min={SPEAKER_THRESHOLD.min}
-              max={SPEAKER_THRESHOLD.max}
-              low="更敢判成别人"
-              high="更不容易漏念"
-              note="Jev 判「这句不是角色说的」要多大把握才信;不够就还算角色的(照常念、换立绘)"
-              onChange={(v) => onChangeConfig({ ...config, speakerThreshold: v })}
-            />
-          </div>
-
-          <div className="pl-sub">
-            <span className="pl-prompt-label">问法</span>
-            <span className="sp-group-note">
-              每次判断时发给 Jev 的说明和题目,改了下一句就用新的。表情、场景、音乐的题在各自插件里。
-            </span>
-            {SHARED_PROMPT_KEYS.map((k) => (
-              <PromptField
-                key={k}
-                label={SHARED_LABELS[k].label}
-                promptKey={k}
-                value={config.prompts[k]}
-                defaults={defaults}
-                placeholders={SHARED_LABELS[k].placeholders}
-                onChange={(v) => setPrompt(k, v)}
-                rows={k === 'state' ? 3 : 2}
-              />
-            ))}
-          </div>
-
-          <div className="pl-sub">
-            <div className="pl-row">
-              <span className="pl-prompt-label">试判</span>
-              <div style={{ flex: 1 }} />
-              <button className="btn small accent" disabled={busy !== null} onClick={() => void runTrial()}>
-                {busy === 'trial' ? '判断中…' : '用最新一条回复试判'}
-              </button>
-            </div>
-            <span className="sp-group-note">
-              用现在的设置和问法,把当前对话最新一条 AI 回复整条判一遍,按句列出结果。不改存档,一次不到 0.001 美元。
-            </span>
-            {trial && <TrialTable trial={trial} kinds={jev.kinds} keep={defaults?.keep ?? '不换'} />}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-function TrialTable({ trial, kinds, keep }: { trial: JevTrial; kinds: JevKinds; keep: string }) {
+export function TrialTable({ trial, kinds, keep }: { trial: JevTrial; kinds: JevKinds; keep: string }) {
   const pct = (v: number | undefined) => (v === undefined ? '' : ` ${v.toFixed(2)}`);
   const s = trial.stats;
   return (
     <>
       <span className="sp-group-note">
         {trial.lines.length} 句,{s.requests} 次请求,共 {(trial.ms / 1000).toFixed(2)} 秒,{s.tokens.toLocaleString()} token
-        (约 {usd(s.tokens)}){s.failed ? `,${s.failed} 句没判成:${s.error ?? ''}` : ''}。没问的格子是空的
+        {s.failed ? `,${s.failed} 句没判成:${s.error ?? ''}` : ''}。没问的格子是空的
         (旁白不问谁说的,台词不问场景;一条回复场景 / 音乐各只换一次,换过就不再问;CG 每句都问)。
       </span>
       <div className="vn-console-scroll">

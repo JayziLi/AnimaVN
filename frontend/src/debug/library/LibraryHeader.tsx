@@ -45,68 +45,67 @@ export function LibraryHeader({
   const cards = item.card_ids.filter((id) => cardNames.has(id));
   const shown = cards.slice(0, MAX_CARDS);
   const all = cards.map((id) => cardNames.get(id)).join('、');
+  // 包名和两个按钮一行,下面那行小字单独占满一行:中间窄的时候小字不会被按钮挤成一个字一行(library.css 的 .lib-head)
   return (
     <div className="lib-head">
-      <div className="lib-head-text">
-        <span className="lib-head-name">
-          <TitleEdit value={item.name} label="名字" onCommit={onRename} />
-          {item.generated && <Chip>AI 生成</Chip>}
-        </span>
-        <span className="lib-head-sub">
-          <span>{headerSummary(kind, item)}</span>
-          {cards.length === 0 ? (
-            <span>未绑定</span>
-          ) : (
-            <span title={cards.length > MAX_CARDS ? all : undefined}>
-              已绑定 {cards.length} 张卡:
-              {shown.map((id, i) => (
-                <Fragment key={id}>
-                  {i > 0 && '、'}
-                  <button
-                    type="button"
-                    className="st-link lib-card-link"
-                    title={`打开「${cardNames.get(id)}」的卡编辑器`}
-                    onClick={() => onOpenCard(id)}
-                  >
-                    {cardNames.get(id)}
-                  </button>
-                </Fragment>
-              ))}
-              {cards.length > MAX_CARDS && ` 等 ${cards.length} 张`}
-            </span>
-          )}
-          {sameAs.length > 0 && (
-            <span>
-              和
-              {sameAs.map((o, i) => (
-                <Fragment key={o.id}>
-                  {i > 0 && '、'}
-                  <button type="button" className="st-link lib-card-link" onClick={() => onSelect(o.id)}>
-                    「{o.name}」
-                  </button>
-                </Fragment>
-              ))}
-              一模一样
-            </span>
-          )}
-          {item.import_job_id && jobTitle !== null && (
-            <span>
-              来自导入
-              <button
-                type="button"
-                className="st-link lib-card-link"
-                onClick={() => item.import_job_id && onOpenJob(item.import_job_id)}
-              >
-                「{jobTitle}」
-              </button>
-            </span>
-          )}
-        </span>
-      </div>
+      <span className="lib-head-name">
+        <TitleEdit value={item.name} label="名字" onCommit={onRename} />
+        {item.generated && <Chip>AI 生成</Chip>}
+      </span>
       <Btn icon="link" onClick={onBind}>
         绑定到角色卡…
       </Btn>
       <MoreMenu label={`更多:${menu.map((m) => m.label).join('、')}`} items={menu} />
+      <span className="lib-head-sub">
+        <span>{headerSummary(kind, item)}</span>
+        {cards.length === 0 ? (
+          <span>未绑定</span>
+        ) : (
+          <span title={cards.length > MAX_CARDS ? all : undefined}>
+            已绑定 {cards.length} 张卡:
+            {shown.map((id, i) => (
+              <Fragment key={id}>
+                {i > 0 && '、'}
+                <button
+                  type="button"
+                  className="st-link lib-card-link"
+                  title={`打开「${cardNames.get(id)}」的卡编辑器`}
+                  onClick={() => onOpenCard(id)}
+                >
+                  {cardNames.get(id)}
+                </button>
+              </Fragment>
+            ))}
+            {cards.length > MAX_CARDS && ` 等 ${cards.length} 张`}
+          </span>
+        )}
+        {sameAs.length > 0 && (
+          <span>
+            和
+            {sameAs.map((o, i) => (
+              <Fragment key={o.id}>
+                {i > 0 && '、'}
+                <button type="button" className="st-link lib-card-link" onClick={() => onSelect(o.id)}>
+                  「{o.name}」
+                </button>
+              </Fragment>
+            ))}
+            一模一样
+          </span>
+        )}
+        {item.import_job_id && jobTitle !== null && (
+          <span>
+            来自导入
+            <button
+              type="button"
+              className="st-link lib-card-link"
+              onClick={() => item.import_job_id && onOpenJob(item.import_job_id)}
+            >
+              「{jobTitle}」
+            </button>
+          </span>
+        )}
+      </span>
     </div>
   );
 }

@@ -15,7 +15,7 @@ import { enabledOnly, type BlockState, type PluginConfig } from '../plugins/comm
 import { labelFromFile, uniqueLabel } from '../lib/assetNames';
 import type { LangPluginConfig } from '../plugins/lang';
 import type { PlayerPluginConfig } from '../plugins/player';
-import { navItems, type BlockPluginId } from '../plugins/registry';
+import { kindName, navItems, type BlockPluginId } from '../plugins/registry';
 import {
   SCENE,
   SWITCH_THRESHOLD,
@@ -42,7 +42,9 @@ import type { SpritePackState } from '../plugins/useSpritePacks';
 import type { VoicePluginState } from '../plugins/useVoicePlugin';
 import { bgmPlayer, useBgm } from '../vn/bgm';
 import { CommitField, DeleteButton } from './pluginFields';
-import { JevCommon, ModeBar, OFF_NOTE, PowerSwitch, PromptField, ThresholdField, type JevControls, type Power } from './JevSettings';
+import { JevPointer, ModeBar, OFF_NOTE, PowerSwitch, PromptField, ThresholdField, type JevControls, type Power } from './JevSettings';
+import { JevPage, type JevKindRow } from './JevPage';
+import { jevHealth } from '../plugins/jev';
 import type { PluginSwitches, SwitchKind } from '../plugins/switches';
 import { LangPanel } from './LangPanel';
 import { PlayerPanel } from './PlayerPanel';
@@ -175,6 +177,9 @@ const SAMPLE_PACK = {
   ],
 };
 
+/** 左栏 Jev 圆点读给读屏软件的话 */
+const JEV_HEALTH_LABEL = { ok: 'Jev 已连上', missing: '还没填 Jev 的 key', error: 'Jev 上次出错' } as const;
+
 /** 这张卡当前立绘包的名字;没挂包是 null */
 const currentPackName = (packs: SpritePackState) => packs.packs.find((p) => p.id === packs.packId)?.name ?? null;
 
@@ -184,15 +189,57 @@ const powerOf = (sw: Props['switches'], kind: SwitchKind): Power => ({
   onChange: (on) => sw.onChange({ ...sw.value, [kind]: on }),
 });
 
-export function PluginsDrawer(props: Props) {
-  const { focus } = props;
+export function PluginsDrawer(outer: Props) {
+  const { focus } = outer;
   const [section, setSection] = useState<PluginSection>(focus?.section ?? 'sprite');
+  // Jev 页(左栏单独一项):各插件页的指路行、没 key 时的提示都能点过去
+  const props: Props = { ...outer, jev: { ...outer.jev, openPage: () => setSection('jev') } };
+  /** 这次打开以后 Jev 测过没有:左栏圆点和 Jev 页页头都看它 */
+  const [jevTestOk, setJevTestOk] = useState<boolean | null>(null);
   const { refreshPacks } = props.scene;
   // 卡带的页:拆句拼接那一页 + 别的卡带给的
   const cartridgePanels = useMemo(
     () => [props.splice.panel, ...(props.panels ?? [])].filter((p): p is CartridgePanel => p !== null),
     [props.splice.panel, props.panels],
   );
+
+  // 「哪几路交给 Jev」:和插件页切的是同一份全局配置;「详情 →」去那个插件页
+  const sw = props.switches.value;
+  const jevRows: JevKindRow[] = [
+    {
+      kind: 'sprite',
+      name: kindName('sprite'),
+      mode: props.sprite.config.mode,
+      onChangeMode: (mode) => props.sprite.onChangeConfig({ ...props.sprite.config, mode }),
+      powerOn: sw.sprite,
+      onDetail: () => setSection('sprite'),
+    },
+    ...(['bg', 'bgm', 'cg'] as const).map(
+      (kind): JevKindRow => ({
+        kind,
+        name: kindName(kind),
+        mode: props.scene.configs[kind].mode,
+        onChangeMode: (mode) => props.scene.changeConfig(kind, { ...props.scene.configs[kind], mode }),
+        powerOn: sw[kind],
+        noAssets: kind === 'cg' ? cgsOf(enabledOnly(props.scene.assets)).length === 0 : undefined,
+        onDetail: () => setSection(kind),
+      }),
+    ),
+    {
+      kind: 'player',
+      name: kindName('player'),
+      mode: props.player.config.mode,
+      onChangeMode: (mode) => props.player.onChangeConfig({ ...props.player.config, mode }),
+      powerOn: true,
+      onDetail: () => setSection('player'),
+    },
+  ];
+  const jevHealthNow = jevHealth({
+    hasKey: Boolean(props.jev.keyStatus?.has_key),
+    anyJevMode: jevRows.some((r) => r.mode === 'jev'),
+    testOk: jevTestOk,
+    last: props.jev.lastStats,
+  });
 
   // 左栏点了插件块:切到那个插件,把提示词模板滚进视野并闪一下,光标放进去
   useEffect(() => {
@@ -242,9 +289,21 @@ export function PluginsDrawer(props: Props) {
               {p.beta && <span className="pl-beta">BETA</span>}
             </button>
           ))}
+          {/* Jev 标注:几个插件共用的连接、用量、设置,单独一页;圆点 绿 = 通了 · 黄 = 没填 key · 红 = 上次出错 */}
+          <div className="sp-nav-sep" />
+          <button
+            className={`sp-nav-item${section === 'jev' ? ' active' : ''}`}
+            onClick={() => setSection('jev')}
+          >
+            <span>Jev 标注</span>
+            {jevHealthNow !== 'idle' && <span className={`jev-dot ${jevHealthNow}`} role="img" aria-label={JEV_HEALTH_LABEL[jevHealthNow]} />}
+          </button>
         </div>
 
         <div className="sp-body">
+          {section === 'jev' && (
+            <JevPage jev={props.jev} rows={jevRows} testOk={jevTestOk} onTested={setJevTestOk} notify={props.notify} />
+          )}
           {section === 'sprite' && <SpriteSection {...props} />}
           {(section === 'bg' || section === 'bgm' || section === 'cg') && (
             <SceneSection key={section} kind={section} {...props} />
@@ -304,7 +363,7 @@ export function PluginsDrawer(props: Props) {
 // ─────────────────────────── 玩家台词 ───────────────────────────
 
 /** 玩家台词:AI 按块写 <我>,或者 Jev 认出玩家说的台词(见 PlayerPanel / plugins/jev.ts) */
-function PlayerSection({ player, jev, notify, presetName, presetDirty, presetBusy, onSavePreset }: Props) {
+function PlayerSection({ player, jev, presetName, presetDirty, presetBusy, onSavePreset }: Props) {
   const { config, onChangeConfig } = player;
   return (
     <>
@@ -319,12 +378,12 @@ function PlayerSection({ player, jev, notify, presetName, presetDirty, presetBus
       />
       {config.mode === 'jev' ? (
         <>
-          <JevCommon jev={jev} notify={notify} />
+          <JevPointer jev={jev} />
           <div className="sp-group">
             <div className="sp-group-head">
               <span className="sp-group-title">弹成选项</span>
               <span className="sp-group-note">
-                模型替玩家写的台词,Jev 认出来以后怎么显示。「谁说的」这道题的问法和门槛在上面的通用设置里。
+                模型替玩家写的台词,Jev 认出来以后怎么显示。「谁说的」这道题的问法和门槛在「Jev 标注」页(和立绘共用)。
               </span>
             </div>
             <label className="vp-check">
@@ -609,7 +668,7 @@ function SpriteSection({
 
       {config.mode === 'jev' ? (
         <>
-          <JevCommon jev={jev} notify={notify} />
+          <JevPointer jev={jev} />
           <div className="sp-group">
             <div className="sp-group-head">
               <span className="sp-group-title">表情题</span>
@@ -1321,7 +1380,7 @@ function SceneSection({
 
       {config.mode === 'jev' && kind === 'cg' ? (
         <>
-          <JevCommon jev={jev} notify={notify} />
+          <JevPointer jev={jev} />
           <div className="sp-group">
             <div className="sp-group-head">
               <span className="sp-group-title">出 CG / 换 CG / 收起</span>
@@ -1374,7 +1433,7 @@ function SceneSection({
         </>
       ) : config.mode === 'jev' ? (
         <>
-          <JevCommon jev={jev} notify={notify} />
+          <JevPointer jev={jev} />
           <div className="sp-group">
             <div className="sp-group-head">
               <span className="sp-group-title">{kind === 'bg' ? '换场景' : '换音乐'}</span>

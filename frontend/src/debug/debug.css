@@ -6104,3 +6104,434 @@ textarea.persona-desc {
 .pl-thumb .vn-bubble {
   position: absolute;
 }
+
+/* ── 一个设置一行(components/settings/SettingRow.tsx,素材架构设计 2.9):名字 · 控件 · 管谁 · 恢复默认 / 说明 ── */
+.set-group {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+.set-group-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 3px 10px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.set-group-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+}
+.set-group-note {
+  font-size: 11px;
+  color: var(--text-faint);
+  line-height: 1.6;
+}
+.set-row {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr) auto;
+  column-gap: 14px;
+  row-gap: 4px;
+  align-items: center;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.set-row:last-child {
+  border-bottom: none;
+}
+.set-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+.set-ctl {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.set-side {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.set-help {
+  grid-column: 2 / 4;
+  font-size: 11px;
+  color: var(--text-faint);
+  line-height: 1.6;
+}
+.set-scope {
+  padding: 1px 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  font-size: 10px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.set-scope.card {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--bg);
+  font-weight: 600;
+}
+.set-scope.device {
+  border-style: dashed;
+}
+.set-global {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.set-override {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.set-slider {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.set-slider input[type='range'] {
+  flex: 1;
+  min-width: 80px;
+  max-width: 260px;
+  accent-color: var(--accent);
+}
+.set-slider-end {
+  font-size: 10px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+.set-slider-value {
+  min-width: 3.5em;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+}
+.set-seg {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-panel);
+}
+.set-seg button {
+  padding: 4px 12px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.set-seg button.on {
+  background: var(--accent);
+  color: var(--bg);
+  font-weight: 600;
+}
+.set-seg button:not(.on):hover {
+  color: var(--text);
+}
+.set-text {
+  flex: 1;
+  min-width: 0;
+  max-width: 420px;
+}
+.set-text.mono {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+@media (max-width: 640px) {
+  .set-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .set-help {
+    grid-column: 1;
+  }
+  .set-side {
+    justify-content: flex-start;
+  }
+}
+/* 开 / 关一律用拨动开关(和插件页右上角的总开关同一个样子) */
+.set-switch {
+  flex-shrink: 0;
+  position: relative;
+  width: 36px;
+  height: 20px;
+  padding: 0;
+  border-radius: 10px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.set-switch .knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  transition: transform 0.12s, background 0.12s;
+}
+.set-switch.on {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+}
+.set-switch.on .knob {
+  background: var(--accent);
+  transform: translateX(16px);
+}
+.set-switch:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+/* 这张卡另设过的行底色浅一点 */
+.set-row.overridden {
+  background: var(--bg-raised);
+}
+/* 会牵连别处:下面一条黄底 */
+.set-affects {
+  grid-column: 2 / 4;
+  padding: 5px 8px;
+  border-radius: 4px;
+  background: #2a2412;
+  color: #e6cf8f;
+  font-size: 11px;
+  line-height: 1.6;
+}
+.set-text.bad {
+  border-color: var(--danger);
+}
+.set-error {
+  font-size: 11px;
+  color: var(--danger);
+}
+@media (max-width: 640px) {
+  .set-affects {
+    grid-column: 1;
+  }
+}
+
+/* ── 插件抽屉里单独的「Jev 标注」页(components/JevPage.tsx) ── */
+.sp-nav-sep {
+  height: 1px;
+  margin: 8px 4px;
+  background: var(--border);
+}
+/* 连接状态的小圆点:绿 = 通了 · 黄 = 没填 key · 红 = 上次出错 */
+.jev-dot {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+.jev-dot.ok,
+.jev-health.ok .jev-dot {
+  background: #5fc98a;
+}
+.jev-dot.missing,
+.jev-health.missing .jev-dot {
+  background: #e3b341;
+}
+.jev-dot.error,
+.jev-health.error .jev-dot {
+  background: var(--danger);
+}
+.jev-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.jev-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.jev-head-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.jev-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+.jev-health {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.jev-health .jev-dot {
+  margin-left: 0;
+}
+.jev-health.missing {
+  border-color: #6b5a24;
+  color: #ecd28a;
+}
+.jev-health.error {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.jev-fixed {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.jev-ok {
+  font-size: 12px;
+  color: #8fd9ad;
+}
+.jev-usage {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 8px;
+  padding: 10px 12px;
+}
+.jev-usage-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-panel);
+}
+.jev-usage-name,
+.jev-usage-sub {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.jev-usage-num {
+  font-family: var(--mono);
+  font-size: 18px;
+  color: var(--text);
+}
+.jev-usage-note {
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.jev-kind-row {
+  display: grid;
+  grid-template-columns: 72px auto minmax(0, 1fr) auto;
+  column-gap: 12px;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.jev-kind-row:last-child {
+  border-bottom: none;
+}
+.jev-kind-status {
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.jev-advanced > summary {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 2px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+}
+.jev-advanced > summary::-webkit-details-marker {
+  display: none;
+}
+.jev-advanced > summary::before {
+  content: '▸';
+  color: var(--text-faint);
+}
+.jev-advanced[open] > summary::before {
+  content: '▾';
+}
+.jev-advanced[open] > summary {
+  margin-bottom: 8px;
+}
+.jev-prompts {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 10px 12px;
+}
+.jev-trial {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+}
+/* 插件页 Jev 模式下模式条下面那一行:去 Jev 页;没 key 时变黄 */
+.pl-jev-pointer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.pl-jev-pointer > span {
+  flex: 1;
+  min-width: 200px;
+}
+.pl-jev-pointer.warn {
+  border-color: #6b5a24;
+  background: #262013;
+  color: #ecd28a;
+}
+@media (max-width: 640px) {
+  .jev-kind-row {
+    grid-template-columns: 1fr auto;
+    row-gap: 6px;
+  }
+}
+
+/* API 抽屉底部:判断模型 Jev 的状态一行,key 只在插件抽屉的「Jev 标注」页填 */
+.conn-jev {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.conn-jev .jev-dot {
+  margin-left: 0;
+}
+.conn-jev-text {
+  flex: 1;
+  min-width: 200px;
+}

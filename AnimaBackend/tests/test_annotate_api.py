@@ -77,6 +77,12 @@ PAYLOAD = {
 }
 
 
+def key_status(client: TestClient) -> dict:
+    """状态接口里 key 的那两项(还有地址、模型名,另有测试)"""
+    body = client.get("/api/annotate/status").json()
+    return {"has_key": body["has_key"], "source": body["source"]}
+
+
 def choice(c, conf=0.9):
     return {"type": "choice", "choice": c, "confidence": conf, "probabilities": {c: conf}}
 
@@ -265,10 +271,10 @@ def test_key_test_asks_jev_one_small_question(client: TestClient, jev):
 
 
 def test_key_can_be_set_from_the_page_but_never_read_back(client: TestClient, jev):
-    assert client.get("/api/annotate/status").json() == {"has_key": False, "source": None}
+    assert key_status(client) == {"has_key": False, "source": None}
 
     assert client.put("/api/annotate/key", json={"key": " sk-jev "}).status_code == 204
-    assert client.get("/api/annotate/status").json() == {"has_key": True, "source": "settings"}
+    assert key_status(client) == {"has_key": True, "source": "settings"}
     # 通用的设置接口读不到、也写不了
     assert client.get("/api/settings/secret.jev_key").status_code == 400
     assert client.put("/api/settings/secret.jev_key", json={"value": "x"}).status_code == 400
@@ -278,12 +284,12 @@ def test_key_can_be_set_from_the_page_but_never_read_back(client: TestClient, je
     assert jev.requests[-1].headers["authorization"] == "Bearer sk-jev"
 
     assert client.put("/api/annotate/key", json={"key": ""}).status_code == 204
-    assert client.get("/api/annotate/status").json() == {"has_key": False, "source": None}
+    assert key_status(client) == {"has_key": False, "source": None}
 
 
 def test_key_from_the_environment_wins(client: TestClient, jev, with_key):
     client.put("/api/annotate/key", json={"key": "from-page"})
-    assert client.get("/api/annotate/status").json() == {"has_key": True, "source": "env"}
+    assert key_status(client) == {"has_key": True, "source": "env"}
 
 
 def test_warmup_opens_a_connection_only_with_a_key(client: TestClient, jev):
@@ -319,3 +325,155 @@ def test_a_blank_character_name_is_still_rejected(client: TestClient, jev, with_
     jev.answers = {"bg1": choice("食堂", 0.95), "bgm1": choice("不换"), "s2": choice("char"), "e2": choice("微笑")}
     r = client.post("/api/annotate/lines", json={**PAYLOAD, "char": " " * 79 + "星绘"})
     assert r.status_code == 200, r.text
+
+
+# ---- 带上一条回复(specs/2026-10-16-jev-page-and-previous-reply.md 第四节) ----
+
+
+def test_the_previous_reply_goes_in_before_the_players_line(client: TestClient, jev, with_key):
+    jev.answers = {"s2": choice("char"), "e2": choice("害羞")}
+    before = [{"text": "她把伞收了起来。", "speaker": None}, {"text": "「明天见。」", "speaker": "星绘"}]
+    r = client.post("/api/annotate/lines", json={**PAYLOAD, "targets": [1], "before": before})
+    assert r.status_code == 200, r.text
+    state = jev.bodies()[-1]["state"]
+    assert list(state)[:4] == ["说明", "上一条回复的最后几句", "玩家上一句", "本条回复"]
+    assert state["说明"].endswith(judge.DEFAULT_PROMPTS["before"])
+    assert state["上一条回复的最后几句"] == [
+        {"类型": "旁白", "内容": "她把伞收了起来。"},
+        {"类型": "引号里的话", "内容": "「明天见。」"},
+    ]
+
+
+def test_without_the_previous_reply_the_request_is_as_before(client: TestClient, jev, with_key):
+    jev.answers = {"s2": choice("char"), "e2": choice("害羞")}
+    client.post("/api/annotate/lines", json={**PAYLOAD, "targets": [1]})
+    client.post("/api/annotate/lines", json={**PAYLOAD, "targets": [1], "before": []})
+    a, b = jev.bodies()
+    assert a == b
+    assert "上一条回复的最后几句" not in a["state"]
+    assert judge.DEFAULT_PROMPTS["before"] not in a["state"]["说明"]
+
+
+def test_the_previous_reply_keeps_its_last_lines_and_long_ones_are_clipped(client: TestClient, jev, with_key):
+    jev.answers = {"s2": choice("char")}
+    before = [{"text": f"第{i}句。", "speaker": None} for i in range(30)]
+    before[-1] = {"text": "长" * 3000, "speaker": None}
+    r = client.post("/api/annotate/lines", json={**PAYLOAD, "targets": [1], "before": before})
+    assert r.status_code == 200, r.text
+    sent = jev.bodies()[-1]["state"]["上一条回复的最后几句"]
+    assert len(sent) == 24
+    assert sent[0]["内容"] == "第6句。"
+    assert len(sent[-1]["内容"]) == 2000
+
+
+def test_the_previous_reply_note_can_be_edited(client: TestClient, jev, with_key):
+    jev.answers = {"s2": choice("char")}
+    r = client.post(
+        "/api/annotate/lines",
+        json={**PAYLOAD, "targets": [1], "before": [{"text": "前情。"}], "prompts": {"before": "改过的前情说明。"}},
+    )
+    assert r.status_code == 200, r.text
+    assert jev.bodies()[-1]["state"]["说明"].endswith("改过的前情说明。")
+
+
+# ---- 地址、模型名(走中转) ----
+
+RELAY = "https://relay.example.com/v1/systemone"
+
+
+def test_the_endpoint_defaults_to_the_official_one(client: TestClient):
+    body = client.get("/api/annotate/status").json()
+    assert body["url"] == body["default_url"] == "https://api.typesafe.ai/v1/systemone"
+    assert body["model"] == body["default_model"] == "jev-latest"
+    assert body["url_source"] == body["model_source"] == "default"
+
+
+def test_a_relay_address_and_model_name_are_used(client: TestClient, jev, with_key):
+    assert client.put("/api/annotate/endpoint", json={"url": f" {RELAY} ", "model": "typesafe/jev"}).status_code == 204
+    body = client.get("/api/annotate/status").json()
+    assert (body["url"], body["model"], body["url_source"], body["model_source"]) == (
+        RELAY, "typesafe/jev", "settings", "settings")
+
+    jev.answers = {"s2": choice("char")}
+    assert client.post("/api/annotate/lines", json={**PAYLOAD, "targets": [1]}).status_code == 200
+    req = [r for r in jev.requests if r.method == "POST"][-1]
+    assert str(req.url) == RELAY
+    assert json.loads(req.content)["model"] == "typesafe/jev"
+    assert client.post("/api/annotate/test").status_code == 200
+    assert str([r for r in jev.requests if r.method == "POST"][-1].url) == RELAY
+    client.post("/api/annotate/warmup")
+    assert str(jev.requests[-1].url) == "https://relay.example.com/"
+
+    # 空串 = 回到官方的
+    assert client.put("/api/annotate/endpoint", json={"url": "", "model": ""}).status_code == 204
+    body = client.get("/api/annotate/status").json()
+    assert (body["url"], body["model"], body["url_source"]) == (body["default_url"], "jev-latest", "default")
+
+
+def test_a_bad_address_is_rejected(client: TestClient):
+    r = client.put("/api/annotate/endpoint", json={"url": "relay.example.com", "model": ""})
+    assert r.status_code == 422
+    assert "http" in r.json()["detail"]
+
+
+def test_the_environment_address_wins(client: TestClient, jev, with_key, monkeypatch):
+    monkeypatch.setattr(settings, "jev_base_url", "https://env.example.com/v1/systemone")
+    client.put("/api/annotate/endpoint", json={"url": RELAY, "model": ""})
+    body = client.get("/api/annotate/status").json()
+    assert (body["url"], body["url_source"]) == ("https://env.example.com/v1/systemone", "env")
+
+
+# ---- 用量(只数 token) ----
+
+
+@pytest.fixture
+def day(monkeypatch):
+    from datetime import date
+
+    from app.annotate import usage
+
+    now = {"d": date(2026, 10, 16)}
+    monkeypatch.setattr(usage, "today", lambda: now["d"])
+    return now
+
+
+def test_usage_counts_every_call_per_day(client: TestClient, jev, with_key, day):
+    from datetime import date
+
+    jev.answers = {"s2": choice("char")}
+    empty = {"requests": 0, "tokens": 0}
+    assert client.get("/api/annotate/usage").json() == {"today": empty, "week": empty, "month": empty, "all": empty}
+
+    client.post("/api/annotate/lines", json={**PAYLOAD, "targets": [1]})
+    client.post("/api/annotate/lines", json={**PAYLOAD, "targets": [1]})
+    client.post("/api/annotate/test")
+    # 没问 Jev 的不算
+    client.post("/api/annotate/lines", json={**PAYLOAD, "targets": [2]})
+    u = client.get("/api/annotate/usage").json()
+    assert u["today"] == u["all"] == {"requests": 3, "tokens": 3 * 1234}
+
+    day["d"] = date(2026, 10, 30)
+    client.post("/api/annotate/lines", json={**PAYLOAD, "targets": [1]})
+    day["d"] = date(2026, 11, 2)
+    client.post("/api/annotate/lines", json={**PAYLOAD, "targets": [1]})
+    u = client.get("/api/annotate/usage").json()
+    assert u["today"] == {"requests": 1, "tokens": 1234}
+    # 这 7 天:10-27 到 11-02
+    assert u["week"] == {"requests": 2, "tokens": 2 * 1234}
+    assert u["month"] == {"requests": 1, "tokens": 1234}
+    assert u["all"] == {"requests": 5, "tokens": 5 * 1234}
+
+
+def test_a_raced_request_counts_twice(client: TestClient, jev, with_key, day, monkeypatch):
+    monkeypatch.setattr(jev_client, "HEDGE_AFTER", 0.05)
+    jev.answers = {"s2": choice("char")}
+    jev.delays = [2.0, 0.0]
+    assert client.post("/api/annotate/lines", json={**PAYLOAD, "targets": [1]}).status_code == 200
+    assert client.get("/api/annotate/usage").json()["today"] == {"requests": 2, "tokens": 2 * 1234}
+
+
+def test_failed_calls_are_not_counted(client: TestClient, jev, with_key, day):
+    jev.reply = httpx.Response(401, json={"error": "invalid key"})
+    assert client.post("/api/annotate/lines", json={**PAYLOAD, "targets": [1]}).status_code == 502
+    assert client.get("/api/annotate/usage").json()["today"] == {"requests": 0, "tokens": 0}
+

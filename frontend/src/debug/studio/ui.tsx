@@ -9,6 +9,7 @@
 
 import {
   useCallback,
+  useContext,
   useEffect,
   useId,
   useLayoutEffect,
@@ -23,6 +24,8 @@ import type { SaveState } from '../components/CardPanel';
 import { LABEL_MAX } from '../plugins/common';
 import { useAnchored, useDismiss } from './floating';
 import { Icon, type IconName } from './icons';
+import { PanelCollapseButton } from './panelParts';
+import { InspectorCollapse } from './sidePanels';
 import { SLOT_NAMES } from './slotSummary';
 import type { SlotKey } from './types';
 
@@ -556,9 +559,19 @@ export function Inspector({
   /** 读屏用的名字,比如「调整「微笑」」 */
   label?: string;
 }) {
+  // 页面让右栏能收(素材管理,sidePanels.tsx):有头的放在头的右上角,没头的单独一行
+  const collapse = useContext(InspectorCollapse);
+  const collapseBtn = collapse && <PanelCollapseButton side="right" label="右栏" onClick={collapse} />;
   return (
-    <aside className="st-inspector" aria-label={label}>
-      {head && <div className="st-inspector-head">{head}</div>}
+    <aside className={`st-inspector${collapse ? ' collapsible' : ''}`} aria-label={label}>
+      {head ? (
+        <div className="st-inspector-head">
+          {head}
+          {collapseBtn}
+        </div>
+      ) : (
+        collapseBtn && <div className="st-inspector-bar">{collapseBtn}</div>
+      )}
       <div className="st-inspector-body">{children}</div>
       {footer && <div className="st-inspector-foot">{footer}</div>}
     </aside>

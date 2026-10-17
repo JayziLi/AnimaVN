@@ -185,6 +185,18 @@ DeepSeek娘之外，导入你自己的卡就能玩。下面是作者本机导入
 
 ## 🚀 快速开始
 
+### Windows：下载整合包（推荐，什么都不用装）
+
+1. 下载整合包 `AnimaVN-日期-windows.zip`（约 160 MB）：国内从 [**魔搭**](https://www.modelscope.cn/models/JayziLi/AnimaVN/files) 下，速度快；海外从 [**GitHub 发布页**](https://github.com/JayziLi/AnimaVN-public/releases/latest) 下
+2. 解压到桌面或 D 盘都行（别放 `C:\Program Files`）
+3. 双击 **`AnimaVN.bat`**。第一次要解压、准备，大概一两分钟，好了会自动打开浏览器
+
+以后更新：先关掉游戏的黑窗口，再双击 **`更新.bat`**。存档在 `AnimaBackend\data`，更新不会动它。
+
+Windows 提示「无法验证发布者」或「已保护你的电脑」时，点「更多信息」→「仍要运行」。
+
+想改代码，或者用的是 macOS / Linux，就照下面自己装。
+
 ### 需要准备
 
 | | 要求 |

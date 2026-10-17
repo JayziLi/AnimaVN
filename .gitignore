@@ -37,6 +37,9 @@ AnimaBackend/data/*
 # 情绪识别模型:scripts/download_emotion_model.py 下载,几十 MB,不进仓库
 AnimaBackend/models/
 
+# Windows 整合包打出来的东西(packaging/windows/build.py),几百 MB
+packaging/windows/out/
+
 # 界面设计的参考截图(几百 MB)和 Claude Design 画布的素材 / 源文件,留在本机,不进仓库
 docs/design/refs/
 docs/design/canvas/

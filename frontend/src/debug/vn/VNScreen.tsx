@@ -2456,7 +2456,8 @@ function ConsoleView({
         {jev && (
           <p className={`vn-console-note${jev.failed ? ' miss' : ''}`}>
             这条的{(jev.kinds ?? []).map((k) => kindName(k)).join('、')}标签是 Jev 标的:判了 {jev.lines} 句、{jev.requests} 次请求、最慢 {(jev.maxMs / 1000).toFixed(2)} 秒、
-            {jev.tokens.toLocaleString()} token(约 ${((jev.tokens * 0.042) / 1e6).toFixed(4)})
+            {/* 只数 token 不算钱:走中转的价格各不一样 */}
+            {jev.tokens.toLocaleString()} token
             {jevPending !== undefined ? ` · 第 ${jevPending + 1} 句起还在判` : ''}
             {jev.failed ? ` · ${jev.failed} 句没判成(照没标处理):${jev.error ?? ''}` : ''}
             {jevDropped ? ` · 原文改过,${jevDropped} 句的标注对不上已去掉` : ''}

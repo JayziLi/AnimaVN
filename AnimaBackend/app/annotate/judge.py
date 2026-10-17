@@ -43,7 +43,10 @@ PROMPT_MAX = 500
 #        {{current}} 现在的背景 / 曲子 {{current_desc}} 它的说明(带括号,没有就是空)
 DEFAULT_PROMPTS: dict[str, str] = {
     "state": "视觉小说里 AI 刚写的一条回复,已经切成一句一句。主角是「{{char}}」,玩家是「{{user}}」(旁白里的「你」指的也是玩家)。",
-    "speaker": "第 {{n}} 句 {{line}} 是谁说的?",
+    # 带了上一条回复时接在通用说明后面(2026-10-15 在两个游戏 6 个角色的剧本上测过,
+    # 「谁说的」判对 59.6% → 68.8%,见 specs/2026-10-15-jev-previous-reply-ab.md)
+    "before": "「上一条回复的最后几句」是这条回复之前、剧情接着往下的那一段,只用来了解前情,不用判。",
+    "speaker":"第 {{n}} 句 {{line}} 是谁说的?",
     "speaker_char": "{{char}}本人说出口的话",
     "speaker_user": "玩家「{{user}}」说的话(旁白里写「你说」「你对她说」的那句)",
     "speaker_other": "{{char}}以外的其他角色说的话",
@@ -166,6 +169,8 @@ class AnnotateInput:
     thresholds: Thresholds = field(default_factory=Thresholds)
     # 改过的问法(键见 DEFAULT_PROMPTS);没有的用默认
     prompts: dict[str, str] = field(default_factory=dict)
+    # 上一条 AI 回复的最后几句(插件页的「带上一条回复」);空 = 不带,请求和以前一字不差
+    before: list[Line] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -281,8 +286,12 @@ def build_request(inp: AnnotateInput) -> tuple[dict, dict]:
     intro = _prompt(inp, "state")
     if first > 0:
         intro += f"前面的 {first} 句省略了。"
-    state: dict = {
-        "说明": intro,
+    state: dict = {"说明": intro}
+    if inp.before:
+        # 按时间顺序放:上一条回复 → 玩家上一句 → 本条回复
+        state["说明"] += _prompt(inp, "before")
+        state["上一条回复的最后几句"] = [{"类型": _kind(x, inp.char), "内容": x.text} for x in inp.before]
+    state |= {
         "玩家上一句": (inp.prev or "(无)")[:PREV_MAX],
         "本条回复": [
             {"句": i + 1, "类型": _kind(inp.lines[i], inp.char), "内容": inp.lines[i].text}

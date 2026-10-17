@@ -178,6 +178,18 @@ class AppSetting(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 
 
+class JevUsage(Base):
+    """Jev 用了多少(app/annotate/usage.py):一天一行,问一次加一次。只数 token 不算钱 ——
+    走中转的价格各不一样。新表,启动时 create_all 建,不用迁移步骤"""
+
+    __tablename__ = "jev_usage"
+
+    # 本机日期 YYYY-MM-DD
+    day: Mapped[str] = mapped_column(String(10), primary_key=True)
+    requests: Mapped[int] = mapped_column(Integer, default=0)
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+
+
 class CardPref(Base):
     """按卡设置(素材架构设计 2.9、第 2 期):一张卡在全局设置(app_settings)之上另外改的几项。
 

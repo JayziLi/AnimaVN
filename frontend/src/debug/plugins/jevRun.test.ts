@@ -2,7 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { vnTagKinds } from '../vn/tags';
 import { NO_JEV, type JevDecision, type JevKinds } from './jev';
 import { jevView } from './jevNotes';
-import { JevRun, type AnnotateRequest, type AnnotateResponse, type JevSnapshot } from './jevRun';
+import type { ChatEntry } from '../lib/chatEntry';
+import {
+  JevRun,
+  previousReplyLines,
+  type AnnotateRequest,
+  type AnnotateResponse,
+  type BeforeLine,
+  type JevSnapshot,
+  type JevStats,
+} from './jevRun';
 
 const kinds = vnTagKinds('<sprite:{表情}>', '<bg:{场景}>', '<bgm:{音乐}>', '<cg:{CG}>');
 const ALL: JevKinds = { sprite: true, bg: true, bgm: true, cg: false, player: true };
@@ -10,7 +19,7 @@ const ALL: JevKinds = { sprite: true, bg: true, bgm: true, cg: false, player: tr
 /** 假后端:记下每次请求,按 answer 回(可以控制什么时候回) */
 function setup(
   answer: (req: AnnotateRequest) => Partial<JevDecision>[] | Error,
-  o: { jevKinds?: JevKinds; popup?: boolean; cg?: string | null; askTone?: boolean; twoQueues?: boolean } = {},
+  o: { jevKinds?: JevKinds; popup?: boolean; cg?: string | null; askTone?: boolean; twoQueues?: boolean; before?: BeforeLine[] } = {},
 ) {
   const calls: { req: AnnotateRequest; resolve: () => void; done?: boolean }[] = [];
   const snaps: JevSnapshot[] = [];
@@ -67,6 +76,7 @@ function setup(
       }),
     onChange: (s) => snaps.push(s),
     twoQueues: o.twoQueues,
+    before: o.before,
   });
   const last = () => snaps[snaps.length - 1];
   /** 原文合并上最新的标注(正文本身不动) */
@@ -370,3 +380,76 @@ describe('two queues (behind a switch)', () => {
     expect(cgOnly.last().voicePendingFrom).toBeNull();
   });
 });
+
+describe('the previous reply (Jev 页「带上一条回复」)', () => {
+  const entry = (role: 'user' | 'assistant', text: string, jev?: JevStats): ChatEntry => ({
+    id: `${role}-${text.length}`,
+    role,
+    swipes: [text],
+    swipeIndex: 0,
+    swipeInfo: [{ sendDate: '', ...(jev ? { jev } : {}) }],
+    overswipe: 'regenerate',
+  });
+  const opts = (n: number) => ({ kinds, charName: '星绘', userName: 'Lj', n });
+
+  it('takes the last lines of the last AI reply, tags stripped, quotes as the character', () => {
+    const before = [
+      entry('assistant', '<bg:教室>早上。\n<sprite:微笑>「早!」'),
+      entry('user', '早'),
+      entry('assistant', '两人走进食堂。\n<sprite:微笑>「今天有咖喱!」\n「欢迎光临。」店员说。'),
+      entry('user', '吃咖喱吧'),
+    ];
+    // 和这条回复同一套切句:引号里的算角色的,引号后面的旁白单独一句
+    expect(previousReplyLines(before, opts(2))).toEqual([
+      { text: '「欢迎光临。」', speaker: '星绘' },
+      { text: '店员说。', speaker: null },
+    ]);
+    expect(previousReplyLines(before, opts(24)).map((l) => l.text)).toEqual([
+      '两人走进食堂。',
+      '「今天有咖喱!」',
+      '「欢迎光临。」',
+      '店员说。',
+    ]);
+    expect(previousReplyLines(before, opts(0))).toEqual([]);
+  });
+
+  it("uses the card's greeting before the first reply, and nothing without one", () => {
+    expect(previousReplyLines([entry('assistant', '「欢迎回来。」')], opts(24))).toEqual([
+      { text: '「欢迎回来。」', speaker: '星绘' },
+    ]);
+    expect(previousReplyLines([entry('user', '你好')], opts(24))).toEqual([]);
+  });
+
+  it('merges the tags Jev stored for that reply before stripping them, and keeps only the Chinese of a pair', () => {
+    const raw = '「おはよう。」\n「早上好。」';
+    const jev: JevStats = {
+      kinds: ['sprite'],
+      lines: 1,
+      requests: 1,
+      tokens: 0,
+      maxMs: 0,
+      failed: 0,
+      notes: [{ at: 0, check: '「おはよう。」'.slice(0, 8), tags: '<sprite:微笑>' }],
+    };
+    expect(previousReplyLines([entry('assistant', raw, jev)], opts(24))).toEqual([{ text: '「早上好。」', speaker: '星绘' }]);
+  });
+
+  it('goes out with every request when given, and not at all otherwise', async () => {
+    const before = [{ text: '「明天见。」', speaker: '星绘' }];
+    const t = setup(() => [{ speaker: 'char', emotion: '微笑' }], { before });
+    t.run.feed('「早!」\n「吃饭吧。」', false);
+    await t.flush();
+    expect(t.calls.length).toBeGreaterThan(0);
+    for (const c of t.calls) expect(c.req.before).toEqual(before);
+
+    const plain = setup(() => [{ speaker: 'char', emotion: '微笑' }]);
+    plain.run.feed('「早!」', false);
+    await plain.flush();
+    expect('before' in plain.calls[0].req).toBe(false);
+    const empty = setup(() => [{ speaker: 'char', emotion: '微笑' }], { before: [] });
+    empty.run.feed('「早!」', false);
+    await empty.flush();
+    expect('before' in empty.calls[0].req).toBe(false);
+  });
+});
+

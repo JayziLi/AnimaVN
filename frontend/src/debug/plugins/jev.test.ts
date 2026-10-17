@@ -7,6 +7,8 @@ import {
   NO_JEV,
   decisionTags,
   insertionPoint,
+  jevHealth,
+  jevKindStatus,
   jevKindsOf,
   jevLangPrompt,
   jevMayTag,
@@ -17,6 +19,7 @@ import {
   normalizeJevConfig,
   promptOverrides,
   stripReplyTags,
+  tokenText,
   wantsTagFreeLang,
   type JevKinds,
 } from './jev';
@@ -280,5 +283,47 @@ describe('CG', () => {
   it('makes every line wait for Jev when CG is judged by it', () => {
     expect(jevMayTag({ speaker: null, text: '……' }, 5, '星绘', ['cg'])).toBe(true);
     expect(jevMayTag({ speaker: '店员', text: '「请」' }, 5, '星绘', ['cg'])).toBe(true);
+  });
+});
+
+describe('the Jev page', () => {
+  it('reads the connection as ok, missing a key, broken or not in use', () => {
+    const base = { hasKey: true, anyJevMode: true, testOk: null, last: null };
+    expect(jevHealth(base)).toBe('ok');
+    expect(jevHealth({ ...base, hasKey: false })).toBe('missing');
+    expect(jevHealth({ ...base, hasKey: false, anyJevMode: false })).toBe('idle');
+    expect(jevHealth({ ...base, testOk: false })).toBe('error');
+    // 上一条回复一半以上没判成算出错;偶尔一句等太久不算;之后测通了就好了
+    expect(jevHealth({ ...base, last: { lines: 14, failed: 9 } })).toBe('error');
+    expect(jevHealth({ ...base, last: { lines: 14, failed: 1 } })).toBe('ok');
+    expect(jevHealth({ ...base, testOk: true, last: { lines: 14, failed: 9 } })).toBe('ok');
+  });
+
+  it('says why each kind is or is not judged by Jev for this card', () => {
+    const base = { mode: 'jev' as const, inUse: true, powerOn: true, hasKey: true };
+    expect(jevKindStatus(base)).toBe('在用');
+    expect(jevKindStatus({ ...base, noAssets: true })).toBe('在用 · 这张卡没有能出的 CG,不判');
+    expect(jevKindStatus({ ...base, powerOn: false, inUse: false })).toBe('插件关着');
+    expect(jevKindStatus({ ...base, inUse: false })).toBe('这张卡另设成 AI 写');
+    expect(jevKindStatus({ ...base, inUse: false, hasKey: false })).toBe('还没填 key,照旧由 AI 写');
+    expect(jevKindStatus({ ...base, mode: 'ai', inUse: false })).toBe('AI 写');
+    expect(jevKindStatus({ ...base, mode: 'ai' })).toBe('这张卡另设成 Jev 标 · 在用');
+  });
+
+  it('writes token counts the way the page shows them', () => {
+    expect(tokenText(1234)).toBe('1,234');
+    expect(tokenText(28_969)).toBe('2.9 万');
+    expect(tokenText(8_180_523)).toBe('818 万');
+    expect(tokenText(74_690_000)).toBe('7,469 万');
+  });
+
+  it('defaults to 24 lines of the previous reply and keeps the setting in range', () => {
+    expect(DEFAULT_JEV_CONFIG.beforeLines).toBe(24);
+    expect(normalizeJevConfig({}).beforeLines).toBe(24);
+    expect(normalizeJevConfig({ beforeLines: 8 }).beforeLines).toBe(8);
+    expect(normalizeJevConfig({ beforeLines: 99 }).beforeLines).toBe(24);
+    expect(normalizeJevConfig({ beforeLines: -3 }).beforeLines).toBe(0);
+    expect(normalizeJevConfig({ beforeLines: 7.6 }).beforeLines).toBe(8);
+    expect(normalizeJevConfig({ prompts: { before: '改过的' } }).prompts.before).toBe('改过的');
   });
 });

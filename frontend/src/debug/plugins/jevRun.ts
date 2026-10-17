@@ -14,13 +14,14 @@
  * 上一句回来了才发下一句。整段一次到达(中转站)时也是从第一句开始排队,一句约 0.2 秒,
  * 前面的句子先判完,读的人不会等。
  *
- * 两条队列(twoQueues,设计稿 2.2;开关在 Jev 通用设置,默认关):CG 是 Jev 时,别的题(说话人、表情、
+ * 两条队列(twoQueues,设计稿 2.2;开关在插件抽屉「Jev 标注」页的高级里,默认关):CG 是 Jev 时,别的题(说话人、表情、
  * 背景、音乐、声线)不再跟着 CG 一句一句排队,而是和 CG 不是 Jev 时一样多句一批;CG 单独一条队列,
  * 只问 CG、一句一句发,第 k 句等批量那边把第 0…k−1 句判完(背景是 Jev 时)再发,地点用这几句里判出来的背景。
  * 一句两边都回来了才算判完;语音只等批量那边(说话人、表情、声线):快照里的 voicePendingFrom。
  */
 
 import { parseBilingual } from './lang';
+import type { ChatEntry } from '../lib/chatEntry';
 import type { ParsedReply, TagKind } from '../vn/script';
 import {
   decisionTags,
@@ -31,7 +32,7 @@ import {
   type JevKinds,
   type TagTemplates,
 } from './jev';
-import { insertionPoint, makeNote, stripReplyTags, type JevNote } from './jevNotes';
+import { insertionPoint, jevText, makeNote, stripReplyTags, type JevNote } from './jevNotes';
 
 /** 发给后端的一个候选(立绘 / 背景 / 音乐) */
 export interface AnnotateChoice {
@@ -74,6 +75,14 @@ export interface AnnotateRequest {
   thresholds: AnnotateThresholds;
   /** 改过的问法(没改的不带) */
   prompts: Record<string, string>;
+  /** 上一条 AI 回复的最后几句(Jev 页「带上一条回复」);不带就不发这个字段,请求和以前一样 */
+  before?: BeforeLine[];
+}
+
+/** 带给 Jev 的上一条回复里的一句 */
+export interface BeforeLine {
+  text: string;
+  speaker: string | null;
 }
 
 export interface AnnotateResponse {
@@ -155,6 +164,24 @@ export interface JevRunOptions {
   onChange: (snap: JevSnapshot) => void;
   /** 两条队列(见文件开头);只在 CG 是 Jev 时有区别 */
   twoQueues?: boolean;
+  /** 上一条 AI 回复的最后几句(previousReplyLines),每个请求都带 */
+  before?: BeforeLine[];
+}
+
+/**
+ * 带给 Jev 的上一条回复:before 里最后一条 AI 回复(它当前的分支,合并了 Jev 另存的标注再摘掉标签),
+ * 和这条回复同一套切句(日中对照只取中文那行),取最后 n 句。卡的开场白也是一条 AI 回复;不够 n 句有几句给几句
+ */
+export function previousReplyLines(
+  before: readonly ChatEntry[],
+  o: { kinds: readonly TagKind[]; charName: string; userName: string; n: number },
+): BeforeLine[] {
+  if (o.n <= 0) return [];
+  const last = [...before].reverse().find((e) => e.role === 'assistant');
+  if (!last) return [];
+  const clean = stripReplyTags(jevText(last, o.kinds), o.kinds);
+  const parsed = parseBilingual(clean, { charName: o.charName, userName: o.userName, tags: o.kinds, streaming: false });
+  return parsed.lines.slice(-o.n).map((l) => ({ text: l.text, speaker: l.speaker }));
 }
 
 /** CG 那条队列判出来的一句:只有画面 */
@@ -424,6 +451,7 @@ export class JevRun {
       ...(this.o.askTone ? { ask_tone: true } : {}),
       thresholds: this.o.thresholds,
       prompts: this.o.prompts,
+      ...(this.o.before?.length ? { before: this.o.before } : {}),
     };
     try {
       const res = await this.o.annotate(req, this.controller.signal);
@@ -484,6 +512,7 @@ export class JevRun {
       ask_speaker: false,
       thresholds: this.o.thresholds,
       prompts: this.o.prompts,
+      ...(this.o.before?.length ? { before: this.o.before } : {}),
     };
     try {
       const res = await this.o.annotate(req, this.controller.signal);

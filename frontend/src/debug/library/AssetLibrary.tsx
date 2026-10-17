@@ -6,6 +6,7 @@
  *   提示条 导完没有卡可开时才有(importer/ImportBanner,和卡编辑器素材页的一样;没认出来的文件点「查看」就地选类型)
  *   左栏   这一类的包(不按角色分组)+ 排序 + 筛选 + 底部占用空间、清理(LibraryAside)
  *   中间 + 右栏   选中那个包的编辑器(卡编辑器里同一套,不带卡;LibraryEditor),顶上一行是 LibraryHeader
+ *   左右两栏能拖宽、能收起(照调试台,studio/sidePanels.tsx;10-16 用户:窗口小时中间被挤得太窄)
  *   导入记录   ImportJobs(整次撤销)
  *
  * 开在哪(页签、选中哪个)由 DebugApp 管(LibraryRoute),这里只画和回报。改包里的东西经 PackSync 通知 DebugApp,
@@ -25,6 +26,8 @@ import { EnvBadge } from '../components/EnvBadge';
 import { ImportBanner } from '../importer/ImportBanner';
 import type { SpriteStage } from '../plugins/spriteLayout';
 import { Icon, type IconName } from '../studio/icons';
+import { PanelRail, PanelResizer } from '../studio/panelParts';
+import { InspectorCollapse, useSidePanels } from '../studio/sidePanels';
 import { Btn, ConfirmDialog, IconBtn, Inspector, PromptDialog } from '../studio/ui';
 import type { ImportNotice, Notify, PackSync, SlotKey } from '../studio/types';
 import { describeClean } from '../vn/dataTab';
@@ -141,6 +144,9 @@ export function AssetLibrary(props: AssetLibraryProps) {
   const { route, onRoute, onClose, cards, stage, sync, notify } = props;
   const writer = props.bindings ?? directBindings;
   const kind: LibraryKind | null = route.tab === 'jobs' ? null : route.tab;
+  const panels = useSidePanels('library.panels');
+  const { toggle: togglePanel } = panels;
+  const collapseRight = useCallback(() => togglePanel('right'), [togglePanel]);
 
   // ---------------------------------------------------------------- 数据
 
@@ -496,75 +502,95 @@ export function AssetLibrary(props: AssetLibraryProps) {
           storage={summary}
           cleaning={cleaning}
           onClean={() => setDialog({ kind: 'clean' })}
+          onCollapse={() => togglePanel('left')}
         />
-        <div className="st-slot">
-          {selected ? (
-            <LibraryEditor
-              key={`${kind}:${selected.id}`}
-              kind={kind}
-              item={selected}
-              firstCardName={selected.card_ids.map((id) => cardNames.get(id)).find(Boolean) ?? null}
-              stage={stage}
-              sync={sync}
-              notify={notify}
-              onEdited={onEdited}
-              header={
-                <LibraryHeader
-                  kind={kind}
-                  item={selected}
-                  cardNames={cardNames}
-                  sameAs={sameAs}
-                  jobTitle={jobTitle}
-                  onRename={(name) => rename(kind, selected, name)}
-                  onBind={() => setDialog({ kind: 'bind', item: selected })}
-                  onOpenCard={(cardId) => props.onOpenCard(cardId, selected.generated ? 'ai' : info.slot)}
-                  onSelect={select}
-                  onOpenJob={(jobId) => onRoute({ tab: 'jobs', id: jobId })}
-                  menu={menu}
-                />
-              }
-            />
-          ) : (
-            <>
-              <main className="st-main">
-                <div className="st-empty">
-                  <span className="st-empty-icon">
-                    <Icon name={TAB_ICONS[kind]} size={26} />
-                  </span>
-                  {listErrors[kind] ? (
-                    <>
-                      <span className="st-empty-title">读不到{info.pack}</span>
-                      <span className="st-empty-note">{listErrors[kind]}</span>
-                    </>
-                  ) : all === null ? (
-                    <span className="st-empty-note">读取中…</span>
-                  ) : all.length === 0 ? (
-                    <>
-                      <span className="st-empty-title">还没有{info.pack}</span>
-                      <span className="st-empty-note">把文件拖进来导入,或者在卡编辑器的素材页上传</span>
-                    </>
-                  ) : (
-                    <>
-                      <span className="st-empty-title">没有对得上的</span>
-                      <span className="st-empty-note">换个筛选或搜索词看看</span>
-                    </>
-                  )}
-                </div>
-              </main>
-              <Inspector label={info.pack}>
-                <p className="st-inspector-hint">
-                  这里按包列出库里所有的{info.pack},不管绑在哪张卡上。选一个直接在中间改;「绑定到角色卡…」决定哪些卡用它。
-                </p>
-              </Inspector>
-            </>
-          )}
-        </div>
+        {/* 收起的那栏换成竖条;分隔线浮在栏和中间的交界上(都只在宽屏有,library.css) */}
+        {!panels.leftOpen && <PanelRail side="left" label={info.pack} onOpen={() => togglePanel('left')} />}
+        <InspectorCollapse.Provider value={collapseRight}>
+          <div className="st-slot">
+            {selected ? (
+              <LibraryEditor
+                key={`${kind}:${selected.id}`}
+                kind={kind}
+                item={selected}
+                firstCardName={selected.card_ids.map((id) => cardNames.get(id)).find(Boolean) ?? null}
+                stage={stage}
+                sync={sync}
+                notify={notify}
+                onEdited={onEdited}
+                header={
+                  <LibraryHeader
+                    kind={kind}
+                    item={selected}
+                    cardNames={cardNames}
+                    sameAs={sameAs}
+                    jobTitle={jobTitle}
+                    onRename={(name) => rename(kind, selected, name)}
+                    onBind={() => setDialog({ kind: 'bind', item: selected })}
+                    onOpenCard={(cardId) => props.onOpenCard(cardId, selected.generated ? 'ai' : info.slot)}
+                    onSelect={select}
+                    onOpenJob={(jobId) => onRoute({ tab: 'jobs', id: jobId })}
+                    menu={menu}
+                  />
+                }
+              />
+            ) : (
+              <>
+                <main className="st-main">
+                  <div className="st-empty">
+                    <span className="st-empty-icon">
+                      <Icon name={TAB_ICONS[kind]} size={26} />
+                    </span>
+                    {listErrors[kind] ? (
+                      <>
+                        <span className="st-empty-title">读不到{info.pack}</span>
+                        <span className="st-empty-note">{listErrors[kind]}</span>
+                      </>
+                    ) : all === null ? (
+                      <span className="st-empty-note">读取中…</span>
+                    ) : all.length === 0 ? (
+                      <>
+                        <span className="st-empty-title">还没有{info.pack}</span>
+                        <span className="st-empty-note">把文件拖进来导入,或者在卡编辑器的素材页上传</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="st-empty-title">没有对得上的</span>
+                        <span className="st-empty-note">换个筛选或搜索词看看</span>
+                      </>
+                    )}
+                  </div>
+                </main>
+                <Inspector label={info.pack}>
+                  <p className="st-inspector-hint">
+                    这里按包列出库里所有的{info.pack},不管绑在哪张卡上。选一个直接在中间改;「绑定到角色卡…」决定哪些卡用它。
+                  </p>
+                </Inspector>
+              </>
+            )}
+          </div>
+        </InspectorCollapse.Provider>
+        {!panels.rightOpen && <PanelRail side="right" label="详情" onOpen={collapseRight} />}
+        {panels.leftOpen && (
+          <PanelResizer side="left" dragging={panels.dragging === 'left'} onPointerDown={(e) => panels.startDrag('left', e)} />
+        )}
+        {panels.rightOpen && (
+          <PanelResizer side="right" dragging={panels.dragging === 'right'} onPointerDown={(e) => panels.startDrag('right', e)} />
+        )}
       </>
     );
   }
 
   return (
-    <div ref={root} className="st-root lib-root" role="dialog" aria-modal="true" aria-label="素材管理" tabIndex={-1}>
+    <div
+      ref={root}
+      className={`st-root lib-root${kind ? ` st-panels${panels.leftOpen ? '' : ' left-collapsed'}${panels.rightOpen ? '' : ' right-collapsed'}` : ''}`}
+      style={kind ? panels.style : undefined}
+      role="dialog"
+      aria-modal="true"
+      aria-label="素材管理"
+      tabIndex={-1}
+    >
       {header}
       {props.notice && (
         <ImportBanner notice={props.notice} onClose={() => props.onNoticeClose?.()} onClassify={classify} />

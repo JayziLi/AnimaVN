@@ -8,6 +8,7 @@
 
 import { useEffect, useRef } from 'react';
 import { Icon, type IconName } from '../studio/icons';
+import { PanelCollapseButton } from '../studio/panelParts';
 import { Chip } from '../studio/ui';
 import { blobThumbUrl } from './libraryApi';
 import {
@@ -53,6 +54,8 @@ export interface LibraryAsideProps {
   storage: StorageSummary;
   cleaning: boolean;
   onClean: () => void;
+  /** 收起左栏(sidePanels.tsx);不给就没有收起按钮 */
+  onCollapse?: () => void;
 }
 
 export function LibraryAside({
@@ -71,6 +74,7 @@ export function LibraryAside({
   storage,
   cleaning,
   onClean,
+  onCollapse,
 }: LibraryAsideProps) {
   const info = KIND_INFO[kind];
   // 中文里夹的英文前后空一格:「立绘约 210 MB」「BGM 约 40 MB」
@@ -98,6 +102,7 @@ export function LibraryAside({
             ))}
           </select>
         </label>
+        {onCollapse && <PanelCollapseButton side="left" label="左栏" onClick={onCollapse} />}
       </div>
       <div className="lib-chips" role="group" aria-label="筛选">
         {chips.map((c) => (

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   debugApi,
+  type JevKeyStatus,
   type ApiType,
   type DebugConnection,
   type ThinkingLevel,
@@ -24,6 +25,11 @@ interface Props {
   onClose: () => void;
   /** 连接变化(增删改/启用)后通知外层刷新它自己的连接状态 */
   onChanged: () => void;
+  /**
+   * 判断模型 Jev 的状态一行(只读):Jev 的 key、地址都只在插件抽屉的「Jev 标注」页填,这里只指路。
+   * 不给就不显示这一行
+   */
+  jev?: { status: JevKeyStatus | null; onOpen: () => void };
 }
 
 interface FormState {
@@ -59,7 +65,7 @@ function formFrom(conn: DebugConnection | null): FormState {
   };
 }
 
-export function ConnectionsDrawer({ connections: shared, notify, onClose, onChanged }: Props) {
+export function ConnectionsDrawer({ connections: shared, notify, onClose, onChanged, jev }: Props) {
   const [connections, setConnections] = useState<DebugConnection[] | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(() => formFrom(null));
@@ -494,6 +500,22 @@ export function ConnectionsDrawer({ connections: shared, notify, onClose, onChan
           )}
         </div>
       </div>
+      {jev && (
+        <div className="conn-jev">
+          <span className={`jev-dot ${jev.status?.has_key ? 'ok' : 'missing'}`} aria-hidden="true" />
+          <span className="conn-jev-text">
+            判断模型 Jev(给立绘、背景、音乐、CG 标标签):
+            {jev.status === null
+              ? '正在问后端…'
+              : jev.status.has_key
+                ? `已填 key${jev.status.url_source && jev.status.url_source !== 'default' ? ' · 走中转' : ''}`
+                : '还没填 key'}
+          </span>
+          <button type="button" className="btn small" onClick={jev.onOpen}>
+            去设置 →
+          </button>
+        </div>
+      )}
     </div>
   );
 }

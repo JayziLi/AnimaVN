@@ -38,8 +38,11 @@ class Settings(BaseSettings):
     # Docker 里放 /app/models —— /app/data 是数据卷的挂载点,放进去会被盖住
     emotion_model_dir: str = str(_BACKEND_DIR / "models" / "bge-small-zh-v1.5")
     # Jev(TypeSafe 的判断模型)的 key:立绘 / 场景 / 音乐 / 说话人交给它标(app/annotate)。
-    # 不设就用插件页里填的那个
+    # 不设就用 Jev 页里填的那个
     jev_api_key: str | None = None
+    # Jev 的地址和模型名(走中转时用);不设就用 Jev 页里填的,再没有就用官方的(app/annotate/client.py)
+    jev_base_url: str | None = None
+    jev_model: str | None = None
     # 数据库迁移器(app/migrations):apply = 有待升级的步骤时先备份到 data/backups/ 再升级(第 3 期起默认:
     # 文件仓库要给老表加列,不升级后端就读不了立绘);report = 启动时只检查、只报告,一个字节都不写;off = 不跑(测试用)
     migrations_mode: Literal["report", "apply", "off"] = "apply"
