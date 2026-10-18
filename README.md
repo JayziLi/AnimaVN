@@ -18,6 +18,8 @@ SillyTavern 的角色卡、世界书、预设直接导入，不用改。
 ![SillyTavern 卡](https://img.shields.io/badge/SillyTavern-%E8%A7%92%E8%89%B2%E5%8D%A1%20%2F%20%E4%B8%96%E7%95%8C%E4%B9%A6%20%2F%20%E9%A2%84%E8%AE%BE-8A2BE2)
 
 [在线试玩](https://animavn.com) ·
+[**国内下载（魔搭）**](https://www.modelscope.cn/models/JayziLi/AnimaVN/files) ·
+[海外下载](https://github.com/JayziLi/AnimaVN-public/releases/latest) ·
 [快速开始](#-快速开始) ·
 [酒馆兼容](#-酒馆角色卡直接用) ·
 [语音](#-语音配音部署gpt-sovits) ·
