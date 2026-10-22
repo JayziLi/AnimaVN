@@ -8,6 +8,7 @@
 import functools
 import ipaddress
 import ssl
+from pathlib import Path
 from urllib.parse import urlsplit
 
 import httpx
@@ -81,23 +82,52 @@ async def read_reference(client: httpx.AsyncClient, base_url: str, service: str,
     if res.status_code == 200:
         mime = res.headers.get("content-type", "").split(";")[0].strip() or "audio/wav"
         return res.content, mime
+    raise _ref_error(res, service)
+
+
+# 声音包导出时拉整个文件(模型几百 MB):单个最多等 60 秒;连接 5 秒连不上就算语音机没开
+FILE_TIMEOUT = httpx.Timeout(60.0, connect=5.0)
+_CHUNK = 1024 * 1024
+
+
+async def download_reference(client: httpx.AsyncClient, base_url: str, service: str, path: str, dest: Path) -> int:
+    """GET {base_url}/anima/ref?path=,边收边写进 dest(不整个放内存),返回字节数。
+    失败抛 TTSError(同 read_reference),写了一半的 dest 删掉;连接层的异常由调用方处理"""
+    dest = Path(dest)
+    try:
+        async with client.stream("GET", f"{base_url}{REF_ROUTE}", params={"path": path}) as res:
+            if res.status_code != 200:
+                await res.aread()
+                raise _ref_error(res, service)
+            size = 0
+            with open(dest, "wb") as f:
+                async for chunk in res.aiter_bytes(_CHUNK):
+                    f.write(chunk)
+                    size += len(chunk)
+            return size
+    except BaseException:
+        dest.unlink(missing_ok=True)
+        raise
+
+
+def _ref_error(res: httpx.Response, service: str) -> TTSError:
     try:
         body = res.json()
     except ValueError:
         body = None
     detail = body.get("detail") if isinstance(body, dict) else None
     if res.status_code == 404 and detail in (None, "Not Found"):
-        raise TTSError(
+        return TTSError(
             501,
             f"{service} 没有取参考音频的接口({REF_ROUTE}),这里听不了原声(官方 api_v2 没有这个接口)。"
             "插件页情绪表里的 ▶ 是合成试听,照样能用",
         )
     # 接口自己的报错(文件不存在、路径不在允许的目录里)原样带回去
     status = res.status_code if 400 <= res.status_code < 500 else 502
-    raise TTSError(status, str(detail) if detail else f"{service} 返回 HTTP {res.status_code}")
+    return TTSError(status, str(detail) if detail else f"{service} 返回 HTTP {res.status_code}")
 
 
-def make_tts_client(base_url: str, timeout: float) -> httpx.AsyncClient:
+def make_tts_client(base_url: str, timeout: float | httpx.Timeout) -> httpx.AsyncClient:
     host = urlsplit(base_url).hostname or ""
     return httpx.AsyncClient(
         timeout=timeout, trust_env=not is_direct_host(host), verify=_ssl_context()

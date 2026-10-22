@@ -142,7 +142,9 @@ def make_plan(
         # 角色包要给人看作者的说明、选要不要预设,也先弹
         "needs_confirm": bool(plan.target_card_id)
         or any(g.duplicate_of for g in plan.groups)
-        or any(g.type == "bundle" for g in plan.groups),
+        or any(g.type == "bundle" for g in plan.groups)
+        # 声音包要选挂到哪个语音服务、看「模型会执行代码」的提醒
+        or any(g.type == "pack_file" and g.detail.get("kind") == "voice" for g in plan.groups),
     }
 
 

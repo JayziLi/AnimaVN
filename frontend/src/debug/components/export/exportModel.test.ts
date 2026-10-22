@@ -9,11 +9,16 @@ import {
   initialChecks,
   nextPreview,
   PACK_EXPORT_LABEL,
+  packExportLabel,
   packExportNote,
+  packExportStarting,
   packKindOf,
   packRows,
   previewSrc,
   rowSize,
+  busyNote,
+  VOICE_MISSING_NOTE,
+  voiceNotes,
   stateBadge,
   totalBytes,
   totalLabel,
@@ -33,7 +38,7 @@ const summary = (over: Partial<ExportBundleSummary> = {}): ExportBundleSummary =
   follows: ['认词记录 32 条'],
   preset: { id: 'p1', name: '刻晴 DeepSeek', bytes: 90_000 },
   previews: [{ kind: 'avatar' }, { kind: 'sprite', id: 's1', thumb: '/api/t/s1' }, { kind: 'sprite', id: 's2', thumb: '/api/t/s2' }],
-  not_included: ['声音(第 4 步再加)'],
+  not_included: ['人设', '对话记录'],
   ...over,
 });
 
@@ -88,6 +93,7 @@ describe('labels', () => {
       ['item', '', '玉衡星(平涂) · 15 张'],
       ['item', '背景 · BGM', '原神 · 璃月 · 16 张背景、7 首 BGM'],
       ['none', 'CG', '没绑 CG 包'],
+      ['none', '声音', '没挂声音'],
     ]);
   });
 
@@ -102,6 +108,44 @@ describe('labels', () => {
     });
     expect(cardLine(group)).toBe('爱弥斯(普通)、爱弥斯(约会) · 整组一起');
     expect(stateBadge(group)).toBe('普通 / 约会');
+  });
+});
+
+describe('voice rows', () => {
+  const voices = summary({
+    items: [
+      { key: 'voice:v1', kind: 'voice', name: '刻晴(日语)', detail: '12 段参考 + 2 个模型', bytes: 312_000_000, thumb: null, missing: 0, warn: '只给自己用,别发给别人' },
+      { key: 'voice:v2', kind: 'voice', name: '刻晴(中文)', detail: '8 段参考 + 2 个模型', bytes: 4_000, thumb: null, missing: 10, warn: null },
+    ],
+  });
+
+  it('lists voices after the packs, the kind named once', () => {
+    const rows = packRows(voices).filter((r) => r.type === 'item');
+    expect(rows.map((r) => [r.label, r.title])).toEqual([
+      ['声音', '刻晴(日语) · 12 段参考 + 2 个模型'],
+      ['', '刻晴(中文) · 8 段参考 + 2 个模型'],
+    ]);
+  });
+
+  it('shows the yellow warning and the settings-only note', () => {
+    const [a, b] = voices.items;
+    expect(voiceNotes(a)).toEqual({ warn: '只给自己用,别发给别人', missing: null });
+    expect(voiceNotes(b)).toEqual({ warn: null, missing: VOICE_MISSING_NOTE });
+    expect(VOICE_MISSING_NOTE).toBe('语音机连不上,这个声音只能带设置');
+    // 别的包没有这两行
+    expect(voiceNotes({ ...a, kind: 'sprite' })).toEqual({ warn: null, missing: null });
+  });
+
+  it('counts a checked voice in the total and excludes it when unticked', () => {
+    const checks = { 'voice:v1': true, 'voice:v2': false };
+    expect(excludeOf(voices, checks)).toEqual(['voice:v2']);
+    expect(totalBytes(voices, checks, false)).toBe(412_000 + 312_000_000);
+  });
+
+  it('says it is fetching from the voice machine only while a voice is checked', () => {
+    expect(busyNote(voices, {})).toMatch(/语音机/);
+    expect(busyNote(voices, { 'voice:v1': false, 'voice:v2': false })).toBeNull();
+    expect(busyNote(summary(), {})).toBeNull();
   });
 });
 
@@ -136,6 +180,7 @@ describe('single pack export', () => {
     expect(packKindOf('bg')).toBe('scene');
     expect(packKindOf('bgm')).toBe('scene');
     expect(packKindOf('cg')).toBe('cg');
+    expect(packKindOf('voice')).toBe('voice');
   });
 
   it('says what the file carries', () => {
@@ -143,5 +188,13 @@ describe('single pack export', () => {
     expect(packExportNote('sprite')).toBe('只有这套立绘,连认词记录和位置');
     expect(packExportNote('scene')).toBe('只有这套背景和 BGM,连认词记录');
     expect(packExportNote('cg')).toBe('只有这套 CG,连差分');
+  });
+
+  it('calls it exporting a voice, and warns it fetches from the voice machine first', () => {
+    expect(packExportLabel('voice')).toBe('导出这个声音(.animapack)');
+    expect(packExportLabel('sprite')).toBe(PACK_EXPORT_LABEL);
+    expect(packExportNote('voice')).toBe('参考音频、模型和设置;语音机连不上时只带设置');
+    expect(packExportStarting('voice')).toMatch(/语音机/);
+    expect(packExportStarting('cg')).toBeNull();
   });
 });

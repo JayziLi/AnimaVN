@@ -72,6 +72,7 @@ from sqlalchemy.orm import Session
 from app import bindings
 from app.assets.common import PACK_NAME_MAX
 from app.bundle import read as bundle_read
+from app.bundle import restore as bundle_restore
 from app.bundle.restore import follows as bundle_follows
 from app.bundle.restore import pack_detail
 from app.contracts import LABEL_FORBIDDEN, LABEL_MAX, REF_NAME_PATTERN
@@ -1055,10 +1056,12 @@ def _bundle_groups(tree: StagedTree, db: Session) -> tuple[list[PlanGroup], list
         size = sum(x.size for x in tree.files if _under(x.path, folder))
         try:
             if f.kind == "bundle_manifest":
-                groups.append(_bundle_group(tree, folder, f, bundle_read.read_manifest(root), size, taken, len(groups) + 1))
+                groups.append(_bundle_group(tree, db, folder, f, bundle_read.read_manifest(root), size, taken, len(groups) + 1))
             else:
                 pack = bundle_read.read_pack(root)
                 detail = {**_pack_out(tree, folder, pack), "bytes": size, "folder": folder}
+                if pack["kind"] == "voice":
+                    detail["voices"] = [voice_out(db, pack)]
                 groups.append(PlanGroup(f"pack_file:{len(groups) + 1}", "pack_file", detail["name"], [f.path], None, detail))
         except bundle_read.BundleError as e:
             what = "角色包" if f.kind == "bundle_manifest" else "素材包"
@@ -1068,8 +1071,26 @@ def _bundle_groups(tree: StagedTree, db: Session) -> tuple[list[PlanGroup], list
     return groups, rest, notes
 
 
+def voice_out(db: Session, pack: dict) -> dict:
+    """计划里的一个声音:名字、「12 段参考 + 2 个模型」、默认挂到哪个语音服务(没有是 null:导入时新建本机的)、包里没带的文件数"""
+    conn = bundle_restore.default_connection(db, bundle_restore.voice_engine(pack))
+    return {
+        "name": str(pack["pack"].get("name") or ""),
+        "detail": bundle_restore.voice_pack_detail(pack),
+        "connection": {"id": conn.id, "name": conn.name, "local": bundle_restore.is_local(conn.base_url)} if conn else None,
+        "missing": bundle_restore.voice_counts(pack)[2],
+    }
+
+
 def _bundle_group(
-    tree: StagedTree, folder: str, f: StagedFile, m: bundle_read.Manifest, size: int, taken: set[str], n: int
+    tree: StagedTree,
+    db: Session,
+    folder: str,
+    f: StagedFile,
+    m: bundle_read.Manifest,
+    size: int,
+    taken: set[str],
+    n: int,
 ) -> PlanGroup:
     data = m.data
     states = {s["card"]: s.get("name") for s in (data.get("state_group") or {}).get("states") or []}
@@ -1082,16 +1103,18 @@ def _bundle_group(
             new, i = f"{name} {i}", i + 1
         cards.append({"name": name, "new_name": new, "state": states.get(key)})
     packs = [m.packs[p["key"]] for p in data.get("packs") or [] if p.get("key") in m.packs]
+    voices = [voice_out(db, p) for p in packs if p["kind"] == "voice"]
     preview = data.get("preview")
     title = str(data.get("title") or cards[0]["name"])
     detail = {
         "note": str(data.get("note") or ""),
         "preview": staged_url(tree.plan_id, _join_rel(folder, preview)) if preview else None,
         "cards": cards,
-        "packs": [_pack_out(tree, folder, p) for p in packs],
+        "packs": [_pack_out(tree, folder, p) for p in packs if p["kind"] != "voice"],
         "follows": bundle_follows(data, packs),
         "preset": {"name": str(data["preset"].get("name") or "")} if m.preset is not None else None,
-        "has_voice": False,
+        "voices": voices,
+        "has_voice": bool(voices),
         "bytes": size,
         "folder": folder,
     }

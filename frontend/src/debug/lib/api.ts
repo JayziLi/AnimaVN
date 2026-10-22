@@ -1175,6 +1175,17 @@ export const debugApi = {
 
   deleteVoice: (id: string) => request<void>(`/api/voices/${id}`, { method: 'DELETE' }),
 
+  /** 「导出这些文件」:这个声音的参考和模型打成 zip(refs/、models/,原文件名)存到本地(第 4 步) */
+  voiceFilesZip: (id: string, fallbackName = 'voice-files.zip') =>
+    downloadAttachment(`${BASE_URL}/api/voices/${encodeURIComponent(id)}/files.zip`, fallbackName),
+
+  /** 「已放好」:文件已经拷到语音机的 folder 下(refs/、models/),路径改成那边的;回改好的声音 */
+  placeVoiceFiles: (id: string, folder: string) =>
+    request<VoiceProfile>(`/api/voices/${encodeURIComponent(id)}/placed`, {
+      method: 'POST',
+      body: JSON.stringify({ folder }),
+    }),
+
   /**
    * 贴进来的 refs.json(已经 JSON.parse 过)。清单带着声音编号就合进那个声音;
    * 没带、又有同名的声音时后端回 409(ApiError),按 onConflict 再发一次:更新那个 / 另建一个
@@ -1690,7 +1701,14 @@ export interface VoiceProfile {
   params: VoiceParams;
   emotions: VoiceEmotion[];
   card_count: number;
+  /**
+   * 文件在哪(第 4 步):local = 本机文件仓库(导完就能念);pending = 导进来了、语音服务在另一台电脑,文件还没放过去;
+   * manual = 手填的路径(原有的声音都是)。后端是旧版时没有,当 manual
+   */
+  files_at?: VoiceFilesAt;
 }
+
+export type VoiceFilesAt = 'local' | 'pending' | 'manual';
 
 export type VoiceProfilePatch = Partial<
   Pick<
@@ -1847,6 +1865,19 @@ export interface ImportPackDetail {
   thumbs: string[];
   /** 单包才有:文件多大 */
   bytes?: number;
+  /** 单个声音包(kind = voice):里面那个声音 */
+  voices?: ImportVoiceDetail[];
+}
+
+/** 角色包、声音包里的一个声音(导入确认那一行,第 4 步) */
+export interface ImportVoiceDetail {
+  name: string;
+  /** 「12 段参考 + 2 个模型」 */
+  detail: string;
+  /** 默认导到哪个语音服务(第一个 GPT-SoVITS 连接);local = 地址是本机(127.0.0.1 / localhost);一个连接都没有是 null */
+  connection: { id: string; name: string; local: boolean } | null;
+  /** 包里缺几个文件(导出时语音机连不上):导入后只有设置 */
+  missing: number;
 }
 
 /** 角色包(.animavn)里有什么:导入确认照它画 */
@@ -1863,6 +1894,8 @@ export interface ImportBundleDetail {
   /** 作者建议的预设;没带是 null */
   preset: { name: string } | null;
   has_voice: boolean;
+  /** 包里的声音(第 4 步);后端是旧版时没有 */
+  voices?: ImportVoiceDetail[];
   bytes: number;
 }
 
@@ -1882,8 +1915,8 @@ export interface ImportApplyBody {
   classify?: Record<string, ClassifyKind>;
   /** 拖到原有的卡上时,挂上以后直接换成这次的第一套立绘 */
   make_current?: boolean;
-  /** 角色包那一组的选项(组的 key → 选项):preset = 也导入作者建议的预设 */
-  options?: Record<string, { preset?: boolean }>;
+  /** 角色包 / 单包那一组的选项(组的 key → 选项):preset = 也导入作者建议的预设;connection_id = 声音导到哪个语音服务 */
+  options?: Record<string, { preset?: boolean; connection_id?: string }>;
 }
 
 /** 素材页顶上那一行提示 */
@@ -1902,6 +1935,8 @@ export interface ImportCreated {
   /** 导入角色包时另建的预设、状态组;后端是旧版时没有 */
   presets?: string[];
   state_groups?: string[];
+  /** 这次新建的声音(第 4 步) */
+  voices?: string[];
 }
 
 export interface ImportResult {
@@ -1965,8 +2000,8 @@ export interface ImportUndoPreview {
 
 // ---- 导出(素材架构第 3 步) ----
 
-/** 单包导出的种类:背景和 BGM 是同一个场景包 */
-export type ExportPackKind = 'sprite' | 'scene' | 'cg';
+/** 单包导出的种类:背景和 BGM 是同一个场景包;voice = 声音(第 4 步) */
+export type ExportPackKind = 'sprite' | 'scene' | 'cg' | 'voice';
 
 /** 导出面板里一个包 */
 export interface ExportBundleItem {
@@ -1981,6 +2016,10 @@ export interface ExportBundleItem {
   current?: boolean;
   /** 缩略图地址(已有的缩略图接口);没有是 null */
   thumb: string | null;
+  /** 声音:现在拿不到的文件数(语音机连不上、路径不让读);别的包没有 */
+  missing?: number;
+  /** 声音:黄字提醒,比如「只给自己用,别发给别人」;没有是 null */
+  warn?: string | null;
 }
 
 /** 能当预览图的:卡头像,或者某张立绘 */
@@ -2004,7 +2043,7 @@ export interface ExportBundleSummary {
   preset: { id: string; name: string; bytes: number } | null;
   /** 能换的预览图,第一张是卡头像 */
   previews: (ExportPreview & { thumb?: string })[];
-  /** 「声音(第 4 步再加)」「人设」…… */
+  /** 「人设」「对话记录」……(第 4 步起声音能带,这里不再有) */
   not_included: string[];
 }
 

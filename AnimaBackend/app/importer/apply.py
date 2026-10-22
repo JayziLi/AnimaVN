@@ -14,7 +14,8 @@
 - 图超过 8 MB、曲子(转码以后)超过 16 MB 的跳过,报告里写一句;一个包里的文件全跳过就不建这个包。
 - 立绘逐张找脸(线程池);曲子按 audio.py 存(要转码的出计划时已经转好)。
 - 角色包 / 单包(bundle / pack_file 组,第 3 步):照清单另建一份(app/bundle/restore.py),不认编号、不挂到拖到的卡上;
-  只能选 new。options:{组的 key: {"preset": true | false}},角色包要不要另建它建议的预设(默认要)。
+  只能选 new。options:{组的 key: {"preset": true | false, "connection_id": "…"}}:角色包要不要另建它建议的预设(默认要);
+  包里的声音挂到哪个语音服务(第 4 步,不给用第一个同引擎的,一个都没有就新建本机的)。
   建了的预设、状态组、补进内置名单的认词记录、新建的设置键记进 created,撤销时一起删(jobs.py)。
 - classify:{暂存路径: sprite / bg / bgm / cg / skip}:确认框里就给认不出的文件选了类型的,导完照 ImportContext.classify
   归进这次建的同类包(没有就新建「角色 · 补充」绑到这次的卡);导完再在提示条里认领的也走它(jobs.py)。
@@ -67,6 +68,8 @@ def empty_created() -> dict:
         "sprite_packs": [],
         "scene_packs": [],
         "cg_packs": [],
+        "voices": [],
+        "tts_connections": [],
         "presets": [],
         "state_groups": [],
         "word_records": [],
@@ -417,25 +420,27 @@ class ImportContext:
         folder = g.detail.get("folder") or ""
         return self.tree.path(folder) if folder else self.tree.root
 
-    def bundle_group(self, g: PlanGroup, with_preset: bool) -> str | None:
+    def bundle_group(self, g: PlanGroup, with_preset: bool, connection_id: str | None = None) -> str | None:
         """照角色包另建一组卡和包;返回新的主卡"""
         root = self._bundle_root(g)
         try:
-            created = bundle_restore.restore_bundle(self.db, root, bundle_read.read_manifest(root), with_preset=with_preset)
+            created = bundle_restore.restore_bundle(
+                self.db, root, bundle_read.read_manifest(root), with_preset=with_preset, connection_id=connection_id
+            )
         except bundle_read.BundleError as e:
             raise HTTPException(400, f"角色包「{g.name}」导入不了:{e}") from e
         self._restored(created)
         return created.main_card
 
-    def pack_file_group(self, g: PlanGroup) -> None:
+    def pack_file_group(self, g: PlanGroup, connection_id: str | None = None) -> None:
         """照单包另建一个包,不绑到任何卡"""
         root = self._bundle_root(g)
         try:
-            created = bundle_restore.restore_pack(self.db, root, bundle_read.read_pack(root))
+            created = bundle_restore.restore_pack(self.db, root, bundle_read.read_pack(root), connection_id)
         except bundle_read.BundleError as e:
             raise HTTPException(400, f"素材包「{g.name}」导入不了:{e}") from e
         self._restored(created)
-        noun = {"sprite_packs": "立绘包", "scene_packs": "场景包", "cg_packs": "CG 包"}
+        noun = {"sprite_packs": "立绘包", "scene_packs": "场景包", "cg_packs": "CG 包", "voices": "声音"}
         made = next((noun[k] for k in noun if getattr(created, k)), "包")
         self.unbound.append(f"{made}「{g.name}」还没绑定到角色卡,在卡编辑器里绑上")
 
@@ -756,7 +761,7 @@ def apply_plan(
     options: dict[str, dict] | None = None,
 ) -> ImportJob:
     """照计划建卡、建包、绑定,记一条导入记录;不提交。请求本身不对(选择、路径、拖到的卡不在了)抛 HTTPException。
-    options:{组的 key: {"preset": bool}}(角色包组要不要另建建议的预设)"""
+    options:{组的 key: {"preset": bool, "connection_id": str}}(角色包组要不要另建建议的预设;声音挂到哪个语音服务)"""
     options = options or {}
     groups = {g.key: g for g in plan.groups}
     for key, opts in options.items():
@@ -764,6 +769,8 @@ def apply_plan(
             raise HTTPException(400, f"导入计划里没有「{key}」这一组")
         if not isinstance(opts, dict):
             raise HTTPException(400, "options 每一组要是一个对象")
+        if opts.get("connection_id") is not None and not isinstance(opts["connection_id"], str):
+            raise HTTPException(400, "connection_id 要是语音服务的编号")
     for key, decision in decisions.items():
         if key not in groups:
             raise HTTPException(400, f"导入计划里没有「{key}」这一组")
@@ -791,12 +798,13 @@ def apply_plan(
             card_ids[g.key] = ctx.card_group(g, decisions.get(g.key, "new"))
     bundle_cards = []
     for g in plan.groups:
+        opts = options.get(g.key, {})
         if g.type == "bundle":
-            main_card = ctx.bundle_group(g, bool(options.get(g.key, {}).get("preset", True)))
+            main_card = ctx.bundle_group(g, bool(opts.get("preset", True)), opts.get("connection_id") or None)
             if main_card:
                 bundle_cards.append(main_card)
         elif g.type == "pack_file":
-            ctx.pack_file_group(g)
+            ctx.pack_file_group(g, opts.get("connection_id") or None)
     # 导完打开的卡:新建的第一张(散卡优先,然后是角色包的主卡),都没有才是拖到的卡
     ctx.card_id = next(iter(card_ids.values()), None) or next(iter(bundle_cards), None) or target
     handlers = {"sprite_pack": ctx.sprite_group, "scene_pack": ctx.scene_group, "cg_pack": ctx.cg_group}
@@ -839,6 +847,7 @@ def detail_of(job: ImportJob) -> str:
         f"立绘包 {len(c['sprite_packs'])} 个" if c["sprite_packs"] else "",
         f"场景包 {len(c['scene_packs'])} 个" if c["scene_packs"] else "",
         f"CG 包 {len(c['cg_packs'])} 个" if c["cg_packs"] else "",
+        f"声音 {len(c['voices'])} 个" if c["voices"] else "",
         f"预设 {len(c['presets'])} 套" if c["presets"] else "",
     ]
     out = []

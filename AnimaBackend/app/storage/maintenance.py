@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 import sqlite3
 import threading
@@ -24,7 +25,7 @@ from app.migrations.sqlite_util import columns
 from app.models import Blob, MaintenanceJob
 from app.storage.blobs import SHA_RE, BlobStore
 from app.storage.copy import JOB_ID
-from app.storage.refs import all_refs
+from app.storage.refs import all_refs, sha_cols
 
 KEEP_MANUAL = 5
 GRACE = timedelta(hours=24)
@@ -70,6 +71,19 @@ def shas_in(conn: sqlite3.Connection) -> set[str]:
         table = ref.model.__tablename__
         if ref.sha in columns(conn, table):
             out.update(r[0] for r in conn.execute(f'SELECT DISTINCT "{ref.sha}" FROM "{table}" WHERE "{ref.sha}" IS NOT NULL'))
+    for col in sha_cols():
+        if col.column not in columns(conn, col.table):
+            continue
+        for (value,) in conn.execute(f'SELECT DISTINCT "{col.column}" FROM "{col.table}" WHERE "{col.column}" IS NOT NULL'):
+            if not col.many:
+                out.add(value)
+                continue
+            try:
+                items = json.loads(value) if isinstance(value, str) else value
+            except ValueError:
+                continue
+            if isinstance(items, list):
+                out.update(s for s in items if isinstance(s, str) and s)
     return out
 
 

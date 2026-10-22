@@ -1,8 +1,10 @@
 """规范形:把一组卡(或一个包)写成「不带编号、名字去掉导入时接的「 2」」的样子,用来比较导出前和导回来的东西
 (往返测试 tests/test_bundle_restore.py、往返验收 scripts/bundle_roundtrip.py)。只读库。
 
-范围和导出一样(collect.py):整组状态卡;立绘包、场景包、CG 包的绑定(声音不算);已经拆成 CG 包的场景包里的 CG 不算;
-背景的默认曲指着范围外的曲子算 null;按卡设置只看 plugin.*;配对表只看 CG 的;一套立绘都没有时看内置名单的认词记录。
+范围和导出一样(collect.py):整组状态卡;立绘包、场景包、CG 包、声音的绑定;已经拆成 CG 包的场景包里的 CG 不算;
+背景的默认曲指着范围外的曲子算 null;按卡设置只看 plugin.*;配对表看 CG 的和声音的;一套立绘都没有时看内置名单的认词记录。
+声音(第 4 步):设置、情绪行(卡带登记不带的行不算)、文件的指纹(仓库里没有的算 null);files=False 只比设置
+(往返验收里语音机拉不到文件时)。语音机上的路径、语音服务连接、files_at 不比(导进来本来就不一样)。
 编号一律换成「包名 / 种类 / 构图名 / 名字」,文件换成指纹(库里没记指纹的按原件现算)。卡的 spec 不比:导出写成 CCv3。
 """
 
@@ -41,10 +43,13 @@ from app.models import (
     SpritePack,
     SpritePackLayout,
     TavernCard,
+    TtsConnection,
+    VoiceProfile,
     WordRecord,
 )
 from app.storage import refs
 from app.storage.blobs import sha_of
+from app.tts import files as voice_files
 
 _SUFFIX = re.compile(r" \d+$")
 _SKIP = {"id", "pack_id", "created_at", "updated_at", "source_scene_pack_id"}
@@ -126,8 +131,63 @@ class _Packs:
         )
 
 
-def pack_canonical(db: Session, kind: str, pack_id: str) -> dict:
-    """单包的规范形(立绘包连同认词记录)"""
+def voice_canonical(db: Session, voice_id: str, files: bool = True) -> dict:
+    """一个声音的规范形:设置、模型、情绪行;files 时带文件的指纹(仓库里没有的是 null)"""
+    profile = db.get(VoiceProfile, voice_id)
+    conn = db.get(TtsConnection, profile.connection_id)
+    emotions = voice_files.exported_emotions(db, voice_id)
+    slots = voice_files.slots_of(db, profile, emotions)
+
+    def sha(slot) -> str | None:
+        return slot.sha if files and slot is not None and voice_files.file_of(db, slot) is not None else None
+
+    own = {x.kind: x for x in slots if x.row is profile}
+    models = {}
+    for kind in ("gpt", "sovits"):
+        slot = own.get(kind)
+        name = getattr(profile, f"{kind}_name") or (voice_files.basename(slot.path) if slot is not None else "")
+        if slot is None and not name:
+            models[kind] = None
+            continue
+        models[kind] = {"name": name}
+        if files and sha(slot):
+            models[kind].update(sha256=sha(slot), size=getattr(profile, f"{kind}_size"))
+    by_row: dict[str, list] = {}
+    for slot in slots:
+        by_row.setdefault(slot.row.id, []).append(slot)
+    items = []
+    for e in emotions:
+        mine = by_row.get(e.id, [])
+        items.append(
+            {
+                "label": e.label,
+                "aliases": list(e.aliases or []),
+                "prompt_text": e.prompt_text,
+                "sort": e.sort,
+                "emo_vector": copy.deepcopy(e.emo_vector),
+                "file": sha(next((x for x in mine if x.kind == "ref"), None)),
+                "aux": [h for x in mine if x.kind == "aux" and (h := sha(x))],
+            }
+        )
+    pack = {
+        "name": strip(profile.name),
+        "aliases": list(profile.aliases or []),
+        "engine": conn.api_type if conn is not None else "gpt_sovits",
+        "text_lang": profile.text_lang,
+        "speed": profile.speed,
+        "params": copy.deepcopy(profile.params or {}),
+        "source": profile.source or "",
+        "license": profile.license or "",
+        "models": models,
+        "speaker_ref": sha(own.get("speaker")),
+    }
+    return {"kind": "voice", "pack": pack, "items": items}
+
+
+def pack_canonical(db: Session, kind: str, pack_id: str, files: bool = True) -> dict:
+    """单包的规范形(立绘包连同认词记录;声音见 voice_canonical)"""
+    if kind == "voice":
+        return voice_canonical(db, pack_id, files)
     p = _Packs(db)
     p.add(kind, pack_id)
     out = p.canon(kind, pack_id)
@@ -143,8 +203,9 @@ def _group(db: Session, card_id: str) -> tuple[list[str], str]:
     return [s["card_id"] for s in g["states"] if db.get(TavernCard, s["card_id"]) is not None], g["main_card_id"]
 
 
-def canonical(db: Session, card_id: str, exclude: Iterable[str] = ()) -> dict:
-    """这张卡所在的整组(主卡从哪张进来都一样)的规范形。exclude 同导出:"sprite:<id>" 这样的"""
+def canonical(db: Session, card_id: str, exclude: Iterable[str] = (), files: bool = True) -> dict:
+    """这张卡所在的整组(主卡从哪张进来都一样)的规范形。exclude 同导出:"sprite:<id>" 这样的。
+    files=False:声音只比设置,不比文件的指纹"""
     excluded = set(exclude)
     cards, main = _group(db, card_id)
     idx = {c: i for i, c in enumerate(cards)}
@@ -155,6 +216,14 @@ def canonical(db: Session, card_id: str, exclude: Iterable[str] = ()) -> dict:
         return f"{kind}:{target}" not in excluded and db.get(models[kind], target) is not None
 
     per_card = {}
+    voices: dict[str, str] = {}  # 声音编号 → 去掉后缀的名字
+    per_voice = {}
+    for c in cards:
+        bound = [(t, pr) for t, pr in bindings.bound(db, c, bindings.VOICE)]
+        bound = [(t, pr) for t, pr in bound if f"voice:{t}" not in excluded and db.get(VoiceProfile, t) is not None]
+        per_voice[c] = bound
+        for t, _ in bound:
+            voices.setdefault(t, strip(db.get(VoiceProfile, t).name))
     for c in cards:
         sprite = [(t, pr) for t, pr in bindings.bound(db, c, bindings.SPRITE) if ok("sprite", t)]
         parts = bindings.scene_parts(db, c)
@@ -189,6 +258,7 @@ def canonical(db: Session, card_id: str, exclude: Iterable[str] = ()) -> dict:
                 "bg": [p.name[t] for t in bg],
                 "bgm": [p.name[t] for t in bgm],
                 "cg": [p.name[t] for t in cg],
+                "voice": [[voices[t], pr] for t, pr in per_voice[c]],
             }
         )
     out["cards"] = card_out
@@ -229,7 +299,33 @@ def canonical(db: Session, card_id: str, exclude: Iterable[str] = ()) -> dict:
                     ),
                 ]
             )
+    # 声音的配对表:名单是范围里的立绘包(一套都没有时是内置名单)
+    vlists = {PACK_PREFIX + pid: pid for pid in sprite_ids} or {BUILTIN: None}
+    labels = {e.id: e.label for v in voices for e in voice_files.exported_emotions(db, v)}
+    if voices:
+        for pr in db.scalars(
+            select(Pairing).where(Pairing.follower == "voice", Pairing.list_ref.in_(list(vlists)), Pairing.target.in_(list(voices)))
+        ).all():
+            if pr.card_id and pr.card_id not in idx:
+                continue
+            pid = vlists[pr.list_ref]
+            own = {r.id for r in p.rows[("sprite", pid)]} if pid else None
+            cells = db.scalars(select(PairingRow).where(PairingRow.pairing_id == pr.id)).all()
+            pairings.append(
+                [
+                    "voice",
+                    p.name[pid] if pid else BUILTIN,
+                    voices[pr.target],
+                    idx.get(pr.card_id) if pr.card_id else None,
+                    _sorted(
+                        [p.ref[r.item] if pid else r.item, labels.get(r.value) if r.value else None, r.source, r.guessed, r.pending, r.unstable]
+                        for r in cells
+                        if own is None or r.item in own
+                    ),
+                ]
+            )
     out["pairings"] = _sorted(pairings)
+    out["voices"] = _sorted(voice_canonical(db, v, files) for v in voices)
 
     sprite_items = {r.id for (kind, _), rows in p.rows.items() if kind == "sprite" for r in rows}
     prefs = []

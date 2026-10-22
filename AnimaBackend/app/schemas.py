@@ -712,6 +712,12 @@ class VoiceProfileOut(BaseModel):
     params: dict[str, Any]
     emotions: list[VoiceEmotionOut]
     card_count: int
+    # 声音包(第 4 步):文件在哪(manual 手填的语音机路径 / local 本机文件仓库 / pending 在另一台电脑,还没放过去)、
+    # 来源和授权说明、包里没带来的文件有几个(导出时语音机连不上;只算导入的声音)
+    files_at: str = "manual"
+    source: str = ""
+    license: str = ""
+    files_missing: int = 0
 
 
 class VoiceReorder(BaseModel):

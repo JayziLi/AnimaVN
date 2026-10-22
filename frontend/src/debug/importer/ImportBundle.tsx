@@ -10,17 +10,20 @@
  *     立绘       [缩][缩] 玉衡星 · 14 张、…
  *     背景 · BGM [缩] 原神 · 璃月 · 16 张背景、7 首 BGM
  *     跟着走     认词记录、配对表、立绘位置和特效
+ *     声音       🎤 刻晴(日语) · 12 段参考 + 2 个模型        → [本机 GPT-SoVITS ▾]
+ *                导完就能念 / 语音服务在另一台电脑,导完要把文件放过去
  *   ☑ 也导入作者建议的预设「…」                     另建一套,绑到这张卡
- *   这个包里没有声音:……                                 取消  导入
+ *   这个包里没有声音:……(带了声音时:模型文件加载时会执行里面的代码……)    取消  导入
  *
  * 每行写什么由 importModel.ts 的 bundleView 算;执行失败时框不关,底下写原因(和 ImportConfirm 一样)。
  */
 
-import { apiUrl, type ImportGroup } from '../lib/api';
+import { apiUrl, type ImportGroup, type TtsConnection } from '../lib/api';
 import { formatSize } from '../library/libraryModel';
 import { Icon } from '../studio/icons';
 import { Btn, Modal } from '../studio/ui';
-import { bundleView } from './importModel';
+import { bundleView, voiceLines, voiceTarget } from './importModel';
+import { VoiceTargetPick } from './VoiceTargetPick';
 import './importer.css';
 
 /** 暂存目录里的图是「/api/import/…」,接上后端地址 */
@@ -32,14 +35,33 @@ interface Props {
   source: string | null;
   withPreset: boolean;
   onPreset: (on: boolean) => void;
+  /** 声音导到哪个语音服务:选过的;没选过是 undefined(用后端给的默认) */
+  voiceConnection: string | undefined;
+  onVoiceConnection: (id: string) => void;
+  /** 语音服务列表;没读到是 null */
+  connections: readonly TtsConnection[] | null;
   busy: boolean;
   error: string | null;
   onCancel: () => void;
   onConfirm: () => void;
 }
 
-export function ImportBundle({ group, source, withPreset, onPreset, busy, error, onCancel, onConfirm }: Props) {
+export function ImportBundle({
+  group,
+  source,
+  withPreset,
+  onPreset,
+  voiceConnection,
+  onVoiceConnection,
+  connections,
+  busy,
+  error,
+  onCancel,
+  onConfirm,
+}: Props) {
   const v = bundleView(group);
+  const voices = voiceLines(group);
+  const target = voiceTarget(group, voiceConnection, connections);
   const meta = [source, v.bytes > 0 ? formatSize(v.bytes) : null].filter(Boolean).join(' · ');
   return (
     <Modal
@@ -57,7 +79,7 @@ export function ImportBundle({ group, source, withPreset, onPreset, busy, error,
       onCancel={onCancel}
       footer={
         <>
-          {v.voiceNote && <span className="imp-b-foot-note">{v.voiceNote}</span>}
+          {(v.voiceNote ?? v.codeWarn) && <span className="imp-b-foot-note">{v.voiceNote ?? v.codeWarn}</span>}
           <span className="st-flex" />
           <Btn onClick={onCancel} disabled={busy}>
             取消
@@ -108,6 +130,20 @@ export function ImportBundle({ group, source, withPreset, onPreset, busy, error,
                 <span className="imp-b-text">{r.text}</span>
               </span>
               {r.warn && <span className="imp-b-warn">{r.warn}</span>}
+            </div>
+          ))}
+          {voices.map((l, i) => (
+            <div key={l.key} className="imp-b-row">
+              <span className="imp-b-kind">{l.label}</span>
+              <span className="imp-b-what stack">
+                <span className="imp-b-text">
+                  <Icon name="mic" size={13} />
+                  {l.text}
+                </span>
+                {i === 0 && <span className="imp-b-faint">{target.status}</span>}
+                {l.missing && <span className="imp-b-faint">{l.missing}</span>}
+              </span>
+              {i === 0 && <VoiceTargetPick target={target} disabled={busy} onPick={onVoiceConnection} />}
             </div>
           ))}
         </div>

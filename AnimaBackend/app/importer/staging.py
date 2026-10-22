@@ -20,7 +20,7 @@ open_tree(plan_id) 照磁盘上的暂存目录重新走一遍(执行导入时用
   没有 UTF-8 标记的文件名按整个压缩包试 utf-8 → gbk → shift_jis,再 NFC(gbk 解出来大多是生僻字、
   shift_jis 又解得通时用 shift_jis:日文压缩包的名字 gbk 往往也「解得通」,只是一堆乱码)。
   最多解两层(zip 里的 zip 也解,再往里的原样留着,kind 是 other);有密码的、坏的拒收。
-- 上限:解开以后总共 2 GiB、5000 个文件(解开的 zip 本身不算);zip 先按目录里写的大小算,超了不解。
+- 上限:解开以后总共 8 GiB(声音包带模型,第 4 步从 2 GiB 放到 8 GiB)、5000 个文件(解开的 zip 本身不算);zip 先按目录里写的大小算,超了不解。
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ from app.assets.common import sniff_image_mime
 from app.config import settings
 from app.importer.sniff import Kind, kind_of
 
-MAX_TOTAL_BYTES = 2 * 1024**3
+MAX_TOTAL_BYTES = 8 * 1024**3
 MAX_FILES = 5000
 MAX_ZIP_DEPTH = 2
 FILES = "files"
@@ -326,9 +326,15 @@ def _open_zip(path: Path) -> tuple[zipfile.ZipFile, bool] | None:
     return None
 
 
+# 本身就是 zip 格式、但要原样留着的文件:PyTorch 的模型(.ckpt / .pth / .pt)。不留的话声音包里的模型会被拆成一堆文件夹
+_KEEP_WHOLE = {".ckpt", ".pth", ".pt"}
+
+
 def _unpack(files_root: Path, rel: str, names: _Names, budget: _Budget) -> list[str]:
-    """rel 是 zip 就解进同一层的「zip 名」文件夹,返回解出来的文件;不是 zip 返回 []"""
+    """rel 是 zip 就解进同一层的「zip 名」文件夹,返回解出来的文件;不是 zip(或是要原样留着的模型)返回 []"""
     path = files_root / rel
+    if path.suffix.lower() in _KEEP_WHOLE:
+        return []
     found = _open_zip(path)
     if found is None:
         return []

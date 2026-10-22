@@ -16,6 +16,7 @@ from app.migrations.core import (
     emotion_records,
     legacy,
     sprite_packs,
+    voice_files,
 )
 
 try:  # 公开版没有 private 文件夹
@@ -49,5 +50,6 @@ STEPS: list[Step] = [
     card_states.STEP,
     drop_card_sprites.STEP,
     binding_parts.STEP,
+    voice_files.STEP,
     *PRIVATE_STEPS,
 ]

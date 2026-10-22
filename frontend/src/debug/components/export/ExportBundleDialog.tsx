@@ -8,12 +8,15 @@
  *   [          ]         ☑ 背景 · BGM …                          17.5 MB
  *                          CG       没绑 CG 包
  *                          跟着走   认词记录、配对表…  跟着上面的包
+ *                       ☑ 声音     🎤 刻晴(日语) · 12 段参考 + 2 个模型  312 MB
+ *                                  只给自己用,别发给别人(黄字,后端给的 warn)
+ *                                  语音机连不上,这个声音只能带设置(灰字,missing > 0)
  *                       ☑ 预设     刻晴 DeepSeek …               0.1 MB
- *                       不带  声音 · 人设 · 对话记录 · 你的 API key 和设置
+ *                       不带  人设 · 对话记录 · 你的 API key 和设置
  *   约 58 MB  存成 刻晴.animavn                         取消  导出
  *
  * 每行写什么、总大小、请求体由 exportModel.ts 算;这里只管勾选、说明、预览图和导出的状态。
- * 导出中按钮变「导出中…」;存好了关面板、提示「已存成 …」;失败面板不关,底下写原因。
+ * 导出中按钮变「导出中…」(带了声音时底部写一句要从语音机取文件);存好了关面板、提示「已存成 …」;失败面板不关,底下写原因。
  */
 
 import { useEffect, useState } from 'react';
@@ -25,17 +28,20 @@ import type { Notify } from '../../studio/types';
 import {
   absoluteUrl,
   bundleBody,
+  busyNote,
   cardLine,
   fileNameOf,
   initialChecks,
   KIND_LABEL,
   nextPreview,
   packRows,
+  type PackRow,
   previewSrc,
   rowSize,
   stateBadge,
   totalBytes,
   totalLabel,
+  voiceNotes,
 } from './exportModel';
 import './export.css';
 
@@ -101,6 +107,7 @@ export function ExportBundleDialog({ cardId, cardName, notify, onClose }: Props)
   const badge = summary ? stateBadge(summary) : null;
   const src = summary ? previewSrc(summary, preview, resolve) : null;
   const canSwitch = (summary?.previews.length ?? 0) > 1;
+  const waiting = busy && summary ? busyNote(summary, checks) : null;
 
   return (
     <Modal
@@ -121,7 +128,7 @@ export function ExportBundleDialog({ cardId, cardName, notify, onClose }: Props)
           {summary && (
             <>
               <span className="exp-total">{totalLabel(totalBytes(summary, checks, withPreset))}</span>
-              <span className="exp-file">存成 {fileNameOf(summary)}</span>
+              <span className="exp-file">{waiting ?? `存成 ${fileNameOf(summary)}`}</span>
             </>
           )}
           <span className="st-flex" />
@@ -189,6 +196,14 @@ export function ExportBundleDialog({ cardId, cardName, notify, onClose }: Props)
                     <span className="exp-kind">{r.label}</span>
                     <span className="exp-what">{r.title}</span>
                   </div>
+                ) : r.item.kind === 'voice' ? (
+                  <VoiceRow
+                    key={r.item.key}
+                    row={r}
+                    checked={checks[r.item.key] !== false}
+                    busy={busy}
+                    onCheck={(on) => setChecks((c) => ({ ...c, [r.item.key]: on }))}
+                  />
                 ) : (
                   <label key={r.item.key} className={`exp-row${checks[r.item.key] === false ? ' off' : ''}`}>
                     <input
@@ -266,5 +281,43 @@ export function ExportBundleDialog({ cardId, cardName, notify, onClose }: Props)
         </div>
       )}
     </Modal>
+  );
+}
+
+/** 声音那一行:没有缩略图,换成话筒;名字底下可能有黄字(别发给别人)和灰字(只能带设置) */
+function VoiceRow({
+  row,
+  checked,
+  busy,
+  onCheck,
+}: {
+  row: Extract<PackRow, { type: 'item' }>;
+  checked: boolean;
+  busy: boolean;
+  onCheck: (on: boolean) => void;
+}) {
+  const notes = voiceNotes(row.item);
+  return (
+    <label className={`exp-row${checked ? '' : ' off'}`}>
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={busy}
+        aria-label={`${KIND_LABEL.voice} · ${row.item.name}`}
+        onChange={(e) => onCheck(e.target.checked)}
+      />
+      <span className="exp-kind">{row.label}</span>
+      <span className="exp-what">
+        <span className="exp-thumb exp-voice-icon">
+          <Icon name="mic" size={15} />
+        </span>
+        <span className="exp-what stack">
+          <span className="exp-what-text">{row.title}</span>
+          {notes.warn && <span className="exp-warn">{notes.warn}</span>}
+          {notes.missing && <span className="exp-faint">{notes.missing}</span>}
+        </span>
+      </span>
+      <span className="exp-size">{rowSize(row.item.bytes)}</span>
+    </label>
   );
 }

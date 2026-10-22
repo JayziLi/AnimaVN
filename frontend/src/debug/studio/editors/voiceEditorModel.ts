@@ -329,3 +329,39 @@ export function peaksOf(samples: ArrayLike<number>, n: number): number[] {
   const max = Math.max(0, ...out);
   return max > 0 ? out.map((v) => v / max) : out;
 }
+
+// ---------------------------------------------------------------- 文件在另一台电脑(第 4 步)
+
+/** 导进来了、语音服务在另一台电脑、文件还没放过去:编辑器顶上那一块要出来 */
+export const filesPending = (p: Pick<VoiceProfile, 'files_at'>) => p.files_at === 'pending';
+
+/** 「语音机上的目录」框里的字整理一下:去掉两头空白、复制路径时带的引号、末尾的斜杠;反斜杠换成 / */
+export function normalizeFolder(raw: string): string {
+  return raw
+    .trim()
+    .replace(/^["']+|["']+$/g, '')
+    .trim()
+    .replace(/\\/g, '/')
+    .replace(/\/+$/, '');
+}
+
+/** 「已放好」能不能点:没填是 null 不能点;填了的给整理好的目录 */
+export function placedFolder(raw: string): string | null {
+  const f = normalizeFolder(raw);
+  return f && f !== '.' ? f : null;
+}
+
+/** 框底下那行小字:路径会改成什么样 */
+export function placedHint(raw: string): string {
+  const f = placedFolder(raw) ?? '目录';
+  return `参考音频会改成 ${f}/refs/原文件名,模型改成 ${f}/models/原文件名`;
+}
+
+/** 名字里 Windows 不让用的字换成 _ */
+const safeName = (name: string) => name.replace(/[\\/:*?"<>|]+/g, '_').trim() || '声音';
+
+/** 框里的提示:D:/AnimaVoice/imports/声音名 */
+export const folderPlaceholder = (name: string) => `D:/AnimaVoice/imports/${safeName(name)}`;
+
+/** 「导出这些文件」存成什么名字(后端给了就用后端的) */
+export const filesZipName = (name: string) => `${safeName(name)}-文件.zip`;

@@ -58,6 +58,7 @@ import {
   benchBlocker,
   benchTuning,
   connectionOption,
+  filesPending,
   fmtSpeed,
   langOptions,
   matchBadge,
@@ -79,6 +80,7 @@ import {
   withParam,
   type SettingKey,
 } from './voiceEditorModel';
+import { VoiceFilesPending } from './VoiceFilesPending';
 import './voiceEditor.css';
 
 export interface VoiceEditorProps {
@@ -450,6 +452,16 @@ function Loaded({ profile, connection, connections, patch, header, spriteLabels,
     <>
       <main className="st-main">
         {header}
+        {filesPending(profile) && (
+          <VoiceFilesPending
+            profile={profile}
+            onPlaced={(next) => {
+              patch(() => next);
+              onChanged();
+            }}
+            notify={notify}
+          />
+        )}
         <VoiceSettings profile={profile} connections={connections} isIndex={isIndex} saveVoice={saveVoice} />
         <Bench
           profile={profile}

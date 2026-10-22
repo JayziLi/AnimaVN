@@ -707,3 +707,63 @@
     padding-left: 23px;
   }
 }
+
+/* ── 声音(第 4 步):「→ [语音服务 ▾]」 ── */
+.imp-voice-to {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 50%;
+  color: var(--text);
+  font-size: 12.5px;
+}
+.imp-voice-arrow {
+  color: var(--text-faint);
+}
+.imp-voice-select {
+  width: 190px;
+  display: flex;
+}
+.imp-voice-select > .st-select {
+  height: 28px;
+  font-size: 12.5px;
+}
+.imp-voice-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.imp-voice-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-top: 6px;
+}
+.imp-voice-line .imp-voice-to {
+  max-width: none;
+}
+.imp-b-what.stack {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.imp-b-what.stack > .imp-b-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  margin-left: 0;
+}
+.imp-code-warn {
+  margin-top: 10px;
+}
+@media (max-width: 640px) {
+  .imp-b-row > .imp-voice-to {
+    max-width: none;
+    width: 100%;
+    padding-left: 66px;
+  }
+}

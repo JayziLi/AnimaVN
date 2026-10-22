@@ -8,6 +8,8 @@
 4. 角色包(第 3 步)多建的:预设(连同 app_settings 的 preset.bindings 里指着这次的卡、这次的预设的项;preset.bindings 是这次
    才建的、删完空了就整个删)、状态组、补进内置名单的认词记录;这次建的立绘包的认词记录、配对表,指着这次的 CG 的配对表也删
    (包删了它们就没有用了,删包接口本身不删它们)。按卡设置跟着卡删。
+5. 声音(第 4 步):这次建的声音(连同情绪行、绑定、指着它的语音配对表);库里原来没有语音服务、这次新建的那个,
+   没有别的声音在用就一起删。仓库里的文件不动,按清理的规矩处理(没人用了 24 小时后挪进回收区)。
 """
 
 from __future__ import annotations
@@ -24,6 +26,7 @@ from app.api.cg_packs import delete_cg_pack
 from app.api.scenes import delete_scene_pack
 from app.api.sprites import _next_current, delete_sprite_pack
 from app.api.tavern import delete_card_cascade
+from app.api.voices import delete_profile_cascade
 from app.importer import staging
 from app.importer.apply import ImportContext, empty_created
 from app.importer.audio import CONVERTED
@@ -43,6 +46,8 @@ from app.models import (
     ScenePack,
     SpritePack,
     TavernCard,
+    TtsConnection,
+    VoiceProfile,
     WordRecord,
 )
 
@@ -193,6 +198,8 @@ def describe(db: Session, job: ImportJob) -> dict:
         side = {bindings.PART_BG: "(背景)", bindings.PART_BGM: "(BGM)"}.get(e.get("parts") or "", "")
         lines.append(f"从「{card_name}」上拿掉{noun}「{target.name}」{side}")
 
+    voices = [{"id": v.id, "name": v.name} for vid in created["voices"] if (v := db.get(VoiceProfile, vid)) is not None]
+    lines += [f"删掉这次新建的声音「{v['name']}」" for v in voices]
     presets = [{"id": p.id, "name": p.name} for pid in created["presets"] if (p := db.get(PromptPreset, pid)) is not None]
     lines += [f"删掉这次新建的预设「{p['name']}」" for p in presets]
 
@@ -206,6 +213,7 @@ def describe(db: Session, job: ImportJob) -> dict:
         "status": job.status,
         "cards": cards,
         "packs": packs,
+        "voices": voices,
         "presets": presets,
         "unbind": unbind,
         "restore_cards": restore,
@@ -253,6 +261,12 @@ def undo(db: Session, job: ImportJob) -> dict:
         delete_sprite_pack(db, pid)
     for cid in created["cards"]:
         delete_card_cascade(db, cid)
+    for vid in created["voices"]:
+        delete_profile_cascade(db, vid)
+    for cid in created["tts_connections"]:
+        conn = db.get(TtsConnection, cid)
+        if conn is not None and db.scalar(select(VoiceProfile.id).where(VoiceProfile.connection_id == cid).limit(1)) is None:
+            db.delete(conn)
     _forget_bundle_extras(db, created)
     for cid, fields in (job.replaced_cards or {}).items():
         card = db.get(TavernCard, cid)
@@ -273,7 +287,13 @@ def _forget_followers(db: Session, created: dict) -> None:
     if lists:
         db.execute(delete(WordRecord).where(WordRecord.list_ref.in_(lists)))
     pairings = list(
-        db.scalars(select(Pairing.id).where((Pairing.list_ref.in_(lists)) | (Pairing.target.in_(cgs)) | (Pairing.card_id.in_(created["cards"])))).all()
+        db.scalars(
+            select(Pairing.id).where(
+                (Pairing.list_ref.in_(lists))
+                | (Pairing.target.in_(cgs + list(created["voices"])))
+                | (Pairing.card_id.in_(created["cards"]))
+            )
+        ).all()
     )
     if pairings:
         db.execute(delete(PairingRow).where(PairingRow.pairing_id.in_(pairings)))

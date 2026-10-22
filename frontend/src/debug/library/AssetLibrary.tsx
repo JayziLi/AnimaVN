@@ -551,13 +551,9 @@ export function AssetLibrary(props: AssetLibraryProps) {
     const menu = selected
       ? [
           { label: '重命名', onClick: () => setDialog({ kind: 'rename', item: selected }) },
-          ...(kind === 'voice'
-            ? []
-            : [
-                { label: '创建副本', onClick: () => setDialog({ kind: 'duplicate', item: selected }) },
-                // 声音第 4 步再导
-                packExportItem(kind, selected.id, notify),
-              ]),
+          // 声音没有「创建副本」
+          ...(kind === 'voice' ? [] : [{ label: '创建副本', onClick: () => setDialog({ kind: 'duplicate', item: selected }) }]),
+          packExportItem(kind, selected.id, notify),
           {
             label: asking ? '读取中…' : '删除',
             danger: true,

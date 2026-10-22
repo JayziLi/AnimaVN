@@ -59,6 +59,8 @@ def test_the_local_database_needs_no_upgrade(tmp_path: Path):
         "core.2026_10_drop_card_sprites",
         # 补列的两张表是前面两步建的,同样先算待做(真做的时候建表已经带上新列,只登记)
         "core.2026_10_binding_parts",
+        # 声音包(第 4 步):给声音补指纹列
+        "core.2026_10_voice_files",
         "private.2026_10_sfx_blob_sha",
         "private.2026_10_unbind_wikira_cg",
         "private.2026_10_split_states",

@@ -42,6 +42,10 @@ def write_zip(archive: Archive, path: Path) -> int:
                 data = json.dumps(obj, ensure_ascii=False, indent=1).encode("utf-8")
                 zf.writestr(name, data, compress_type=zipfile.ZIP_DEFLATED)
             for name, src in archive.files.items():
+                if src.disk is not None and Path(src.disk).is_file():
+                    # 仓库里的大文件(声音的模型):按块从硬盘拷进 zip
+                    zf.write(src.disk, name, compress_type=zipfile.ZIP_STORED)
+                    continue
                 data = src.load()
                 if data is None:
                     raise MissingFile(f"文件 {src.sha} 读不出来(仓库里没有,库里也没有)")

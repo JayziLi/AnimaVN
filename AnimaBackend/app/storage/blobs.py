@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import shutil
 import threading
 import time
 from dataclasses import dataclass
@@ -41,15 +42,41 @@ _EXT = {
     "audio/mp4": "m4a",
     "audio/x-m4a": "m4a",
     "audio/aac": "aac",
+    "audio/opus": "opus",
+    # 声音包的模型(第 4 步):GPT-SoVITS 按扩展名认 GPT(.ckpt)和 SoVITS(.pth),仓库里也得存成这两个扩展名
+    "application/x-gsv-ckpt": "ckpt",
+    "application/x-gsv-pth": "pth",
 }
+CKPT_MIME, PTH_MIME = "application/x-gsv-ckpt", "application/x-gsv-pth"
+# 扩展名 → 类型(声音的文件只有路径、没有类型时按扩展名猜;同一个扩展名取上面排第一的类型)
+_MIME_OF_EXT: dict[str, str] = {}
+for _mime, _ext in _EXT.items():
+    _MIME_OF_EXT.setdefault(_ext, _mime)
+_MIME_OF_EXT["jpeg"] = "image/jpeg"
+_CHUNK = 1024 * 1024
 
 
 def ext_of(mime: str) -> str:
     return _EXT.get(mime.lower().split(";")[0].strip(), "bin")
 
 
+def mime_for_name(name: str) -> str:
+    """文件名(或路径)的扩展名 → 类型;认不出的是 application/octet-stream(存成 .bin)"""
+    ext = name.rsplit(".", 1)[-1].lower() if "." in name.replace("\\", "/").rsplit("/", 1)[-1] else ""
+    return _MIME_OF_EXT.get(ext, "application/octet-stream")
+
+
 def sha_of(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def sha_of_file(path: Path) -> str:
+    """大文件(模型)按块算指纹,不整个读进内存"""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        while chunk := f.read(_CHUNK):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 def relpath(sha: str, mime: str) -> str:
@@ -100,6 +127,36 @@ class BlobStore:
         pending = db is not None and any(isinstance(o, Blob) and o.sha == sha for o in db.new)
         if db is not None and not pending and db.get(Blob, sha) is None:
             db.add(Blob(sha=sha, mime=mime, size=len(data)))
+        return sha
+
+    def put_path(self, src: Path, mime: str, db: Session | None = None, *, move: bool = False) -> str:
+        """放一个硬盘上的文件(声音包的模型动辄几百 MB:按块算指纹、按块复制,不整个读进内存),返回指纹。
+        move=True 时把 src 挪进来(同一个盘上就是改名;已经在了就删掉 src)。其余同 put"""
+        src = Path(src)
+        sha = sha_of_file(src)
+        target = self.path(sha, mime)
+        if not target.is_file():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            tmp = target.with_name(f"{target.name}.tmp-{os.getpid()}-{threading.get_ident()}")
+            try:
+                if move:
+                    shutil.move(str(src), tmp)
+                else:
+                    with open(src, "rb") as fin, open(tmp, "wb") as fout:
+                        shutil.copyfileobj(fin, fout, _CHUNK)
+                        fout.flush()
+                        os.fsync(fout.fileno())
+                if sha_of_file(tmp) != sha:
+                    raise OSError(f"放进仓库的文件读回来对不上:{target.name}")
+                if not target.is_file():
+                    os.replace(tmp, target)
+            finally:
+                tmp.unlink(missing_ok=True)
+        if move:
+            src.unlink(missing_ok=True)
+        pending = db is not None and any(isinstance(o, Blob) and o.sha == sha for o in db.new)
+        if db is not None and not pending and db.get(Blob, sha) is None:
+            db.add(Blob(sha=sha, mime=mime, size=target.stat().st_size))
         return sha
 
     def _write(self, target: Path, data: bytes, sha: str) -> None:

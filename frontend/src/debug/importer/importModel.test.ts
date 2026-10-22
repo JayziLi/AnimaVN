@@ -282,6 +282,10 @@ describe('libraryRouteAfterImport', () => {
     expect(libraryRouteAfterImport(made({ cg_packs: ['g1', 'g2'] }), empty, NO_BODY, null)).toEqual({ tab: 'cg', id: 'g1' });
   });
 
+  it('opens the voice tab on the first new voice when only voices came in', () => {
+    expect(libraryRouteAfterImport(made({ voices: ['v1'] }), empty, NO_BODY, null)).toEqual({ tab: 'voice', id: 'v1' });
+  });
+
   it('opens a new scene pack on the BGM tab when it only has music', () => {
     const r = made({ scene_packs: ['sc1'] });
     const sides = (bg: number, bgm: number) => [

@@ -8,12 +8,20 @@
 """
 
 import re
+from pathlib import Path
 from typing import Any
 
 import httpx
 
 from app.tts.base import ServerState, SharedServer, TTSError, VoiceSpec
-from app.tts.http import REF_TIMEOUT, make_tts_client, read_reference, transport_error
+from app.tts.http import (
+    FILE_TIMEOUT,
+    REF_TIMEOUT,
+    download_reference,
+    make_tts_client,
+    read_reference,
+    transport_error,
+)
 
 COLD_TIMEOUT = 90.0
 WARM_TIMEOUT = 30.0
@@ -118,6 +126,14 @@ class GptSovitsEngine(SharedServer):
                 return await read_reference(client, self.base_url, "GPT-SoVITS", path)
         except httpx.HTTPError as e:
             raise self._transport_error(e) from e
+
+    async def download(self, path: str, dest: Path) -> int:
+        # 导出声音包时拉整个文件(参考音频、模型);不进锁,也不动 warm(拉不到不说明合成服务重启了)
+        try:
+            async with make_tts_client(self.base_url, FILE_TIMEOUT) as client:
+                return await download_reference(client, self.base_url, "GPT-SoVITS", path, dest)
+        except httpx.HTTPError as e:
+            raise TTSError(*transport_error(self.base_url, "GPT-SoVITS", e)) from e
 
     async def _run(self, text: str, voice: VoiceSpec, timeout: float) -> tuple[bytes, str]:
         try:

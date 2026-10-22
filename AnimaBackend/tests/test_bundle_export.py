@@ -1,7 +1,7 @@
 """角色包导出(第 3 步 A1):从一张卡收齐要带的行和文件(app/bundle/collect.py),写成 zip(write.py),三个接口。
 
 库是 tests/bundle_seed.py 那份:主卡 + 状态卡、立绘包(两张,一张有认词记录)、场景包(背景 1 的默认曲在同包,
-背景 2 的默认曲在别的场景包)、CG 包(构图 + 差分)、配对表、预设绑定、按卡设置、声音和 secret.*(都不该带)。
+背景 2 的默认曲在别的场景包)、CG 包(构图 + 差分)、配对表、预设绑定、按卡设置、声音(第 4 步起带)和 secret.*(不该带)。
 """
 
 import json
@@ -19,7 +19,7 @@ from app.bundle import collect, write
 from app.db import Base, get_db
 from app.main import app
 from app.models import WordRecord
-from tests.bundle_seed import SECRET, png, seed
+from tests.bundle_seed import SECRET, VOICE_FILES, png, seed
 
 
 @pytest.fixture
@@ -83,17 +83,19 @@ def test_bundle_has_the_whole_state_group_and_everything_bound(db, tmp_path):
         (ids["sprite_pack"], "sprite"),
         (ids["scene_pack"], "scene"),
         (ids["cg_pack"], "cg"),
+        (ids["voice"], "voice"),
     ]
     main_bindings = sorted((b["kind"], b["pack"], b["is_primary"], b["parts"]) for b in m["bindings"] if b["card"] == ids["main"])
     assert main_bindings == [
         ("cg", ids["cg_pack"], False, ""),
         ("scene", ids["scene_pack"], False, ""),
         ("sprite", ids["sprite_pack"], True, ""),
+        ("voice", ids["voice"], True, ""),
     ]
     role_of_main = next(r["key"] for r in m["roles"] if r["card"] == ids["main"])
     assert next(b for b in m["bindings"] if b["card"] == ids["main"] and b["kind"] == "sprite")["role"] == role_of_main
-    # 声音不带
-    assert all(b["kind"] != "voice" for b in m["bindings"])
+    # 声音绑在角色位上(第 4 步)
+    assert next(b for b in m["bindings"] if b["card"] == ids["main"] and b["kind"] == "voice")["role"] == role_of_main
 
 
 def test_packs_carry_rows_files_and_internal_references(db, tmp_path):
@@ -132,7 +134,7 @@ def test_packs_carry_rows_files_and_internal_references(db, tmp_path):
     assert s2["file"] == m["cards"][0]["avatar"]
     names = [n for n in zf.namelist() if n.startswith("assets/")]
     assert len(names) == len(set(names))
-    assert len(names) == 7  # 头像/生气、微笑、港口、远山、日常、花火、花火微笑
+    assert len(names) == 12  # 头像/生气、微笑、港口、远山、日常、花火、花火微笑 + 声音的 3 段参考、2 个模型
     assert zf.getinfo(s1["file"]).compress_type == zipfile.ZIP_STORED
     assert zf.getinfo("animavn.json").compress_type == zipfile.ZIP_DEFLATED
 
@@ -144,8 +146,8 @@ def test_follows_word_records_pairings_prefs_and_preset(db, tmp_path):
     assert [(w["list"], w["word"], w["item"], w["source"], w["guessed"], w["score"]) for w in m["word_records"]] == [
         (f"pack:{ids['sprite_pack']}", "开心", ids["s1"], "model", True, 0.8)
     ]
-    assert len(m["pairings"]) == 1  # 语音的配对表第 4 步再带
-    p = m["pairings"][0]
+    assert len(m["pairings"]) == 2  # CG 的一张、声音的一张(指着不在的声音的那张不带)
+    p = next(x for x in m["pairings"] if x["follower"] == "cg")
     assert (p["follower"], p["list"], p["target"], p["card"]) == ("cg", f"pack:{ids['sprite_pack']}", ids["comp"], None)
     assert sorted((r["item"], r["value"], r["source"]) for r in p["rows"]) == sorted(
         [(ids["s1"], ids["var"], "name"), (ids["s2"], None, "local")]
@@ -162,8 +164,9 @@ def test_follows_word_records_pairings_prefs_and_preset(db, tmp_path):
 
     everything = b"".join(zf.read(n) for n in zf.namelist())
     assert SECRET.encode() not in everything
-    assert "G:/models".encode() not in everything and "台式机".encode() not in everything
-    assert ids["voice"].encode() not in everything
+    # 声音不带语音机上的路径、不带语音服务连接
+    assert "G:/models".encode() not in everything and "D:/refs".encode() not in everything
+    assert "台式机".encode() not in everything and "10.0.0.2".encode() not in everything
 
 
 def test_exclude_and_no_preset(db, tmp_path):
@@ -171,7 +174,7 @@ def test_exclude_and_no_preset(db, tmp_path):
     bundle = collect.collect_card(db, ids["main"], exclude=[f"sprite:{ids['sprite_pack']}"], with_preset=False)
     zf = _zip(bundle, tmp_path)
     m = _json(zf, "animavn.json")
-    assert [p["kind"] for p in m["packs"]] == ["scene", "cg"]
+    assert [p["kind"] for p in m["packs"]] == ["scene", "cg", "voice"]
     assert all(b["kind"] != "sprite" for b in m["bindings"])
     assert m["word_records"] == [] and m["pairings"] == []
     # 生图参考的立绘没导出:去掉 ref,别的留着
@@ -232,18 +235,27 @@ def test_summary(api):
     ]
     assert s["card_bytes"] > 0
     items = {i["key"]: i for i in s["items"]}
-    assert list(items) == [f"sprite:{ids['sprite_pack']}", f"scene:{ids['scene_pack']}", f"cg:{ids['cg_pack']}"]
+    assert list(items) == [
+        f"sprite:{ids['sprite_pack']}",
+        f"scene:{ids['scene_pack']}",
+        f"cg:{ids['cg_pack']}",
+        f"voice:{ids['voice']}",
+    ]
     sp = items[f"sprite:{ids['sprite_pack']}"]
     assert sp["kind"] == "sprite" and sp["name"] == "刻晴 · 玉衡星" and sp["detail"] == "2 张" and sp["current"] is True
     assert sp["bytes"] == len(png("微笑")) + len(png("avatar"))
     assert sp["thumb"].startswith("/api/blobs/")
     assert items[f"scene:{ids['scene_pack']}"]["detail"] == "2 张背景、1 首 BGM"
     assert items[f"cg:{ids['cg_pack']}"]["detail"] == "1 张 CG、1 张差分"
-    assert "认词记录 1 条" in s["follows"] and "配对表 1 张" in s["follows"] and "立绘位置和特效" in s["follows"]
+    assert "认词记录 1 条" in s["follows"] and "配对表 2 张" in s["follows"] and "立绘位置和特效" in s["follows"]
+    v = items[f"voice:{ids['voice']}"]
+    assert v["kind"] == "voice" and v["name"] == "刻晴声音" and v["detail"] == "3 段参考 + 2 个模型"
+    assert v["bytes"] == sum(len(b) for b in VOICE_FILES.values()) and v["missing"] == 0
+    assert v["warn"] == "只给自己用,别发给别人"
     assert s["preset"]["id"] == ids["preset"] and s["preset"]["name"] == "刻晴 DeepSeek" and s["preset"]["bytes"] > 0
     assert s["previews"][0] == {"kind": "avatar"}
     assert {"kind": "sprite", "id": ids["s1"], "thumb": s["previews"][1]["thumb"]} == s["previews"][1]
-    assert s["not_included"] == ["声音(第 4 步再加)", "人设", "对话记录", "你的 API key 和设置"]
+    assert s["not_included"] == ["人设", "对话记录", "你的 API key 和设置"]
     assert client.get("/api/export/bundle/nope/summary").status_code == 404
 
 
@@ -259,7 +271,7 @@ def test_download_bundle(api, export_tmp):
     zf = zipfile.ZipFile(BytesIO(r.content))
     m = json.loads(zf.read("animavn.json"))
     assert m["note"] == "说明" and m["preset"] is None
-    assert [p["kind"] for p in m["packs"]] == ["sprite", "scene"]
+    assert [p["kind"] for p in m["packs"]] == ["sprite", "scene", "voice"]
     assert zf.read(m["preview"]) == png("微笑")
     # 发完临时文件删掉
     assert not export_tmp.exists() or not any(export_tmp.iterdir())
@@ -272,5 +284,6 @@ def test_download_pack(api):
     assert unquote(r.headers["content-disposition"].split("filename*=UTF-8''")[1]) == "刻晴 · CG.animapack"
     p = json.loads(zipfile.ZipFile(BytesIO(r.content)).read("pack.json"))
     assert p["kind"] == "cg" and len(p["items"]) == 2
-    assert client.get(f"/api/export/pack/voice/{ids['voice']}").status_code == 404
+    assert client.get("/api/export/pack/voice/nope").status_code == 404
+    assert client.get("/api/export/pack/other/nope").status_code == 404
     assert client.get("/api/export/pack/sprite/nope").status_code == 404

@@ -298,6 +298,17 @@ label.exp-row:has(input:disabled) {
   color: var(--text);
   font-size: 11px;
 }
+.exp-voice-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+}
+/* 声音那一行的黄字:和卡编辑器的 --st-amber 同一个色 */
+.exp-warn {
+  color: #e0b86b;
+  font-size: 11.5px;
+}
 .exp-size {
   flex: none;
   font-family: var(--mono);

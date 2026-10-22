@@ -360,6 +360,21 @@ class VoiceProfile(Base):
     speed: Mapped[float] = mapped_column(Float, default=1.0)
     # 调过的合成参数(schemas.VoiceParams,只存调过的项);空 = 全用默认
     params: Mapped[dict] = mapped_column(JSON, default=dict)
+    # 声音包(素材架构第 4 步):两个模型、音色参考在文件仓库里的指纹(没进过仓库是 null)、大小和原文件名。
+    # 指纹对的是「现在这个路径上的文件」:路径改了指纹就清掉(app/api/voices.py)
+    gpt_sha: Mapped[str | None] = mapped_column(String(64), nullable=True, default=None)
+    gpt_size: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
+    gpt_name: Mapped[str] = mapped_column(String(255), default="")
+    sovits_sha: Mapped[str | None] = mapped_column(String(64), nullable=True, default=None)
+    sovits_size: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
+    sovits_name: Mapped[str] = mapped_column(String(255), default="")
+    speaker_sha: Mapped[str | None] = mapped_column(String(64), nullable=True, default=None)
+    # 来源 / 作者说明、能不能再分发的说明(随声音包带走)
+    source: Mapped[str] = mapped_column(Text, default="")
+    license: Mapped[str] = mapped_column(Text, default="")
+    # 文件在哪:manual 手填的语音机路径(以前的声音都是)/ local 本机文件仓库(导入时连接是本机)/
+    # pending 导进来了、语音服务在另一台电脑,文件还没放过去
+    files_at: Mapped[str] = mapped_column(String(16), default="manual")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 
@@ -389,6 +404,9 @@ class VoiceEmotion(Base):
     aux_refs: Mapped[list] = mapped_column(JSON, default=list)
     # IndexTTS 的 8 维情绪向量 [高兴, 愤怒, 悲伤, 害怕, 厌恶, 忧郁, 惊讶, 平静];空 = 不用向量
     emo_vector: Mapped[list | None] = mapped_column(JSON, nullable=True, default=None)
+    # 参考音频在文件仓库里的指纹(第 4 步);aux_shas 和 aux_refs 一一对应(没进过仓库的那条是 null)
+    ref_sha: Mapped[str | None] = mapped_column(String(64), nullable=True, default=None)
+    aux_shas: Mapped[list] = mapped_column(JSON, default=list)
     sort: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)

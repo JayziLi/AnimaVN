@@ -187,6 +187,16 @@ def test_nested_zips_are_unpacked_two_levels_deep(tmp_path: Path):
     }
 
 
+def test_pytorch_models_inside_a_zip_stay_whole(tmp_path: Path):
+    # .ckpt / .pth 本身是 zip 格式;声音包里的模型要原样留着,不能被当成套着的压缩包解开
+    model = _zip(("archive/data.pkl", b"x"),)
+    outer = _zip(("assets/a.ckpt", model), ("assets/b.pth", model), ("assets/c.png", PNG))
+    tree = stage([("pack.animavn", outer)], tmp_path)
+    kinds = _kinds(tree)
+    assert {k for k in kinds if k.endswith((".ckpt", ".pth"))} == {"pack/assets/a.ckpt", "pack/assets/b.pth"}
+    assert not any("archive" in k for k in kinds)
+
+
 def test_a_zip_hidden_after_a_jpeg_is_found(tmp_path: Path):
     """JPEG 后面接 zip(CHARX 有这种):往后找到 PK 头照样解开,外面那张图不留"""
     tree = stage([("card.jpg", JPEG + _zip(("card.json", CARD_JSON), ("assets/icon.png", PNG)))], tmp_path)

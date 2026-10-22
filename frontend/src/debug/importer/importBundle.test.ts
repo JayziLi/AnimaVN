@@ -7,7 +7,16 @@ import {
   bundleView,
   confirmModel,
   defaultBundlePresets,
+  defaultVoiceConnections,
+  isLocalUrl,
+  MODEL_CODE_WARN,
+  planHasVoices,
   shouldConfirm,
+  VOICE_LOCAL,
+  VOICE_NO_SERVICE,
+  VOICE_REMOTE,
+  voiceLines,
+  voiceTarget,
 } from './importModel';
 
 const NONE: ImportTarget = { cardId: null, cardName: null, kind: null };
@@ -130,6 +139,87 @@ describe('bundle plans', () => {
     expect(m.rows.map((r) => [r.icon, r.title, r.effect])).toEqual([
       ['card', '角色包「刻晴」', '新建角色卡和 3 个包,都是另存的一份'],
       ['scene', '背景和 BGM「原神 · 璃月」· 16 张背景、7 首 BGM', '另建一个新的包,先放进素材库,不绑到卡上'],
+    ]);
+  });
+});
+
+describe('voices in a bundle or a voice pack (step 4)', () => {
+  const LOCAL = { id: 'tts1', name: '本机 GPT-SoVITS', local: true };
+  const kqJa = { name: '刻晴(日语)', detail: '12 段参考 + 2 个模型', connection: LOCAL, missing: 0 };
+  const withVoice = bundle(detail({ has_voice: true, voices: [kqJa, { ...kqJa, name: '刻晴(中文)', missing: 3 }] }));
+  const voicePack: ImportGroup = {
+    key: 'f2',
+    type: 'pack_file',
+    name: '刻晴(日语)',
+    count: 12,
+    owner: null,
+    duplicate_of: null,
+    detail: { kind: 'voice', name: '刻晴(日语)', detail: '12 段参考 + 2 个模型', thumbs: [], voices: [{ ...kqJa, connection: null }] },
+  };
+  const conns = [
+    { id: 'tts1', name: '本机 GPT-SoVITS', base_url: 'http://127.0.0.1:9880' },
+    { id: 'tts2', name: '台式机', base_url: 'http://192.168.1.20:9880' },
+  ];
+
+  it('tells local from another computer by the address', () => {
+    expect(isLocalUrl('http://127.0.0.1:9880')).toBe(true);
+    expect(isLocalUrl('http://localhost:9880/')).toBe(true);
+    expect(isLocalUrl('http://[::1]:9880')).toBe(true);
+    expect(isLocalUrl('127.0.0.1:9880')).toBe(true);
+    expect(isLocalUrl('http://192.168.1.20:9880')).toBe(false);
+    expect(isLocalUrl('http://localhost.example.com')).toBe(false);
+    expect(isLocalUrl('')).toBe(false);
+  });
+
+  it('lists each voice once, the kind named on the first, and what is missing', () => {
+    expect(voiceLines(withVoice)).toEqual([
+      { key: 'voice-0', label: '声音', text: '刻晴(日语) · 12 段参考 + 2 个模型', missing: null },
+      { key: 'voice-1', label: '', text: '刻晴(中文) · 12 段参考 + 2 个模型', missing: '包里缺 3 个文件,导完这个声音只有设置' },
+    ]);
+    expect(voiceLines(bundle())).toEqual([]);
+  });
+
+  it('defaults to the backend connection and says it reads right away when it is local', () => {
+    expect(defaultVoiceConnections(plan([withVoice, voicePack]))).toEqual({ b1: 'tts1' });
+    const t = voiceTarget(withVoice, undefined, null);
+    expect(t).toMatchObject({ id: 'tts1', name: '本机 GPT-SoVITS', options: null, status: VOICE_LOCAL });
+  });
+
+  it('gives a dropdown when there are several services and follows the pick', () => {
+    const t = voiceTarget(withVoice, 'tts2', conns);
+    expect(t.options).toEqual([
+      { value: 'tts1', label: '本机 GPT-SoVITS' },
+      { value: 'tts2', label: '台式机' },
+    ]);
+    expect(t).toMatchObject({ id: 'tts2', name: '台式机', local: false, status: VOICE_REMOTE });
+    expect(VOICE_REMOTE).toBe('语音服务在另一台电脑,导完要把文件放过去');
+    // 选的那个已经删掉了:换成第一个
+    expect(voiceTarget(withVoice, 'gone', conns).id).toBe('tts1');
+  });
+
+  it('says there is no voice service yet when none exists', () => {
+    expect(voiceTarget(voicePack, undefined, [])).toMatchObject({ id: null, status: VOICE_NO_SERVICE });
+  });
+
+  it('sends the chosen service as connection_id next to the preset', () => {
+    const p = plan([withVoice, voicePack]);
+    const model = confirmModel(p, NONE, null, false);
+    expect(applyBody(model, {}, {}, false, { b1: true }, { b1: 'tts2', f2: 'tts1' }).options).toEqual({
+      b1: { preset: true, connection_id: 'tts2' },
+      f2: { connection_id: 'tts1' },
+    });
+  });
+
+  it('asks before importing a voice pack and warns about model code', () => {
+    expect(planHasVoices(plan([voicePack]))).toBe(true);
+    expect(shouldConfirm(plan([voicePack]))).toBe(true);
+    const v = bundleView(withVoice);
+    expect(v.voiceNote).toBeNull();
+    expect(v.codeWarn).toBe(MODEL_CODE_WARN);
+    expect(bundleView(bundle()).codeWarn).toBeNull();
+    const m = confirmModel(plan([voicePack]), NONE, null, false);
+    expect(m.rows.map((r) => [r.icon, r.title, r.effect])).toEqual([
+      ['voice', '声音「刻晴(日语)」· 12 段参考 + 2 个模型', '另建一个声音,先放进素材库,不挂到卡上'],
     ]);
   });
 });

@@ -8,11 +8,17 @@
 """
 
 import re
+import uuid
+import zipfile
 from collections.abc import Callable
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
+from starlette.background import BackgroundTask
 
 from app import bindings
 from app.api.sprites import current_sprites
@@ -33,6 +39,7 @@ from app.schemas import (
     VoiceProfileUpdate,
     VoiceReorder,
 )
+from app.tts import files as voice_files
 from app.tts.emotion_presets import BUILTIN_EMOTIONS, clean_emo_vector, preset_vector
 
 router = APIRouter(tags=["voices"])
@@ -179,7 +186,57 @@ def _profile_out(p: VoiceProfile, db: Session) -> VoiceProfileOut:
         params=dict(p.params or {}),
         emotions=[_emotion_out(e) for e in list_emotions(p.id, db)],
         card_count=bindings.count_cards(db, bindings.VOICE, p.id),
+        files_at=p.files_at or "manual",
+        source=p.source or "",
+        license=p.license or "",
+        files_missing=files_missing(p, db),
     )
+
+
+# ── 文件指纹(声音包,第 4 步)──
+# 指纹对的是「现在这个路径上的文件」:路径改了就清掉(files_at 不跟着变:只有「已放好」改它)
+
+
+def files_missing(p: VoiceProfile, db: Session) -> int:
+    """导入的声音(local / pending)有几个文件包里没带来:模型有名字没指纹、GSV 的情绪行没参考的指纹"""
+    if (p.files_at or "manual") == "manual":
+        return 0
+    n = sum(1 for name, sha in ((p.gpt_name, p.gpt_sha), (p.sovits_name, p.sovits_sha)) if name and not sha)
+    conn = db.get(TtsConnection, p.connection_id)
+    if conn is not None and conn.api_type == "indextts":
+        return n + (0 if p.speaker_sha else 1)
+    return n + sum(1 for e in list_emotions(p.id, db) if not e.ref_sha)
+
+
+def set_profile_path(p: VoiceProfile, key: str, value: str) -> None:
+    """改声音上的一个路径(gpt_weights / sovits_weights / ref_path);和原来不一样时清掉那个文件的指纹"""
+    if getattr(p, key) == value:
+        return
+    setattr(p, key, value)
+    if key == "gpt_weights":
+        p.gpt_sha, p.gpt_size, p.gpt_name = None, None, ""
+    elif key == "sovits_weights":
+        p.sovits_sha, p.sovits_size, p.sovits_name = None, None, ""
+    elif key == "ref_path":
+        p.speaker_sha = None
+
+
+def set_emotion_ref(e: VoiceEmotion, path: str) -> None:
+    """改一行情绪的参考路径;变了就清掉它的指纹"""
+    if e.ref_path != path:
+        e.ref_path = path
+        e.ref_sha = None
+
+
+def set_emotion_aux(e: VoiceEmotion, paths: list[str]) -> None:
+    """改辅助参考:没变的那几条留着指纹"""
+    old = list(e.aux_refs or [])
+    if old == paths:
+        return
+    shas = list(e.aux_shas or [])
+    known = {p: (shas[i] if i < len(shas) else None) for i, p in enumerate(old)}
+    e.aux_refs = paths
+    e.aux_shas = [known.get(p) for p in paths]
 
 
 # ── 声音 ──────────────────────────────────────────────
@@ -258,12 +315,12 @@ def import_refs(req: VoiceImportIn, db: Session = Depends(get_db)):
     for key in ("gpt_weights", "sovits_weights"):
         value = data.get(key)
         if isinstance(value, str) and value.strip():
-            setattr(profile, key, clean_path(value))
+            set_profile_path(profile, key, clean_path(value))
     speaker = data.get("speaker_ref")
     if isinstance(speaker, str) and speaker.strip():
-        profile.ref_path = clean_path(speaker)
+        set_profile_path(profile, "ref_path", clean_path(speaker))
     elif is_index and not profile.ref_path:
-        profile.ref_path = rows[0][1]
+        set_profile_path(profile, "ref_path", rows[0][1])
 
     existing = list_emotions(profile.id, db)
     by_name = {n.casefold(): e for e in existing for n in [e.label, *(e.aliases or [])]}
@@ -275,14 +332,14 @@ def import_refs(req: VoiceImportIn, db: Session = Depends(get_db)):
             next_sort += 1
             db.add(row)
             by_name[label.casefold()] = row
-        row.ref_path = path
+        set_emotion_ref(row, path)
         row.prompt_text = text
         if has_vector:
             row.emo_vector = vector
         if aux is not None:
-            row.aux_refs = aux
+            set_emotion_aux(row, aux)
         elif path in (row.aux_refs or []):
-            row.aux_refs = [p for p in row.aux_refs if p != path]
+            set_emotion_aux(row, [p for p in row.aux_refs if p != path])
     db.commit()
     db.refresh(profile)
     return _profile_out(profile, db)
@@ -333,7 +390,7 @@ def update_profile(profile_id: str, req: VoiceProfileUpdate, db: Session = Depen
         profile.connection_id = u["connection_id"]
     for key in ("gpt_weights", "sovits_weights", "ref_path"):
         if u.get(key) is not None:
-            setattr(profile, key, clean_path(u[key]))
+            set_profile_path(profile, key, clean_path(u[key]))
     if u.get("text_lang") is not None:
         profile.text_lang = u["text_lang"].strip() or "zh"
     if u.get("speed") is not None:
@@ -355,16 +412,75 @@ def register_profile_cleanup(fn: Callable[[str, Session], None]) -> None:
         _profile_cleanups.append(fn)
 
 
-@router.delete(PROFILES + "/{profile_id}", status_code=204)
-def delete_profile(profile_id: str, db: Session = Depends(get_db)):
-    profile = _load_profile(profile_id, db)
+def delete_profile_cascade(db: Session, profile_id: str) -> None:
+    """删一个声音,连同情绪行、卡的绑定、卡带挂在它上面的东西;不提交(导入撤销也用)"""
+    profile = db.get(VoiceProfile, profile_id)
+    if profile is None:
+        return
     # SQLite 默认不开外键约束,不会自动级联,手动删情绪行和卡的绑定(卡带的由它们登记的清理函数删)
     db.execute(delete(VoiceEmotion).where(VoiceEmotion.profile_id == profile_id))
     bindings.remove_target(db, bindings.VOICE, profile_id)
     for cleanup in _profile_cleanups:
         cleanup(profile_id, db)
     db.delete(profile)
+    db.flush()
+
+
+@router.delete(PROFILES + "/{profile_id}", status_code=204)
+def delete_profile(profile_id: str, db: Session = Depends(get_db)):
+    _load_profile(profile_id, db)
+    delete_profile_cascade(db, profile_id)
     db.commit()
+
+
+# ── 语音服务在另一台电脑:导出这些文件、已放好(声音包,第 4 步)──
+
+
+class VoicePlacedIn(BaseModel):
+    # 语音机上放这些文件的目录,比如 D:/AnimaVoice/imports/刻晴_ja(里面是 refs/、models/)
+    folder: str
+
+
+@router.get(PROFILES + "/{profile_id}/files.zip")
+def voice_files_zip(profile_id: str, db: Session = Depends(get_db)):
+    """这个声音在文件仓库里的文件打成一个 zip:refs/、models/ 放好,文件名用原名(模型)/「【情绪】原文」(参考)。
+    解压到语音机上的一个目录,再调 placed 告诉这边目录在哪"""
+    from app.api.export import _disposition
+    from app.bundle.write import tmp_dir
+
+    profile = _load_profile(profile_id, db)
+    folder = tmp_dir()
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / f"{uuid.uuid4().hex}.zip"
+    seen: set[str] = set()
+    try:
+        with zipfile.ZipFile(path, "w", allowZip64=True) as zf:
+            for _, name, disk in voice_files.placement(db, profile):
+                if name not in seen:
+                    seen.add(name)
+                    zf.write(disk, name, compress_type=zipfile.ZIP_STORED)
+    except BaseException:
+        path.unlink(missing_ok=True)
+        raise
+    return FileResponse(
+        path,
+        media_type="application/zip",
+        headers={"Content-Disposition": _disposition(f"{profile.name}.zip")},
+        background=BackgroundTask(Path.unlink, path, missing_ok=True),
+    )
+
+
+@router.post(PROFILES + "/{profile_id}/placed", response_model=VoiceProfileOut)
+def voice_files_placed(profile_id: str, req: VoicePlacedIn, db: Session = Depends(get_db)):
+    """files.zip 已经解压到语音机上的 folder 里:路径改成 <folder>/refs/<名字>、<folder>/models/<原名>,声音算手填的"""
+    profile = _load_profile(profile_id, db)
+    folder = clean_path(req.folder).replace("\\", "/").rstrip("/")
+    if not folder:
+        raise HTTPException(400, "填语音机上放这些文件的目录")
+    voice_files.place(db, profile, folder)
+    db.commit()
+    db.refresh(profile)
+    return _profile_out(profile, db)
 
 
 # ── 情绪 ──────────────────────────────────────────────
@@ -415,14 +531,14 @@ def update_emotion(
     emotion.label = label
     emotion.aliases = aliases
     if u.get("ref_path") is not None:
-        emotion.ref_path = clean_path(u["ref_path"])
+        set_emotion_ref(emotion, clean_path(u["ref_path"]))
     if u.get("prompt_text") is not None:
         emotion.prompt_text = u["prompt_text"].strip()
     if u.get("aux_refs") is not None:
-        emotion.aux_refs = clean_aux_refs(u["aux_refs"], emotion.ref_path)
+        set_emotion_aux(emotion, clean_aux_refs(u["aux_refs"], emotion.ref_path))
     elif u.get("ref_path") is not None and emotion.ref_path in (emotion.aux_refs or []):
         # 主参考换成了原来的某条辅助参考:辅助里就不再留它
-        emotion.aux_refs = [p for p in emotion.aux_refs if p != emotion.ref_path]
+        set_emotion_aux(emotion, [p for p in emotion.aux_refs if p != emotion.ref_path])
     if "emo_vector" in u:
         emotion.emo_vector = clean_vector(u["emo_vector"])
     db.commit()

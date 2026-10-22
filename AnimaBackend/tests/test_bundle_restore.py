@@ -24,6 +24,7 @@ from app.models import (
     ScenePack,
     SpritePack,
     TavernCard,
+    VoiceProfile,
     WordRecord,
 )
 from tests.bundle_seed import seed
@@ -77,8 +78,12 @@ def test_round_trip_into_the_same_library_is_identical_up_to_ids_and_name_suffix
     assert cards[ids["main"]] == ids["preset"]
     # 旧绑定表也写了一份
     assert bindings.primary(db, new_main, bindings.SPRITE) == created.sprite_packs[0]
-    # 新的包不带声音
-    assert bindings.targets(db, new_main, bindings.VOICE) == []
+    # 声音也另建了一个,绑成新卡的主声音(第 4 步);语音服务在另一台电脑:路径空着、等放过去
+    assert len(created.voices) == 1 and created.voices[0] != ids["voice"]
+    assert bindings.primary(db, new_main, bindings.VOICE) == created.voices[0]
+    voice = db.get(VoiceProfile, created.voices[0])
+    assert voice.name == "刻晴声音 2" and voice.connection_id == ids["tts"] and voice.files_at == "pending"
+    assert voice.gpt_weights == "" and voice.gpt_sha == db.get(VoiceProfile, ids["voice"]).gpt_sha
 
 
 def test_round_trip_twice_counts_names_up(db, tmp_path):
@@ -161,7 +166,7 @@ def _edit(folder, fn):
         (lambda m: m["cards"][0].update(file="C:/evil.json"), "路径不安全"),
         (lambda m: m["cards"][0].update(avatar="assets/missing.png"), "缺文件"),
         (lambda m: m.update(main_card="nope"), "主卡"),
-        (lambda m: m["packs"][0].update(kind="voice"), "不认识"),
+        (lambda m: m["packs"][0].update(kind="music"), "不认识"),
     ],
 )
 def test_bad_manifests_are_refused(db, tmp_path, change, message):

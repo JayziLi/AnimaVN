@@ -110,6 +110,8 @@ def check_pack(folder: Path, pack, *, kind: str | None = None) -> dict:
             safe_path(folder, item["file"])
     if len(keys) != len(_list(pack.get("items"), "素材")):
         raise BundleError("pack.json 里有重复的素材编号")
+    if pack["kind"] == "voice":
+        _check_voice(folder, pack)
     for layout in _list(pack.get("layouts"), "摆法"):
         if not isinstance(layout, dict):
             raise BundleError("pack.json 里的摆法不对")
@@ -117,6 +119,26 @@ def check_pack(folder: Path, pack, *, kind: str | None = None) -> dict:
         if not isinstance(rec, dict):
             raise BundleError("pack.json 里的认词记录不对")
     return pack
+
+
+def _check_voice(folder: Path, pack: dict) -> None:
+    """声音包:辅助参考、模型、音色参考的文件都在(拿不到的写 null,不算缺)"""
+    head = pack["pack"]
+    for item in pack.get("items") or []:
+        for rel in _list(item.get("aux"), "辅助参考"):
+            safe_path(folder, rel)
+    models = head.get("models")
+    if models is not None and not isinstance(models, dict):
+        raise BundleError("声音包里的模型不对")
+    for m in (models or {}).values():
+        if m is None:
+            continue
+        if not isinstance(m, dict):
+            raise BundleError("声音包里的模型不对")
+        if m.get("file") is not None:
+            safe_path(folder, m["file"])
+    if head.get("speaker_ref") is not None:
+        safe_path(folder, head["speaker_ref"])
 
 
 def read_pack(folder: Path) -> dict:

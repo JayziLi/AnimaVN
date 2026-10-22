@@ -5,6 +5,7 @@
 """
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Protocol
 
 
@@ -110,4 +111,8 @@ class TTSEngine(Protocol):
 
     async def reference_audio(self, path: str) -> tuple[bytes, str]:
         """语音服务那台机器上的一段参考音频,原样取回(「语音详情」里试听)。失败抛 TTSError。"""
+        ...
+
+    async def download(self, path: str, dest: Path) -> int:
+        """语音服务那台机器上的一个文件(参考音频、模型)整个拉下来写进 dest,返回字节数(导出声音包)。失败抛 TTSError。"""
         ...

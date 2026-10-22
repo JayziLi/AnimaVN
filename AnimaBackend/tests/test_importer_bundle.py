@@ -67,7 +67,7 @@ def test_bundle_round_trip_through_import_and_undo(lib):
     g = plan["groups"][0]
     assert g["name"] == "刻晴" and g["count"] == 2
     d = g["detail"]
-    assert d["note"] == "一起看花火" and d["has_voice"] is False and d["bytes"] > 0
+    assert d["note"] == "一起看花火" and d["has_voice"] is True and d["bytes"] > 0
     assert d["cards"] == [
         {"name": "刻晴", "new_name": "刻晴 2", "state": "普通"},
         {"name": "刻晴", "new_name": "刻晴 2", "state": "夜晚"},
@@ -78,7 +78,7 @@ def test_bundle_round_trip_through_import_and_undo(lib):
         ("cg", "刻晴 · CG", "1 张 CG、1 张差分"),
     ]
     assert d["packs"][0]["thumbs"] and all(t.startswith(f"{API}/{plan['plan_id']}/file?path=") for t in d["packs"][0]["thumbs"])
-    assert "认词记录 1 条" in d["follows"] and "配对表 1 张" in d["follows"]
+    assert "认词记录 1 条" in d["follows"] and "配对表 2 张" in d["follows"]
     assert d["preset"] == {"name": "刻晴 DeepSeek"}
     # 预览图能从暂存目录取
     r = client.get(d["preview"])

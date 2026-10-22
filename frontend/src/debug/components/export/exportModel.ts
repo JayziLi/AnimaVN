@@ -51,6 +51,7 @@ export const KIND_LABEL: Record<ExportPackKind, string> = {
   sprite: '立绘',
   scene: '背景 · BGM',
   cg: 'CG',
+  voice: '声音',
 };
 
 /** 这一类一个都没绑时那一行灰字 */
@@ -58,9 +59,25 @@ const NONE_LABEL: Record<ExportPackKind, string> = {
   sprite: '没绑立绘包',
   scene: '没绑背景和 BGM',
   cg: '没绑 CG 包',
+  voice: '没挂声音',
 };
 
-const KIND_ORDER: readonly ExportPackKind[] = ['sprite', 'scene', 'cg'];
+const KIND_ORDER: readonly ExportPackKind[] = ['sprite', 'scene', 'cg', 'voice'];
+
+/** 声音那一行拿不到文件时的灰字 */
+export const VOICE_MISSING_NOTE = '语音机连不上,这个声音只能带设置';
+
+/** 声音那一行底下的小字:黄字 warn(后端给的)、灰字「只能带设置」(有文件拿不到时);别的包都是 null */
+export function voiceNotes(item: ExportBundleItem): { warn: string | null; missing: string | null } {
+  if (item.kind !== 'voice') return { warn: null, missing: null };
+  return { warn: item.warn || null, missing: (item.missing ?? 0) > 0 ? VOICE_MISSING_NOTE : null };
+}
+
+/** 导出中时底部的小字:勾着声音时要先从语音机取文件,会慢一些;没勾声音是 null */
+export function busyNote(summary: ExportBundleSummary, checks: ExportChecks): string | null {
+  const voice = summary.items.some((it) => it.kind === 'voice' && checks[it.key] !== false);
+  return voice ? '正在从语音机取参考音频和模型,模型大时要等一会儿' : null;
+}
 
 /** 清单里的一行包:同一类只有第一行写类名;一类都没有时是一行灰字 */
 export type PackRow =
@@ -140,8 +157,8 @@ export function absoluteUrl(url: string, base: (path: string) => string): string
 
 // ---------------------------------------------------------------- 单包导出
 
-/** 素材管理 / 卡编辑器的立绘、背景、BGM、CG 页:单包导出是哪一类 */
-export function packKindOf(kind: 'sprite' | 'bg' | 'bgm' | 'cg'): ExportPackKind {
+/** 素材管理 / 卡编辑器的立绘、背景、BGM、CG 页、素材管理的声音页:单包导出是哪一类 */
+export function packKindOf(kind: 'sprite' | 'bg' | 'bgm' | 'cg' | 'voice'): ExportPackKind {
   return kind === 'bg' || kind === 'bgm' ? 'scene' : kind;
 }
 
@@ -149,7 +166,16 @@ export function packKindOf(kind: 'sprite' | 'bg' | 'bgm' | 'cg'): ExportPackKind
 export function packExportNote(kind: ExportPackKind): string {
   if (kind === 'sprite') return '只有这套立绘,连认词记录和位置';
   if (kind === 'scene') return '只有这套背景和 BGM,连认词记录';
+  if (kind === 'voice') return '参考音频、模型和设置;语音机连不上时只带设置';
   return '只有这套 CG,连差分';
 }
 
 export const PACK_EXPORT_LABEL = '导出这个包(.animapack)';
+
+/** 「⋯」里那一项的字:声音写「导出这个声音」 */
+export const packExportLabel = (kind: ExportPackKind) =>
+  kind === 'voice' ? '导出这个声音(.animapack)' : PACK_EXPORT_LABEL;
+
+/** 点了以后先提示一句:声音要先从语音机取文件,会慢一些;别的包直接存,不提示 */
+export const packExportStarting = (kind: ExportPackKind) =>
+  kind === 'voice' ? '正在从语音机取参考音频和模型,存好了会提示' : null;

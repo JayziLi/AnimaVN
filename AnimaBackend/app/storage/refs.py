@@ -58,6 +58,31 @@ def all_refs() -> tuple[BlobRef, ...]:
     return (*CORE_REFS, *_extra)
 
 
+@dataclass(frozen=True)
+class ShaCol:
+    """只记指纹、库里从来不存原件的一列(声音包的参考音频和模型,第 4 步):清理时照样算「有人用」
+    (app/storage/maintenance.py 的 shas_in)。many = 这一列是指纹的 JSON 列表(辅助参考),里面的 null 不算"""
+
+    name: str
+    table: str
+    column: str
+    many: bool = False
+
+
+# 声音的文件:参考音频、辅助参考、音色参考、两个模型(app/models.py 的 voice_emotions / voice_profiles)
+VOICE_SHAS: tuple[ShaCol, ...] = (
+    ShaCol("声音参考", "voice_emotions", "ref_sha"),
+    ShaCol("声音辅助参考", "voice_emotions", "aux_shas", many=True),
+    ShaCol("声音音色参考", "voice_profiles", "speaker_sha"),
+    ShaCol("声音 GPT 模型", "voice_profiles", "gpt_sha"),
+    ShaCol("声音 SoVITS 模型", "voice_profiles", "sovits_sha"),
+)
+
+
+def sha_cols() -> tuple[ShaCol, ...]:
+    return VOICE_SHAS
+
+
 def has_content(ref: BlobRef):
     """查询条件:这一行有原件(库里有,或者已经在仓库里)"""
     return or_(ref.data_col.is_not(None), ref.sha_col.is_not(None))

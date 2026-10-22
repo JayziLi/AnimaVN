@@ -18,7 +18,9 @@ import type {
   ImportPackDetail,
   ImportPlan,
   ImportResult,
+  ImportVoiceDetail,
   ScenePack,
+  TtsConnection,
 } from '../lib/api';
 import type { LibraryRoute } from '../library/libraryModel';
 import type { ImportNotice, SlotKey } from '../studio/types';
@@ -44,7 +46,7 @@ export interface RowChoice {
   initial: ImportDecision;
 }
 
-export type RowIcon = 'card' | 'sprite' | 'bg' | 'bgm' | 'scene' | 'cg';
+export type RowIcon = 'card' | 'sprite' | 'bg' | 'bgm' | 'scene' | 'cg' | 'voice';
 
 export interface ConfirmRow {
   key: string;
@@ -130,10 +132,10 @@ function titleOf(g: ImportGroup): { icon: RowIcon; title: string } {
 
 // ---------------------------------------------------------------- 角色包 / 单包(第 3 步)
 
-const PACK_ICON: Record<ExportPackKind, RowIcon> = { sprite: 'sprite', scene: 'scene', cg: 'cg' };
-const PACK_WORD: Record<ExportPackKind, string> = { sprite: '立绘包', scene: '背景和 BGM', cg: 'CG 包' };
+const PACK_ICON: Record<ExportPackKind, RowIcon> = { sprite: 'sprite', scene: 'scene', cg: 'cg', voice: 'voice' };
+const PACK_WORD: Record<ExportPackKind, string> = { sprite: '立绘包', scene: '背景和 BGM', cg: 'CG 包', voice: '声音' };
 /** 导入确认里一类包那一行左边写什么(和导出面板一样) */
-const PACK_LABEL: Record<ExportPackKind, string> = { sprite: '立绘', scene: '背景 · BGM', cg: 'CG' };
+const PACK_LABEL: Record<ExportPackKind, string> = { sprite: '立绘', scene: '背景 · BGM', cg: 'CG', voice: '声音' };
 
 const bundleDetail = (g: ImportGroup): ImportBundleDetail | null =>
   g.type === 'bundle' && g.detail && 'cards' in g.detail ? g.detail : null;
@@ -171,6 +173,8 @@ export interface BundleView {
   preset: { label: string; hint: string } | null;
   /** 底部那行灰字;带了声音时是 null */
   voiceNote: string | null;
+  /** 带了声音时那一行灰字:模型加载时会执行代码;没带是 null */
+  codeWarn: string | null;
   bytes: number;
 }
 
@@ -219,8 +223,104 @@ export function bundleView(g: ImportGroup): BundleView {
     rows: [...cardRows, ...packRows, ...follows],
     preset: d.preset ? { label: `也导入作者建议的预设「${d.preset.name}」`, hint: '另建一套,绑到这张卡' } : null,
     voiceNote: d.has_voice ? null : '这个包里没有声音:导入后在卡编辑器的声音栏挂一个',
+    codeWarn: d.has_voice || (d.voices?.length ?? 0) > 0 ? MODEL_CODE_WARN : null,
     bytes: d.bytes,
   };
+}
+
+// ---------------------------------------------------------------- 声音(第 4 步)
+
+/** 导入带声音的包时那一行灰字 */
+export const MODEL_CODE_WARN = '模型文件加载时会执行里面的代码,只导入信得过的人给的包';
+
+/** 这一组里的声音:角色包的 detail.voices、声音包的 detail.voices;别的组没有 */
+export function groupVoices(g: ImportGroup): ImportVoiceDetail[] {
+  return bundleDetail(g)?.voices ?? packDetail(g)?.voices ?? [];
+}
+
+/** 语音服务的地址是不是本机(127.0.0.1 / localhost / ::1);地址写不全(没写 http://)也认 */
+export function isLocalUrl(baseUrl: string): boolean {
+  const raw = baseUrl.trim();
+  if (!raw) return false;
+  let host: string;
+  try {
+    host = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : `http://${raw}`).hostname;
+  } catch {
+    return false;
+  }
+  host = host.toLowerCase().replace(/^\[|\]$/g, '');
+  return host === '127.0.0.1' || host === 'localhost' || host === '::1';
+}
+
+/** 每个带声音的组默认导到哪个语音服务:后端给的那个(第一个 GPT-SoVITS 连接);一个都没有的组不放 */
+export function defaultVoiceConnections(plan: ImportPlan): Record<string, string> {
+  return Object.fromEntries(
+    plan.groups.flatMap((g) => {
+      const id = groupVoices(g).find((v) => v.connection)?.connection?.id;
+      return id ? [[g.key, id] as const] : [];
+    }),
+  );
+}
+
+/** 计划里有没有声音(要读语音服务列表、给下拉) */
+export const planHasVoices = (plan: ImportPlan) => plan.groups.some((g) => groupVoices(g).length > 0);
+
+/** 选了这个语音服务以后会怎样 */
+export const VOICE_LOCAL = '导完就能念';
+export const VOICE_REMOTE = '语音服务在另一台电脑,导完要把文件放过去';
+export const VOICE_NO_SERVICE = '还没有语音服务:先去插件页添加,导完在声音编辑器里选';
+
+/** 声音那一行要画的 */
+export interface VoiceLine {
+  key: string;
+  /** 左边那一格:第一个声音写「声音」,后面的空着 */
+  label: string;
+  /** 「刻晴(日语) · 12 段参考 + 2 个模型」 */
+  text: string;
+  /** 缺文件时的灰字;不缺是 null */
+  missing: string | null;
+}
+
+export function voiceLines(g: ImportGroup): VoiceLine[] {
+  return groupVoices(g).map((v, i) => ({
+    key: `voice-${i}`,
+    label: i === 0 ? '声音' : '',
+    text: v.detail ? `${v.name} · ${v.detail}` : v.name,
+    missing: v.missing > 0 ? `包里缺 ${v.missing} 个文件,导完这个声音只有设置` : null,
+  }));
+}
+
+/** 「→ [连接名]」那一格:选中的是哪个、能不能下拉、导完会怎样 */
+export interface VoiceTarget {
+  /** 选中的语音服务;没有是 null */
+  id: string | null;
+  /** 只有一个(或者列表读不到)时直接写名字 */
+  name: string;
+  /** 不止一个语音服务时给下拉 */
+  options: { value: string; label: string }[] | null;
+  /** 导完会怎样:导完就能念 / 要把文件放过去 / 还没有语音服务 */
+  status: string;
+  local: boolean;
+}
+
+/**
+ * chosen = 选了哪个(没选过用后端给的默认);connections = 语音服务列表(读不到是 null,只能照后端给的那个写)
+ */
+export function voiceTarget(
+  g: ImportGroup,
+  chosen: string | undefined,
+  connections: readonly Pick<TtsConnection, 'id' | 'name' | 'base_url'>[] | null,
+): VoiceTarget {
+  const fallback = groupVoices(g).find((v) => v.connection)?.connection ?? null;
+  let id = chosen ?? fallback?.id ?? null;
+  // 列表里已经没有这个了(刚删掉):换成第一个
+  if (id && connections && connections.length > 0 && !connections.some((c) => c.id === id)) id = connections[0].id;
+  const hit = id ? connections?.find((c) => c.id === id) : undefined;
+  const local = hit ? isLocalUrl(hit.base_url) : fallback !== null && fallback.id === id ? fallback.local : false;
+  const name = hit?.name ?? (fallback && fallback.id === id ? fallback.name : '');
+  const options = connections && connections.length > 1 ? connections.map((c) => ({ value: c.id, label: c.name })) : null;
+  if (!id) return { id: null, name: '', options, status: VOICE_NO_SERVICE, local: false };
+  return { id, name, options, status: local ? VOICE_LOCAL : VOICE_REMOTE, local };
 }
 
 /** 角色包的预设默认勾着(作者建议的) */
@@ -307,7 +407,9 @@ export function confirmModel(
       const packs = bundleDetail(g)?.packs.length ?? 0;
       return `新建角色卡${packs > 0 ? `和 ${packs} 个包` : ''},都是另存的一份`;
     }
-    if (g.type === 'pack_file') return '另建一个新的包,先放进素材库,不绑到卡上';
+    if (g.type === 'pack_file') {
+      return packDetail(g)?.kind === 'voice' ? '另建一个声音,先放进素材库,不挂到卡上' : '另建一个新的包,先放进素材库,不绑到卡上';
+    }
     if (g.type === 'card') {
       if (g.duplicate_of) return '';
       const owns = plan.groups.some((x) => x.owner === g.key);
@@ -355,27 +457,32 @@ export function applyBody(
   classify: Readonly<Record<string, ClassifyKind | null>>,
   makeCurrent: boolean,
   bundlePresets: Readonly<Record<string, boolean>> = {},
+  voiceConnections: Readonly<Record<string, string>> = {},
 ): ImportApplyBody {
   const choosable = new Set(model.rows.filter((r) => r.choice).map((r) => r.key));
   const groups = new Set(model.rows.map((r) => r.key));
-  const options = Object.entries(bundlePresets).filter(([k]) => groups.has(k));
+  const options: Record<string, { preset?: boolean; connection_id?: string }> = {};
+  for (const [k, preset] of Object.entries(bundlePresets)) if (groups.has(k)) options[k] = { preset };
+  for (const [k, id] of Object.entries(voiceConnections)) if (groups.has(k) && id) options[k] = { ...options[k], connection_id: id };
   return {
     decisions: Object.fromEntries(Object.entries(decisions).filter(([k]) => choosable.has(k))),
     classify: Object.fromEntries(
       Object.entries(classify).filter((e): e is [string, ClassifyKind] => e[1] !== null),
     ),
     make_current: makeCurrent && model.makeCurrent !== null,
-    // 角色包那一组:要不要也导入作者建议的预设
-    ...(options.length > 0 ? { options: Object.fromEntries(options.map(([k, preset]) => [k, { preset }])) } : {}),
+    // 角色包那一组:要不要也导入作者建议的预设;带声音的组:导到哪个语音服务
+    ...(Object.keys(options).length > 0 ? { options } : {}),
   };
 }
 
-/** 要不要先弹确认框:计划说要(拖到卡上、有重复)、有角色包,或者什么都没认出来、只剩认不出的文件 */
+/** 要不要先弹确认框:计划说要(拖到卡上、有重复)、有角色包、有声音,或者什么都没认出来、只剩认不出的文件 */
 export function shouldConfirm(plan: ImportPlan): boolean {
   return (
     plan.needs_confirm ||
     // 角色包一律先给人看一眼:作者的说明、会新建什么、要不要那套预设
     plan.groups.some((g) => g.type === 'bundle') ||
+    // 声音包也问:导到哪个语音服务,还要提醒模型会执行代码
+    planHasVoices(plan) ||
     (plan.groups.length === 0 && plan.unknown.length > 0)
   );
 }
@@ -412,7 +519,7 @@ function sceneTab(id: string, packs: readonly SceneSides[] | null): 'bg' | 'bgm'
 
 /**
  * 没有卡可开(只导了包、没拖到卡上)时素材管理页开在哪:
- * 1. 第一个新建的包 —— 按立绘、场景包、CG 的先后(和 slotAfterImport 一样),选中它;
+ * 1. 第一个新建的包 —— 按立绘、场景包、CG、声音的先后(和 slotAfterImport 一样),选中它;
  * 2. 什么都没新建、选了「不导这份」(库里有一模一样的):开计划里第一个这样的包那一类,选中库里那份;
  * 3. 都不是(只剩认不出的文件、后端是旧版没给 created):开「导入记录」,标出这一次。
  * scenePacks:新建的场景包有没有背景(读不到给 null)
@@ -427,6 +534,7 @@ export function libraryRouteAfterImport(
   if (c?.sprite_packs[0]) return { tab: 'sprite', id: c.sprite_packs[0] };
   if (c?.scene_packs[0]) return { tab: sceneTab(c.scene_packs[0], scenePacks), id: c.scene_packs[0] };
   if (c?.cg_packs[0]) return { tab: 'cg', id: c.cg_packs[0] };
+  if (c?.voices?.[0]) return { tab: 'voice', id: c.voices[0] };
   const shared = plan.groups.find((g) => g.type !== 'card' && g.duplicate_of && body.decisions?.[g.key] === 'share');
   if (shared?.duplicate_of) {
     const id = shared.duplicate_of.id;

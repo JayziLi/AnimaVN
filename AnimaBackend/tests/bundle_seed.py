@@ -1,5 +1,5 @@
 """第 3 步(角色打包带走)几个测试共用的库:一张主卡 + 一张状态卡,立绘包、场景包、CG 包、配对表、认词记录、
-预设绑定、按卡设置、声音(不该被带走)、secret.*(不该被带走)都齐。
+预设绑定、按卡设置、声音(第 4 步起跟着走;文件已经在文件仓库里,当作导出前拉过了)、secret.*(不该被带走)都齐。
 
     ids = seed(db)   # 返回各样东西的编号,db 已提交
 
@@ -33,10 +33,12 @@ from app.models import (
     SpritePackLayout,
     TavernCard,
     TtsConnection,
+    VoiceEmotion,
     VoiceProfile,
     WordRecord,
 )
 from app.storage import refs
+from app.storage.blobs import CKPT_MIME, PTH_MIME, store
 
 SECRET = "sk-very-secret-key"
 
@@ -48,6 +50,19 @@ def png(seed: str) -> bytes:
 
 def mp3(seed: str) -> bytes:
     return b"ID3\x04\x00\x00\x00\x00\x00\x00" + seed.encode("utf-8") + bytes(32)
+
+
+def wav(seed: str) -> bytes:
+    return b"RIFF\x00\x00\x00\x00WAVEfmt " + seed.encode("utf-8") + bytes(16)
+
+
+VOICE_FILES = {
+    "gpt": b"gpt-model " * 50,
+    "sovits": b"sovits-model " * 50,
+    "calm": wav("平静"),
+    "happy": wav("开心"),
+    "aux": wav("辅助"),
+}
 
 
 def data_url(data: bytes) -> str:
@@ -151,18 +166,52 @@ def seed(db: Session) -> dict:
             PairingRow(pairing_id=pairing.id, item=s2.id, value=None, source="local", guessed=True),
         ]
     )
-    # 语音的配对表不带
+    # 指着不在的声音的配对表不带
     db.add(Pairing(follower="voice", list_ref=f"pack:{sp.id}", target="v" * 32, card_id=""))
     ids["pairing"] = pairing.id
 
-    # 声音:绑在卡上,但第 3 步不带
+    # 声音(第 4 步):语音机在另一台电脑;文件已经拉进仓库(指纹记好了),路径还是语音机上的
     conn = TtsConnection(name="台式机", base_url="http://10.0.0.2:9880")
     db.add(conn)
     db.flush()
-    voice = VoiceProfile(name="刻晴声音", connection_id=conn.id, gpt_weights="G:/models/keqing.ckpt")
+    blobs = store()
+    sha = {k: blobs.put(v, CKPT_MIME if k == "gpt" else PTH_MIME if k == "sovits" else "audio/wav", db) for k, v in VOICE_FILES.items()}
+    voice = VoiceProfile(
+        name="刻晴声音",
+        aliases=["刻晴"],
+        connection_id=conn.id,
+        gpt_weights="G:/models/keqing-e10.ckpt",
+        sovits_weights="G:/models/keqing_e10_s460.pth",
+        text_lang="ja",
+        speed=1.1,
+        params={"top_k": 12},
+        gpt_sha=sha["gpt"],
+        gpt_size=len(VOICE_FILES["gpt"]),
+        gpt_name="keqing-e10.ckpt",
+        sovits_sha=sha["sovits"],
+        sovits_size=len(VOICE_FILES["sovits"]),
+        sovits_name="keqing_e10_s460.pth",
+        source="自己练的",
+    )
     db.add(voice)
     db.flush()
-    ids["voice"] = voice.id
+    calm = VoiceEmotion(profile_id=voice.id, label="平静", aliases=["calm"], ref_path="D:/refs/【平静】你好.wav",
+                        prompt_text="你好", ref_sha=sha["calm"], sort=0)
+    happy = VoiceEmotion(profile_id=voice.id, label="开心", ref_path="D:/refs/【开心】太好了.wav", prompt_text="太好了",
+                         ref_sha=sha["happy"], aux_refs=["D:/refs/aux.wav"], aux_shas=[sha["aux"]], sort=1)
+    db.add_all([calm, happy])
+    db.flush()
+    # 语音的配对表:立绘名单 × 这个声音
+    vp = Pairing(follower="voice", list_ref=f"pack:{sp.id}", target=voice.id, card_id="")
+    db.add(vp)
+    db.flush()
+    db.add_all(
+        [
+            PairingRow(pairing_id=vp.id, item=s1.id, value=happy.id, source="name"),
+            PairingRow(pairing_id=vp.id, item=s2.id, value=None, source="local", guessed=True),
+        ]
+    )
+    ids.update(voice=voice.id, calm=calm.id, happy=happy.id, voice_pairing=vp.id, tts=conn.id)
 
     for card in (main, state):
         bindings.replace(db, card.id, bindings.SPRITE, [sp.id], sp.id)

@@ -34,6 +34,7 @@ from app.schemas import (
     VoiceTuning,
 )
 from app.tts import cache as tts_cache
+from app.tts import files as voice_files
 from app.tts.base import TTSEngine, TTSError, VoiceSpec
 from app.tts.indextts import emo_mode
 from app.tts.registry import emo_alpha_of, engine_for, forget_engine
@@ -465,6 +466,10 @@ async def reference_audio(profile_id: str, path: str, db: Session = Depends(get_
         known.update([e.ref_path, *(e.aux_refs or [])])
     if not path or path not in known:
         raise HTTPException(404, "这个声音没有配这段参考音频")
+    # 声音包导进来的(第 4 步):文件就在本机的文件仓库里,不用问语音服务
+    for slot in voice_files.slots_of(db, profile):
+        if slot.path == path and (disk := voice_files.file_of(db, slot)) is not None:
+            return Response(content=disk.read_bytes(), media_type=voice_files.mime_of(db, slot), headers={"Cache-Control": "private, max-age=600"})
     conn = db.get(TtsConnection, profile.connection_id)
     if conn is None:
         raise HTTPException(400, f"声音「{profile.name}」没有选语音服务")

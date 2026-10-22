@@ -8,9 +8,13 @@
 按指纹只放一份;原件到写 zip 时才读)。格式见技术计划「格式(版本 1)」:
 - key 就是库里原来的编号;行里存指纹的列换成 "file": "assets/<sha>.<ext>"(没有图的行是 null)。
 - 包内、包间的引用(背景的默认曲、封面曲、CG 差分的构图)指向这次没导出的东西时写 null。
-- 整组状态卡一起走(app/states.py 的 group_of);绑定读 app/bindings.py;声音不带(第 4 步)。
+- 整组状态卡一起走(app/states.py 的 group_of);绑定读 app/bindings.py。
+- 声音(第 4 步)也是一种包(kind = voice):设置、每行情绪的参考音频和原文、两个模型;文件要先在文件仓库里
+  (导出接口先调 app/tts/files.py 的 prefetch_voice_files 从语音机拉),拿不到的写 null(模型只写名字和大小)。
+  不写语音服务连接(导入时选);卡带登记的情绪行(声线分档)不带。
 - 按卡设置只带 plugin.* 的键;生图卡带的 ref.id 指着导出的立绘就留着(导入时换编号),指着别的就去掉 ref。
-- 配对表只带 CG 的:名单是导出的立绘包、target 是导出的 CG 构图、只给导出的卡(或共用)的。
+- 配对表:CG 的(名单是导出的立绘包、target 是导出的 CG 构图)和声音的(名单是导出的立绘包,一套立绘都不带时是内置名单;
+  target 是导出的声音),只给导出的卡(或共用)的。
 - 认词记录:导出的立绘包的;一套立绘都不带时带内置名单(builtin)的。
 - 预设:app_settings 的 preset.bindings 里主卡绑的那一套;同组绑了同一套的卡记进 preset.cards。
 """
@@ -26,6 +30,7 @@ import uuid
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import select
@@ -48,14 +53,17 @@ from app.models import (
     SpritePack,
     SpritePackLayout,
     TavernCard,
+    TtsConnection,
+    VoiceProfile,
     WordRecord,
 )
 from app.storage import refs
 from app.storage.blobs import ext_of, sha_of, store
+from app.tts import files as voice_files
 
 FORMAT_BUNDLE, FORMAT_PACK, VERSION = "animavn", "animapack", 1
 MANIFEST, PACK_MANIFEST = "animavn.json", "pack.json"
-PACK_KINDS = ("sprite", "scene", "cg")
+PACK_KINDS = ("sprite", "scene", "cg", "voice")
 PACK_PREFIX = "pack:"
 BUILTIN = "builtin"
 PLUGIN_PREFIX = "plugin."
@@ -64,7 +72,11 @@ PRESET_BINDINGS = "preset.bindings"
 NOTE_MAX = 2000
 THUMB_W = 256
 MAX_SPRITE_PREVIEWS = 12
-NOT_INCLUDED = ["声音(第 4 步再加)", "人设", "对话记录", "你的 API key 和设置"]
+NOT_INCLUDED = ["人设", "对话记录", "你的 API key 和设置"]
+# 声音的授权说明里写了这些才算能再分发;没写(以前的声音都没写)、写了别的都提醒「只给自己用」
+SHARE_OK = re.compile(r"可以?再分发|可以?分享|可以?转发|redistribut|CC0|CC[- ]BY|MIT|Apache", re.I)
+SHARE_NOT = re.compile(r"不可|不能|不许|禁止|勿|no[nt]?[- ]?redistribut|not? (?:be )?redistribut", re.I)
+VOICE_WARN = "只给自己用,别发给别人"
 # 卡 JSON 里 data 下的字段(CCv3;头像单独放 assets/,spec 写在外面)
 CARD_FIELDS = (
     "name",
@@ -102,6 +114,8 @@ class FileSrc:
     mime: str
     size: int
     load: Callable[[], bytes | None]
+    # 仓库里的文件(声音的模型几百 MB):写 zip 时直接从硬盘按块拷,不整个读进内存
+    disk: Path | None = None
 
     @property
     def path(self) -> str:
@@ -116,6 +130,8 @@ class PackInfo:
     data: dict  # pack.json 的内容
     paths: list[str]  # 这个包用到的文件(去重)
     detail: str
+    missing: int = 0  # 声音:现在拿不到的文件数(语音机连不上、路径不让读)
+    warn: str | None = None  # 声音:授权不让再分发时的提醒
 
 
 @dataclass
@@ -281,10 +297,91 @@ class _Collector:
             comps = sum(1 for r in rows if r.parent_id is None)
             variants = len(rows) - comps
             detail = f"{comps} 张 CG" + (f"、{variants} 张差分" if variants else "")
+        elif kind == "voice":
+            return self.voice(pack_id)
         else:
             raise NotFound(f"没有这一类包:{kind}")
         body = {"format": FORMAT_PACK, "version": VERSION, "kind": kind, "key": pack_id, **data}
         return PackInfo(kind, pack_id, pack.name, body, paths, detail)
+
+    def _voice_file(self, slot: voice_files.Slot) -> FileSrc | None:
+        disk = voice_files.file_of(self.db, slot)
+        if disk is None:
+            return None
+        return FileSrc(slot.sha, voice_files.mime_of(self.db, slot), disk.stat().st_size, disk.read_bytes, disk)
+
+    def voice(self, voice_id: str) -> PackInfo:
+        """一个声音 → pack.json(格式见技术计划第 4 步「格式」)。文件只认仓库里已经有的(先 prefetch)"""
+        db = self.db
+        profile = db.get(VoiceProfile, voice_id)
+        if profile is None:
+            raise NotFound("声音不存在")
+        conn = db.get(TtsConnection, profile.connection_id)
+        emotions = voice_files.exported_emotions(db, voice_id)
+        slots = voice_files.slots_of(db, profile, emotions)
+        paths: list[str] = []
+
+        def put(slot: voice_files.Slot | None) -> str | None:
+            path = self.add(self._voice_file(slot)) if slot is not None else None
+            if path and path not in paths:
+                paths.append(path)
+            return path
+
+        by_row: dict[str, list[voice_files.Slot]] = {}
+        for slot in slots:
+            by_row.setdefault(slot.row.id, []).append(slot)
+        items = []
+        for e in emotions:
+            mine = by_row.get(e.id, [])
+            ref = next((x for x in mine if x.kind == "ref"), None)
+            aux = [put(x) for x in mine if x.kind == "aux"]
+            items.append(
+                {
+                    "key": e.id,
+                    "label": e.label,
+                    "aliases": list(e.aliases or []),
+                    "prompt_text": e.prompt_text,
+                    "sort": e.sort,
+                    "emo_vector": copy.deepcopy(e.emo_vector),
+                    "file": put(ref),
+                    "aux": [a for a in aux if a],
+                }
+            )
+            if items[-1]["file"] is None and ref is not None and ref.path:
+                # 文件没带来:记下原文件名,导入时认得出「两行用的是同一段参考」
+                items[-1]["ref_name"] = voice_files.basename(ref.path)
+            self.item_keys.add(e.id)
+        own = {x.kind: x for x in slots if x.row is profile}
+        models: dict[str, dict | None] = {}
+        for kind in ("gpt", "sovits"):
+            slot = own.get(kind)
+            name = getattr(profile, f"{kind}_name") or (voice_files.basename(slot.path) if slot is not None else "")
+            size = getattr(profile, f"{kind}_size")
+            src = self._voice_file(slot) if slot is not None else None
+            if src is not None:
+                path = put(slot)
+                models[kind] = {"file": path, "sha256": src.sha, "size": src.size, "name": name}
+            elif slot is not None or name:
+                models[kind] = {"name": name, "size": size}
+            else:
+                models[kind] = None
+        head = {
+            "name": profile.name,
+            "aliases": list(profile.aliases or []),
+            "engine": conn.api_type if conn is not None else "gpt_sovits",
+            "text_lang": profile.text_lang,
+            "speed": profile.speed,
+            "params": copy.deepcopy(profile.params or {}),
+            "source": profile.source or "",
+            "license": profile.license or "",
+            "models": models,
+            "speaker_ref": put(own.get("speaker")),
+        }
+        body = {"format": FORMAT_PACK, "version": VERSION, "kind": "voice", "key": voice_id, "pack": head, "items": items}
+        refs_n = len({voice_files.file_key(x) for x in slots if x.kind in ("ref", "aux", "speaker")})
+        models_n = sum(1 for k in ("gpt", "sovits") if models[k] is not None)
+        missing = len({voice_files.file_key(x) for x in slots} - {voice_files.file_key(x) for x in slots if voice_files.file_of(db, x) is not None})
+        return PackInfo("voice", voice_id, profile.name, body, paths, voice_detail(refs_n, models_n), missing, voice_warn(profile.license))
 
     def fix_refs(self, info: PackInfo) -> None:
         """包里指向这次没导出的东西的引用写 null:背景的默认曲(可以是别的导出的包里的曲子)、封面曲和差分的构图(只能是本包的)"""
@@ -319,6 +416,20 @@ class _Collector:
         return out
 
 
+def voice_detail(refs_n: int, models_n: int) -> str:
+    """「12 段参考 + 2 个模型」"""
+    parts = [f"{refs_n} 段参考" if refs_n else "", f"{models_n} 个模型" if models_n else ""]
+    return " + ".join(x for x in parts if x) or "空的"
+
+
+def voice_warn(license_text: str | None) -> str | None:
+    """授权说明明说能再分发才不提醒;没写的(以前的声音都没写)一律提醒:游戏原声练的模型本来就不能再分发"""
+    text = (license_text or "").strip()
+    if text and SHARE_OK.search(text) and not SHARE_NOT.search(text):
+        return None
+    return VOICE_WARN
+
+
 def _pack_word_records(c: _Collector, info: PackInfo) -> list[dict]:
     return c.word_records(PACK_PREFIX + info.id, {i["key"] for i in info.data["items"]})
 
@@ -341,7 +452,8 @@ def _first_image(info: PackInfo) -> str | None:
 
 
 def collect_pack(db: Session, kind: str, pack_id: str) -> PackFile:
-    """一个包 → .animapack:pack.json 在根目录,认词记录也在 pack.json 里(立绘包才有)"""
+    """一个包 → .animapack:pack.json 在根目录,认词记录也在 pack.json 里(立绘包才有)。
+    声音的文件要先在仓库里(导出接口先 prefetch)"""
     if kind not in PACK_KINDS:
         raise NotFound(f"没有这一类包:{kind}")
     c = _Collector(db)
@@ -374,7 +486,7 @@ def _group_cards(db: Session, card_id: str) -> tuple[list[TavernCard], TavernCar
 
 
 def _bindings_of(db: Session, card: TavernCard, excluded: set[str]) -> list[dict]:
-    """这张卡的立绘包、场景包、CG 包绑定(声音不带);包已经不在的、勾掉的不要"""
+    """这张卡的立绘包、场景包、CG 包、声音的绑定;包已经不在的、勾掉的不要"""
     role = bindings.main_role(db, card.id)
     out = []
     sprites = [(t, p) for t, p in bindings.bound(db, card.id, bindings.SPRITE) if db.get(SpritePack, t) is not None]
@@ -392,6 +504,22 @@ def _bindings_of(db: Session, card: TavernCard, excluded: set[str]) -> list[dict
     cgs = [t for t in cgs if f"cg:{t}" not in excluded]
     for i, t in enumerate(cgs):
         out.append({"card": card.id, "kind": "cg", "pack": t, "role": None, "parts": "", "is_primary": False, "sort": i})
+    voices = [(t, p) for t, p in bindings.bound(db, card.id, bindings.VOICE) if db.get(VoiceProfile, t) is not None]
+    voices = [(t, p) for t, p in voices if f"voice:{t}" not in excluded]
+    for i, (t, p) in enumerate(voices):
+        out.append({"card": card.id, "kind": "voice", "pack": t, "role": role.id if role else None, "parts": "", "is_primary": p, "sort": i})
+    return out
+
+
+def voice_ids_of_card(db: Session, card_id: str, exclude: Iterable[str] = ()) -> list[str]:
+    """导出这张卡(整组)会带的声音(导出接口先把它们的文件拉进仓库)"""
+    excluded = set(exclude)
+    cards, _, _ = _group_cards(db, card_id)
+    out: list[str] = []
+    for card in cards:
+        for b in _bindings_of(db, card, excluded):
+            if b["kind"] == "voice" and b["pack"] not in out:
+                out.append(b["pack"])
     return out
 
 
@@ -405,7 +533,60 @@ def _imagegen_pref(value: Any, sprite_keys: set[str]) -> Any:
     return {k: v for k, v in value.items() if k != "ref"}
 
 
-def _pairings(db: Session, sprite_packs: list[PackInfo], cg_comps: set[str], cg_keys: set[str], cards: set[str]) -> list[dict]:
+def _pairings(
+    db: Session,
+    sprite_packs: list[PackInfo],
+    cg_comps: set[str],
+    cg_keys: set[str],
+    cards: set[str],
+    voices: list[PackInfo] = (),
+) -> list[dict]:
+    return _cg_pairings(db, sprite_packs, cg_comps, cg_keys, cards) + _voice_pairings(db, sprite_packs, voices, cards)
+
+
+def _voice_pairings(db: Session, sprite_packs: list[PackInfo], voices: list[PackInfo], cards: set[str]) -> list[dict]:
+    """声音的配对表:名单是导出的立绘包(一套立绘都不带时是内置名单),target 是导出的声音;格子的值是这个声音的情绪行"""
+    if not voices:
+        return []
+    lists: dict[str, set[str] | None] = {PACK_PREFIX + p.id: {i["key"] for i in p.data["items"]} for p in sprite_packs}
+    if not lists:
+        lists = {BUILTIN: None}
+    rows_of = {v.id: {i["key"] for i in v.data["items"]} for v in voices}
+    out = []
+    rows = db.scalars(
+        select(Pairing)
+        .where(Pairing.follower == "voice", Pairing.list_ref.in_(list(lists)), Pairing.target.in_(list(rows_of)))
+        .order_by(Pairing.list_ref, Pairing.target, Pairing.card_id)
+    ).all()
+    for p in rows:
+        if p.card_id and p.card_id not in cards:
+            continue
+        items = lists[p.list_ref]
+        cells = db.scalars(select(PairingRow).where(PairingRow.pairing_id == p.id).order_by(PairingRow.item)).all()
+        out.append(
+            {
+                "follower": "voice",
+                "list": p.list_ref,
+                "target": p.target,
+                "card": p.card_id or None,
+                "rows": [
+                    {
+                        "item": r.item,
+                        "value": r.value if r.value in rows_of[p.target] else None,
+                        "source": r.source,
+                        "guessed": r.guessed,
+                        "pending": r.pending,
+                        "unstable": r.unstable,
+                    }
+                    for r in cells
+                    if items is None or r.item in items
+                ],
+            }
+        )
+    return out
+
+
+def _cg_pairings(db: Session, sprite_packs: list[PackInfo], cg_comps: set[str], cg_keys: set[str], cards: set[str]) -> list[dict]:
     out = []
     lists = {PACK_PREFIX + p.id: {i["key"] for i in p.data["items"]} for p in sprite_packs}
     if not lists or not cg_comps:
@@ -538,7 +719,7 @@ def collect_card(
     words = [w for i in sprite_infos for w in _pack_word_records(c, i)]
     if not sprite_infos:
         words = c.word_records(BUILTIN, None)
-    pairings = _pairings(db, sprite_infos, cg_comps, cg_keys, set(card_ids))
+    pairings = _pairings(db, sprite_infos, cg_comps, cg_keys, set(card_ids), [i for i in infos if i.kind == "voice"])
 
     # 预设
     preset_entry = None
@@ -614,18 +795,19 @@ def summary(db: Session, card_id: str) -> dict:
     names = {c.id: c.name for c in db.scalars(select(TavernCard).where(TavernCard.id.in_([e["key"] for e in m["cards"]])))}
     items = []
     for info in b.packs:
-        sha = _first_image(info)
-        items.append(
-            {
-                "key": f"{info.kind}:{info.id}",
-                "kind": info.kind,
-                "name": info.name,
-                "detail": info.detail,
-                "bytes": sum(b.files[p].size for p in info.paths),
-                "current": info.kind == "sprite" and info.id in b.current_sprite_packs,
-                "thumb": _thumb(sha),
-            }
-        )
+        sha = _first_image(info) if info.kind != "voice" else None
+        item = {
+            "key": f"{info.kind}:{info.id}",
+            "kind": info.kind,
+            "name": info.name,
+            "detail": info.detail,
+            "bytes": sum(b.files[p].size for p in info.paths),
+            "current": info.kind == "sprite" and info.id in b.current_sprite_packs,
+            "thumb": _thumb(sha),
+        }
+        if info.kind == "voice":
+            item.update(missing=info.missing, warn=info.warn)
+        items.append(item)
     follows = []
     if m["word_records"]:
         follows.append(f"认词记录 {len(m['word_records'])} 条")
