@@ -261,11 +261,16 @@ function DrawPanel({ store, ctx }: { store: ImageGenStore; ctx: VnIllustrationCo
               <span>名字</span>
               <input className="ig-input" value={preview.title} onChange={(e) => setPreview({ ...preview, title: e.target.value })} />
             </label>
-            <label className="ig-field ig-grow">
-              <span>画的是什么</span>
-              <input className="ig-input" value={preview.description} onChange={(e) => setPreview({ ...preview, description: e.target.value })} />
-            </label>
           </div>
+          <label className="ig-field">
+            <span>分镜</span>
+            <textarea
+              className="ig-input"
+              rows={2}
+              value={preview.description}
+              onChange={(e) => setPreview({ ...preview, description: e.target.value })}
+            />
+          </label>
           <label className="ig-check">
             <input
               type="checkbox"
@@ -281,6 +286,15 @@ function DrawPanel({ store, ctx }: { store: ImageGenStore; ctx: VnIllustrationCo
               rows={2}
               value={preview.picture.scene}
               onChange={(e) => setPreview({ ...preview, picture: { ...preview.picture, scene: e.target.value } })}
+            />
+          </label>
+          <label className="ig-field">
+            <span>构图(一句英文)</span>
+            <textarea
+              className="ig-input"
+              rows={2}
+              value={preview.picture.composition ?? ''}
+              onChange={(e) => setPreview({ ...preview, picture: { ...preview.picture, composition: e.target.value } })}
             />
           </label>
           {preview.picture.people.map((p, i) => (

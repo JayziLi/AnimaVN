@@ -23,7 +23,17 @@ import {
   usesReference,
   withLook,
 } from './config';
-import { addImage, blockedByCooldown, endOf, imagesOf, markAt, newShowLog, patchImage, repliesSinceImage } from './marks';
+import {
+  addImage,
+  blockedByCooldown,
+  endOf,
+  imagesOf,
+  lastImageBefore,
+  markAt,
+  newShowLog,
+  patchImage,
+  repliesSinceImage,
+} from './marks';
 
 const entry = (id: string, role: 'user' | 'assistant', images?: VnImageMark[], swipes = 1): ChatEntry => ({
   id,
@@ -265,6 +275,10 @@ describe('生图卡带 · 图挂在消息上', () => {
     expect(repliesSinceImage(es, 4)).toBe(2);
     expect(repliesSinceImage(es, 2)).toBe(1);
     expect(repliesSinceImage([entry('a', 'assistant')], 1)).toBeNull();
+    // 上一张画的是什么:最近那条有图的回复里句号最靠后的那张
+    const two = [entry('b1', 'assistant', [m(9, 'late'), m(2, 'early')]), entry('u', 'user'), entry('b2', 'assistant')];
+    expect(lastImageBefore(two, 2)?.id).toBe('late');
+    expect(lastImageBefore(two, 0)).toBeNull();
     expect(blockedByCooldown(2, 3, 2)).toBe(true);
     expect(blockedByCooldown(3, 3, 2)).toBe(true);
     expect(blockedByCooldown(4, 3, 2)).toBe(false);

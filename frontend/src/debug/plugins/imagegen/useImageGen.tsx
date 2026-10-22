@@ -31,6 +31,7 @@ import {
   type LookIn,
   type NaiAccount,
   type Picture,
+  type Drawn,
   type PlanRequest,
   type PlanResult,
 } from './api';
@@ -53,7 +54,17 @@ import {
 } from './config';
 import { ConsoleSettings } from './ConsoleSettings';
 import { ImageGenSettings } from './ImageGenSettings';
-import { addImage, blockedByCooldown, markAt, newShowLog, patchImage, repliesSinceImage, type ShowLog } from './marks';
+import {
+  addImage,
+  blockedByCooldown,
+  imagesOf,
+  lastImageBefore,
+  markAt,
+  newShowLog,
+  patchImage,
+  repliesSinceImage,
+  type ShowLog,
+} from './marks';
 import { StudioAlbum } from './StudioAlbum';
 import { albumSummary } from './studioAlbumModel';
 import { IgButton, IgStage } from './VnControls';
@@ -308,10 +319,38 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
   );
 
   // 异步回来时对话可能已经换了:按最新的比
-  const latest = useRef({ chatId, entries, config, prefs, onKept });
+  const latest = useRef({ chatId, entries, config, prefs, onKept, album: albumNow });
   useEffect(() => {
-    latest.current = { chatId, entries, config, prefs, onKept };
+    latest.current = { chatId, entries, config, prefs, onKept, album: albumNow };
   });
+
+  // 前后已经画过的图(给指导模型接上连贯,10-18 用户:「要知道之后画了什么、前面画了什么」):
+  // 这条回复里画过的(收起的不算)+ 上一条有图的回复的最后一张。line 换成给它的那段剧情里的编号(offset = 那段从第几句开始)。
+  // 标题和分镜相册里有就用,没有去后端读;读不到的那张不说
+  const drawnNear = useCallback(async (entry: ChatEntry, offset: number): Promise<Drawn[]> => {
+    const es = latest.current.entries;
+    const index = es.findIndex((e) => e.id === entry.id);
+    const here = es[index] ?? entry;
+    const prev = lastImageBefore(es, index < 0 ? es.length : index);
+    const marks = [
+      ...(prev ? [{ id: prev.id, line: null }] : []),
+      ...imagesOf(here)
+        .filter((m) => !m.hidden)
+        .map((m) => ({ id: m.id, line: m.line - offset })),
+    ].slice(-8);
+    const found = await Promise.all(
+      marks.map(async ({ id, line }): Promise<Drawn | null> => {
+        const img = latest.current.album?.find((x) => x.id === id) ?? (await imagegenApi.image(id).catch(() => undefined));
+        if (!img) return null;
+        const clothes = (img.picture.people ?? [])
+          .filter((x) => x.clothes?.trim())
+          .map((x) => `${x.who}穿 ${x.clothes}`)
+          .join(';');
+        return { line, title: img.title.slice(0, 40), description: img.description.slice(0, 300), clothes: clothes.slice(0, 300) };
+      }),
+    );
+    return found.filter((d): d is Drawn => d !== null);
+  }, []);
 
   const writerConnection = useCallback(() => {
     const id = latest.current.config.writer.connectionId;
@@ -388,6 +427,7 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
       await ensureLook();
       const { config: c, prefs: p, entries: es } = latest.current;
       const from = Math.max(0, target.line - BEFORE);
+      const drawn = await drawnNear(target.entry, from);
       const req: PlanRequest = {
         mode: 'manual',
         connection_id: writerConnection(),
@@ -399,6 +439,7 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
         place: placeText(target.place),
         want,
         user_text: userTextBefore(es, target.entry.id),
+        drawn,
         sfw_only: p.sfwOnly,
         camera: camera ?? c.camera,
       };
@@ -411,7 +452,7 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
         return null;
       }
     },
-    [cast, ensureLook, notify, track, writerConnection],
+    [cast, drawnNear, ensureLook, notify, track, writerConnection],
   );
 
   const draw = useCallback<ImageGenStore['draw']>(
@@ -495,6 +536,7 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
         people: old.picture.people ?? [],
         nsfw: Boolean(old.picture.nsfw),
         pov: Boolean(old.picture.pov),
+        composition: old.picture.composition ?? '',
       };
       const w = old.params.width ?? 1344;
       const h = old.params.height ?? 768;
@@ -560,6 +602,7 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
       try {
         const index = es.findIndex((e) => e.id === entry.id);
         const since = repliesSinceImage(es, index < 0 ? es.length : index);
+        const drawn = await drawnNear(entry, 0);
         const req: PlanRequest = {
           mode: 'auto',
           connection_id: writerConnection(),
@@ -570,6 +613,7 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
           place: placeText(place),
           user_text: userTextBefore(es, entry.id),
           since,
+          drawn,
           sfw_only: p.sfwOnly,
           camera: c.camera,
         };
@@ -597,7 +641,7 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
         autoBusy.current.delete(key);
       }
     },
-    [cardId, cast, draw, notify, status?.has_token, track, writerConnection],
+    [cardId, cast, draw, drawnNear, notify, status?.has_token, track, writerConnection],
   );
 
   const store: ImageGenStore = useMemo(

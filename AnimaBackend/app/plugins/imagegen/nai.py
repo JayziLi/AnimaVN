@@ -7,6 +7,8 @@
 - 免费范围(Opus):面积不超过 1024×1024、步数不超过 28、一次一张。超出的每张都扣 Anlas。
 - 角色参考(director_reference_*)只有 V4.5 能用(10-09 实测 V5 发了回 500);图要补成 1024×1536 / 1536×1024 / 1472×1472。
   10-09 星绘:V4.5 + 立绘原图、提示词不写长相,一致性最好。
+- 多人时默认不给坐标(网页上的「AI's Choice」):10-18 让指导模型定坐标,两个人常被挤在一起画糊、动作对调;
+  不给坐标、站位写进英文构图句,同种子重画都好了(用户:「让模型自己根据上下文定,不要限定」)。
 """
 
 from __future__ import annotations
@@ -160,6 +162,8 @@ class Request:
     cfg_rescale: float = 0.0
     # Variety+(只 V4.5)
     variety: bool = False
+    # 多人时按 CharPrompt 的 x / y 摆位置;False = 让 NovelAI 自己根据提示词摆(AI's Choice)
+    use_coords: bool = False
 
 
 def is_free(width: int, height: int, steps: int) -> bool:
@@ -217,7 +221,7 @@ def noise_schedule(model: str, sampler: str, chosen: str | None) -> str:
 def build_body(r: Request) -> dict:
     """请求体。字段照网页发的(10-09 从用户贴的图里读出来的参数,10-12 对过网页前端代码),V5 / V4.5 共用"""
     v5 = r.model.startswith("nai-diffusion-5")
-    coords = len(r.chars) > 1
+    coords = r.use_coords and len(r.chars) > 1
     captions = [{"char_caption": c.prompt, "centers": [{"x": c.x, "y": c.y}]} for c in r.chars]
     neg_captions = [{"char_caption": c.negative, "centers": [{"x": c.x, "y": c.y}]} for c in r.chars]
     params = {

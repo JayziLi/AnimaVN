@@ -121,6 +121,17 @@ export function repliesSinceImage(entries: readonly ChatEntry[], index: number):
   return null;
 }
 
+/** 第 index 条之前最近的那张图(上一条有图的回复里句号最靠后的那张);没有是 null。给指导模型说「上一张画的是什么」 */
+export function lastImageBefore(entries: readonly ChatEntry[], index: number): VnImageMark | null {
+  for (let i = index - 1; i >= 0; i--) {
+    const e = entries[i];
+    if (e.role !== 'assistant') continue;
+    const list = imagesOf(e);
+    if (list.length) return list[list.length - 1];
+  }
+  return null;
+}
+
 /** 冷却挡不挡:出过图以后中间至少隔 cooldown 条回复;重要度 3(第一次到某地、第一次身体接触……)不挡 */
 export const blockedByCooldown = (since: number | null, cooldown: number, importance: number) =>
   since !== null && since <= cooldown && importance < 3;

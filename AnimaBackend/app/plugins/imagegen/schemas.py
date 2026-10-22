@@ -47,6 +47,15 @@ class WhoIn(BaseModel):
     player: bool = False
 
 
+class DrawnIn(BaseModel):
+    """前后已经画过的一张:line 是在发过去的那段剧情里的编号(null = 上一条回复的;越界 = 这条回复更前 / 更后面)"""
+
+    line: int | None = None
+    title: str = Field("", max_length=40)
+    description: str = Field("", max_length=400)
+    clothes: str = Field("", max_length=300)
+
+
 class PlanIn(BaseModel):
     mode: Literal["manual", "auto"] = "manual"
     # 不传 = 当前的聊天连接
@@ -63,6 +72,7 @@ class PlanIn(BaseModel):
     user_text: str = Field("", max_length=2000)
     since: int | None = None
     last: str = Field("", max_length=400)
+    drawn: list[DrawnIn] = Field(default_factory=list, max_length=8)
     sfw_only: bool = False
     # 镜头:pov 第一人称(默认)/ third 第三人称 / auto 指导模型挑
     camera: Literal["pov", "third", "auto"] = "pov"
@@ -83,6 +93,8 @@ class PictureIO(BaseModel):
     nsfw: bool = False
     # 第一人称:玩家是镜头,不画玩家这个人
     pov: bool = False
+    # 一句英文的整体构图
+    composition: str = Field("", max_length=600)
 
 
 class PlanOut(BaseModel):

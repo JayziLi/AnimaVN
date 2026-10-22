@@ -20,35 +20,59 @@ from app.plugins.imagegen.assemble import Person, Plan
 
 MAX_PEOPLE = 4
 
-SKILL_MANUAL = """你是视觉小说的插画指导。根据玩家正在看的剧情,给 NovelAI(动漫画风的生图模型)写这一幕的画面。
+# 10-18 改成「给这场戏拍一张 CG」:用户嫌以前像给某一句配插图、没有导演感(构图平、总是中景、两人并排);
+# 说明书只讲想要什么样的 CG,不列规则和词表(用户:「描述清楚需求就好,不需要太严格的限制」,初稿交给 GPT 压短)。
+# 先写中文分镜(description)再写英文:一句英文构图(composition,NovelAI V4.5 读得懂句子,谁站在哪也写在这里)+ 标签。
+# 不让它写坐标:10-18 试过,两个人常被挤在一起画糊(nai.py 的 use_coords)
+_HOW = (
+    "怎么拍：先用 description 写两三句中文分镜，想清楚这一刻的情绪和视觉重点，再写英文描述与标签。"
+    "根据情绪选择景别、机位、人物位置、光线和前后景的虚实，让构图表现人物的关系与距离。"
+    "需要看清表情时靠近，需要环境承载情绪时拉开，不必总用中景或让两人左右并排。"
+    "画面服务于整场戏，不要把某句话逐字画出来，也不要让无关的小物件或宏大背景抢走主体。"
+)
+_UNTIL = (
+    "until 是显示结束的句号编号。换地方、换姿势、换衣服或有人来去时，写变化前一句；一直没变写最后一句。"
+    "说话、表情和手上的小动作不算变化。"
+)
+_FIELDS = (
+    "- composition 用一句英文自然语言描述整张画面的镜头、人物在画面里的位置与关系、动作和光线；"
+    "scene 用英文 danbooru 标签写景别、机位、环境、光影与景深；人物 tags 写姿势、动作、表情、视线和互动。"
+    "标签用逗号隔开，与分镜保持一致。\n"
+    "- people 只列画面中出现的人，who 只能用给定的名字；无人风景写 []。\n"
+    "- 不写头发、眼睛、身材，代码会自动补充。衣服和平时一样时 clothes 写空字符串；不一样时，用英文标签写这一刻的全部穿着。"
+)
+# 10-18 用户:「要知道之后画了什么、前面画了什么,这样大概能出一个连续的图」:用户消息里列出前后画过的图
+_SERIES = (
+    "用户消息里会列出前后已经画过的图：让这张和它们连得上（地点、衣服、光线一致），像同一组 CG 里的一张，"
+    "景别和构图别和它们重复。"
+)
 
-写法:
-- 标签用英文 danbooru 标签,逗号隔开,不要写句子。例如 sitting, hugging own knees, looking at viewer, blush, smile, beach, sunset, waves, from side, cowboy shot。
-- 画「[>]」标出的那一句此刻的样子;前面几句是上下文。
-- 画面里有谁就在 people 里写谁,who 只能用给你的名字;没人的风景 people 写 []。两个人时写清相对位置和互动(holding hands, hug, head on another's shoulder, facing each other)。
-- 不要写头发、眼睛、身材:代码会自动加上。
-- 衣服:和平时一样就让 clothes 空着(代码加平时的衣服);这一刻穿得不一样(睡衣、泳装、浴巾、脱了外套、nude)就在 clothes 里写这一刻穿的全部。
-- 手里拿着的东西要写出来(holding ice cream, holding umbrella)。
-- 镜头选最能表现这一刻的:close-up / portrait / upper body / cowboy shot / full body / from above / from below / from side。
-- scene 写地点、时间、天气、光线、氛围,地点和剧情一致。
-- 玩家写了「想看什么」时以它为准。
-- 画面里有裸露或性内容时 nsfw 写 true;不是就写 false。"""
 
-SKILL_AUTO = """你是视觉小说的导演,决定这条回复要不要配一张插图(CG),要的话顺便写好画面。
+def _manual(nsfw: str) -> str:
+    # 10-18 用户:点画笔「不是完全这一句,而是这一段附近的重要的画面内容」;重要的那一拍在还没读到的后几句里也画
+    return (
+        "你是视觉小说的 CG 导演。玩家读到「[>]」那一句时点了「画」：为这一段剧情选出最重要、最打动人的画面，"
+        "设计一张值得留下的 CG。不一定是「[>]」这一句本身，可以是它前后附近的那一拍。"
+        "玩家写了「想看什么」时以它为准。\n"
+        f"{_SERIES}\n\n"
+        f"{_HOW}\n\n字段约定：\n- {_UNTIL}\n{_FIELDS}\n- {nsfw}"
+    )
 
-什么时候出图:
-- 值得出:第一次到一个有氛围的地方;身体接触(牵手、拥抱、亲吻、靠肩、膝枕);强烈的情绪(哭、告白、大笑);换了衣服;玩家明说想看(「给我看看」「拍张照」)。
-- 不出:闲聊、普通对话、和上一张图差不多的场面。拿不准就不出。
-- importance:3 = 第一次到某地、第一次身体接触、告白、玩家明说想看;2 = 值得出;1 = 可出可不出。
-- at 写这个画面出现的那一句的编号(从 0 数)。
 
-写画面的方法:
-- 标签用英文 danbooru 标签,逗号隔开,不要写句子。
-- 画面里有谁就在 people 里写谁,who 只能用给你的名字;没人的风景 people 写 []。两个人时写清相对位置和互动。
-- 不要写头发、眼睛、身材:代码会自动加上。衣服和平时一样就让 clothes 空着;穿得不一样(睡衣、泳装、nude)就在 clothes 里写这一刻穿的全部。
-- 手里拿着的东西要写出来。
-- 镜头选最能表现这一刻的;scene 写地点、时间、天气、光线、氛围。
-- 画面里有裸露或性内容时 nsfw 写 true;不是就写 false。"""
+def _auto(when: str, top: str, nsfw: str) -> str:
+    return (
+        "你是视觉小说的 CG 导演。读完整条按句编号的回复，决定是否配一张 CG；要出图，就为这场戏选出最打动人的一刻，"
+        "设计一张值得玩家留下的画面。\n"
+        f"{_SERIES}\n\n"
+        f"什么时候出图：{when}或玩家明说想看时，考虑出图。普通闲聊、和上一张 CG 差不多的场面不出，拿不准也不出。"
+        f"importance：3 = 很重要，如第一次到某地、第一次身体接触、告白、{top}玩家明说想看；2 = 值得出；1 = 可出可不出。\n\n"
+        f"{_HOW}\n\n字段约定：\n- at 是选中这一刻开始的句号编号；{_UNTIL}\n{_FIELDS}\n- {nsfw}"
+    )
+
+
+_NSFW = "nsfw：画面里有裸露写 true，否则写 false。"
+SKILL_MANUAL = _manual(_NSFW)
+SKILL_AUTO = _auto("情绪浓烈、关系推进、有氛围的新地点、换装", "", _NSFW)
 
 SKILL_LOOK = """根据角色卡,写这个角色平时的外貌,给 NovelAI(动漫画风的生图模型)用。
 只要英文 danbooru 标签,逗号隔开,分三栏:
@@ -60,21 +84,30 @@ SKILL_LOOK = """根据角色卡,写这个角色平时的外貌,给 NovelAI(动�
 
 DEFAULT_SKILLS = {"manual": SKILL_MANUAL, "auto": SKILL_AUTO, "look": SKILL_LOOK}
 
-_PICTURE_FIELDS = """  "title": "四到八个字的短名字,比如 河堤回眸、深夜抱枕",
-  "description": "一句中文:画的是什么",
-  "scene": "英文标签:镜头、地点、时间、光线、氛围",
-  "people": [{"who": "名字", "tags": "英文标签:姿势、动作、表情、视线、手里的东西", "clothes": "这一刻穿的(和平时一样就空着)"}],
-  "nsfw": false,
-  "pov": true,
-  "until": "这个画面一直持续到第几句(编号)。说话、表情、手上的小动作都不算变;换了地方、换了姿势(比如背后抱变成面对面)、换了衣服、有人来或走才算结束,写变之前那一句;后面一直没变就写给你的最后一句"""
+_PICTURE_FIELDS = """  "description": "两三句中文分镜，说明选中的瞬间、情绪及画面安排",
+  "title": "四到八个字的中文短名",
+  "composition": "One English sentence describing the whole picture.",
+  "scene": "英文 danbooru 标签，逗号隔开",
+  "people": [{"who": "给定的名字", "tags": "英文 danbooru 标签，逗号隔开", "clothes": ""}],
+  "nsfw": false"""
+_AUTO_HEAD = """  "draw": true,
+  "importance": 2,
+  "reason": "一句中文说明为什么出图",
+  "at": 0,
+"""
 
-FORMAT_MANUAL = "只输出一个 JSON,不要代码块、不要别的字:\n{\n" + _PICTURE_FIELDS + "\n}"
-FORMAT_AUTO = (
-    "只输出一个 JSON,不要代码块、不要别的字:\n{\n"
-    '  "draw": true,\n  "at": 0,\n  "importance": 2,\n  "reason": "一句中文:为什么出 / 不出",\n'
-    + _PICTURE_FIELDS
-    + "\n}\ndraw 是 false 时其余字段留空。"
-)
+
+def format_for(mode: str, camera: str) -> str:
+    """输出格式(写死,改说明书也改不坏)。pov 只在「指导模型挑」镜头时让它写
+    (10-18:定死第三人称时示例里还写着 pov true,自相矛盾)"""
+    out = "只输出一个 JSON，不要代码块或其他文字。字段按以下顺序排列，description 放在英文画面描述与标签之前：\n{\n"
+    out += (_AUTO_HEAD if mode == "auto" else "") + '  "until": 0,\n' + _PICTURE_FIELDS
+    out += ',\n  "pov": false\n}' if camera == "auto" else "\n}"
+    if mode == "auto":
+        out += "\ndraw 为 false 时，只输出 draw、importance、reason 三个字段。"
+    return out
+
+
 FORMAT_LOOK = (
     '只输出一个 JSON,不要代码块、不要别的字:\n'
     '{"name_tag": "角色名标签,原创角色空串", "tags": "长相的英文标签", "outfit": "平时穿的英文标签", "gender": "female 或 male"}'
@@ -87,8 +120,8 @@ _POV_HOW = (
     "不要写 from side、from behind 这类从旁边看的镜头"
 )
 CAMERA_NOTES = {
-    "pov": f"镜头:第一人称 —— 画面就是玩家的眼睛。{_POV_HOW}。pov 写 true。",
-    "third": "镜头:第三人称 —— 玩家出现时写进 people(用玩家的名字),不要写 pov。pov 写 false。",
+    "pov": f"镜头:第一人称 —— 画面就是玩家的眼睛。{_POV_HOW}。",
+    "third": "镜头:第三人称 —— 玩家出现时写进 people(用玩家的名字),不要写 pov。",
     "auto": (
         "镜头你来挑:一对一、她对着玩家的时刻(看着你、喂你、牵手、摸头、凑过来)用第一人称:pov 写 true,"
         f"{_POV_HOW};两个人的身体都要入镜时(背后抱、并肩走的远景、从侧面看接吻)用第三人称:pov 写 false,玩家写进 people。"
@@ -121,18 +154,32 @@ class Who:
     outfit: str = ""
 
 
+@dataclass(frozen=True)
+class Drawn:
+    """前后已经画过的一张(给指导模型接上连贯):line 是在给它的那段剧情里的编号,
+    None = 上一条回复的;小于 0 / 超出这段 = 这条回复里更前 / 更后面"""
+
+    line: int | None
+    title: str = ""
+    description: str = ""
+    # 这一张里谁穿得和平时不一样(「星绘穿 pajamas」)
+    clothes: str = ""
+
+
 @dataclass
 class Context:
     cast: list[Who]
     lines: list[Line]
-    # 手动:玩家现在看到的这一句;自动:不用
+    # 手动:玩家现在读到的这一句;自动:不用
     focus: int | None = None
     place: str = ""
     want: str = ""
     user_text: str = ""
-    # 自动:隔了几条回复、上一张画的是什么(手动时 lines 里 focus 后面那几句只用来判断画面到哪一句结束)
+    # 自动:隔了几条回复、上一张画的是什么(没传 drawn 的旧前端才用 last)
     since: int | None = None
     last: str = ""
+    # 前后已经画过的图
+    drawn: list[Drawn] = field(default_factory=list)
     sfw_only: bool = False
     # pov 第一人称 / third 第三人称 / auto 指导模型挑
     camera: str = "pov"
@@ -156,6 +203,26 @@ def _speaker(line: Line) -> str:
     return f"{line.speaker}:" if line.speaker else "(旁白)"
 
 
+def _drawn_text(ctx: Context, mode: str) -> list[str]:
+    if not ctx.drawn:
+        return []
+    out = ["\n前后已经画过的图:"]
+    n = len(ctx.lines)
+    for d in ctx.drawn:
+        if d.line is None:
+            where = "上一条回复"
+        elif d.line < 0:
+            where = "这条回复更前面"
+        elif d.line >= n:
+            where = "这条回复更后面"
+        elif mode == "manual" and ctx.focus is not None and d.line != ctx.focus:
+            where = f"第 {d.line} 句(在玩家读到的这句{'前面' if d.line < ctx.focus else '后面'})"
+        else:
+            where = f"第 {d.line} 句"
+        out.append(f"- {where}:【{d.title}】{d.description}" + (f"({d.clothes})" if d.clothes else ""))
+    return out
+
+
 def context_text(ctx: Context, mode: str) -> str:
     cast = "、".join(f"{w.name}({'玩家,' if w.player else ''}{'男' if w.gender == 'male' else '女'})" for w in ctx.cast)
     out = [f"画面里可能出现的人:{cast}"]
@@ -172,14 +239,17 @@ def context_text(ctx: Context, mode: str) -> str:
         if ctx.since is None:
             out.append("这段对话还没出过图。")
         else:
-            out.append(f"上一张图在 {ctx.since} 条回复以前" + (f",画的是:{ctx.last}" if ctx.last else "") + "。")
+            last = f",画的是:{ctx.last}" if ctx.last and not ctx.drawn else ""
+            out.append(f"上一张图在 {ctx.since} 条回复以前{last}。")
         out.append("\n这条回复(按句编号):")
         out += [f"{i}. {_speaker(line)}{line.text}" for i, line in enumerate(ctx.lines)]
+        out += _drawn_text(ctx, mode)
     else:
-        out.append("\n剧情(按句编号;「[>]」是玩家现在看到的这一句,画它;后面几句只用来判断画面到哪一句结束,不要画进去):")
+        out.append("\n剧情(按句编号;「[>]」是玩家现在读到的这一句):")
         for i, line in enumerate(ctx.lines):
             mark = "[>] " if i == ctx.focus else ""
             out.append(f"{i}. {mark}{_speaker(line)}{line.text}")
+        out += _drawn_text(ctx, mode)
         if ctx.want.strip():
             out.append(f"\n想看什么:{ctx.want.strip()}")
     return "\n".join(out)
@@ -194,7 +264,7 @@ def messages_for(
     system += "\n\n" + CAMERA_NOTES.get(ctx.camera, CAMERA_NOTES["pov"])
     if ctx.sfw_only:
         system += "\n\n" + SFW_NOTE
-    system += "\n\n" + (FORMAT_AUTO if mode == "auto" else FORMAT_MANUAL)
+    system += "\n\n" + format_for(mode, ctx.camera)
     user = context_text(ctx, mode)
     return [ChatMessage(role="system", content=system), ChatMessage(role="user", content=user)]
 
@@ -271,7 +341,13 @@ def to_result(
             people.append(Person(who=p.strip()))
     pov = camera == "pov" or (camera == "auto" and _bool(data.get("pov")))
     nsfw = _bool(data.get("nsfw"))
-    plan = Plan(scene=_text(data.get("scene")), people=tuple(people[:MAX_PEOPLE]), nsfw=nsfw and not sfw_only, pov=pov)
+    plan = Plan(
+        scene=_text(data.get("scene")),
+        people=tuple(people[:MAX_PEOPLE]),
+        nsfw=nsfw and not sfw_only,
+        pov=pov,
+        composition=_text(data.get("composition"))[:600],
+    )
     result = Result(plan=plan, title=_text(data.get("title"))[:20], description=_text(data.get("description")), raw=data)
     if mode == "auto":
         result.draw = _bool(data.get("draw"))

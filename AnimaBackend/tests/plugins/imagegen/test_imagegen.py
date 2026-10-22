@@ -17,7 +17,6 @@ from app.plugins.imagegen.assemble import (
     Plan,
     Style,
     assemble,
-    centers,
     join,
     sleeves,
 )
@@ -49,7 +48,7 @@ def decoded(b64: str) -> Image.Image:
 # ── 请求体 ──
 
 
-def test_body_for_v5_with_two_people_uses_positions():
+def test_body_for_v5_with_two_people_lets_novelai_place_them_unless_asked():
     body = nai.build_body(
         nai.Request(
             prompt="1girl, 1boy, couple, beach",
@@ -64,8 +63,8 @@ def test_body_for_v5_with_two_people_uses_positions():
     p = body["parameters"]
     assert body["model"] == nai.V5_CURATED and body["input"] == "1girl, 1boy, couple, beach"
     assert p["params_version"] == 4 and p["seed"] == 7 and p["extra_noise_seed"] == 7
-    assert p["v4_prompt"]["use_coords"] is True
-    assert [c["centers"][0]["x"] for c in p["v4_prompt"]["caption"]["char_captions"]] == [0.35, 0.65]
+    # 默认不给坐标(AI's Choice):10-18 指导模型定的坐标常把两个人挤在一起画糊
+    assert p["v4_prompt"]["use_coords"] is False and p["use_coords"] is False
     assert p["v4_negative_prompt"]["caption"]["char_captions"][1]["char_caption"] == "long hair"
     assert p["characterPrompts"][0]["prompt"] == "girl, pink hair"
 
@@ -202,7 +201,7 @@ def test_couple_with_player_dresses_him_on_ordinary_days():
     plan = Plan(scene="park", people=(Person("Wikira", "hug"), Person("Lj", "hug")))
     out = assemble(plan, {"Wikira": WIKIRA, "Lj": PLAYER}, Style(), model=nai.V5_CURATED)
     assert out.prompt.startswith("1girl, 1boy, couple, park")
-    assert [c.x for c in out.chars] == [0.35, 0.65]
+    assert {(c.x, c.y) for c in out.chars} == {(0.5, 0.5)}  # 不给坐标
     assert "black shirt" in out.chars[1].prompt and "fully clothed" in out.chars[1].prompt
     assert "shirtless" in out.chars[1].negative
     assert "1boy" not in out.negative.split(", ")[:3]  # 两个人时不挡男的
@@ -235,10 +234,6 @@ def test_nobody_is_scenery_and_unknown_people_guess_gender_from_tags():
     assert assemble(Plan(scene="sea"), {}, Style(), model=nai.V5_CURATED).prompt.startswith("no humans, scenery, sea")
     out = assemble(Plan(people=(Person("店员", "1boy, apron"),)), {}, Style(), model=nai.V5_CURATED)
     assert out.prompt.startswith("1boy, solo")
-
-
-def test_three_people_spread_out():
-    assert centers(3) == [0.2, 0.5, 0.8]
 
 
 # ── 指导模型回的 JSON ──
@@ -274,7 +269,37 @@ def test_camera_note_follows_the_skill_even_when_rewritten():
     ctx = writer.Context(cast=[], lines=[writer.Line(None, "a")], focus=0)
     for camera, word in (("pov", "第一人称"), ("third", "第三人称"), ("auto", "你来挑")):
         system = writer.messages_for(writer.Context(**{**ctx.__dict__, "camera": camera}), "manual", "我自己写的说明书")[0].content
-        assert system.startswith("我自己写的说明书") and word in system and '"pov"' in system
+        assert system.startswith("我自己写的说明书") and word in system
+        # 镜头定死时格式里不让它写 pov(以前示例写着 pov true,和第三人称打架)
+        assert ('"pov"' in system) == (camera == "auto")
+
+
+def test_format_asks_for_the_storyboard_before_the_english():
+    for mode in ("manual", "auto"):
+        fmt = writer.format_for(mode, "third")
+        order = [fmt.index(f'"{k}"') for k in ("until", "description", "composition", "scene", "people", "nsfw")]
+        assert order == sorted(order) and '"x"' not in fmt
+    assert writer.format_for("auto", "pov").index('"draw"') < writer.format_for("auto", "pov").index('"description"')
+    assert '"draw"' not in writer.format_for("manual", "pov")
+
+
+def test_writer_composition_is_read_and_coordinates_are_ignored():
+    data = {"scene": "alley", "composition": "A girl crouches by a glowing vending machine.",
+            "people": [{"who": "星绘", "x": 0.3}, {"who": "Lj"}]}
+    r = writer.to_result(data, mode="manual", camera="third")
+    assert r.plan.composition == "A girl crouches by a glowing vending machine."
+    assert r.plan.people == (Person("星绘"), Person("Lj"))  # 写了坐标也不用
+
+
+def test_composition_goes_in_whole_after_the_scene():
+    plan = Plan(scene="night, alley, wide shot", composition="A lone vending machine glows, {the girl} crouching in its light.",
+                people=(Person("Wikira", "squatting"), Person("Lj", "standing")))
+    out = assemble(plan, {"Wikira": WIKIRA, "Lj": PLAYER}, Style("flat color"), model=nai.V45_FULL, quality="masterpiece")
+    assert out.prompt == ("1girl, 1boy, couple, night, alley, wide shot, "
+                          "A lone vending machine glows, the girl crouching in its light., flat color, masterpiece")
+    bare = assemble(Plan(scene="park", people=(Person("Wikira", "sitting"),)), {"Wikira": WIKIRA}, Style("flat color"),
+                    model=nai.V45_FULL, quality="")
+    assert bare.prompt == "1girl, solo, park, flat color"
 
 
 def test_until_is_kept_between_the_start_and_the_last_line():
@@ -316,6 +341,21 @@ def test_messages_mark_the_focus_line_and_keep_the_format_fixed():
     assert "Lj(玩家,男)" in user.content and "想看什么:她坐在沙滩上" in user.content
     auto = writer.messages_for(writer.Context(cast=[], lines=[writer.Line(None, "a")], since=2, last="牵手"), "auto")
     assert '"draw"' in auto[0].content and "0. (旁白)a" in auto[1].content and "2 条回复以前" in auto[1].content
+    assert "画的是:牵手" in auto[1].content
+
+
+def test_writer_hears_what_was_drawn_before_and_after():
+    lines = [writer.Line(None, str(i)) for i in range(6)]
+    drawn = [writer.Drawn(None, "路灯靠肩", "她靠在你肩上"), writer.Drawn(-3, "更早", "x"), writer.Drawn(1, "巷中贩卖机", "她指着贩卖机"),
+             writer.Drawn(4, "分享一口可可", "递可可", clothes="星绘穿 white coat"), writer.Drawn(9, "更晚", "y")]
+    user = writer.messages_for(writer.Context(cast=[], lines=lines, focus=2, drawn=drawn), "manual")[1].content
+    assert "- 上一条回复:【路灯靠肩】她靠在你肩上" in user
+    assert "- 这条回复更前面:【更早】x" in user and "- 这条回复更后面:【更晚】y" in user
+    assert "- 第 1 句(在玩家读到的这句前面):【巷中贩卖机】她指着贩卖机" in user
+    assert "- 第 4 句(在玩家读到的这句后面):【分享一口可可】递可可(星绘穿 white coat)" in user
+    # 有了画过的图清单,自动那行就不再重复「画的是」
+    auto = writer.messages_for(writer.Context(cast=[], lines=lines, since=1, last="旧的", drawn=drawn[:1]), "auto")[1].content
+    assert "画的是" not in auto and "- 上一条回复:【路灯靠肩】" in auto and "- 第" not in auto
 
 
 # ── 接口 ──

@@ -138,6 +138,7 @@ def _picture(plan: Plan) -> PictureIO:
         people=[{"who": p.who, "tags": p.tags, "clothes": p.clothes} for p in plan.people],
         nsfw=plan.nsfw,
         pov=plan.pov,
+        composition=plan.composition,
     )
 
 
@@ -154,6 +155,7 @@ async def plan(req: PlanIn, db: Session = Depends(get_db)):
         user_text=req.user_text,
         since=req.since,
         last=req.last,
+        drawn=[writer.Drawn(line=d.line, title=d.title, description=d.description, clothes=d.clothes) for d in req.drawn],
         sfw_only=req.sfw_only,
         camera=req.camera,
     )
@@ -293,6 +295,7 @@ async def generate(req: GenerateIn, db: Session = Depends(get_db)):
         people=tuple(Person(p.who, p.tags, p.clothes) for p in picture.people),
         nsfw=picture.nsfw,
         pov=picture.pov,
+        composition=picture.composition,
     )
     ref_name, reference, ref_note = await _reference(db, req)
     looks = {

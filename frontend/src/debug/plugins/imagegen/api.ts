@@ -46,6 +46,8 @@ export interface Picture {
   nsfw: boolean;
   /** 第一人称:玩家是镜头,不画玩家 */
   pov?: boolean;
+  /** 一句英文的整体构图(接在场景标签后面) */
+  composition?: string;
 }
 
 export interface Who {
@@ -54,6 +56,14 @@ export interface Who {
   look: string;
   outfit?: string;
   player?: boolean;
+}
+
+export interface Drawn {
+  line: number | null;
+  title: string;
+  description: string;
+  /** 这一张里谁穿得和平时不一样 */
+  clothes?: string;
 }
 
 export interface PlanRequest {
@@ -69,6 +79,8 @@ export interface PlanRequest {
   user_text?: string;
   since?: number | null;
   last?: string;
+  /** 前后已经画过的图(接上连贯):line 是在 lines 里的编号,null = 上一条回复的,越界 = 这条回复更前 / 更后面 */
+  drawn?: Drawn[];
   sfw_only?: boolean;
   /** 镜头:pov 第一人称 / third 第三人称 / auto 指导模型挑 */
   camera?: 'pov' | 'third' | 'auto';

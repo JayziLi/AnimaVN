@@ -4,7 +4,10 @@
 (10-09 星绘整段剧情的 C 线就是这样:发箍、白发紫眼、蝴蝶结每张都在)。
 - 人数标签按每个人的性别算(1girl / 1boy …),一个人时加 solo,一男一女时日常加 couple、nsfw 时加 hetero
   (10-06 发现日常写 hetero 会往成人向带);一个人都没有是风景(no humans, scenery)。
-- 每个人一条分角色提示词:girl / boy + 外貌 + 这次的动作表情;位置从左到右排开(两个人 0.35 / 0.65,10-09 一次就对)。
+- 每个人一条分角色提示词:girl / boy + 外貌 + 这次的动作表情;不给坐标,NovelAI 自己摆(nai.py 的 use_coords)。
+  10-09 起是从左到右排开(两个人 0.35 / 0.65),10-18 试过让指导模型定坐标,两个人常被挤在一起画糊,
+  最后改成谁在哪写进构图句,NovelAI 自己排。
+- 指导模型写的一句英文构图(composition)原样接在场景标签后面。
 - 反向:反向预设 + 画风的反向 + 成人保护词 + 人数保护(单人挡多出来的人);只画全年龄时再挡成人向的词。
 - 衣服:每个人平时穿什么(outfit)单独放;指导模型写了这一刻穿什么(clothes:睡衣、泳装、脱了外套、nude)就换掉平时的,
   没写就照平时的。nsfw 场面没写时不加平时的衣服(多半是脱了,写进去两边打架)。
@@ -64,6 +67,8 @@ class Plan:
     nsfw: bool = False
     # 第一人称:玩家是镜头
     pov: bool = False
+    # 一句英文自然语言的整体构图(10-18 实测 V4.5 读得懂:写的光圈、谁在谁身后都画出来了)
+    composition: str = ""
 
 
 @dataclass(frozen=True)
@@ -106,15 +111,6 @@ def _count(word: str, n: int) -> str:
     return f"{n}{word}" if n == 1 else f"{n}{word}s"
 
 
-def centers(n: int) -> list[float]:
-    """n 个人从左到右的 x"""
-    if n <= 1:
-        return [0.5]
-    if n == 2:
-        return [0.35, 0.65]
-    return [round(0.2 + 0.6 * i / (n - 1), 2) for i in range(n)]
-
-
 def _tags(text: str) -> set[str]:
     return {t.strip().lower() for t in (text or "").split(",") if t.strip()}
 
@@ -125,6 +121,12 @@ def sleeves(outfit: str) -> str:
         if word in COLORS:
             return f"{word} sleeves"
     return ""
+
+
+def sentence_of(text: str) -> str:
+    """构图句子:压成一行,去掉 NovelAI 当加权用的括号,太长截断"""
+    flat = " ".join((text or "").translate(str.maketrans("", "", "{}[]")).split())
+    return flat[:600].rstrip(" ,")
 
 
 def assemble(
@@ -182,7 +184,7 @@ def assemble(
         guards.append(SFW_GUARD)
 
     chars: list[CharPrompt] = []
-    for person, gender, x in zip(people, genders, centers(len(people)), strict=False):
+    for person, gender in zip(people, genders, strict=True):
         look = looks.get(person.who)
         base = "girl" if gender == "female" else "boy"
         outfit = person.clothes or ("" if nsfw or look is None else look.outfit)
@@ -195,10 +197,14 @@ def assemble(
         if look is not None and look.player and gender == "male" and not nsfw and not person.clothes:
             prompt = join(prompt, PLAYER_DRESSED)
             negative = join(negative, PLAYER_DRESSED_NEG)
-        chars.append(CharPrompt(prompt=prompt, negative=negative, x=x, y=0.5))
+        chars.append(CharPrompt(prompt=prompt, negative=negative))
 
+    # 构图那句接在场景标签后面、画风前面;句子里有逗号,不能进 join(会被拆开去重)
+    head = join(", ".join(count), style.artists, plan.scene, hands)
+    tail = join(head, style.tags, quality)[len(head):]
+    sentence = sentence_of(plan.composition)
     return Assembled(
-        prompt=join(", ".join(count), style.artists, plan.scene, hands, style.tags, quality),
+        prompt=f"{head}, {sentence}{tail}" if sentence else head + tail,
         negative=join(uc, style.negative, *guards),
         chars=tuple(chars),
         model=SFW_OF.get(model, model) if sfw_only else model,
