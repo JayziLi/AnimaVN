@@ -65,8 +65,8 @@
   border-radius: 8px;
   border: 1px solid var(--skin-line);
   background: var(--skin-box);
-  backdrop-filter: blur(16px) saturate(1.2);
   -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  backdrop-filter: blur(16px) saturate(1.2);
   box-shadow: var(--skin-shadow);
 }
 .vn-root[data-skin='glass-light'] :is(.vn-text, .vn-ja) {
@@ -237,8 +237,8 @@
   border: none;
   border-radius: 6px;
   background: transparent;
-  backdrop-filter: none;
   -webkit-backdrop-filter: none;
+  backdrop-filter: none;
   font-size: 14px;
   letter-spacing: 0.04em;
   overflow: hidden;
@@ -288,8 +288,8 @@
   border-radius: 10px;
   border: 1px solid var(--skin-line);
   background: var(--skin-box);
-  backdrop-filter: blur(16px) saturate(1.2);
   -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  backdrop-filter: blur(16px) saturate(1.2);
   box-shadow: 0 12px 30px rgba(10, 10, 30, 0.28);
 }
 .vn-turn-bar {
@@ -334,8 +334,8 @@
   border: none;
   border-radius: 8px;
   background: transparent;
-  backdrop-filter: none;
   -webkit-backdrop-filter: none;
+  backdrop-filter: none;
   color: var(--skin-ink);
 }
 .vn-turn-bar .vn-send {
@@ -357,8 +357,8 @@
   border-radius: 10px;
   border: 1px solid var(--skin-line);
   background: var(--skin-box);
-  backdrop-filter: blur(16px) saturate(1.2);
   -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  backdrop-filter: blur(16px) saturate(1.2);
   box-shadow: 0 12px 30px rgba(10, 10, 30, 0.28);
   color: var(--skin-ink);
   font-size: calc(16px * var(--vn-text-scale));

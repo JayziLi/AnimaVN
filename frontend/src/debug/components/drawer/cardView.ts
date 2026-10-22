@@ -36,6 +36,8 @@ export interface DrawerCardFacts {
   /** 认词记录用的名单:pack:<立绘包 id>;没立绘时 'builtin' */
   listRef: string;
   mainVoice: VoiceProfile | null;
+  /** 挂着的声音(主声音、备用);语音页换主声音时在这上面改 */
+  voices: CardVoices;
   /** 场景包 / CG 包:包名(排第一的)和启用的背景、BGM、CG 构图各几个 */
   scene: { packName: string | null; bg: number; bgm: number; cgPackName: string | null; cg: number };
   /** 这张卡另设过的全部项(card_prefs);卡带看自己那一项(比如 AI 生图写没写长相)。没读到是 {} */
@@ -84,6 +86,7 @@ export function cardFacts(raw: CardViewRaw): DrawerCardFacts {
     spritePack: current ? { id: current, name: nameIn(raw.spritePacks, current) ?? '' } : null,
     listRef: emotionListRef(sprites),
     mainVoice: raw.profiles.find((p) => p.id === raw.voices.main) ?? null,
+    voices: raw.voices,
     scene: {
       packName: firstScene === undefined ? null : (nameIn(raw.scenePacks, firstScene) ?? ''),
       bg: backgroundsOf(scene).length,

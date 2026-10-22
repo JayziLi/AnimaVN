@@ -50,6 +50,7 @@ import {
 } from '../plugins/emotionMatch';
 import { SYNC_MAX_WAIT_MS, jevKindsOf, jevMayTag, NO_KINDS, voiceWaitsForJev } from '../plugins/jev';
 import { entryView } from '../plugins/jevNotes';
+import { jaHiddenOf, type JaHideControls } from '../plugins/jaHide';
 import { parseBilingual } from '../plugins/lang';
 import { manualEmotions, manualOf } from '../plugins/manualMarks';
 import { cgFrameFromPairs, missingCell, voiceRowFromPairs } from '../plugins/pairings';
@@ -167,6 +168,8 @@ export interface PageContext {
   pluginFocus: PluginFocus | null;
   /** 换到菜单的「设置」页(插件页底部「游戏设置 · 音量」) */
   openConfig: () => void;
+  /** 换到菜单的「素材」页(插件页里的「素材管理 · 立绘包」这类链接;停在哪个页签由外面先定好) */
+  openAssets: () => void;
   /** 设置里的「思考过程」:关了历史页也不显示 */
   showThinking: boolean;
 }
@@ -204,6 +207,8 @@ interface Props {
   showJa: boolean;
   /** 设置页「字幕」改的就是外语插件的「显示日语」(全局一份) */
   onChangeShowJa: (showJa: boolean) => void;
+  /** 隐藏前文日语(plugins/jaHide.ts):藏了的回复不显示日语,历史页「显示原文」还看得到 */
+  jaHide: JaHideControls;
   /** 立绘和文字同步(Jev 通用设置):这句 Jev 判完才出字 */
   jevSync: boolean;
   /** 回车键:和调试台的聊天框共用 */
@@ -258,13 +263,6 @@ interface Props {
   illustrations?: VnIllustrations | null;
   /** 插件开关(plugins/switches.ts,插件页右上角):关掉的立绘 / 背景 / 音乐 / CG / AI 出图不显示、不干活 */
   switches?: PluginSwitches;
-  /** 菜单里的「素材」:打开素材管理页(调试台的全屏页,盖在菜单上面);不给就没有这一项 */
-  onOpenLibrary?: () => void;
-  /**
-   * 设置页「换声音 · 试音 · 调参数」、语音标签「换声音 · 试音」:打开素材管理的「声音」页签、选中这张卡的主声音
-   * (盖在游戏 / 菜单上面,关了回来)。不给就去菜单插件页的语音
-   */
-  onOpenVoiceAssets?: () => void;
 }
 
 interface Cursor {
@@ -639,6 +637,7 @@ export function VNScreen({
   onChangeVoiceConfig,
   showJa,
   onChangeShowJa,
+  jaHide,
   jevSync,
   enterKey,
   onChangeEnterKey,
@@ -667,8 +666,6 @@ export function VNScreen({
   onSetManual,
   illustrations: illustrationsInstalled = null,
   switches = DEFAULT_SWITCHES,
-  onOpenLibrary,
-  onOpenVoiceAssets,
 }: Props) {
   // AI 出图关了:不画、不显示、画笔收起;设置里那一页照旧在(插件页能再打开)
   const illustrations = switches.illustrations ? illustrationsInstalled : null;
@@ -749,6 +746,8 @@ export function VNScreen({
     line = 0;
   }
   const beat = beatIndex >= 0 ? beats[beatIndex] : null;
+  // 对话框和选项上显示不显示日语:这条回复点过「隐藏前文日语」的不显示
+  const jaVisible = showJa && !(beat && jaHiddenOf(beat.entry));
   const lines = beat?.parsed?.lines ?? [];
   line = Math.max(0, Math.min(line, lines.length - 1));
   const streaming = Boolean(beat?.entry.streaming);
@@ -1393,7 +1392,7 @@ export function VNScreen({
                 }}
               >
                 <span className="vn-log-text">
-                  {showJa && ln.ja && <span className="vn-log-ja">{ln.ja}</span>}
+                  {showJa && !jaHiddenOf(entry) && ln.ja && <span className="vn-log-ja">{ln.ja}</span>}
                   {ln.speaker && <span className="vn-log-speaker">{ln.speaker}</span>}
                   {ln.text}
                 </span>
@@ -1436,8 +1435,8 @@ export function VNScreen({
     setMenu('plugin');
     setLastPage('plugin');
   };
-  // 「换声音 · 试音」:素材管理的「声音」页签(插件页的语音只管声音在对话里怎么用,不再有这些)
-  const openVoice = onOpenVoiceAssets ?? (() => openPlugin('voice'));
+  // 「换声音 · 试音」:菜单插件页的语音(顶上就是主声音下拉框;10-18 一度改去素材页,那里换不了主声音,10-19 改回来)
+  const openVoice = () => openPlugin('voice');
 
   const advance = () => {
     if (uiHidden) {
@@ -1741,6 +1740,7 @@ export function VNScreen({
       openPlugin,
       pluginFocus,
       openConfig: () => openMenu('config'),
+      openAssets: () => openMenu('assets'),
       showThinking: settings.showThinking,
     });
 
@@ -2030,7 +2030,7 @@ export function VNScreen({
           )}
 
           {/* 外语插件:这句的日语小字在上,中文照常打字在下 */}
-          {showJa && shown?.ja && !waiting && <div className="vn-ja">{shown.ja}</div>}
+          {jaVisible && shown?.ja && !waiting && <div className="vn-ja">{shown.ja}</div>}
           {body !== null && <div className={`vn-text${speaker ? '' : ' narration'}`}>{body}</div>}
           {showNextMark && <span className="vn-next" aria-hidden="true">▼</span>}
           {atEnd && <span className="vn-end" aria-hidden="true">■</span>}
@@ -2125,7 +2125,6 @@ export function VNScreen({
             ) : null
           }
           onClose={closeMenu}
-          onLibrary={onOpenLibrary}
           onTitle={() => {
             setMenu(null);
             setTitleCold(false);
@@ -2146,6 +2145,7 @@ export function VNScreen({
               onOpenVoice={openVoice}
               showJa={showJa}
               onChangeShowJa={onChangeShowJa}
+              jaHide={jaHide}
               initialTab={settingsTab}
               extraTabs={
                 illustrationsInstalled

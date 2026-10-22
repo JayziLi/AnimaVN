@@ -1,10 +1,11 @@
 /**
  * 画出来的图挂在消息上:swipe_info[分支].vn.images,一张一个记号 {line, until?, id, sha, hidden?}。纯函数,有测试。
  *
- * 显示规则:这条回复里,第 line 句显示「在这句或之前、最近的那一张」,到它的结束句(until,指导模型判的:
- * 地点、动作、衣服、在场的人一变就结束;没写的挂 hold.fallback 句)或者下一张为止,最少挂 hold.min 句
- * (10-12 用户:原来一直挂到回复结束;后来又要「最小持续时间」,指导模型判早了也挂够)。
- * 那一张收起了(hidden)或者已经过了结束句就什么都不显示(更早的那张不会冒回来)。同一句画了新的,新的顶掉旧的(旧的还在相册里)。
+ * 显示规则:这条回复里,第 line 句起显示,到它的结束句(until,指导模型判的:地点、动作、衣服、在场的人一变就结束;
+ * 没写的就是画的那句)为止;另外从玩家第一次看到它的那句算起,至少挂「最少显示」那么多句(含那句),
+ * 这次新画好、还没显示过的那张,玩家已经读过它那句了也照样显示(10-17 用户:图画好时玩家早读过去了,刚出来就跳过)。
+ * 同时有几张能显示时显示新的那张:这次画的比以前的新,后画的比先画的新,同样以前的看句号靠后的。
+ * 收起(hidden)的那张不显示,它之前的也不冒回来。同一句画了新的,新的顶掉旧的(旧的还在相册里)。
  */
 
 import type { ChatEntry, SwipeInfo, VnImageMark, VnMarks } from '../../lib/chatEntry';
@@ -22,24 +23,50 @@ export function imagesOf(entry: ChatEntry, swipe = entry.swipeIndex): VnImageMar
   return Array.isArray(raw) ? raw.filter(valid).sort((a, b) => a.line - b.line) : [];
 }
 
-/** 一张图挂几句(都含画的那句):min 至少几句;fallback 指导模型没写结束句时挂几句。设置里能改 */
-export interface Hold {
-  min: number;
-  fallback: number;
-}
-export const DEFAULT_HOLD: Hold = { min: 3, fallback: 4 };
+/** 最少显示几句(从玩家第一次看到它的那句算,含那句);设置里能改 */
+export const DEFAULT_HOLD_LINES = 3;
 
-/** 这张图显示到第几句(含) */
-export function endOf(m: VnImageMark, hold: Hold = DEFAULT_HOLD): number {
-  const judged = typeof m.until === 'number' && m.until >= m.line ? m.until : m.line + hold.fallback - 1;
-  return Math.max(judged, m.line + hold.min - 1);
+/** 这次打开以来的显示记录(只在内存里,不写库):哪张什么时候画好、第一次显示在第几句 */
+export interface ShowLog {
+  drawn: Map<string, number>;
+  shown: Map<string, number>;
 }
+export const newShowLog = (): ShowLog => ({ drawn: new Map(), shown: new Map() });
 
-/** 当前分支第 line 句显示的那张;没有、收起了、过了结束句是 null */
-export function markAt(entry: ChatEntry, line: number, hold: Hold = DEFAULT_HOLD): VnImageMark | null {
-  let found: VnImageMark | null = null;
-  for (const m of imagesOf(entry)) if (m.line <= line) found = m;
-  return found && !found.hidden && line <= endOf(found, hold) ? found : null;
+/** 这张图按句号显示到第几句(含) */
+export const endOf = (m: VnImageMark): number => (typeof m.until === 'number' && m.until >= m.line ? m.until : m.line);
+
+/**
+ * 当前分支第 line 句显示的那张;没有是 null。传了 log 就按上面的规则算并记下「第一次显示在第几句」,
+ * 不传只看句号(没有最少句数、新画的这些)
+ */
+export function markAt(
+  entry: ChatEntry,
+  line: number,
+  holdLines = DEFAULT_HOLD_LINES,
+  log?: ShowLog,
+): VnImageMark | null {
+  const reached = imagesOf(entry).filter((m) => m.line <= line);
+  let from = 0;
+  reached.forEach((m, i) => {
+    if (m.hidden) from = i + 1;
+  });
+  const live = (m: VnImageMark) => {
+    if (line <= endOf(m)) return true;
+    if (!log) return false;
+    const shown = log.shown.get(m.id);
+    if (shown === undefined) return log.drawn.has(m.id);
+    return line - shown < holdLines;
+  };
+  let best: VnImageMark | null = null;
+  const newer = (a: VnImageMark, b: VnImageMark) => {
+    const da = log?.drawn.get(a.id) ?? -1;
+    const db = log?.drawn.get(b.id) ?? -1;
+    return da !== db ? da > db : a.line > b.line;
+  };
+  for (const m of reached.slice(from)) if (live(m) && (!best || newer(m, best))) best = m;
+  if (best && log && !log.shown.has(best.id)) log.shown.set(best.id, line);
+  return best;
 }
 
 function withImages(entry: ChatEntry, swipe: number, images: VnImageMark[]): ChatEntry {

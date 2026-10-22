@@ -45,6 +45,7 @@ describe('cardFacts:抽屉里看的那张卡用了哪些素材', () => {
       spritePack: null,
       listRef: 'builtin',
       mainVoice: null,
+      voices: { main: null, extras: [] },
       scene: { packName: null, bg: 0, bgm: 0, cgPackName: null, cg: 0 },
       prefs: {},
     });

@@ -1224,8 +1224,8 @@
   background: rgba(251, 250, 248, 0.86) !important;
   border: 1px solid rgba(255, 255, 255, 0.9) !important;
   box-shadow: 0 1cqh 3cqh rgba(60, 50, 70, 0.18);
-  backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
   text-align: left;
   color: var(--tt2-ink);
   transition: box-shadow 0.2s, transform 0.2s;

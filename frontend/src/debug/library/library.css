@@ -3,6 +3,21 @@
    中间和右栏是卡编辑器里同一套包编辑器(studio.css)。颜色只用 debug.css 的 :root 变量。
    整页和卡编辑器同一层(92);从卡名打开的卡编辑器后挂上,盖在这一页上面 */
 
+/* ── 嵌进游戏菜单的「素材」页(embedded):铺满菜单的内容区,不是全屏浮层。
+   颜色变量由外面的 .vn-embed / .vn-library-embed 换成菜单那套(vn.css),这里只管尺寸 ── */
+
+.lib-embedded {
+  position: relative;
+  inset: auto;
+  z-index: auto;
+  flex: 1;
+  min-height: 0;
+  padding: 0;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.18);
+  font-family: inherit;
+}
+
 /* ── 顶栏 ── */
 
 .lib-header {
@@ -679,6 +694,13 @@
   }
   .lib-tab {
     padding: 0 11px;
+  }
+  /* 菜单里没有「←」和标题:搜索框从左边起,不留空 */
+  .lib-embedded .lib-header {
+    padding-left: 10px;
+  }
+  .lib-embedded .lib-header > .st-flex {
+    display: none;
   }
 
   .lib-aside {

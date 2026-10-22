@@ -87,8 +87,8 @@
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(16, 16, 16, 0.62);
-  backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
   pointer-events: none;
 }
 .st-stage-speaker {
@@ -219,8 +219,8 @@
   padding: 0 11px;
   border-radius: 15px;
   background: rgba(14, 14, 14, 0.62);
-  backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
   color: var(--text-dim);
   font-size: 12px;
   white-space: nowrap;
@@ -281,8 +281,8 @@
   border: 0;
   border-radius: 15px;
   background: rgba(14, 14, 14, 0.62);
-  backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
   color: var(--text);
   font: inherit;
   font-size: 12px;

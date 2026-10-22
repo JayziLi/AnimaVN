@@ -17,6 +17,7 @@ const keqing = (over: Partial<DrawerCardFacts> = {}): DrawerCardFacts => ({
   spritePack: { id: 'p1', name: '玉衡星' },
   listRef: 'pack:p1',
   mainVoice: voice('ja'),
+  voices: { main: 'v1', extras: [] },
   scene: { packName: '原神 · 璃月', bg: 16, bgm: 8, cgPackName: null, cg: 0 },
   prefs: {},
   ...over,

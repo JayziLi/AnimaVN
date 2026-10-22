@@ -175,8 +175,8 @@
   min-height: 200px;
   border: 1px dashed rgba(255, 255, 255, 0.6);
   background: rgba(251, 250, 248, 0.14);
-  backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
   color: #f6f6f8;
   font: inherit;
   cursor: pointer;

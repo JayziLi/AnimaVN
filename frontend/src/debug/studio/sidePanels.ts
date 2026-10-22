@@ -63,20 +63,19 @@ export function dragWidth(side: Side, start: number, delta: number, other: numbe
   return Math.min(max, Math.max(PANEL_LIMITS[side].min, start + delta));
 }
 
-/** localStorage 里存的;读不到、坏了、字段不对的用默认 */
-export function parsePanels(raw: string | null): PanelPrefs {
-  if (!raw) return DEFAULT_PANELS;
+/** localStorage 里存的;读不到、坏了、字段不对的用默认(不给就是 DEFAULT_PANELS) */
+export function parsePanels(raw: string | null, d: PanelPrefs = DEFAULT_PANELS): PanelPrefs {
+  if (!raw) return d;
   let v: unknown;
   try {
     v = JSON.parse(raw);
   } catch {
-    return DEFAULT_PANELS;
+    return d;
   }
-  if (!v || typeof v !== 'object' || Array.isArray(v)) return DEFAULT_PANELS;
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return d;
   const o = v as Record<string, unknown>;
-  const num = (x: unknown, d: number) => (typeof x === 'number' && Number.isFinite(x) ? x : d);
-  const bool = (x: unknown, d: boolean) => (typeof x === 'boolean' ? x : d);
-  const d = DEFAULT_PANELS;
+  const num = (x: unknown, fallback: number) => (typeof x === 'number' && Number.isFinite(x) ? x : fallback);
+  const bool = (x: unknown, fallback: boolean) => (typeof x === 'boolean' ? x : fallback);
   return {
     left: num(o.left, d.left),
     right: num(o.right, d.right),
@@ -85,11 +84,11 @@ export function parsePanels(raw: string | null): PanelPrefs {
   };
 }
 
-function load(key: string): PanelPrefs {
+function load(key: string, defaults: PanelPrefs): PanelPrefs {
   try {
-    return parsePanels(window.localStorage.getItem(key));
+    return parsePanels(window.localStorage.getItem(key), defaults);
   } catch {
-    return DEFAULT_PANELS;
+    return defaults;
   }
 }
 
@@ -122,13 +121,21 @@ export interface SidePanels {
   style: CSSProperties;
 }
 
-export function useSidePanels(storageKey: string): SidePanels {
-  const [prefs, setPrefs] = useState<PanelPrefs>(() => load(storageKey));
+export interface SidePanelOptions {
+  /** 没存过时用的(比如游戏菜单里的素材页:右栏默认收起) */
+  defaults?: PanelPrefs;
+  /** 页面不是整个窗口宽时,窗口里别的东西占掉的宽(菜单的左栏和边距):两栏按剩下的宽来收 */
+  reserved?: number;
+}
+
+export function useSidePanels(storageKey: string, options: SidePanelOptions = {}): SidePanels {
+  const { defaults = DEFAULT_PANELS, reserved = 0 } = options;
+  const [prefs, setPrefs] = useState<PanelPrefs>(() => load(storageKey, defaults));
   const latest = useRef(prefs);
   useEffect(() => {
     latest.current = prefs;
   });
-  const viewport = useViewportWidth();
+  const viewport = useViewportWidth() - reserved;
   const widths = fitWidths(prefs, viewport);
   const [dragging, setDragging] = useState<Side | null>(null);
 
@@ -158,7 +165,7 @@ export function useSidePanels(storageKey: string): SidePanels {
     const startX = e.clientX;
     const start = widths[side];
     const other = widths[otherSide];
-    const vw = window.innerWidth;
+    const vw = window.innerWidth - reserved;
     // 另一栏按眼下画出来的宽定住:窗口小、两栏正被按占比收着时,拖完不会再跳一下
     let next: PanelPrefs = { ...latest.current, [side]: start, [otherSide]: prefsWidth(latest.current, otherSide, other) };
     const onMove = (ev: PointerEvent) => {

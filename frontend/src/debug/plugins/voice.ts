@@ -98,6 +98,20 @@ export function switchMainVoice(binding: CardVoices, next: string | null): CardV
 }
 
 /**
+ * 插件页「主声音」下拉框的两组:这张卡挂着的(主声音在前、备用按绑定顺序)和其余的(按声音列表的顺序)。
+ * 同一个人换语言、换版本时都挂在卡上,排在最前面好找;挂着但已经删掉的声音不列
+ */
+export function mainVoiceChoices(
+  binding: CardVoices | null,
+  profiles: readonly VoiceProfile[],
+): { onCard: VoiceProfile[]; others: VoiceProfile[] } {
+  const ids = binding ? [binding.main, ...binding.extras].filter((x): x is string => Boolean(x)) : [];
+  const byId = new Map(profiles.map((p) => [p.id, p]));
+  const onCard = ids.map((id) => byId.get(id)).filter((p): p is VoiceProfile => Boolean(p));
+  return { onCard, others: profiles.filter((p) => !ids.includes(p.id)) };
+}
+
+/**
  * 说话人 → 声音。旁白(null)不念;说话人就是这张卡的角色名(切句没认出「名字：」时
  * 用的就是它)→ 主声音;否则按名字 / 别名找,不分大小写,找不到不念
  */

@@ -23,7 +23,7 @@ import {
   usesReference,
   withLook,
 } from './config';
-import { addImage, blockedByCooldown, endOf, imagesOf, markAt, patchImage, repliesSinceImage } from './marks';
+import { addImage, blockedByCooldown, endOf, imagesOf, markAt, newShowLog, patchImage, repliesSinceImage } from './marks';
 
 const entry = (id: string, role: 'user' | 'assistant', images?: VnImageMark[], swipes = 1): ChatEntry => ({
   id,
@@ -188,29 +188,52 @@ describe('生图卡带 · 设置', () => {
 describe('生图卡带 · 图挂在消息上', () => {
   const m = (line: number, id: string, hidden?: boolean): VnImageMark => ({ line, id, sha: `sha-${id}`, ...(hidden ? { hidden } : {}) });
 
-  it('每句显示这句或之前最近的那一张;收起的那张不显示,更早的也不冒回来', () => {
-    const e = entry('e', 'assistant', [m(5, 'b'), m(2, 'a', false)]);
+  it('只看句号:从画的那句显示到结束句(没写就是那一句);收起的那张不显示,更早的也不冒回来', () => {
+    const e = entry('e', 'assistant', [{ ...m(5, 'b'), until: 8 }, { ...m(2, 'a', false), until: 4 }]);
     expect(markAt(e, 1)).toBeNull();
     expect(markAt(e, 2)?.id).toBe('a');
     expect(markAt(e, 4)?.id).toBe('a');
+    expect(markAt(e, 5)?.id).toBe('b');
     expect(markAt(e, 8)?.id).toBe('b');
+    expect(markAt(e, 9)).toBeNull();
     const hidden = patchImage(e, 0, 'b', (x) => ({ ...x, hidden: true }));
     expect(markAt(hidden, 8)).toBeNull();
     expect(markAt(hidden, 3)?.id).toBe('a');
+    expect(endOf(m(5, 'x'))).toBe(5);
+    expect(endOf({ ...m(5, 'x'), until: 2 })).toBe(5);
   });
 
-  it('到结束句为止:指导模型写了 until 就到那句,没写挂 4 句;最少挂 3 句;过了就不显示,更早的也不冒回来', () => {
-    const e = entry('e', 'assistant', [{ ...m(2, 'a'), until: 6 }, m(10, 'b')]);
-    expect(markAt(e, 6)?.id).toBe('a');
-    expect(markAt(e, 7)).toBeNull();
-    expect(markAt(e, 13)?.id).toBe('b');
-    expect(markAt(e, 14)).toBeNull();
-    expect(endOf({ ...m(5, 'x'), until: 2 })).toBe(8);
-    // 判得太早(画的那句就结束):也挂够最少的句数;设置改了跟着
-    expect(endOf({ ...m(5, 'x'), until: 5 })).toBe(7);
-    expect(endOf({ ...m(5, 'x'), until: 5 }, { min: 1, fallback: 4 })).toBe(5);
-    expect(endOf(m(5, 'x'), { min: 1, fallback: 2 })).toBe(6);
-    expect(markAt(e, 12, { min: 1, fallback: 2 })).toBeNull();
+  it('最少显示几句:从第一次看到的那句算(含那句);过了结束句也挂够', () => {
+    const e = entry('e', 'assistant', [{ ...m(2, 'a'), until: 2 }]);
+    const log = newShowLog();
+    expect(markAt(e, 2, 3, log)?.id).toBe('a');
+    expect(markAt(e, 3, 3, log)?.id).toBe('a');
+    expect(markAt(e, 4, 3, log)?.id).toBe('a');
+    expect(markAt(e, 5, 3, log)).toBeNull();
+    // 以前看过的(读库来的、没在这次显示过):只按句号
+    expect(markAt(e, 3, 3, newShowLog())).toBeNull();
+  });
+
+  it('这次新画好的:玩家读过它那句了也显示,从显示那句起算;有新画的换新的', () => {
+    const log = newShowLog();
+    const e = entry('e', 'assistant', [{ ...m(2, 'a'), until: 2 }, { ...m(10, 'old'), until: 20 }]);
+    expect(markAt(e, 12, 3, log)?.id).toBe('old');
+    log.drawn.set('a', 1);
+    // 后画的 a 句号靠前也优先
+    expect(markAt(e, 12, 3, log)?.id).toBe('a');
+    expect(markAt(e, 14, 3, log)?.id).toBe('a');
+    // 挂够了退回到还在结束句以内的那张
+    expect(markAt(e, 15, 3, log)?.id).toBe('old');
+    const f = addImage(e, 0, { line: 4, until: 4, id: 'b', sha: 's' });
+    log.drawn.set('b', 2);
+    expect(markAt(f, 15, 3, log)?.id).toBe('b');
+    // 收起的那张之前的都不冒回来,之后的照常
+    const g = patchImage(f, 0, 'b', (x) => ({ ...x, hidden: true }));
+    expect(markAt(g, 16, 3, log)?.id).toBe('old');
+    expect(markAt(patchImage(g, 0, 'old', (x) => ({ ...x, hidden: true })), 16, 3, log)).toBeNull();
+  });
+
+  it('记号的增改', () => {
     const added = addImage(entry('f', 'assistant'), 0, { line: 4, until: 9, id: 'n', sha: 's' });
     expect(imagesOf(added)).toEqual([{ line: 4, until: 9, id: 'n', sha: 's' }]);
   });

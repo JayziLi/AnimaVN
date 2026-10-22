@@ -53,7 +53,7 @@ import {
 } from './config';
 import { ConsoleSettings } from './ConsoleSettings';
 import { ImageGenSettings } from './ImageGenSettings';
-import { addImage, blockedByCooldown, markAt, patchImage, repliesSinceImage } from './marks';
+import { addImage, blockedByCooldown, markAt, newShowLog, patchImage, repliesSinceImage, type ShowLog } from './marks';
 import { StudioAlbum } from './StudioAlbum';
 import { albumSummary } from './studioAlbumModel';
 import { IgButton, IgStage } from './VnControls';
@@ -138,6 +138,8 @@ export interface ImageGenStore {
   /** 发送右边的画笔(量它所在的对话框,小面板放在框上方) */
   anchor: HTMLElement | null;
   setAnchor: (el: HTMLElement | null) => void;
+  /** 这条回复第 line 句显示的那张(marks.ts 的 markAt,带这次打开以来的显示记录);没有是 null */
+  shownAt: (entry: ChatEntry, line: number) => VnImageMark | null;
   /** 光标这句的样子 → 给指导模型、出图的目标 */
   targetOf: (ctx: VnIllustrationContext) => DrawTarget | null;
   /** 只问指导模型(「先看提示词」);出错时提示并返回 null */
@@ -254,6 +256,12 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
   const [panelOpen, setPanelOpen] = useState(false);
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const jobKey = useRef(0);
+  // 哪张什么时候画好 / 第一次显示在第几句(「最少显示」从那句算,这次新画的读过了那句也显示)
+  const showLog = useRef<ShowLog>(newShowLog());
+  const shownAt = useCallback(
+    (entry: ChatEntry, line: number) => markAt(entry, line, config.holdLines, showLog.current),
+    [config.holdLines],
+  );
   const track = useCallback(async <T,>(label: string, run: () => Promise<T>): Promise<T> => {
     const key = ++jobKey.current;
     setJobs((j) => [...j, { key, label, started: Date.now() }]);
@@ -458,6 +466,7 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
         return img;
       }
       const until = typeof o.until === 'number' ? o.until : undefined;
+      showLog.current.drawn.set(img.id, Date.now());
       patchEntry(target.entry.id, (e) => addImage(e, swipe, { line: target.line, until, id: img.id, sha: img.sha ?? '' }));
       return img;
     },
@@ -618,6 +627,7 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
       setPanelOpen,
       anchor,
       setAnchor,
+      shownAt,
       targetOf,
       plan,
       draw,
@@ -652,6 +662,7 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
       removeImage,
       panelOpen,
       anchor,
+      shownAt,
       targetOf,
       plan,
       draw,
@@ -687,7 +698,7 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
   const vn: VnIllustrations = useMemo(
     () => ({
       viewAt: (entry, line) => {
-        const m = markAt(entry, line, store.config.hold);
+        const m = store.shownAt(entry, line);
         return m ? { key: m.id, src: apiUrl(`/api/blobs/${m.sha}?w=${SHOW_WIDTH}`), focus: 50, place: store.config.place } : null;
       },
       button: (ctx) => <IgButton store={store} ctx={ctx} />,

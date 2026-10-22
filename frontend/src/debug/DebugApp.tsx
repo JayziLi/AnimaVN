@@ -186,7 +186,8 @@ import {
   type JevSnapshot,
   type JevTrial,
 } from './plugins/jevRun';
-import { cutJev, jevText } from './plugins/jevNotes';
+import { cutJev } from './plugins/jevNotes';
+import { hiddenJaCount, hideJa, historyText, showJaAgain, type JaHideControls } from './plugins/jaHide';
 import { BUILTIN_EMOTIONS } from './plugins/emotions';
 import {
   DEFAULT_PLAYER_BLOCK_PROMPT,
@@ -506,6 +507,8 @@ export default function DebugApp() {
   // 素材管理页(全屏页,library/):开在哪个页签、选中哪个包;null = 没开。关了再开回到上次的地方
   const [library, setLibrary] = useState<LibraryRoute | null>(null);
   const lastLibrary = useRef<LibraryRoute>({ tab: 'sprite', id: null });
+  // 游戏菜单的「素材」页(同一个 AssetLibrary 嵌在菜单里):开在哪个页签、选中哪个包,和全屏那份各记各的
+  const [menuLibrary, setMenuLibrary] = useState<LibraryRoute>({ tab: 'sprite', id: null });
   // 导完没有卡可开时素材管理页顶上那一行提示;关掉素材管理页就没了
   const [libraryNotice, setLibraryNotice] = useState<ImportNotice | null>(null);
   // 导完一批加一:素材管理页开着就重读列表和导入记录
@@ -2073,7 +2076,17 @@ export default function DebugApp() {
   // 发给模型的历史是「原文 + Jev 另外存的标注」(plugins/jevNotes.ts);现在是 Jev 模式的那几类,
   // 组装完再整个摘掉(assembleForSend)—— 切回 AI 写以后,以前 Jev 标的照样当示例
   const history: ChatTurn[] = useMemo(
-    () => entries.map((e) => ({ role: e.role, content: jevText(e, vnKinds) })),
+    () => entries.map((e) => ({ role: e.role, content: historyText(e, vnKinds) })),
+    [entries, vnKinds],
+  );
+
+  // 隐藏前文日语(plugins/jaHide.ts):外语插件页和视觉小说设置的「字幕」里各有一份按钮
+  const jaHide: JaHideControls = useMemo(
+    () => ({
+      hidden: hiddenJaCount(entries),
+      hide: () => setEntries((prev) => prev.map((e) => hideJa(e, vnKinds))),
+      show: () => setEntries((prev) => prev.map(showJaAgain)),
+    }),
     [entries, vnKinds],
   );
 
@@ -2415,8 +2428,8 @@ export default function DebugApp() {
     });
   };
 
-  /** 条目 → 发给模型的一条历史(和 history 一样合并了 Jev 的标注) */
-  const turnOf = (e: ChatEntry): ChatTurn => ({ role: e.role, content: jevText(e, vnKinds) });
+  /** 条目 → 发给模型的一条历史(和 history 一样合并了 Jev 的标注、摘掉藏起来的日语) */
+  const turnOf = (e: ChatEntry): ChatTurn => ({ role: e.role, content: historyText(e, vnKinds) });
 
   // 设置 → 数据「表情认法」:Jev 的起始表情和舞台用同一种认法
   const timelineEngine = useTimelineEngine();
@@ -2978,8 +2991,11 @@ export default function DebugApp() {
   const renderPluginsDrawer = (
     focus: PluginFocus | null,
     onClose: () => void,
-    /** 只在游戏菜单里有:「游戏设置 · 音量」那个链接 */
-    extra?: { gameSettings?: () => void },
+    /**
+     * 只在游戏菜单里有:「游戏设置 · 音量」那个链接;「素材管理 · 立绘包」这类链接改成换到菜单的「素材」页
+     * (不给就打开全屏的素材管理页)
+     */
+    extra?: { gameSettings?: () => void; library?: (tab: LibraryKind) => void },
   ) => (
     <PluginsDrawer
       presetName={preset?.name ?? null}
@@ -3006,7 +3022,7 @@ export default function DebugApp() {
       splice={splice}
       panels={cartridgePanels}
       switches={{ value: switches, onChange: changeSwitches }}
-      lang={{ config: langConfig, onChangeConfig: changeLangConfig }}
+      lang={{ config: langConfig, onChangeConfig: changeLangConfig, jaHide }}
       chat={{ entries, kinds: vnKinds, userName }}
       send={sendView}
       links={{
@@ -3016,6 +3032,10 @@ export default function DebugApp() {
           openStudio({ tab: 'assets', slot }, id);
         },
         library: (tab) => {
+          if (extra?.library) {
+            extra.library(tab);
+            return;
+          }
           onClose();
           routeLibrary({ tab, id: null });
         },
@@ -3342,6 +3362,37 @@ export default function DebugApp() {
     void t.scenePlugin.refreshPacks();
     void t.scenePlugin.refreshCgPacks();
   };
+
+  /**
+   * 素材管理页:调试台的全屏那份(盖在调试台、视觉小说上面)和游戏菜单「素材」页的那份(embedded)是同一个组件、
+   * 同一份数据,只有开在哪(route)各记各的。导完没有卡可开时的提示条只在全屏那份上(finishImport 打开的是它)
+   */
+  const renderAssetLibrary = (route: LibraryRoute, onRoute: (next: LibraryRoute) => void, embedded = false) => (
+    <AssetLibrary
+      route={route}
+      onRoute={onRoute}
+      embedded={embedded}
+      onClose={embedded ? undefined : () => setLibrary(null)}
+      cards={libraryCards}
+      stage={spriteLayout.stage}
+      sync={packSync}
+      notify={notify}
+      bindings={libraryBindings}
+      // 包上「被几张卡用」跟着变
+      onBindingsChanged={(kind) => packSync.packs(kind === 'bg' || kind === 'bgm' ? 'scene' : kind)}
+      onDeleted={forgetDeleted}
+      onOpenCard={(id, slot) => openStudio({ tab: 'assets', slot }, id)}
+      onUndone={(r) => void afterImportUndone(r)}
+      // 「导入」:选文件交给导入器,不带目标卡;导完有卡就开那张卡的卡编辑器(盖在这一页上面)
+      onImport={() => importer.pick()}
+      notice={embedded ? null : libraryNotice}
+      onNoticeClose={() => setLibraryNotice(null)}
+      onClassifyUnknown={classifyInLibrary}
+      // 菜单里那份:上面盖着卡编辑器或全屏那份,关掉回来时重读
+      covered={studio !== null || (embedded && library !== null)}
+      reloadKey={libraryReload}
+    />
+  );
 
   /**
    * 资料页:左栏目录 + 角色卡的全部字段 + 右栏(绑定、Token 分布、上下文预算、删卡);目录点「玩家人设」换成人设页。
@@ -4018,6 +4069,7 @@ export default function DebugApp() {
           onChangeVoiceConfig={voicePlugin.changeConfig}
           showJa={langConfig.showJa}
           onChangeShowJa={(showJa) => changeLangConfig({ ...langConfig, showJa })}
+          jaHide={jaHide}
           jevSync={jevConfig.syncText}
           enterKey={chatSettings.enterKey}
           onChangeEnterKey={(enterKey) => changeChatSettings({ ...chatSettings, enterKey })}
@@ -4054,12 +4106,6 @@ export default function DebugApp() {
           onSetManual={(id, line, pick) => patchEntry(id, (e) => setManual(e, line, pick))}
           illustrations={illustrations.vn}
           switches={switches}
-          onOpenLibrary={openLibrary}
-          // 游戏里「换声音 · 试音」:素材管理的声音页签,选中这张卡的主声音(没绑就是列表里第一个)
-          onOpenVoiceAssets={() => {
-            setMobileMenu(false);
-            routeLibrary({ tab: 'voice', id: voicePlugin.binding.main });
-          }}
           renderPage={(page, ctx) => {
             if (page === 'log') {
               return (
@@ -4176,9 +4222,19 @@ export default function DebugApp() {
               // 调试台的插件抽屉原样嵌进来:同一个组件、同一份数据,两边改动互通
               return (
                 <div className="vn-embed vn-plugin-embed">
-                  {renderPluginsDrawer(ctx.pluginFocus, ctx.close, { gameSettings: ctx.openConfig })}
+                  {renderPluginsDrawer(ctx.pluginFocus, ctx.close, {
+                    gameSettings: ctx.openConfig,
+                    library: (tab) => {
+                      setMenuLibrary({ tab, id: null });
+                      ctx.openAssets();
+                    },
+                  })}
                 </div>
               );
+            }
+            if (page === 'assets') {
+              // 调试台的素材管理页嵌进来:同一个组件、同一份数据,两边改动互通;页签和选中的包另记一份
+              return <div className="vn-embed vn-library-embed">{renderAssetLibrary(menuLibrary, setMenuLibrary, true)}</div>;
             }
             if (page === 'preset') {
               return (
@@ -4218,30 +4274,7 @@ export default function DebugApp() {
       {vnOpen && <EnvBadge floating />}
 
       {/* 素材管理页:全屏,盖在视觉小说上面;排在卡编辑器前面 —— 点卡名打开的卡编辑器盖在它上面 */}
-      {library && (
-        <AssetLibrary
-          route={library}
-          onRoute={routeLibrary}
-          onClose={() => setLibrary(null)}
-          cards={libraryCards}
-          stage={spriteLayout.stage}
-          sync={packSync}
-          notify={notify}
-          bindings={libraryBindings}
-          // 包上「被几张卡用」跟着变
-          onBindingsChanged={(kind) => packSync.packs(kind === 'bg' || kind === 'bgm' ? 'scene' : kind)}
-          onDeleted={forgetDeleted}
-          onOpenCard={(id, slot) => openStudio({ tab: 'assets', slot }, id)}
-          onUndone={(r) => void afterImportUndone(r)}
-          // 「导入」:选文件交给导入器,不带目标卡;导完有卡就开那张卡的卡编辑器(盖在这一页上面)
-          onImport={() => importer.pick()}
-          notice={libraryNotice}
-          onNoticeClose={() => setLibraryNotice(null)}
-          onClassifyUnknown={classifyInLibrary}
-          covered={studio !== null}
-          reloadKey={libraryReload}
-        />
-      )}
+      {library && renderAssetLibrary(library, routeLibrary)}
 
       {/* 卡编辑器:全屏,盖在视觉小说上面(从选角页、菜单的「角色」页也能打开) */}
       {studio && card && cardId && (

@@ -9,6 +9,7 @@
 
 import { langStatus, type LangStatus, type SendView } from '../../../core/sendPlan';
 import { textDiff } from '../../../core/textDiff';
+import type { JaHideControls } from '../../../plugins/jaHide';
 import { DEFAULT_LANG_BLOCK_PROMPT, DEFAULT_LANG_BLOCK_PROMPT_JEV, isJaLang, type LangPluginConfig } from '../../../plugins/lang';
 import { SettingRow } from '../../settings/SettingRow';
 import { headTags } from '../cardView';
@@ -61,6 +62,34 @@ function SentText({ status, lang }: { status: LangStatus; lang: SendView['lang']
   );
 }
 
+/** 隐藏前文日语:按钮 + 当前对话藏了几条(视觉小说设置「字幕」那一栏也有一份) */
+function JaHideRow({ jaHide }: { jaHide: JaHideControls }) {
+  return (
+    <SettingRow
+      label="前文日语"
+      tip="ja_hide"
+      control={{
+        kind: 'custom',
+        render: () => (
+          <>
+            <button type="button" className="btn small" onClick={jaHide.hide}>
+              隐藏前文日语
+            </button>
+            {jaHide.hidden > 0 && (
+              <button type="button" className="btn small" onClick={jaHide.show}>
+                恢复
+              </button>
+            )}
+            <span className="dw-muted">
+              {jaHide.hidden > 0 ? `当前对话已藏 ${jaHide.hidden} 条回复的日语` : '当前对话的日语都还显示着'}
+            </span>
+          </>
+        ),
+      }}
+    />
+  );
+}
+
 export function LangPage(p: {
   view: CardView;
   card: { id: string; name: string } | null;
@@ -68,6 +97,8 @@ export function LangPage(p: {
   onChangeConfig: (next: LangPluginConfig) => void;
   /** 当前聊天这张卡这次怎么发;不传就照旧按主声音写「在用」 */
   send?: SendView;
+  /** 隐藏前文日语(当前对话);不传就不显示这一行 */
+  jaHide?: JaHideControls;
   links: PageLinks;
   advOpen: AdvOpen;
 }) {
@@ -121,6 +152,7 @@ export function LangPage(p: {
           default="both"
           onChange={(v) => onChangeConfig({ ...config, showJa: v === 'both' })}
         />
+        {p.jaHide && <JaHideRow jaHide={p.jaHide} />}
       </Section>
 
       <Advanced

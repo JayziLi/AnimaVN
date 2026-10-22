@@ -4,6 +4,8 @@
  * 外貌这类本来就只属于一张卡)。纯函数,有测试。
  */
 
+import { DEFAULT_HOLD_LINES } from './marks';
+
 export const IMAGEGEN_SETTING_KEY = 'plugin.imagegen';
 
 export type SizeKey = 'landscape' | 'portrait' | 'square' | 'screen';
@@ -187,9 +189,8 @@ export interface ImageGenConfig {
   ucPreset: UcPreset;
   /** 反向预设之外另外写的反向 */
   uc: string;
-  /** 一张图在游戏里挂几句(都含画的那句):min 至少几句(指导模型判早了也挂够);
-   *  fallback 指导模型没判结束句时挂几句 */
-  hold: { min: number; fallback: number };
+  /** 一张图在游戏里至少显示几句(从玩家第一次看到它的那句算,含那句;过了指导模型判的结束句也挂够) */
+  holdLines: number;
   /** 图在游戏里放哪:above 对话框上面那一块(整张居中,不被挡,默认)/ screen 铺满屏幕 */
   place: 'above' | 'screen';
   /** 内置画风是第几版(新加的内置画风补进库里那份用) */
@@ -233,7 +234,7 @@ export const DEFAULT_IMAGEGEN_CONFIG: ImageGenConfig = {
   quality: 'standard',
   ucPreset: 'light',
   uc: '',
-  hold: { min: 3, fallback: 4 },
+  holdLines: DEFAULT_HOLD_LINES,
   place: 'above',
   stylesVersion: STYLES_VERSION,
   allowPaid: false,
@@ -370,7 +371,6 @@ export function normalizeImageGenConfig(raw: unknown): ImageGenConfig {
   const auto = isObj(raw.auto) ? raw.auto : {};
   const player = isObj(raw.player) ? raw.player : {};
   const custom = isObj(raw.custom) ? raw.custom : {};
-  const hold = isObj(raw.hold) ? raw.hold : {};
   const sampler = typeof raw.sampler === 'string' && SAMPLERS.some((s) => s.value === raw.sampler) ? raw.sampler : d.sampler;
   return {
     model: typeof raw.model === 'string' && MODELS.some((m) => m.id === raw.model) ? raw.model : d.model,
@@ -387,10 +387,7 @@ export function normalizeImageGenConfig(raw: unknown): ImageGenConfig {
     variety: bool(raw.variety, d.variety),
     quality: quality(raw.quality),
     ...ucOf(raw),
-    hold: {
-      min: Math.round(num(hold.min, d.hold.min, 1, 20)),
-      fallback: Math.round(num(hold.fallback, d.hold.fallback, 1, 20)),
-    },
+    holdLines: Math.round(num(raw.holdLines, d.holdLines, 1, 20)),
     place: raw.place === 'screen' ? 'screen' : 'above',
     stylesVersion: STYLES_VERSION,
     allowPaid: bool(raw.allowPaid, d.allowPaid),

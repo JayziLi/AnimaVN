@@ -2,12 +2,13 @@
  * 菜单里的「设置」页。视觉小说自己的偏好存 vnSettings;回车键和调试台聊天框共用,
  * 改的是 chatSettings;BGM 和语音的音量直接交给各自的播放器;
  * 语音开关、等不等语音是语音插件的配置(全局一份,和调试台插件抽屉里的是同一个)。
- * 换声音、试音、调参数在素材管理的「声音」页签(这张卡的主声音),这里只放个入口。
+ * 换声音、试音在菜单的插件页(语音),这里只放个入口;调参数在素材管理的「声音」页签。
  */
 
 import { useEffect, useState, type ReactNode } from 'react';
 import { debugApi, type MigrationStatus, type RecordsSummary, type SceneAsset, type StorageStatus } from '../lib/api';
 import { ENTER_KEY_MODES, type EnterKeyMode } from '../lib/chatSettings';
+import type { JaHideControls } from '../plugins/jaHide';
 import {
   MAX_WAIT_MAX,
   MAX_WAIT_MIN,
@@ -85,11 +86,13 @@ interface Props {
   onChangeVoiceConfig: (next: VoicePluginConfig) => void;
   /** 这张卡念台词用的声音;没绑是 null,还没选角色是 undefined */
   voiceCastName: string | null | undefined;
-  /** 打开素材管理的「声音」页签、选中这张卡的主声音:换声音、试音、调参数 */
+  /** 去插件页的语音:换主声音、试音 */
   onOpenVoice: () => void;
   /** 字幕:外语插件的「显示日语」(全局一份,和调试台插件里的是同一个开关) */
   showJa: boolean;
   onChangeShowJa: (showJa: boolean) => void;
+  /** 隐藏前文日语:外语块不发以后(比如主声音换成了中文),前面回复里的日语对玩家和模型都藏起来 */
+  jaHide: JaHideControls;
   /** 打开时停在哪一栏(右上角语音面板点「完整设置」进来是「声音」;卡带的分页是它的 key) */
   initialTab?: SettingsTab | string;
   /** 卡带加的分页(生图),排在「数据」后面 */
@@ -325,6 +328,7 @@ export function VNSettingsPage({
   onOpenVoice,
   showJa,
   onChangeShowJa,
+  jaHide,
   initialTab,
   titleMusic,
   onUploadMarks,
@@ -385,6 +389,24 @@ export function VNSettingsPage({
               />
               <span className="vn-set-note">
                 日语配音的卡在中文上面带一行日语原文;只显示中文就把它藏起来(历史页也是) · 和调试台外语插件里的开关是同一个
+              </span>
+            </div>
+          </Row>
+          <Row label="前文日语">
+            <div className="vn-set-stack">
+              <div className="vn-set-buttons">
+                <button className="vn-pill" onClick={jaHide.hide}>
+                  隐藏前文日语
+                </button>
+                {jaHide.hidden > 0 && (
+                  <button className="vn-pill" onClick={jaHide.show}>
+                    恢复
+                  </button>
+                )}
+              </div>
+              <span className="vn-set-note">
+                {jaHide.hidden > 0 ? `当前对话已藏 ${jaHide.hidden} 条回复的日语 · ` : ''}
+                外语块不发以后用(比如主声音换成了中文):前面回复里的日语不再显示,也不发给模型(免得它接着写日语);历史页「显示原文」还能看到
               </span>
             </div>
           </Row>
@@ -524,7 +546,7 @@ export function VNSettingsPage({
               </span>
             )}
             <button className="vn-pill" onClick={onOpenVoice}>
-              换声音 · 试音 · 调参数
+              换声音 · 试音
             </button>
           </div>
           <Row label="语音">

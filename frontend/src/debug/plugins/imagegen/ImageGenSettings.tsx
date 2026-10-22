@@ -395,28 +395,16 @@ function PicturePage({ store, go }: { store: ImageGenStore; go: (p: Page) => voi
           onPick={(v) => set({ ...config, place: v })}
         />
       </Row>
-      <Para text={IG_TIPS.hold} />
-      <Row label="最少显示" value={`${config.hold.min} 句`} tip={IG_TIPS.hold}>
+      <Row label="最少显示" value={`${config.holdLines} 句`} tip={IG_TIPS.hold}>
         <input
           type="range"
           min={1}
           max={10}
-          value={config.hold.min}
+          value={config.holdLines}
           aria-label="最少显示几句"
-          onChange={(e) => set({ ...config, hold: { ...config.hold, min: Number(e.target.value) } })}
+          onChange={(e) => set({ ...config, holdLines: Number(e.target.value) })}
         />
       </Row>
-      <Row label="没判结束时" value={`${config.hold.fallback} 句`} tip={IG_TIPS.hold_end}>
-        <input
-          type="range"
-          min={1}
-          max={10}
-          value={config.hold.fallback}
-          aria-label="指导模型没判结束时显示几句"
-          onChange={(e) => set({ ...config, hold: { ...config.hold, fallback: Number(e.target.value) } })}
-        />
-      </Row>
-      <Para text={IG_TIPS.hold_end} />
     </div>
   );
 }

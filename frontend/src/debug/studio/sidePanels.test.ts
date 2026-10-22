@@ -72,4 +72,13 @@ describe('parsePanels', () => {
     });
     expect(parsePanels(JSON.stringify({ left: 'wide', leftOpen: 'no' }))).toEqual(DEFAULT_PANELS);
   });
+
+  it('给了自己的默认(菜单里的素材页右栏默认收起):没存过、缺的字段都用它', () => {
+    const menu = prefs({ rightOpen: false });
+    expect(parsePanels(null, menu)).toEqual(menu);
+    expect(parsePanels('{oops', menu)).toEqual(menu);
+    expect(parsePanels(JSON.stringify({ left: 300 }), menu)).toEqual({ ...menu, left: 300 });
+    // 存过的照存的来
+    expect(parsePanels(JSON.stringify({ rightOpen: true }), menu).rightOpen).toBe(true);
+  });
 });

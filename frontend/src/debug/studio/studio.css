@@ -1995,8 +1995,8 @@ button.st-drop-hint:hover {
   padding: 3px;
   border-radius: 15px;
   background: rgba(14, 14, 14, 0.62);
-  backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
 }
 .st-stage-toggle {
   height: 24px;
@@ -2038,8 +2038,8 @@ button.st-drop-hint:hover {
   padding: 0 12px 0 4px;
   border-radius: 17px;
   background: rgba(14, 14, 14, 0.72);
-  backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
   color: var(--text);
   font-size: 12px;
   white-space: nowrap;

@@ -1,12 +1,20 @@
 /**
- * 插件抽屉角色组「语音」(第 2 步 D5,画布 V6Voice):页头(主声音、用哪台语音服务)→ 常用(文字和语音、最多等、
- * 语音情绪)→ 高级(缓存、配对表)→ 去卡编辑器 / 素材管理 / 游戏设置。快速预览在 D6 加。
- * 总开关在左栏这一行的行尾;声音、情绪行、调参在卡编辑器和素材管理;语音服务在全局组。
+ * 插件抽屉角色组「语音」(第 2 步 D5,画布 V6Voice):页头(主声音、用哪台语音服务)→ 常用(主声音、文字和语音、
+ * 最多等、语音情绪)→ 高级(缓存、配对表)→ 去卡编辑器 / 素材管理 / 游戏设置。快速预览在 D6 加。
+ * 总开关在左栏这一行的行尾;情绪行、调参在卡编辑器和素材管理;语音服务在全局组。
+ * 「主声音」下拉框 10-19 加回来(第 2 步拿掉以后游戏里没处换声音了):换下来的那个留在卡上当备用。
  */
 
 import { useCallback, useEffect, useState } from 'react';
 import { debugApi } from '../../../lib/api';
-import { DEFAULT_VOICE_CONFIG, MAX_WAIT_MAX, MAX_WAIT_MIN, normalizeVoiceConfig } from '../../../plugins/voice';
+import {
+  DEFAULT_VOICE_CONFIG,
+  MAX_WAIT_MAX,
+  MAX_WAIT_MIN,
+  mainVoiceChoices,
+  normalizeVoiceConfig,
+  switchMainVoice,
+} from '../../../plugins/voice';
 import type { VoicePluginState } from '../../../plugins/useVoicePlugin';
 import { VoicePairingGroup } from '../../PairingGroup';
 import { DeleteButton } from '../../pluginFields';
@@ -43,9 +51,108 @@ function CacheTab({ stats, onCleared, notify }: { stats: CacheStats | null; onCl
   );
 }
 
+/** 主声音下拉框:这张卡挂着的排前面,换下来的留在卡上当备用 */
+function MainVoiceRow({
+  view,
+  card,
+  voice,
+  isCurrent,
+  notify,
+}: {
+  view: CardView;
+  card: { id: string; name: string };
+  voice: VoicePluginState;
+  isCurrent: boolean;
+  notify: Notify;
+}) {
+  const facts = view.facts;
+  const [busy, setBusy] = useState(false);
+  // 刚选的那个先显示着,等卡的资料重读回来(不然下拉框会先弹回旧的、过一秒才变)
+  const [pending, setPending] = useState<string | null | undefined>(undefined);
+  const saved = facts?.voices.main ?? null;
+  useEffect(() => setPending(undefined), [saved]);
+  if (!facts) return null;
+  const { onCard, others } = mainVoiceChoices(facts.voices, voice.profiles);
+  const nameOf = (id: string) => voice.profiles.find((v) => v.id === id)?.name ?? '这个声音';
+
+  const pick = async (next: string | null) => {
+    const old = facts.voices.main;
+    if (next === old) return;
+    const target = switchMainVoice(facts.voices, next);
+    setBusy(true);
+    setPending(next);
+    try {
+      // 当前聊天这张卡走语音插件(游戏里马上换声音);别的卡直接存
+      if (isCurrent) {
+        if (!(await voice.bind(target))) {
+          setPending(undefined);
+          return;
+        }
+      } else {
+        await debugApi.setCardVoices(card.id, target);
+      }
+      view.reload();
+      notify(
+        'ok',
+        !next
+          ? `「${card.name}」不念了`
+          : old
+            ? `「${nameOf(next)}」设为主声音,「${nameOf(old)}」留在卡上当备用`
+            : `「${nameOf(next)}」设为主声音`,
+      );
+    } catch (e) {
+      setPending(undefined);
+      notify('error', `换主声音失败: ${errText(e)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <SettingRow
+      label="主声音"
+      tip="main_voice"
+      control={{
+        kind: 'custom',
+        render: () => (
+          <select
+            className="text-input"
+            aria-label={`「${card.name}」的主声音`}
+            value={(pending !== undefined ? pending : saved) ?? ''}
+            disabled={busy}
+            onChange={(e) => void pick(e.target.value || null)}
+          >
+            <option value="">不念</option>
+            {onCard.length > 0 && (
+              <optgroup label="挂在这张卡上">
+                {onCard.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.name}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            {others.length > 0 && (
+              <optgroup label="其他声音">
+                {others.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.name}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+          </select>
+        ),
+      }}
+    />
+  );
+}
+
 export function VoicePage(p: {
   view: CardView;
   card: { id: string; name: string } | null;
+  /** 看的就是当前聊天这张卡 */
+  isCurrent: boolean;
   voice: VoicePluginState;
   cards: readonly { id: string; name: string }[];
   links: PageLinks;
@@ -89,21 +196,14 @@ export function VoicePage(p: {
             <VoicePreview key={facts.mainVoice.id} main={facts.mainVoice} />
           ) : (
             <div className="dw-line">
-              {facts.mainVoice ? '语音关着,打开左栏这一行的开关再试' : `${name}还没有主声音`}
-              {!facts.mainVoice && (
-                <>
-                  {' · '}
-                  <button type="button" className="dw-inline-link" onClick={() => p.links.studio('voice')}>
-                    去卡编辑器选一个
-                  </button>
-                </>
-              )}
+              {facts.mainVoice ? '语音关着,打开左栏这一行的开关再试' : `${name}还没有主声音,在下面「主声音」里选一个`}
             </div>
           )}
         </Section>
       )}
 
       <Section title="常用">
+        {card && <MainVoiceRow view={view} card={card} voice={voice} isCurrent={p.isCurrent} notify={notify} />}
         <SettingRow
           label="文字和语音"
           tip="text_voice"

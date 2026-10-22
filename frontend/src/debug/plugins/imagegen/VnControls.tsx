@@ -18,7 +18,6 @@ import {
   type SizeKey,
 } from './config';
 import './imagegen.css';
-import { markAt } from './marks';
 import { Seg } from './ui';
 import type { DrawTarget, ImageGenStore } from './useImageGen';
 
@@ -405,7 +404,7 @@ function Info({ id, store, onClose }: { id: string; store: ImageGenStore; onClos
 
 export function IgStage({ store, ctx }: { store: ImageGenStore; ctx: VnIllustrationContext }) {
   const [info, setInfo] = useState<string | null>(null);
-  const mark = ctx.entry ? markAt(ctx.entry, ctx.line, store.config.hold) : null;
+  const mark = ctx.entry ? store.shownAt(ctx.entry, ctx.line) : null;
   return (
     <>
       <div className="ig-corner" onClick={stop}>

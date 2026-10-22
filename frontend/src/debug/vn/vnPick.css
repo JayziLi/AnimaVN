@@ -281,8 +281,8 @@
 .vn-pick.scene .pk-panel {
   border-color: rgba(255, 255, 255, 0.85);
   background: rgba(251, 250, 248, 0.84);
-  backdrop-filter: blur(18px) saturate(1.1);
   -webkit-backdrop-filter: blur(18px) saturate(1.1);
+  backdrop-filter: blur(18px) saturate(1.1);
   box-shadow: 0 20px 50px rgba(20, 20, 40, 0.3);
 }
 .pk-map {
@@ -762,8 +762,8 @@
   border: 1px solid rgba(255, 255, 255, 0.22);
   border-radius: 4px;
   background: rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
   font-size: 11px;
   letter-spacing: 0.1em;
   white-space: nowrap;

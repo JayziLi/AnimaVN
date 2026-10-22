@@ -1,6 +1,8 @@
 /**
  * 素材管理页(照画布第四版 V4Library):调试台里的全屏页,和卡编辑器一样盖在调试台、视觉小说上面。
- * 入口:调试台顶栏「素材」、视觉小说菜单「素材」。管理工具的样子,配色照调试台的中性灰。
+ * 入口:调试台顶栏「素材」。管理工具的样子,配色照调试台的中性灰。
+ * 游戏菜单的「素材」页是同一个组件的 embedded 模式:嵌在菜单内容区里(没有「←」和标题,菜单页头写了「素材」),
+ * 不是对话框、不管 Esc(Esc 照旧关菜单),配色跟菜单里别的页(vn.css 的 .vn-library-embed);右栏默认收起。
  *
  *   顶栏   ← · 「素材管理」· 页签(立绘 / 声音 / 背景 / BGM / CG 带个数 + 导入记录)· 搜索 · 主按钮「导入」
  *   提示条 导完没有卡可开时才有(importer/ImportBanner,和卡编辑器素材页的一样;没认出来的文件点「查看」就地选类型)
@@ -12,7 +14,7 @@
  *
  * 开在哪(页签、选中哪个)由 DebugApp 管(LibraryRoute),这里只画和回报。改包里的东西经 PackSync 通知 DebugApp,
  * 当前卡绑着的包游戏里马上换;改卡的绑定用外面给的 CardBindingWriter(当前卡走 hook)。
- * Esc 或左上角「←」关;上面还开着卡编辑器(点了卡名)时 Esc 先关卡编辑器。
+ * Esc 或左上角「←」关;上面还开着卡编辑器(点了卡名)时 Esc 先关卡编辑器。embedded 时都没有。
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -31,7 +33,7 @@ import { ImportBanner } from '../importer/ImportBanner';
 import type { SpriteStage } from '../plugins/spriteLayout';
 import { Icon, type IconName } from '../studio/icons';
 import { PanelRail, PanelResizer } from '../studio/panelParts';
-import { InspectorCollapse, useSidePanels } from '../studio/sidePanels';
+import { DEFAULT_PANELS, InspectorCollapse, useSidePanels, type SidePanelOptions } from '../studio/sidePanels';
 import { Btn, ConfirmDialog, IconBtn, Inspector, PromptDialog } from '../studio/ui';
 import type { ImportNotice, Notify, PackSync, SlotKey } from '../studio/types';
 import { describeClean } from '../vn/dataTab';
@@ -93,6 +95,12 @@ function renameApi(kind: LibraryKind, id: string, name: string): Promise<unknown
   return debugApi.updateScenePack(id, { name });
 }
 
+/**
+ * 游戏菜单里:两栏的宽、收没收起另记一份;右栏默认收起(菜单里地方小)。
+ * 菜单左栏 208 + 内容区左右边距 24×2 不归这一页(vn.css 的 .vn-menu、.vn-menu-body)
+ */
+const MENU_PANELS: SidePanelOptions = { defaults: { ...DEFAULT_PANELS, rightOpen: false }, reserved: 208 + 48 };
+
 /** 浮在上面、自己管 Esc 的东西(「?」、「⋯」、确认框)开着时,Esc 交给它们 */
 const OWN_LAYERS = '.st-layer';
 
@@ -117,7 +125,10 @@ type Dialog =
 export interface AssetLibraryProps {
   route: LibraryRoute;
   onRoute: (next: LibraryRoute) => void;
-  onClose: () => void;
+  /** 「←」、Esc:关这一页(embedded 时没有,不用给) */
+  onClose?: () => void;
+  /** 嵌在游戏菜单的「素材」页里:没有「←」和标题、不是对话框、不管 Esc,尺寸跟着菜单内容区 */
+  embedded?: boolean;
   /** 全部角色卡(绑定框、卡名) */
   cards: readonly LibraryCard[];
   /** 所有角色共用的构图(useSpriteLayout 的 stage) */
@@ -149,9 +160,10 @@ export interface AssetLibraryProps {
 
 export function AssetLibrary(props: AssetLibraryProps) {
   const { route, onRoute, onClose, cards, stage, sync, notify } = props;
+  const embedded = props.embedded ?? false;
   const writer = props.bindings ?? directBindings;
   const kind: LibraryKind | null = route.tab === 'jobs' ? null : route.tab;
-  const panels = useSidePanels('library.panels');
+  const panels = useSidePanels(embedded ? 'library.menu.panels' : 'library.panels', embedded ? MENU_PANELS : undefined);
   const { toggle: togglePanel } = panels;
   const collapseRight = useCallback(() => togglePanel('right'), [togglePanel]);
 
@@ -462,9 +474,10 @@ export function AssetLibrary(props: AssetLibraryProps) {
   // ---------------------------------------------------------------- Esc、焦点
 
   const root = useRef<HTMLDivElement | null>(null);
+  // 全屏打开时焦点挪进来;菜单里不抢(键盘还在菜单上)
   useEffect(() => {
-    root.current?.focus();
-  }, []);
+    if (!embedded) root.current?.focus();
+  }, [embedded]);
   // 窄屏时页签是一排横着滚的,当前页签可能在屏幕外 —— 换页签时把它滚进来
   useEffect(() => {
     root.current?.querySelector('.lib-tab[aria-current="page"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
@@ -474,6 +487,8 @@ export function AssetLibrary(props: AssetLibraryProps) {
     closeRef.current = onClose;
   });
   useEffect(() => {
+    // 菜单里的 Esc 归菜单(关菜单),这里不听
+    if (embedded) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.isComposing || e.defaultPrevented) return;
       if (document.querySelector(OWN_LAYERS)) return;
@@ -482,11 +497,11 @@ export function AssetLibrary(props: AssetLibraryProps) {
       if (roots[roots.length - 1] !== root.current) return;
       e.preventDefault();
       if (isTextField(e.target)) return;
-      closeRef.current();
+      closeRef.current?.();
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, []);
+  }, [embedded]);
 
   // ---------------------------------------------------------------- 画
 
@@ -506,9 +521,14 @@ export function AssetLibrary(props: AssetLibraryProps) {
 
   const header = (
     <header className="st-header lib-header">
-      <IconBtn icon="back" label="返回" onClick={onClose} />
-      <EnvBadge />
-      <span className="lib-title">素材管理</span>
+      {/* 菜单里:页头已经写了「素材」,关菜单走左边的「返回游戏」;测试环境的角标视觉小说自己有一个 */}
+      {!embedded && (
+        <>
+          <IconBtn icon="back" label="返回" onClick={() => onClose?.()} />
+          <EnvBadge />
+          <span className="lib-title">素材管理</span>
+        </>
+      )}
       <nav className="st-tabs lib-tabs" aria-label="素材类型">
         {KIND_ORDER.map((k) => tabButton(k, KIND_INFO[k].tab, TAB_ICONS[k], lists[k]?.length))}
         {tabButton('jobs', '导入记录', null)}
@@ -671,12 +691,12 @@ export function AssetLibrary(props: AssetLibraryProps) {
   return (
     <div
       ref={root}
-      className={`st-root lib-root${kind ? ` st-panels${panels.leftOpen ? '' : ' left-collapsed'}${panels.rightOpen ? '' : ' right-collapsed'}` : ''}`}
+      className={`st-root lib-root${embedded ? ' lib-embedded' : ''}${kind ? ` st-panels${panels.leftOpen ? '' : ' left-collapsed'}${panels.rightOpen ? '' : ' right-collapsed'}` : ''}`}
       style={kind ? panels.style : undefined}
-      role="dialog"
-      aria-modal="true"
-      aria-label="素材管理"
-      tabIndex={-1}
+      role={embedded ? undefined : 'dialog'}
+      aria-modal={embedded ? undefined : true}
+      aria-label={embedded ? undefined : '素材管理'}
+      tabIndex={embedded ? undefined : -1}
     >
       {header}
       {props.notice && (

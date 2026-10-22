@@ -223,6 +223,64 @@ function splitRows(raw: string, kinds: readonly TagKind[], streaming: boolean): 
 }
 
 /**
+ * 每行日语的去向:挂到它下面那行中文上;写反了的(先中后日)挂到上面那行;前后都没有能配的中文的
+ * 留在正文里(orphan);流式时最后一行是正在写的日语(pending)
+ */
+function pairRows(rows: readonly Row[], streaming: boolean) {
+  const jaOf = new Map<number, string>(); // 正文行 → 挂在它上面的日语
+  const orphan = new Set<number>(); // 没有中文的日语行:留在正文里
+  let pending: string | null = null; // 流式:正在写、中文还没开始的日语
+  const nextRow = (i: number) => rows.findIndex((x, k) => k > i && x.kind !== 'blank');
+  const prevRow = (i: number) => rows.findLastIndex((x, k) => k < i && x.kind !== 'blank');
+  rows.forEach((r, i) => {
+    if (r.kind !== 'ja') return;
+    const next = nextRow(i);
+    const prev = prevRow(i);
+    if (next !== -1 && rows[next].kind === 'text') {
+      jaOf.set(next, cleanJa(r.content));
+    } else if (next === -1 && streaming) {
+      pending = r.content;
+    } else if (
+      // 先中后日写反了:上面那行中文还没配上日语,两行又都是台词或都是旁白
+      prev !== -1 &&
+      rows[prev].kind === 'text' &&
+      !jaOf.has(prev) &&
+      isQuoted(rows[prev].content) === isQuoted(r.content)
+    ) {
+      jaOf.set(prev, cleanJa(r.content));
+    } else {
+      orphan.add(i);
+    }
+  });
+  return { jaOf, orphan, pending: pending as string | null };
+}
+
+/**
+ * 摘掉回复里挂在中文上的日语行(「隐藏前文日语」发给模型的那份,plugins/jaHide.ts)。
+ * 行里的标签留在原位(它们管的是下面那句中文);只剩标签的行不再单占一行,并到下一行开头。
+ * 没配上中文的日语(模型只写了日语)和画面上一样留着 —— 摘了这段就没了。没有日语的回复原样返回
+ */
+export function stripJa(raw: string, tags: readonly TagKind[]): string {
+  const rows = splitRows(raw, tags, false);
+  if (!rows.some((r) => r.kind === 'ja')) return raw;
+  const { orphan } = pairRows(rows, false);
+  const out: string[] = [];
+  let carry = ''; // 摘掉的日语行里的标签,接到下一行开头
+  rows.forEach((r, i) => {
+    if (r.kind === 'ja' && !orphan.has(i)) {
+      carry += r.tags.map((t) => t.raw).join('');
+      return;
+    }
+    const line = raw.slice(r.start, r.end);
+    out.push(carry && line.trim() ? carry + line : line);
+    if (line.trim()) carry = '';
+  });
+  if (carry) out.push(carry);
+  // 日语和中文之间、日中两对之间本来的空行:摘完以后连着的空行并成一行
+  return out.join('\n').replace(/\n{3,}/g, '\n\n');
+}
+
+/**
  * 切一条回复,同时把日语挂到句子上。没有日语的回复和 parseReply 完全一样。
  *
  * 日语行从正文里摘掉(行里的标签留在原位,仍然作用到下面那句中文),挂在它下面紧跟的
@@ -246,33 +304,7 @@ export function parseBilingual(
 ): ParsedReply {
   const rows = splitRows(raw, opts.tags, opts.streaming);
   if (!rows.some((r) => r.kind === 'ja')) return parseReply(raw, opts);
-
-  // 每行日语的去向
-  const jaOf = new Map<number, string>(); // 正文行 → 挂在它上面的日语
-  const orphan = new Set<number>(); // 没有中文的日语行:留在正文里
-  let pending: string | null = null; // 流式:正在写、中文还没开始的日语
-  const nextRow = (i: number) => rows.findIndex((x, k) => k > i && x.kind !== 'blank');
-  const prevRow = (i: number) => rows.findLastIndex((x, k) => k < i && x.kind !== 'blank');
-  rows.forEach((r, i) => {
-    if (r.kind !== 'ja') return;
-    const next = nextRow(i);
-    const prev = prevRow(i);
-    if (next !== -1 && rows[next].kind === 'text') {
-      jaOf.set(next, cleanJa(r.content));
-    } else if (next === -1 && opts.streaming) {
-      pending = r.content;
-    } else if (
-      // 先中后日写反了:上面那行中文还没配上日语,两行又都是台词或都是旁白
-      prev !== -1 &&
-      rows[prev].kind === 'text' &&
-      !jaOf.has(prev) &&
-      isQuoted(rows[prev].content) === isQuoted(r.content)
-    ) {
-      jaOf.set(prev, cleanJa(r.content));
-    } else {
-      orphan.add(i);
-    }
-  });
+  const { jaOf, orphan, pending } = pairRows(rows, opts.streaming);
 
   // 摘掉日语后的文本,逐字记下它在原文里的位置
   let reduced = '';

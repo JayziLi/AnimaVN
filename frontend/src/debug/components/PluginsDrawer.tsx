@@ -7,6 +7,7 @@ import type { LibraryKind } from '../library/libraryModel';
 import type { CartridgePanel, SpliceState } from '../plugins/cartridges';
 import { enabledOnly } from '../plugins/common';
 import { jevHealth, promptOverrides } from '../plugins/jev';
+import type { JaHideControls } from '../plugins/jaHide';
 import type { LangPluginConfig } from '../plugins/lang';
 import { kindName, type BlockPluginId } from '../plugins/registry';
 import { cgsOf, type SceneKindKey } from '../plugins/scene';
@@ -95,8 +96,8 @@ interface Props extends PresetControls {
   /** 插件开关(plugins/switches.ts):左栏立绘 / 背景 / BGM / CG / AI 生图那几行的行尾 */
   switches: { value: PluginSwitches; onChange: (next: PluginSwitches) => void };
 
-  /** 外语插件:日语配音、中文字幕 */
-  lang: { config: LangPluginConfig; onChangeConfig: (next: LangPluginConfig) => void };
+  /** 外语插件:日语配音、中文字幕;jaHide 是隐藏前文日语(当前对话) */
+  lang: { config: LangPluginConfig; onChangeConfig: (next: LangPluginConfig) => void; jaHide?: JaHideControls };
 
   /** 当前聊天这张卡这次每个插件块怎么发(core/sendPlan.ts):外语页、自动补块页看;不传就不显示 */
   send?: SendView;
@@ -466,6 +467,7 @@ export function PluginsDrawer(outer: Props) {
             <VoicePage
               view={view}
               card={viewCard}
+              isCurrent={isCurrent}
               voice={props.voice}
               cards={props.cards}
               links={links}
@@ -480,6 +482,7 @@ export function PluginsDrawer(outer: Props) {
               config={props.lang.config}
               onChangeConfig={props.lang.onChangeConfig}
               send={props.send}
+              jaHide={props.lang.jaHide}
               links={links}
               advOpen={advFor('lang')}
             />
