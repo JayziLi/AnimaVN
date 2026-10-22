@@ -1,16 +1,149 @@
 /**
- * 声音编辑器(卡编辑器「声音」栏、素材管理页的声音)的纯函数:情绪参考表的匹配小牌子和每行文字、
- * 「新增情绪」认路径、改参考音频顺手填参考文本、全局参数存哪几项、试听的例句、进度和波形。
+ * 声音编辑器(卡编辑器「声音」栏、素材管理页的声音)的纯函数:「声音设置」每格存什么、缺什么、收起时的摘要,
+ * 情绪参考表的匹配小牌子和每行文字、「新增情绪」认路径、改参考音频顺手填参考文本、全局参数存哪几项、
+ * 「更多参数」的摘要和固定种子、试听的例句、念不了时说缺什么、进度和波形。
  */
 
-import type { VoiceEmotion, VoiceEmotionPatch, VoiceParams, VoiceProfile } from '../../lib/api';
+import type {
+  TtsConnection,
+  VoiceEmotion,
+  VoiceEmotionPatch,
+  VoiceParams,
+  VoiceProfile,
+  VoiceProfilePatch,
+  VoiceTuning,
+} from '../../lib/api';
 import { BUILTIN_EMOTIONS } from '../../plugins/emotions';
-import { EMO_DIMS, VOICE_SAMPLES, missingEmotions, parseRefFileName, sampleLangOf } from '../../plugins/voice';
+import {
+  EMO_DIMS,
+  GSV_NUM_PARAMS,
+  VOICE_LANGS,
+  VOICE_SAMPLES,
+  missingEmotions,
+  parseRefFileName,
+  sampleLangOf,
+  type NumParam,
+} from '../../plugins/voice';
+import { ENGINE_NAME } from '../slots/voiceSlotModel';
 
 export const basename = (path: string) => path.split(/[\\/]/).pop() || path;
 
 /** 贴进来的路径常带着引号(Windows「复制为路径」) */
 const unquote = (s: string) => s.trim().replace(/^"|"$/g, '').trim();
+
+// ---------------------------------------------------------------- 声音设置
+
+/** 「声音设置」里一格一格存的几项(别名是一串小标签,另算:aliasesPatch) */
+export type SettingKey = 'name' | 'connection_id' | 'text_lang' | 'ref_path' | 'gpt_weights' | 'sovits_weights';
+
+/**
+ * 「声音设置」里一格交出来的字 → 要存的那一项。路径去掉前后空格和引号;
+ * 没变、或者名字 / 语音服务 / 语言清空了(不许存空的,框里退回原值)是 null
+ */
+export function settingPatch(
+  profile: Pick<VoiceProfile, SettingKey>,
+  key: SettingKey,
+  raw: string,
+): VoiceProfilePatch | null {
+  const required = key === 'name' || key === 'connection_id' || key === 'text_lang';
+  const value = required ? raw.trim() : unquote(raw);
+  if ((required && !value) || value === profile[key]) return null;
+  const patch: VoiceProfilePatch = {};
+  patch[key] = value;
+  return patch;
+}
+
+/** 别名:去掉空的、重复的(不分大小写)、和名字一样的(后端也这么收);和原来一样是 null */
+export function aliasesPatch(
+  profile: Pick<VoiceProfile, 'name' | 'aliases'>,
+  next: readonly string[],
+): VoiceProfilePatch | null {
+  const seen = new Set([profile.name.trim().toLowerCase()]);
+  const aliases: string[] = [];
+  for (const raw of next) {
+    const word = raw.trim();
+    if (!word || seen.has(word.toLowerCase())) continue;
+    seen.add(word.toLowerCase());
+    aliases.push(word);
+  }
+  const same = aliases.length === profile.aliases.length && aliases.every((a, i) => a === profile.aliases[i]);
+  return same ? null : { aliases };
+}
+
+/** 还没填、念不了的:IndexTTS 要音色参考,GPT-SoVITS 两个权重都要(后端缺了就不念) */
+export function missingSettings(
+  profile: Pick<VoiceProfile, 'ref_path' | 'gpt_weights' | 'sovits_weights'>,
+  isIndex: boolean,
+): string[] {
+  if (isIndex) return profile.ref_path.trim() ? [] : ['音色参考'];
+  return [
+    ...(profile.gpt_weights.trim() ? [] : ['GPT 权重']),
+    ...(profile.sovits_weights.trim() ? [] : ['SoVITS 权重']),
+  ];
+}
+
+/** 「还没填 GPT 权重」「还没填音色参考」:中文里夹的英文前面空一格 */
+const lacking = (missing: readonly string[]) => {
+  const list = missing.join('、');
+  return /^[A-Za-z]/.test(list) ? `还没填 ${list}` : `还没填${list}`;
+};
+
+/** 语音服务下拉的一项:连接名,右边灰字是引擎;连接名里已经写了引擎名就不重复 */
+export function connectionOption(c: Pick<TtsConnection, 'id' | 'name' | 'api_type'>): {
+  value: string;
+  label: string;
+  sub?: string;
+} {
+  const engine = ENGINE_NAME[c.api_type];
+  const name = c.name.trim();
+  if (!name) return { value: c.id, label: engine };
+  return name.toLowerCase().includes(engine.toLowerCase())
+    ? { value: c.id, label: name }
+    : { value: c.id, label: name, sub: engine };
+}
+
+/**
+ * 「语言」下拉:这个引擎认的几种(plugins/voice.ts 的 VOICE_LANGS,写人话名字);
+ * 存着的不在里面(换过引擎、手填过 all_ja 这类)就原样多列一项,不悄悄改掉
+ */
+export function langOptions(textLang: string, isIndex: boolean): { value: string; label: string }[] {
+  const list = VOICE_LANGS[isIndex ? 'indextts' : 'gpt_sovits'].map((l) => ({ value: l.value, label: l.name }));
+  return list.some((l) => l.value === textLang) ? list : [...list, { value: textLang, label: textLang }];
+}
+
+/** 语言的人话名字:「日语」;不认识的原样 */
+export const langName = (textLang: string, isIndex: boolean) =>
+  langOptions(textLang, isIndex).find((l) => l.value === textLang)?.label ?? textLang;
+
+/** 「声音设置」收起时的一行:用哪台语音服务、念什么语言 + 权重 / 音色参考的文件名;缺东西时写缺什么(warn) */
+export function settingsSummary(
+  profile: Pick<VoiceProfile, 'text_lang' | 'ref_path' | 'gpt_weights' | 'sovits_weights'>,
+  connection: Pick<TtsConnection, 'id' | 'name' | 'api_type'> | null,
+  isIndex: boolean,
+): { text: string; warn: boolean } {
+  const opt = connection && connectionOption(connection);
+  const conn = opt ? [opt.label, ...(opt.sub ? [opt.sub] : [])].join(' · ') : '没选语音服务';
+  const head = `${conn} · ${langName(profile.text_lang, isIndex)}`;
+  const missing = missingSettings(profile, isIndex);
+  if (!connection || missing.length > 0) {
+    return { text: missing.length > 0 ? `${head} · ${lacking(missing)}` : head, warn: true };
+  }
+  const files = isIndex ? [basename(profile.ref_path)] : [basename(profile.gpt_weights), basename(profile.sovits_weights)];
+  return { text: [head, ...files].join(' · '), warn: false };
+}
+
+/** 试听台念不了时那句话(缺音色参考 / 权重 / 参考音频);念得了是 null */
+export function benchBlocker(
+  profile: Pick<VoiceProfile, 'name' | 'ref_path' | 'gpt_weights' | 'sovits_weights' | 'emotions'>,
+  isIndex: boolean,
+): string | null {
+  const missing = missingSettings(profile, isIndex);
+  if (missing.length > 0) return `「${profile.name}」${lacking(missing)},念不了 · 在上面「声音设置」里填`;
+  if (!isIndex && profile.emotions.length === 0) {
+    return `「${profile.name}」还没有参考音频,念不了 · 在下面「新增情绪」贴一段参考音频的路径`;
+  }
+  return null;
+}
 
 // ---------------------------------------------------------------- 情绪参考表
 
@@ -103,7 +236,7 @@ export function moveToFront(ids: readonly string[], id: string): string[] {
 
 // ---------------------------------------------------------------- 全局参数
 
-/** 改一项合成参数;改回默认(或清掉)就删掉这一项 —— 和插件页试音台一样,调过又调回默认也算没改 */
+/** 改一项合成参数;改回默认(或清掉)就删掉这一项 —— 调过又调回默认也算没改(和 plugins/voice.ts 的 sameDraft 一样) */
 export function withParam<K extends keyof VoiceParams>(
   params: VoiceParams,
   key: K,
@@ -121,6 +254,51 @@ export function fmtSpeed(v: number): string {
   const r = Math.round(v * 100) / 100;
   const oneDigit = Math.abs(r * 10 - Math.round(r * 10)) < 1e-9;
   return `${r.toFixed(oneDigit ? 1 : 2)}×`;
+}
+
+// ---------------------------------------------------------------- 更多参数(只有 GPT-SoVITS)
+
+/**
+ * 「全局参数」下面收起来的「更多参数」里的数值项:旧试音台里有、上面没单独放的 GSV 参数
+ * (温度在上面)。名字、范围、默认值照 plugins/voice.ts 的 GSV_NUM_PARAMS
+ */
+export const MORE_GSV_PARAMS: readonly NumParam[] = GSV_NUM_PARAMS.filter((p) => p.key !== 'temperature');
+
+/** 一项的默认:采样步数没设时跟语音服务的步数,别的是引擎自己的默认 */
+export const paramDefault = (p: Pick<NumParam, 'def'>, connSteps: number) => p.def ?? connSteps;
+
+/** 「更多参数」收起时那行小字:改过的几项(「采样步数 32 · top_k 10 · 关并行推理」);全是默认是空串 */
+export function moreParamsSummary(params: VoiceParams): string {
+  const parts = MORE_GSV_PARAMS.flatMap((p) => {
+    const v = params[p.key];
+    return v === undefined ? [] : [`${p.name} ${trimNum(v)}${p.unit ? ` ${p.unit}` : ''}`];
+  });
+  if (params.parallel_infer === false) parts.push('关并行推理');
+  return parts.join(' · ');
+}
+
+/** 种子最大能填多少(和后端 VoiceTuning.seed 一样) */
+export const SEED_MAX = 2 ** 32 - 1;
+
+/** 「固定种子」框里的字:空着 = 每次随机(null);不是 0 到 SEED_MAX 的整数是 bad */
+export function parseSeed(text: string): { seed: number | null; bad: boolean } {
+  const t = text.trim();
+  if (!t) return { seed: null, bad: false };
+  const n = Number(t);
+  return /^\d+$/.test(t) && n <= SEED_MAX ? { seed: n, bad: false } : { seed: null, bad: true };
+}
+
+/**
+ * 试听这一句带不带 tuning:固定了种子才带(种子只能跟着 tuning 发),其余照声音存着的发 ——
+ * 和不带时念出来一样,只是种子固定。IndexTTS 不认种子,不带
+ */
+export function benchTuning(
+  profile: Pick<VoiceProfile, 'speed' | 'text_lang' | 'params'>,
+  seed: number | null,
+  isIndex: boolean,
+): VoiceTuning | undefined {
+  if (seed === null || isIndex) return undefined;
+  return { speed: profile.speed, text_lang: profile.text_lang, params: profile.params, seed };
 }
 
 // ---------------------------------------------------------------- 试听

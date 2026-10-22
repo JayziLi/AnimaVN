@@ -8,11 +8,14 @@ import {
   jevHealth,
   jevKindStatus,
   tokenText,
-  type JevHealth,
   type JevKind,
   type SharedPromptKey,
 } from '../plugins/jev';
 import type { JevTrial } from '../plugins/jevRun';
+import { PageHead } from './drawer/frame';
+import { Tip } from './drawer/Tip';
+import { TIPS } from './drawer/tips';
+import { JEV_HEALTH_TEXT as HEALTH_TEXT } from './drawer/globalStatus';
 import { PromptField, TrialTable, type JevControls } from './JevSettings';
 import { DeleteButton } from './pluginFields';
 import { SettingGroup, SettingRow } from './settings/SettingRow';
@@ -40,13 +43,6 @@ export interface JevKindRow {
   /** 去这一路的插件页 */
   onDetail: () => void;
 }
-
-const HEALTH_TEXT: Record<JevHealth, string> = {
-  ok: '已连上',
-  missing: '还没填 key',
-  error: '上次出错',
-  idle: '没在用',
-};
 
 const SHARED_LABELS: Record<SharedPromptKey, { label: string; placeholders: ('char' | 'user' | 'n' | 'line')[]; rows: number }> = {
   state: { label: '通用说明(每次放在最前面)', placeholders: ['char', 'user'], rows: 3 },
@@ -161,24 +157,19 @@ export function JevPage({
 
   return (
     <div className="jev-page">
-      <div className="jev-head">
-        <div className="jev-head-row">
-          <span className="jev-title">Jev 标注</span>
-          <span className={`jev-health ${health}`}>
-            <span className="jev-dot" aria-hidden="true" />
-            {HEALTH_TEXT[health]}
-          </span>
-          {s && s.kinds.length > 0 && (
-            <span className="sp-group-note">
-              上一条回复:判了 {s.lines} 句 · {tokenText(s.tokens)} token · 最慢 {(s.maxMs / 1000).toFixed(2)} 秒
-              {s.failed ? ` · ${s.failed} 句没判成${s.error ? `(${s.error})` : ''}` : ''}
-            </span>
-          )}
-        </div>
-        <span className="sp-group-note">
-          LLM 只写正文,选了「Jev 标注」的那几路,标签由 Jev(TypeSafe 的判断模型)一句一句判断后补上。这里是 Jev 唯一的设置页。
-        </span>
-      </div>
+      <PageHead
+        title="Jev 标注"
+        tip="jev_page"
+        inUse={{ on: health === 'ok', text: HEALTH_TEXT[health] }}
+        tags={[]}
+        note={
+          s && s.kinds.length > 0
+            ? `上一条回复:判了 ${s.lines} 句 · ${tokenText(s.tokens)} token · 最慢 ${(s.maxMs / 1000).toFixed(2)} 秒${
+                s.failed ? ` · ${s.failed} 句没判成${s.error ? `(${s.error})` : ''}` : ''
+              }`
+            : undefined
+        }
+      />
 
       <SettingGroup title="连接">
         <SettingRow
@@ -216,14 +207,11 @@ export function JevPage({
                     </button>
                   )}
                   {urlBad && <span className="set-error">地址要以 http:// 或 https:// 开头</span>}
+                  {oldBackend && <span className="set-error">后端还是旧版,重启后端以后才能填地址</span>}
                 </>
               ),
           }}
-          help={
-            oldBackend
-              ? '后端还是旧版,重启后端以后才能填地址'
-              : `走中转就填中转给的地址,发过去的格式不变;空着 = 官方的 ${defaultUrl}`
-          }
+          tip={`${TIPS.jev_url}${defaultUrl}`}
         />
         <SettingRow
           label="key"
@@ -256,11 +244,7 @@ export function JevPage({
                 </>
               ),
           }}
-          help={
-            keyStatus?.has_key
-              ? '只存在后端,填了以后读不回来。'
-              : '还没填 key:切到 Jev 的插件现在照旧由 AI 写标签。key 在 typesafe.ai 的控制台创建,走中转的填中转给的。'
-          }
+          tip={keyStatus?.has_key ? 'jev_key' : 'jev_key_missing'}
         />
         <SettingRow
           label="测试"
@@ -276,7 +260,7 @@ export function JevPage({
             ),
           }}
           scopes={[]}
-          help="问 Jev 一道小题,看连不连得上、多快回来"
+          tip="jev_test"
         />
         <SettingRow
           label="模型名"
@@ -310,11 +294,11 @@ export function JevPage({
                 </>
               ),
           }}
-          help={`中转要求别的名字时才改;空着 = ${defaultModel}`}
+          tip={`${TIPS.jev_model}${defaultModel}`}
         />
       </SettingGroup>
 
-      <SettingGroup title="用量" note="只数 token,不算钱 —— 走中转的价格各不一样。判断、试判、测试都算,1 秒没回重发的那份也算一次">
+      <SettingGroup title="用量" tip="jev_usage">
         {usage === 'old' ? (
           <div className="jev-usage-note">后端还是旧版,重启后端以后才有用量。</div>
         ) : (
@@ -337,7 +321,7 @@ export function JevPage({
         )}
       </SettingGroup>
 
-      <SettingGroup title="哪几路交给 Jev" note="和各插件页上是同一个设置,改哪边另一边马上跟着变">
+      <SettingGroup title="哪几路交给 Jev" tip="jev_kinds">
         {rows.map((r) => (
           <div key={r.kind} className="jev-kind-row">
             <span className="set-label">{r.name}</span>
@@ -371,7 +355,7 @@ export function JevPage({
         ))}
       </SettingGroup>
 
-      <SettingGroup title="常用" note="几路共用">
+      <SettingGroup title="常用" tip="jev_common">
         <SettingRow
           label="带上一条回复"
           control={{
@@ -381,20 +365,18 @@ export function JevPage({
             step: 1,
             format: (v) => (v === 0 ? '不带' : `${v} 句`),
           }}
-          scopes={['global']}
           value={config.beforeLines}
           default={JEV_BEFORE_LINES.default}
           onChange={(v) => onChangeConfig({ ...config, beforeLines: v })}
-          help="判每句时多看上一条回复(卡的开场白也算)的最后几句。实测「谁说的」判对:不带 59.6%,8 句 64.9%,24 句 68.8%;带 24 句每次判断多用约 700 token(约多四成)。"
+          tip="jev_before"
         />
         <SettingRow
           label="立绘和文字同步"
           control={{ kind: 'toggle' }}
-          scopes={['global']}
           value={config.syncText}
           default={true}
           onChange={(v) => onChangeConfig({ ...config, syncText: v })}
-          help="你追上生成进度的那句,等 Jev 判完立绘 / 背景再出字,画面和文字一起变;这句出字因此晚约 0.7 秒(日中对照约 1.2 秒),最多等 2 秒。没追上的句子不受影响。"
+          tip="jev_sync"
         />
         <SettingRow
           label="说话人门槛"
@@ -407,30 +389,30 @@ export function JevPage({
             high: '更不容易漏念',
             format: (v) => v.toFixed(2),
           }}
-          scopes={['global']}
           value={config.speakerThreshold}
           default={SPEAKER_THRESHOLD.default}
           onChange={(v) => onChangeConfig({ ...config, speakerThreshold: v })}
-          help="Jev 判「这句不是角色说的」要多大把握才信;不够就还算角色的(照常念、换立绘)。"
+          tip="jev_speaker"
         />
       </SettingGroup>
 
       <details className="jev-advanced">
         <summary>
-          高级 <span className="sp-group-note">两条队列(试用)· 通用说明和说话人的 7 道问法</span>
+          高级 <Tip k="jev_advanced" />
         </summary>
         <SettingGroup title="高级">
           <SettingRow
             label="两条队列(试用)"
             control={{ kind: 'toggle' }}
-            scopes={['global']}
-            value={config.twoQueues}
+              value={config.twoQueues}
             default={false}
             onChange={(v) => onChangeConfig({ ...config, twoQueues: v })}
-            help="只在 CG 由 Jev 标时有区别。开着:CG 单独一句一句问,别的题多句一批先判完,立绘和语音不再跟着 CG 排队;请求数大约多 1/16。"
+            tip="jev_two_queues"
           />
           <div className="jev-prompts">
-            <span className="sp-group-note">每次判断时发给 Jev 的说明和题目,改了下一句就用新的。表情、场景、音乐、CG 的题在各自插件页里。</span>
+            <span className="jev-prompts-title">
+              通用说明和说话人的问法 <Tip k="jev_prompts" />
+            </span>
             {SHARED_PROMPT_KEYS.map((k) => (
               <PromptField
                 key={k}
@@ -447,7 +429,7 @@ export function JevPage({
         </SettingGroup>
       </details>
 
-      <SettingGroup title="试判" note="用现在的设置和问法,把当前对话最新一条 AI 回复整条判一遍,按句列出结果。不改存档">
+      <SettingGroup title="试判" tip="jev_trial">
         <div className="jev-trial">
           <button type="button" className="btn small accent" disabled={busy !== null || !keyStatus?.has_key} onClick={() => void runTrial()}>
             {busy === 'trial' ? '判断中…' : '用最新一条回复试判'}

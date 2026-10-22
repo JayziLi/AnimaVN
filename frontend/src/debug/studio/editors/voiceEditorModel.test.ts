@@ -3,9 +3,21 @@ import type { VoiceEmotion, VoiceProfile } from '../../lib/api';
 import { BUILTIN_EMOTIONS } from '../../plugins/emotions';
 import { VOICE_SAMPLES } from '../../plugins/voice';
 import {
+  MORE_GSV_PARAMS,
+  SEED_MAX,
+  aliasesPatch,
   basename,
+  benchBlocker,
+  benchTuning,
+  connectionOption,
   fmtSpeed,
+  langName,
+  langOptions,
   matchBadge,
+  missingSettings,
+  moreParamsSummary,
+  paramDefault,
+  parseSeed,
   moveToFront,
   newEmotionFrom,
   peaksOf,
@@ -14,6 +26,8 @@ import {
   rowText,
   samplesFor,
   selectAfterDelete,
+  settingPatch,
+  settingsSummary,
   tableNote,
   withParam,
 } from './voiceEditorModel';
@@ -204,5 +218,137 @@ describe('row order helpers', () => {
     expect(moveToFront(['a', 'b', 'c'], 'c')).toEqual(['c', 'a', 'b']);
     expect(moveToFront(['a', 'b'], 'a')).toEqual(['a', 'b']);
     expect(moveToFront(['a', 'b'], 'zz')).toEqual(['a', 'b']);
+  });
+});
+
+describe('voice settings', () => {
+  const gsv = { ...profile([emo('a', '平静', { ref_path: 'D:/r/a.wav' })]), aliases: ['刻晴'] };
+  const weighted = { ...gsv, gpt_weights: 'D:/m/keqing-e10.ckpt', sovits_weights: 'D:/m/keqing_e10_s230.pth' };
+
+  it('turns one field into a patch, trimming names and unquoting paths', () => {
+    expect(settingPatch(gsv, 'name', '  刻晴(日语) ')).toEqual({ name: '刻晴(日语)' });
+    expect(settingPatch(gsv, 'gpt_weights', ' "D:/m/a.ckpt" ')).toEqual({ gpt_weights: 'D:/m/a.ckpt' });
+    expect(settingPatch(gsv, 'connection_id', 'c2')).toEqual({ connection_id: 'c2' });
+    expect(settingPatch(gsv, 'text_lang', 'ja')).toEqual({ text_lang: 'ja' });
+    // 路径可以清空(换成别的引擎时不用了)
+    expect(settingPatch(weighted, 'sovits_weights', '')).toEqual({ sovits_weights: '' });
+  });
+
+  it('saves nothing when a field did not change or a name would be empty', () => {
+    expect(settingPatch(gsv, 'name', '刻晴(中文)')).toBeNull();
+    expect(settingPatch(gsv, 'name', '   ')).toBeNull();
+    expect(settingPatch(gsv, 'connection_id', '')).toBeNull();
+    expect(settingPatch(gsv, 'text_lang', ' ')).toBeNull();
+    expect(settingPatch(gsv, 'text_lang', 'zh')).toBeNull();
+    expect(settingPatch(weighted, 'gpt_weights', '"D:/m/keqing-e10.ckpt"')).toBeNull();
+  });
+
+  it('cleans aliases the way the backend keeps them', () => {
+    expect(aliasesPatch(gsv, ['刻晴', ' 玉衡星 ', '', '玉衡星', '刻晴(中文)'])).toEqual({ aliases: ['刻晴', '玉衡星'] });
+    expect(aliasesPatch(gsv, ['刻晴'])).toBeNull();
+    expect(aliasesPatch(gsv, [])).toEqual({ aliases: [] });
+  });
+
+  it('knows what a voice still needs before it can speak', () => {
+    expect(missingSettings(gsv, false)).toEqual(['GPT 权重', 'SoVITS 权重']);
+    expect(missingSettings({ ...gsv, gpt_weights: 'a.ckpt' }, false)).toEqual(['SoVITS 权重']);
+    expect(missingSettings(weighted, false)).toEqual([]);
+    expect(missingSettings(gsv, true)).toEqual(['音色参考']);
+    expect(missingSettings({ ...gsv, ref_path: 'D:/r/spk.wav' }, true)).toEqual([]);
+  });
+
+  it('labels a TTS service without repeating the engine name', () => {
+    expect(connectionOption({ id: 'c', name: '5090', api_type: 'gpt_sovits' })).toEqual({
+      value: 'c',
+      label: '5090',
+      sub: 'GPT-SoVITS',
+    });
+    expect(connectionOption({ id: 'c', name: '5090 · GPT-SoVITS', api_type: 'gpt_sovits' })).toEqual({
+      value: 'c',
+      label: '5090 · GPT-SoVITS',
+    });
+    expect(connectionOption({ id: 'c', name: ' ', api_type: 'indextts' })).toEqual({ value: 'c', label: 'IndexTTS-2.5' });
+  });
+
+  it('sums the settings up in one line when collapsed', () => {
+    const conn = { id: 'c', name: '5090', api_type: 'gpt_sovits' as const };
+    expect(settingsSummary(weighted, conn, false)).toEqual({
+      text: '5090 · GPT-SoVITS · 中文 · keqing-e10.ckpt · keqing_e10_s230.pth',
+      warn: false,
+    });
+    expect(settingsSummary(gsv, conn, false)).toEqual({
+      text: '5090 · GPT-SoVITS · 中文 · 还没填 GPT 权重、SoVITS 权重',
+      warn: true,
+    });
+    expect(
+      settingsSummary({ ...gsv, text_lang: 'ja', ref_path: 'D:/r/【平静】你好.wav' }, { ...conn, api_type: 'indextts' }, true),
+    ).toEqual({ text: '5090 · IndexTTS-2.5 · 日语 · 【平静】你好.wav', warn: false });
+    expect(settingsSummary(weighted, null, false)).toEqual({ text: '没选语音服务 · 中文', warn: true });
+  });
+
+  it('tells the bench why it cannot speak, pointing at the right place', () => {
+    expect(benchBlocker(gsv, false)).toBe('「刻晴(中文)」还没填 GPT 权重、SoVITS 权重,念不了 · 在上面「声音设置」里填');
+    expect(benchBlocker({ ...weighted, emotions: [] }, false)).toBe(
+      '「刻晴(中文)」还没有参考音频,念不了 · 在下面「新增情绪」贴一段参考音频的路径',
+    );
+    expect(benchBlocker(weighted, false)).toBeNull();
+    expect(benchBlocker({ ...gsv, emotions: [] }, true)).toBe('「刻晴(中文)」还没填音色参考,念不了 · 在上面「声音设置」里填');
+    expect(benchBlocker({ ...gsv, ref_path: 'D:/r/spk.wav', emotions: [] }, true)).toBeNull();
+  });
+});
+
+describe('voice language', () => {
+  it('offers the languages the engine knows, by their names', () => {
+    expect(langOptions('ja', false).map((l) => l.label)).toEqual(['中文', '日语', '英语', '粤语', '韩语', '自动(多语混合)']);
+    expect(langOptions('zh', true).map((l) => l.value)).toEqual(['zh', 'ja', 'en']);
+  });
+
+  it('keeps a stored language the list does not know instead of changing it', () => {
+    expect(langOptions('all_ja', false).at(-1)).toEqual({ value: 'all_ja', label: 'all_ja' });
+    expect(langOptions('yue', true).at(-1)).toEqual({ value: 'yue', label: 'yue' });
+  });
+
+  it('names a language', () => {
+    expect(langName('ja', false)).toBe('日语');
+    expect(langName('auto', false)).toBe('自动(多语混合)');
+    expect(langName('all_ja', false)).toBe('all_ja');
+  });
+});
+
+describe('more parameters', () => {
+  it('lists the GSV parameters the old bench had besides temperature, with its ranges and defaults', () => {
+    expect(MORE_GSV_PARAMS.map((p) => [p.key, p.min, p.max, p.def])).toEqual([
+      ['sample_steps', 8, 128, null],
+      ['top_p', 0.05, 1, 1],
+      ['top_k', 1, 100, 15],
+      ['repetition_penalty', 1, 2, 1.35],
+      ['fragment_interval', 0.05, 1, 0.3],
+    ]);
+    expect(paramDefault(MORE_GSV_PARAMS[0], 64)).toBe(64);
+    expect(paramDefault(MORE_GSV_PARAMS[2], 64)).toBe(15);
+  });
+
+  it('sums up what was changed, in one line', () => {
+    expect(moreParamsSummary({})).toBe('');
+    expect(moreParamsSummary({ temperature: 0.7, text_split_method: 'cut0' })).toBe('');
+    expect(moreParamsSummary({ sample_steps: 32, top_k: 10, fragment_interval: 0.5, parallel_infer: false })).toBe(
+      '采样步数 32 · top_k 10 · 句间停顿 0.5 秒 · 关并行推理',
+    );
+    expect(moreParamsSummary({ parallel_infer: true })).toBe('');
+  });
+
+  it('reads a fixed seed: empty is random, anything but a whole number in range is bad', () => {
+    expect(parseSeed('  ')).toEqual({ seed: null, bad: false });
+    expect(parseSeed(' 1234 ')).toEqual({ seed: 1234, bad: false });
+    expect(parseSeed('0')).toEqual({ seed: 0, bad: false });
+    expect(parseSeed(String(SEED_MAX))).toEqual({ seed: SEED_MAX, bad: false });
+    for (const t of [String(SEED_MAX + 1), '-1', '1.5', '1e3', 'abc']) expect(parseSeed(t)).toEqual({ seed: null, bad: true });
+  });
+
+  it('sends a tuning only with a fixed seed, carrying what the voice has saved', () => {
+    const p = { speed: 1.1, text_lang: 'ja', params: { top_k: 10 } };
+    expect(benchTuning(p, null, false)).toBeUndefined();
+    expect(benchTuning(p, 7, true)).toBeUndefined();
+    expect(benchTuning(p, 7, false)).toEqual({ speed: 1.1, text_lang: 'ja', params: { top_k: 10 }, seed: 7 });
   });
 });

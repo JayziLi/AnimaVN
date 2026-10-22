@@ -3,46 +3,36 @@
  * 再交给 lib/assembler.ts 组装;组装完按 stripKinds 把 Jev 负责的标签从整份提示词里摘掉,
  * 再按 lastUserTurn 把自动补的块并进最后一个 user 回合(moveToLastUserTurn)。
  *
- * 规则(1、3、4、5 和搬过来以前一样):
+ * 每个插件块这次发不发先由 core/sendPlan.ts 的 blockSendPlan 算好(第 2 步),这里照它做:
  * 1. 块正文同步不在这里:读预设时就换成插件模板了(plugins/common.ts 的 syncPluginBlocks),左栏看到的也是它。
- * 2. 自动补块(autoFill):AI 模式的那一路、这张卡有跟着它走的素材、当前编排组里完全没有这一块时,
- *    这次组装里补上(不写回预设)。插在哪见 autoInsertAt。Anthropic 格式的连接补成 user 块放最后,
- *    组装完并进最后一个 user 回合(不并进开头的 system:{{current_*}} 变了,前面的提示词缓存不失效)。
- * 3. Jev 模式的那几路,编排里关掉对应的插件块(plugins/jev.ts 的 jevOrder)。预设本身不动。
- * 4. 有在用 Jev 的、而且开着的标签插件块全是 Jev 的:外语块换成不提标签的版本(jevLangPrompt)。
- * 5. 有在用 Jev 的:组装完从历史、卡里的示例、世界书……整份提示词里摘掉这几类标签(jevStripPrompt)。
- * jevKinds 已经是按 key 算过的:Jev 没 key 时那几路算 AI(缺的块照 2 补,左栏写明是临时补的)。
- * 6. 插件页右上角关掉的那几路(offKinds,plugins/switches.ts)按 Jev 的那几路处理:不补块、块不发、标签摘掉。
+ * 2. 自动补(auto)的块这次组装里补上(不写回预设)。插在哪见 autoInsertAt。Anthropic 格式的连接补成 user 块
+ *    放最后,组装完并进最后一个 user 回合(不并进开头的 system:{{current_*}} 变了,前面的提示词缓存不失效)。
+ * 3. 不发(skip)的块编排里关掉:Jev 标的、插件开关关着的、这张卡没素材的、外语跟不上主声音的。预设本身不动。
+ * 4. 精简版(short,或自动补的外语块带 short)的外语块换成不提标签的版本(jevLangPrompt)。
+ * 5. 有在用 Jev 的、或插件开关关着的:组装完从历史、卡里的示例、世界书……整份提示词里摘掉这几类标签
+ *    (jevStripPrompt)。jevKinds 已经是按 key 算过的:Jev 没 key 时那几路算 AI。
  */
 
 import type { AssembledMessage, AssemblyResult } from '../lib/assembler';
 import type { PresetOrderEntry, PresetPrompt, TavernPreset } from '../lib/presetParser';
 import type { PluginBlock } from '../plugins/common';
-import { anyJev, jevLangPrompt, jevOrder, jevTagKinds, wantsTagFreeLang, type JevKinds } from '../plugins/jev';
+import { anyJev, jevLangPrompt, jevTagKinds, NO_JEV, type JevKinds } from '../plugins/jev';
 import { LANG_BLOCK_ID } from '../plugins/lang';
-import { PLUGIN, PLUGIN_BLOCK_IDS } from '../plugins/registry';
+import { PLUGIN_BLOCK_IDS } from '../plugins/registry';
 import type { TagKind } from '../vn/script';
+import { blockSendPlan, type AutoFillMaterial, type BlockSend } from './sendPlan';
 
-/** 这张卡(这个状态)有没有跟着这一路走、真能用起来的素材 */
-export interface AutoFillMaterial {
-  /** 表情这一路:启用的立绘、能念的主声音、有差分的 CG,有一样就算 */
-  sprite: boolean;
-  /** 绑的场景包里有启用的背景 */
-  bg: boolean;
-  /** 绑的场景包里有启用的曲子 */
-  bgm: boolean;
-  /** 场景包里有现在能出的 CG 构图 */
-  cg: boolean;
-}
+export type { AutoFillMaterial } from './sendPlan';
 
 export interface AutoFill {
   /** 总开关(后端设置 core.assembly 的 autoFill) */
   enabled: boolean;
-  /** 选的是 Jev 的那几路(不管有没有 key);和 jevKinds 比,算出「Jev 没 key,这次临时补」 */
+  /** 选的是 Jev 的那几路(不管有没有 key);和 jevKinds 比,算出「Jev 没 key,这次照 AI 写发」 */
   configuredJev: JevKinds;
+  /** 这张卡有没有各路的素材:没有的那一路块不发、也不补 */
   material: AutoFillMaterial;
-  /** 这张卡打开了「预设缺外语块时补上」 */
-  lang: boolean;
+  /** 主声音的 text_lang;没有主声音是 null。外语块只跟着日语声音发 */
+  mainVoiceLang: string | null;
   /** 各插件块的模板:名字和正文,和「加入当前预设」得到的一样 */
   blocks: Readonly<Record<string, PluginBlock>>;
   /** Anthropic 格式的连接:补的块并进最后一个 user 回合 */
@@ -68,8 +58,8 @@ export interface AssemblyPassInput {
   offKinds?: JevKinds;
   /** 视觉小说认的几类标签 */
   vnKinds: readonly TagKind[];
-  /** 自动补块要的东西;不传 = 不补 */
-  autoFill?: AutoFill;
+  /** 自动补块、这张卡的素材和主声音(哪块发不发要看);自动补块的总开关在里面 */
+  autoFill: AutoFill;
 }
 
 export interface AssemblyPass {
@@ -83,6 +73,8 @@ export interface AssemblyPass {
   auto: AutoBlock[];
   /** 组装完要并进最后一个 user 回合的块(Anthropic 格式的连接);空 = 不用并 */
   lastUserTurn: string[];
+  /** 每个插件块这次发不发、为什么(core/sendPlan.ts);只有在编排里的和这次自动补的 */
+  plan: BlockSend[];
 }
 
 /** 组装的设置存在后端 app_settings 的这个键 */
@@ -98,25 +90,6 @@ export const DEFAULT_ASSEMBLY_CONFIG: AssemblyConfig = { autoFill: true };
 export function normalizeAssemblyConfig(raw: unknown): AssemblyConfig {
   const r = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
   return { autoFill: typeof r.autoFill === 'boolean' ? r.autoFill : DEFAULT_ASSEMBLY_CONFIG.autoFill };
-}
-
-/** 跟着素材走、能自动补的几路(玩家台词不补,和今天一样:预设里放了才有) */
-const AUTO_KINDS = ['sprite', 'bg', 'bgm', 'cg'] as const;
-
-/** 这次要补哪几块:AI 模式、有素材、当前编排组里完全没有(有但关着是你的选择,不补) */
-export function autoBlocksFor(order: readonly PresetOrderEntry[], jevKinds: JevKinds, o: AutoFill): AutoBlock[] {
-  if (!o.enabled) return [];
-  const present = new Set(order.map((e) => e.identifier));
-  const out: AutoBlock[] = [];
-  for (const kind of AUTO_KINDS) {
-    const id = PLUGIN[kind].blockId;
-    const block = o.blocks[id];
-    if (!block || present.has(id) || jevKinds[kind] || !o.material[kind]) continue;
-    out.push({ identifier: id, name: block.name, reason: o.configuredJev[kind] ? 'no-key' : 'ai' });
-  }
-  const lang = o.blocks[LANG_BLOCK_ID];
-  if (o.lang && lang && !present.has(LANG_BLOCK_ID)) out.push({ identifier: LANG_BLOCK_ID, name: lang.name, reason: 'ai' });
-  return out;
 }
 
 /** 去掉 {{// 注释 }} 再看:名字或正文以 </xxx> 开头的块,是预设里用来闭合包裹标签的那种 */
@@ -212,29 +185,55 @@ const withOff = (jev: JevKinds, off: JevKinds): JevKinds =>
   Object.fromEntries(Object.entries(jev).map(([k, v]) => [k, v || off[k as keyof JevKinds]])) as JevKinds;
 
 export function pluginAssemblyPass(o: AssemblyPassInput): AssemblyPass {
-  // 关掉的那几路和 Jev 标的一样处理:不归 AI 写
-  const gone = o.offKinds ? withOff(o.jevKinds, o.offKinds) : o.jevKinds;
-  const auto = o.autoFill && o.preset ? autoBlocksFor(o.order, gone, o.autoFill) : [];
-  const filled =
-    auto.length > 0 && o.preset && o.autoFill
-      ? withAutoBlocks(o.preset, o.order, auto, o.autoFill)
-      : { preset: o.preset, order: o.order };
-  const jevOn = anyJev(gone);
-  const tagFreeLang = wantsTagFreeLang(gone, filled.order);
+  const offKinds = o.offKinds ?? NO_JEV;
+  const fill = o.autoFill;
+  // 没有预设就没东西可补;补的块得有模板(名字和正文),没有模板的不算这次补
+  const plan = blockSendPlan({
+    order: o.order,
+    configuredJev: fill.configuredJev,
+    jevKinds: o.jevKinds,
+    offKinds,
+    material: fill.material,
+    mainVoiceLang: fill.mainVoiceLang,
+    autoFill: fill.enabled && o.preset !== null,
+  }).filter((b) => b.state !== 'auto' || b.identifier in fill.blocks);
+
+  const auto = plan
+    .filter((b) => b.state === 'auto')
+    .map((b): AutoBlock => ({
+      identifier: b.identifier,
+      name: fill.blocks[b.identifier].name,
+      reason: b.plugin !== 'lang' && b.plugin !== 'player' && fill.configuredJev[b.plugin] ? 'no-key' : 'ai',
+    }));
+  const filled = auto.length > 0 && o.preset ? withAutoBlocks(o.preset, o.order, auto, fill) : { preset: o.preset, order: o.order };
+
+  // 不发的块在编排里关掉(本来就关着的不动;没有要关的就还是同一个数组)
+  const skip = new Set(plan.filter((b) => b.state === 'skip').map((b) => b.identifier));
+  const order = filled.order.some((e) => e.enabled && skip.has(e.identifier))
+    ? filled.order.map((e) => (e.enabled && skip.has(e.identifier) ? { ...e, enabled: false } : e))
+    : filled.order;
+
+  // 外语块发精简版:不提标签(这次一块标签块都没发)
+  const short = plan.some((b) => b.identifier === LANG_BLOCK_ID && (b.state === 'short' || b.short));
+  const preset =
+    short && filled.preset
+      ? {
+          ...filled.preset,
+          prompts: filled.preset.prompts.map((p) =>
+            p.identifier === LANG_BLOCK_ID ? { ...p, content: jevLangPrompt(p.content, o.vnKinds) } : p,
+          ),
+        }
+      : filled.preset;
+
+  // 关掉的那几路和 Jev 标的一样:标签由不得 AI 写,整份提示词里摘掉
+  const gone = withOff(o.jevKinds, offKinds);
   return {
-    preset:
-      tagFreeLang && filled.preset
-        ? {
-            ...filled.preset,
-            prompts: filled.preset.prompts.map((p) =>
-              p.identifier === LANG_BLOCK_ID ? { ...p, content: jevLangPrompt(p.content, o.vnKinds) } : p,
-            ),
-          }
-        : filled.preset,
-    order: jevOn ? jevOrder(filled.order, gone) : filled.order,
-    stripKinds: jevOn ? jevTagKinds(gone, o.vnKinds) : null,
+    preset,
+    order,
+    stripKinds: anyJev(gone) ? jevTagKinds(gone, o.vnKinds) : null,
     auto,
-    lastUserTurn: o.autoFill?.lastUserTurn ? auto.map((a) => a.identifier) : [],
+    lastUserTurn: fill.lastUserTurn ? auto.map((a) => a.identifier) : [],
+    plan,
   };
 }
 

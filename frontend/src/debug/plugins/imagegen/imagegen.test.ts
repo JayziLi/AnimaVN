@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import type { ChatEntry, SwipeInfo, VnImageMark } from '../../lib/chatEntry';
 // 先加载登记处(它再加载各卡带),和内核加载的顺序一样
 import { cartridge, extension } from '../cartridges';
+import type { DrawerCardFacts } from '../../components/drawer/cardView';
 import { navItems } from '../registry';
+import { IMAGEGEN_PANEL, imagegenInUse } from './useImageGen';
 import {
   anlasCost,
   artistsFor,
@@ -249,10 +251,19 @@ describe('生图卡带 · 图挂在消息上', () => {
 });
 
 describe('生图卡带 · 登记', () => {
-  it('内核要到的插图扩展点就是它;插件页「生图 BETA」排在 CG 后面', () => {
-    expect(cartridge('imagegen')?.name).toBe('生图');
+  it('内核要到的插图扩展点就是它;插件抽屉角色组里「AI 生图 BETA」排在外语后面', () => {
+    expect(cartridge('imagegen')?.name).toBe('AI 生图');
     expect(extension('useIllustrations')).toBe(cartridge('imagegen')?.useIllustrations);
-    const ids = navItems({ key: 'imagegen', title: '生图', beta: true, after: 'cg' }).map((p) => p.id);
-    expect(ids.indexOf('imagegen')).toBe(ids.indexOf('cg') + 1);
+    const ids = navItems(IMAGEGEN_PANEL).map((p) => p.id);
+    expect(ids.indexOf('imagegen')).toBe(ids.indexOf('lang') + 1);
+    expect(IMAGEGEN_PANEL).toMatchObject({ title: 'AI 生图', group: 'role', power: 'illustrations' });
+  });
+
+  it('这张卡在不在用:它自己那份里写了长相或角色名', () => {
+    const card = (prefs: DrawerCardFacts['prefs']) => ({ prefs }) as DrawerCardFacts;
+    expect(imagegenInUse(card({}))).toBe(false);
+    expect(imagegenInUse(card({ 'plugin.imagegen': { look: '  ' } }))).toBe(false);
+    expect(imagegenInUse(card({ 'plugin.imagegen': { look: 'long hair' } }))).toBe(true);
+    expect(imagegenInUse(card({ 'plugin.imagegen': { nameTag: 'keqing (genshin impact)' } }))).toBe(true);
   });
 });

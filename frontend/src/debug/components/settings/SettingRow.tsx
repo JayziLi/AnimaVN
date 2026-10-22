@@ -1,10 +1,15 @@
 import type { ReactNode } from 'react';
+import { Tip } from '../drawer/Tip';
+import { isTipKey, type TipKey } from '../drawer/tips';
 import { differsFromDefault, SCOPE_NAME, type SettingScope } from './settingValues';
 
 /**
  * 一个设置一行(素材架构设计 2.9 技术细节 2、3;画布「④ 一个设置一行」):名字 · 控件 · 管谁(范围小标签)· 恢复,
  * 下面一句说明;会牵连别处的,再一条黄底「↳ 会影响:…」。插件页、Jev 页、视觉小说设置的「快捷」都照这一个画法。
  * 先给 Jev 页用(specs/2026-10-16-jev-page-and-previous-reply.md),第 2 步整理插件页时所有页接着用。
+ *
+ * 第 2 步起插件抽屉里的说明都收进名字旁的「?」(tip,键在 components/drawer/tips.ts,也能直接给一句话);
+ * help 一行字留着兼容。所有设置都是全局一份,不给 scopes 就不画范围标签。
  *
  * 参数是声明式的:control 说用什么控件,value / default / onChange 是它的值;
  * 「恢复默认 X」在 value ≠ default 时才出现,点了调 onReset(不给就是 onChange(default))。
@@ -42,10 +47,12 @@ interface Base {
   /** 控件的 id(label 的 for 指向它);不给就用 label 拼一个 */
   id?: string;
   label: string;
+  /** 名字旁的「?」:tips.ts 的键,或者直接一句话(还没改写的草稿) */
+  tip?: TipKey | string;
   help?: ReactNode;
   /** 改了会牵连别处(预设里的块不发、别的插件变慢……):下面一条黄底写清楚 */
   affects?: ReactNode;
-  /** 能在哪几层设,排第一的是它的家;范围标签画排第一的那个。不给 = 全局;空数组 = 不是设置(比如「测试」按钮),不画标签 */
+  /** 能在哪几层设,排第一的是它的家;范围标签画排第一的那个。不给 / 空数组 = 不画标签(第 2 步:抽屉里都是全局一份) */
   scopes?: readonly SettingScope[];
   disabled?: boolean;
   onReset?: () => void;
@@ -155,7 +162,7 @@ function Control(p: SettingRowProps) {
 }
 
 export function SettingRow(p: SettingRowProps) {
-  const home: SettingScope | null = p.scopes ? (p.scopes[0] ?? null) : 'global';
+  const home: SettingScope | null = p.scopes?.[0] ?? null;
   const override = p.cardOverride;
   const canReset = !override?.active && p.control.kind !== 'custom' && differsFromDefault(p.value, p.default);
   const reset = () => {
@@ -163,14 +170,22 @@ export function SettingRow(p: SettingRowProps) {
     else if (p.control.kind !== 'custom' && p.default !== undefined) (p.onChange as (v: unknown) => void)(p.default);
   };
   const named = p.control.kind === 'slider' || p.control.kind === 'text';
+  const label = named ? (
+    <label className="set-label" htmlFor={idOf(p)}>
+      {p.label}
+    </label>
+  ) : (
+    <span className="set-label">{p.label}</span>
+  );
   return (
     <div className={`set-row${override?.active ? ' overridden' : ''}`}>
-      {named ? (
-        <label className="set-label" htmlFor={idOf(p)}>
-          {p.label}
-        </label>
+      {p.tip ? (
+        <span className="set-name">
+          {label}
+          {isTipKey(p.tip) ? <Tip k={p.tip} /> : <Tip text={p.tip} />}
+        </span>
       ) : (
-        <span className="set-label">{p.label}</span>
+        label
       )}
       <div className="set-ctl">
         <Control {...p} />
@@ -211,12 +226,24 @@ export function SettingRow(p: SettingRowProps) {
   );
 }
 
-/** 一组设置:标题 + 一行说明 + 几行 SettingRow,外面一个框 */
-export function SettingGroup({ title, note, children }: { title: string; note?: ReactNode; children: ReactNode }) {
+/** 一组设置:标题(+ 问号)+ 一行说明 + 几行 SettingRow,外面一个框 */
+export function SettingGroup({
+  title,
+  note,
+  tip,
+  children,
+}: {
+  title: string;
+  note?: ReactNode;
+  /** 标题旁的「?」:tips.ts 的键,或者直接一句话 */
+  tip?: TipKey | string;
+  children: ReactNode;
+}) {
   return (
     <section className="set-group" aria-label={title}>
       <div className="set-group-head">
         <span className="set-group-title">{title}</span>
+        {tip && (isTipKey(tip) ? <Tip k={tip} /> : <Tip text={tip} />)}
         {note && <span className="set-group-note">{note}</span>}
       </div>
       {children}

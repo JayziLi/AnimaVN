@@ -12,10 +12,26 @@ import {
   type TavernPreset,
 } from '../lib/presetParser';
 import { estimateTokens, formatTokens } from '../lib/tokens';
+import { sendBadge, type BlockSend, type SendBadge } from '../core/sendPlan';
+import { PLAYER_BLOCK_ID } from '../plugins/player';
 import { BlockEditorModal } from './BlockEditorModal';
 import { AnimaIcon } from './AnimaIcon';
+import { Tip } from './drawer/Tip';
 
-const NO_BLOCKS: ReadonlyMap<string, string> = new Map();
+const NO_PLAN: readonly BlockSend[] = [];
+
+/** 插件块的名字去掉「 · 插件」:后面已经有「插件」小块了,左栏窄,省出地方给名字(悬停看全名) */
+const pluginLabel = (name: string) => name.replace(/\s*·\s*插件$/, '');
+
+/** 插件块这次怎么发的小块(core/sendPlan.ts 的 sendBadge):字 + 问号 */
+function SendChip({ badge }: { badge: SendBadge }) {
+  return (
+    <span className={`block-state ${badge.kind}`}>
+      {badge.text}
+      <Tip k={badge.tip} />
+    </span>
+  );
+}
 
 /** 左栏里一块自动补的块 */
 export interface AutoBlockRow {
@@ -66,9 +82,10 @@ export interface PresetPanelProps {
    */
   autoBlocks?: readonly AutoBlockRow[];
   /**
-   * 这次不发的插件块 → 标记上写的原因(Jev 标的、插件关掉的):这里显示成关着、开关点不动
+   * 每个插件块这次怎么发(core/sendPlan.ts 的 blockSendPlan,和组装用的是同一份):名字后面写「先按 AI 写 /
+   * 精简版 / 自动补 / 这次不发」+ 问号;这次不发的开关画灰、点不动(预设里的开关值不变)
    */
-  skippedBlocks?: ReadonlyMap<string, string>;
+  sendPlan?: readonly BlockSend[];
   /** 「固定到预设」:变成预设里的普通块(和插件页的「加入当前预设」一样,要保存) */
   onPinAuto?: (identifier: string) => void;
   /** 正被角色卡顶替的块 identifier */
@@ -145,7 +162,7 @@ export function PresetPanel({
   isPluginBlock,
   onOpenPlugin,
   autoBlocks = [],
-  skippedBlocks = NO_BLOCKS,
+  sendPlan = NO_PLAN,
   onPinAuto,
   overridden,
   resolveMarker,
@@ -236,8 +253,11 @@ export function PresetPanel({
   const byIdentifier = new Map(preset?.prompts.map((p) => [p.identifier, p]) ?? []);
   // 换预设时 detailOf 可能指向一个已经不存在的块 —— 查不到就当没开
   const detailPrompt = detailOf ? byIdentifier.get(detailOf) ?? null : null;
-  /** 这块这次发不发:开着、而且不在这次不发的插件块里 */
-  const sent = (o: PresetOrderEntry) => o.enabled && !skippedBlocks.has(o.identifier);
+  /** 插件块这次怎么发(只有在编排里的和这次自动补的) */
+  const planOf = new Map(sendPlan.map((b) => [b.identifier, b]));
+  const skipped = (identifier: string) => planOf.get(identifier)?.state === 'skip';
+  /** 这块这次发不发:开着、而且不是这次不发的插件块 */
+  const sent = (o: PresetOrderEntry) => o.enabled && !skipped(o.identifier);
   const enabledCount = order.filter(sent).length;
   // 只统计实际会进请求的文本块;marker 的内容来自卡和历史,这里算不出来
   const totalTokens = order
@@ -309,7 +329,10 @@ export function PresetPanel({
   const autoRowsBefore = (before: string | null) =>
     autoBlocks
       .filter((a) => a.before === before)
-      .map((a) => (
+      .map((a) => {
+        const plan = planOf.get(a.identifier);
+        const badge = plan ? sendBadge(plan) : null;
+        return (
         <div key={`auto:${a.identifier}`} className="block-row auto">
           <div
             className="block-head"
@@ -320,11 +343,19 @@ export function PresetPanel({
               ·
             </span>
             <span className="block-name" title={a.name}>
-              {a.name}
+              {pluginLabel(a.name)}
             </span>
-            <span className="block-badge badge-auto">
-              {a.reason === 'no-key' ? 'Jev 没 key · 这次临时补块' : '自动补 · 不在预设里'}
-            </span>
+            {a.identifier === PLAYER_BLOCK_ID && <Tip k="no_user_block" />}
+            <span className="block-badge badge-plugin">插件</span>
+            {badge ? (
+              <SendChip badge={badge} />
+            ) : (
+              <span className="block-state auto">
+                自动补
+                <Tip k="auto_fill" />
+              </span>
+            )}
+            {a.reason === 'no-key' && <SendChip badge={{ text: '先按 AI 写', tip: 'skip_nokey', kind: 'note' }} />}
             {onPinAuto && (
               <button
                 className="btn small"
@@ -332,14 +363,15 @@ export function PresetPanel({
                   e.stopPropagation();
                   onPinAuto(a.identifier);
                 }}
-                title="变成预设里的普通块,之后能拖能改;改完记得保存预设"
+                title="固定到预设:变成预设里的普通块,之后能拖能改;改完记得保存预设"
               >
-                固定到预设
+                固定
               </button>
             )}
           </div>
         </div>
-      ));
+        );
+      });
 
   /** 左栏自己的那几行:标题、预设行、绑定、新建块、没预设时的提示。资料页这几样由 PresetView 摆 */
   const chrome = (
@@ -523,15 +555,13 @@ export function PresetPanel({
             {order.flatMap((entry, i) => [...autoRowsBefore(entry.identifier), (() => {
               const prompt = byIdentifier.get(entry.identifier);
               const plugin = Boolean(prompt) && isPluginBlock(entry.identifier);
-              // Jev 标的、插件关掉的那几路:块不发,显示成关着
-              const skipped = plugin ? skippedBlocks.get(entry.identifier) : undefined;
-              const skippedNow = skipped !== undefined;
+              // 插件块这次怎么发(core/sendPlan.ts):这次不发的(Jev 标的、插件关着的、没素材的、外语跟不上主声音的)
+              // 开关画灰、点不动,预设里的值不变;预设里本来就关着的照常
+              const plan = plugin ? planOf.get(entry.identifier) : undefined;
+              const state = plan ? sendBadge(plan) : null;
+              const skippedNow = state?.kind === 'skip';
               const on = entry.enabled && !skippedNow;
-              const badge = skipped
-                ? { cls: 'badge-auto', text: skipped }
-                : plugin
-                  ? { cls: 'badge-plugin', text: '插件' }
-                  : badgeFor(prompt);
+              const badge = plugin ? { cls: 'badge-plugin', text: '插件' } : badgeFor(prompt);
               const open = () => {
                 if (!prompt) return;
                 if (plugin) onOpenPlugin(entry.identifier);
@@ -549,7 +579,7 @@ export function PresetPanel({
               return (
                 <div
                   key={key}
-                  className={`block-row ${on ? 'on' : 'off'}${plugin ? ' plugin' : ''}${
+                  className={`block-row ${on ? 'on' : 'off'}${skippedNow ? ' skip' : ''}${plugin ? ' plugin' : ''}${
                     selectedIdentifier === entry.identifier ? ' selected' : ''
                   }${
                     dragFrom === i ? ' dragging' : ''
@@ -625,9 +655,11 @@ export function PresetPanel({
                       ⠿
                     </span>
                     <span className="block-name" title={label}>
-                      {label}
+                      {plugin ? pluginLabel(label) : label}
                     </span>
+                    {plugin && entry.identifier === PLAYER_BLOCK_ID && <Tip k="no_user_block" />}
                     <span className={`block-badge ${badge.cls}`}>{badge.text}</span>
+                    {state && <SendChip badge={state} />}
 
                     {prompt && !prompt.marker && prompt.injectionPosition === 1 && (
                       <span
@@ -664,7 +696,7 @@ export function PresetPanel({
                     )}
 
                     <button
-                      className={`block-toggle${on ? ' on' : ''}`}
+                      className={`block-toggle${entry.enabled ? ' on' : ''}${skippedNow ? ' muted' : ''}`}
                       onClick={(e) => {
                         e.stopPropagation();
                         onToggleBlock(entry.identifier);
@@ -672,7 +704,7 @@ export function PresetPanel({
                       disabled={skippedNow}
                       title={
                         skippedNow
-                          ? '这一路是 Jev 标的或者插件关了,这块不发;要发得在插件页改回「AI 写」、右上角打开'
+                          ? '这次不发,原因见旁边的问号;预设里的开关不变'
                           : entry.enabled
                             ? '关闭这一块'
                             : '启用这一块'

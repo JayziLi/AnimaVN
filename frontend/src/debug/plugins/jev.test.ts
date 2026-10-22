@@ -5,6 +5,7 @@ import { vnTagKinds } from '../vn/tags';
 import {
   DEFAULT_JEV_CONFIG,
   NO_JEV,
+  chosenJevKinds,
   decisionTags,
   insertionPoint,
   jevHealth,
@@ -15,12 +16,12 @@ import {
   jevOrder,
   jevStripPrompt,
   jevTagKinds,
+  liveJevKinds,
   voiceWaitsForJev,
   normalizeJevConfig,
   promptOverrides,
   stripReplyTags,
   tokenText,
-  wantsTagFreeLang,
   type JevKinds,
 } from './jev';
 import { jevView, makeNote } from './jevNotes';
@@ -170,13 +171,6 @@ describe('assembly helpers', () => {
     expect(jevOrder(order, { ...NO_JEV, bg: true }).map((o) => o.enabled)).toEqual([true, true, false, true, false, true]);
   });
 
-  it('uses the tag-free bilingual block only when no AI-mode tag block is on', () => {
-    expect(wantsTagFreeLang(NO_JEV, order)).toBe(false);
-    expect(wantsTagFreeLang({ ...NO_JEV, sprite: true, bg: true }, order)).toBe(false);
-    // 玩家台词块本来就关着,不算
-    expect(wantsTagFreeLang({ ...NO_JEV, sprite: true, bg: true, bgm: true }, order)).toBe(true);
-  });
-
   it('strips tags from every message of the assembled prompt', () => {
     const result = {
       messages: [
@@ -196,6 +190,28 @@ describe('assembly helpers', () => {
     expect(jevLangPrompt(DEFAULT_LANG_BLOCK_PROMPT, kinds)).toBe(DEFAULT_LANG_BLOCK_PROMPT_JEV);
     expect(DEFAULT_LANG_BLOCK_PROMPT_JEV).not.toMatch(/标签|<sprite/);
     expect(jevLangPrompt('先日后中。\n<sprite:微笑>\n「おかえり」', kinds)).toBe('先日后中。\n「おかえり」');
+  });
+
+  it('drops the sentences about tags from an edited bilingual block too', () => {
+    // 库里存的那份:只比默认版少了示例里那行 <sprite:微笑>
+    const stored = DEFAULT_LANG_BLOCK_PROMPT.replace('<sprite:微笑>\n', '');
+    expect(stored).not.toBe(DEFAULT_LANG_BLOCK_PROMPT);
+    expect(jevLangPrompt(stored, kinds)).toBe(DEFAULT_LANG_BLOCK_PROMPT_JEV);
+  });
+
+  it('takes out a whole line when its only sentence is about tags, bullet and all', () => {
+    expect(jevLangPrompt('先日后中。\n- 立绘标签写在前面。\n结尾。', kinds)).toBe('先日后中。\n结尾。');
+  });
+
+  it('keeps the other sentences of a line, joined by their own semicolons, ending with 。 like before', () => {
+    expect(jevLangPrompt('A；讲标签。', kinds)).toBe('A。');
+    expect(jevLangPrompt('- A；不要写标签;B；C', kinds)).toBe('- A;B；C');
+    expect(jevLangPrompt('- 写标签；A！', kinds)).toBe('- A！');
+  });
+
+  it('returns a block that never mentions tags as it is', () => {
+    const plain = '[双语]\n- 先日后中；中文自然一点。\n\n示例：\n「おかえり。」';
+    expect(jevLangPrompt(plain, kinds)).toBe(plain);
   });
 });
 
@@ -230,6 +246,22 @@ describe('in the visual novel', () => {
     expect(jevMayTag(narrate, 3, '星绘', ['sprite'])).toBe(false);
     expect(jevMayTag(narrate, 3, '星绘', ['bgm'])).toBe(true);
     expect(jevMayTag({ speaker: '店员', text: '「请」' }, 3, '星绘', ['sprite', 'player'])).toBe(false);
+  });
+});
+
+describe('which kinds Jev tags', () => {
+  const modes = { sprite: 'jev', bg: 'ai', bgm: 'jev', cg: 'jev' } as const;
+  const on = { sprite: true, bg: true, bgm: true, cg: false };
+
+  it('takes the chosen modes, and the player lines follow the sprites (no mode of their own)', () => {
+    expect(chosenJevKinds(modes)).toEqual({ sprite: true, bg: false, bgm: true, cg: true, player: true });
+    expect(chosenJevKinds({ ...modes, sprite: 'ai' }).player).toBe(false);
+  });
+
+  it('needs a key and the plugin switched on; the player lines still follow the sprites', () => {
+    expect(liveJevKinds(chosenJevKinds(modes), true, on)).toEqual({ sprite: true, bg: false, bgm: true, cg: false, player: true });
+    expect(liveJevKinds(chosenJevKinds(modes), false, on)).toEqual(NO_JEV);
+    expect(liveJevKinds(chosenJevKinds(modes), true, { ...on, sprite: false })).toMatchObject({ sprite: false, player: false });
   });
 });
 

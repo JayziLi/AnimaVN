@@ -4,7 +4,7 @@
  *
  * Jev 模式的那几类(模式是 jev、而且后端有 key):
  *   组装提示词  它们的插件块不发;提示词里它们的标签全摘掉(历史、卡里的对话示例……
- *              模型看见就会照着写)。开着的标签插件全是 Jev 时,外语块换成不提标签的版本
+ *              模型看见就会照着写)。这次一块标签块都没发时,外语块发不提标签的精简版(core/sendPlan.ts)
  *   生成中      每写完一句交给后端问 Jev(/api/annotate/lines,见 jevRun.ts)。正文只存模型写的
  *              原文,Jev 的标签另外存在 swipe_info.jev.notes,用的时候合并(见 jevNotes.ts)
  *   切句        立绘是 Jev 的回复(swipe_info.jev.kinds 有 sprite),Jev 判过的台词没带立绘标签
@@ -148,6 +148,27 @@ export const NO_JEV: JevKinds = Object.fromEntries(JEV_KINDS.map((k) => [k, fals
 export const anyJev = (k: JevKinds) => JEV_KINDS.some((x) => k[x]);
 export const jevKindList = (k: JevKinds): JevKind[] => JEV_KINDS.filter((x) => k[x]);
 
+/** 有模式、有插件开关的四路(玩家台词没有自己的模式:跟着立绘) */
+type TagRoute = 'sprite' | 'bg' | 'bgm' | 'cg';
+
+/**
+ * 各路选的是不是 Jev(不管有没有 key、插件开没开)。玩家台词跟着立绘:立绘交给 Jev 时它本来就在判谁说的,
+ * 顺手认出玩家(设计稿 12.1「10-16 第 2 步」)
+ */
+export const chosenJevKinds = (modes: Readonly<Record<TagRoute, TagMode>>): JevKinds => ({
+  sprite: modes.sprite === 'jev',
+  bg: modes.bg === 'jev',
+  bgm: modes.bgm === 'jev',
+  cg: modes.cg === 'jev',
+  player: modes.sprite === 'jev',
+});
+
+/** 这次哪几路由 Jev 标:选了 Jev、后端有 key、插件开着(DebugApp 和提示词快照共用)。玩家台词跟着立绘 */
+export function liveJevKinds(chosen: JevKinds, hasKey: boolean, switches: Readonly<Record<TagRoute, boolean>>): JevKinds {
+  const live = (k: TagRoute) => hasKey && switches[k] && chosen[k];
+  return { sprite: live('sprite'), bg: live('bg'), bgm: live('bgm'), cg: live('cg'), player: live('sprite') };
+}
+
 // ---- 视觉小说里(这个分支哪几类是 Jev 标的:jevNotes.ts 的 jevKindsOf) ----
 
 /** 谁说的 / 什么表情由 Jev 判时,语音要等 Jev 判完(只有背景、音乐是 Jev 时不用等) */
@@ -170,25 +191,54 @@ export const jevTagKinds = (k: JevKinds, kinds: readonly TagKind[]): TagKind[] =
 
 // ---- 组装提示词 ----
 
-/** 编排里关掉在用 Jev 的那几块(预设本身不动,只影响这次组装) */
+/**
+ * 编排里关掉在用 Jev 的那几块(预设本身不动,只影响这次组装)。组装现在照 core/sendPlan.ts 关块,
+ * 这个留给搬家以前的写法(core/assemblyLegacy.ts)对照用
+ */
 export const jevOrder = (order: readonly PresetOrderEntry[], k: JevKinds): PresetOrderEntry[] =>
   order.map((o) =>
     o.enabled && JEV_KINDS.some((x) => k[x] && BLOCK_OF[x] === o.identifier) ? { ...o, enabled: false } : o,
   );
 
-/** 在用 Jev 的那几路的插件块 identifier(组装时不发;左栏显示成关着) */
-export const jevBlockIds = (k: JevKinds): Set<string> => new Set(jevKindList(k).map((x) => BLOCK_OF[x]));
+/** 行首的缩进和列表记号(「- 」「* 」「• 」):留在行首;一行讲标签的话全删掉时跟着删 */
+const BULLET_RE = /^\s*(?:[-*•]\s+)?/;
 
 /**
- * 外语块要不要换成不提标签的版本:有在用 Jev 的,而且开着的标签插件块全是 Jev 的。
- * 还有 AI 模式的块开着时用原版 —— 原版里写了标签放哪
+ * 一行里讲标签的小句去掉:按「；」/「;」切成几小句,提到「标签」的不要;全不要了返回 null(整行删掉,
+ * 行首的「- 」一起删);剩下的用原来的分号接回去(每句前面那个),原行以「。」结尾而剩下的不是时补一个「。」。
+ * 没提「标签」的行一字不动
  */
-export const wantsTagFreeLang = (k: JevKinds, order: readonly PresetOrderEntry[]) =>
-  anyJev(k) && !JEV_KINDS.some((x) => !k[x] && order.some((o) => o.enabled && o.identifier === BLOCK_OF[x]));
+function dropTagClauses(line: string): string | null {
+  if (!line.includes('标签')) return line;
+  const cr = line.endsWith('\r') ? '\r' : '';
+  const body = cr ? line.slice(0, -1) : line;
+  const bullet = BULLET_RE.exec(body)?.[0] ?? '';
+  // [小句, 分号, 小句, 分号, 小句 …]
+  const parts = body.slice(bullet.length).split(/([；;])/);
+  let kept = '';
+  for (let i = 0; i < parts.length; i += 2) {
+    if (parts[i].includes('标签')) continue;
+    kept += (kept ? parts[i - 1] : '') + parts[i];
+  }
+  if (!kept.trim()) return null;
+  kept = kept.trim();
+  if (body.trimEnd().endsWith('。') && !kept.endsWith('。')) kept += '。';
+  return bullet + kept + cr;
+}
 
-/** 外语块:默认模板换成不提标签的版本;改过的模板只去掉单独占一行的标签(示例里的那种) */
+/**
+ * 外语块的精简版(core/sendPlan.ts:这次一块标签块都没发时发它),标签交给 Jev 以后讲标签的话不发:
+ * 默认模板换成不提标签的版本(DEFAULT_LANG_BLOCK_PROMPT_JEV);改过的模板先去掉单独占一行的标签(示例里的那种),
+ * 再逐行去掉讲标签的小句(dropTagClauses)
+ */
 export const jevLangPrompt = (prompt: string, kinds: readonly TagKind[]) =>
-  prompt === DEFAULT_LANG_BLOCK_PROMPT ? DEFAULT_LANG_BLOCK_PROMPT_JEV : stripReplyTags(prompt, kinds);
+  prompt === DEFAULT_LANG_BLOCK_PROMPT
+    ? DEFAULT_LANG_BLOCK_PROMPT_JEV
+    : stripReplyTags(prompt, kinds)
+        .split('\n')
+        .map(dropTagClauses)
+        .filter((line): line is string => line !== null)
+        .join('\n');
 
 /**
  * 组装好的整份提示词里,这几类标签全摘掉:历史、卡里的对话示例、世界书、预设里写的示例 ——

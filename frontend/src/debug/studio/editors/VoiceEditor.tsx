@@ -1,24 +1,34 @@
 /**
- * 声音编辑器(照 V4AttachVoice.png):主区是「试听」台和「情绪参考」表,右栏是选中那种情绪的参考音频、
- * 参考文本、别名、辅助参考,和整个声音的「全局参数」(语速、温度、切分)。
+ * 声音编辑器(照 V4AttachVoice.png):主区是「声音设置」(名字、语音服务、语言、别名、权重或音色参考)、「试听」台和
+ * 「情绪参考」表,右栏是选中那种情绪的参考音频、参考文本、别名、辅助参考,和整个声音的「全局参数」(语速、温度、切分;
+ * GPT-SoVITS 下面还有收起来的「更多参数」:采样步数、top_p、top_k、重复惩罚、句间停顿、并行推理、试听用的固定种子)。
  * 不依赖卡:卡编辑器「声音」栏和素材管理页都用它,主区顶上那一行(header)由用的地方给。
  *
  * 声音按 voiceId 自己从后端读;改完用后端回的那份更新自己,再 onChanged() 让 DebugApp 重新拉声音列表 ——
  * 游戏里这个声音已经合成好的句子会作废重念(useVoicePlugin 比较前后的设置)。
- * 参考音频在语音机上,这里改的是路径;▶ 原声经后端从语音机取回(/api/tts/reference)。
+ * 参考音频、权重在语音机上,这里改的是路径;▶ 原声经后端从语音机取回(/api/tts/reference)。
  */
 
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import {
   debugApi,
   type TtsConnection,
   type VoiceEmotion,
   type VoiceEmotionPatch,
+  type VoiceParams,
   type VoiceProfile,
   type VoiceProfilePatch,
 } from '../../lib/api';
 import { EmotionVectorEditor } from '../../components/EmotionVectorEditor';
-import { GSV_NUM_PARAMS, INDEX_NUM_PARAMS, SPEED_RANGE, TEXT_SPLIT_METHODS } from '../../plugins/voice';
+import { LABEL_MAX } from '../../plugins/common';
+import {
+  GSV_NUM_PARAMS,
+  INDEX_NUM_PARAMS,
+  SPEED_RANGE,
+  TEXT_SPLIT_METHODS,
+  sampleIn,
+  sampleLangOf,
+} from '../../plugins/voice';
 import { audioBus } from '../../vn/audioBus';
 import { useVoice, voicePlayer } from '../../vn/voice';
 import { ArmedBtn } from '../profile/ArmedBtn';
@@ -34,30 +44,50 @@ import {
   InspectorHead,
   PromptDialog,
   Section,
+  SelectBox,
   SelectRow,
   SliderRow,
   TagsField,
 } from '../ui';
 import type { Notify } from '../types';
 import {
+  MORE_GSV_PARAMS,
+  SEED_MAX,
+  aliasesPatch,
   basename,
+  benchBlocker,
+  benchTuning,
+  connectionOption,
   fmtSpeed,
+  langOptions,
   matchBadge,
+  missingSettings,
+  moreParamsSummary,
   moveToFront,
   newEmotionFrom,
+  paramDefault,
+  parseSeed,
   peaksOf,
   progressText,
   refPatch,
   rowText,
   samplesFor,
   selectAfterDelete,
+  settingPatch,
+  settingsSummary,
   tableNote,
   withParam,
+  type SettingKey,
 } from './voiceEditorModel';
 import './voiceEditor.css';
 
 export interface VoiceEditorProps {
   voiceId: string;
+  /**
+   * 外面列表里这个声音现在叫什么(素材管理顶上的名字、卡编辑器「⋯ → 重命名」改的):变了就跟着换,
+   * 不用整个重读。不给 = 只认自己读到的
+   */
+  name?: string;
   /** 主区顶上那一行:卡编辑器里是类型小牌子 + 声音页签 + ⋯;素材管理页是包名、用到它的卡…… */
   header: ReactNode;
   /**
@@ -79,9 +109,17 @@ export function VoiceEditor(props: VoiceEditorProps) {
   return <Editor key={props.voiceId} {...props} />;
 }
 
-function Editor({ voiceId, header, spriteLabels, onChanged, notify }: VoiceEditorProps) {
+function Editor({ voiceId, name, header, spriteLabels, onChanged, notify }: VoiceEditorProps) {
   const [data, setData] = useState<{ profile: VoiceProfile | null; connections: TtsConnection[] } | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
+  // 外面改了名字:跟着换。只看外面的名字有没有变 —— 这里刚改的名字外面还没刷新时,不能被旧名字盖回去
+  const [outerName, setOuterName] = useState(name);
+  if (name !== outerName) {
+    setOuterName(name);
+    if (name && data?.profile && data.profile.name !== name) {
+      setData({ ...data, profile: { ...data.profile, name } });
+    }
+  }
   useEffect(() => {
     let alive = true;
     Promise.all([debugApi.listVoices(), debugApi.listTtsConnections()])
@@ -114,6 +152,7 @@ function Editor({ voiceId, header, spriteLabels, onChanged, notify }: VoiceEdito
     <Loaded
       profile={data.profile}
       connection={data.connections.find((c) => c.id === data.profile?.connection_id) ?? null}
+      connections={data.connections}
       patch={patch}
       header={header}
       spriteLabels={spriteLabels}
@@ -287,6 +326,8 @@ function Wave({ peaks, bars, height, progress }: { peaks: number[] | null; bars:
 interface LoadedProps {
   profile: VoiceProfile;
   connection: TtsConnection | null;
+  /** 全部语音服务(「声音设置」的下拉) */
+  connections: readonly TtsConnection[];
   patch: (f: (p: VoiceProfile) => VoiceProfile) => void;
   header: ReactNode;
   spriteLabels: readonly string[] | null;
@@ -294,7 +335,7 @@ interface LoadedProps {
   notify: Notify;
 }
 
-function Loaded({ profile, connection, patch, header, spriteLabels, onChanged, notify }: LoadedProps) {
+function Loaded({ profile, connection, connections, patch, header, spriteLabels, onChanged, notify }: LoadedProps) {
   const isIndex = connection?.api_type === 'indextts';
   const emotions = profile.emotions;
   const [selId, setSelId] = useState<string | null>(emotions[0]?.id ?? null);
@@ -304,6 +345,8 @@ function Loaded({ profile, connection, patch, header, spriteLabels, onChanged, n
   const benchLabel = emotions.find((e) => e.label === benchEmo)?.label ?? sel?.label ?? '';
   const [dialog, setDialog] = useState<'add' | 'rename' | null>(null);
   const preview = usePreview();
+  // 「更多参数」里的固定种子:只给试听用,不存
+  const [seedText, setSeedText] = useState('');
 
   const select = (id: string) => {
     setSelId(id);
@@ -407,12 +450,14 @@ function Loaded({ profile, connection, patch, header, spriteLabels, onChanged, n
     <>
       <main className="st-main">
         {header}
+        <VoiceSettings profile={profile} connections={connections} isIndex={isIndex} saveVoice={saveVoice} />
         <Bench
           profile={profile}
           isIndex={isIndex}
           emotionLabel={benchLabel}
           onEmotion={setBenchEmo}
           preview={preview}
+          seed={isIndex ? { seed: null, bad: false } : parseSeed(seedText)}
         />
         <section className="vo-panel vo-table" aria-label="情绪参考">
           <div className="vo-table-head">
@@ -502,6 +547,7 @@ function Loaded({ profile, connection, patch, header, spriteLabels, onChanged, n
         onDelete={(e) => void deleteEmotion(e)}
         saveEmotion={saveEmotion}
         saveVoice={saveVoice}
+        seed={{ text: seedText, onText: setSeedText }}
         notify={notify}
       />
 
@@ -539,6 +585,126 @@ function Loaded({ profile, connection, patch, header, spriteLabels, onChanged, n
   );
 }
 
+// ---------------------------------------------------------------- 声音设置
+
+/**
+ * 主区最上面的「声音设置」:名字、语音服务、语言、别名,GPT-SoVITS 的两个权重或 IndexTTS 的音色参考。
+ * 一格一存(失焦 / 回车,下拉选了就存)。都填好了收成一行摘要;缺东西(刚新建的声音)时一打开就是展开的
+ */
+function VoiceSettings({
+  profile,
+  connections,
+  isIndex,
+  saveVoice,
+}: {
+  profile: VoiceProfile;
+  connections: readonly TtsConnection[];
+  isIndex: boolean;
+  saveVoice: (body: VoiceProfilePatch) => Promise<boolean>;
+}) {
+  const [open, setOpen] = useState(() => missingSettings(profile, isIndex).length > 0);
+  const bodyId = useId();
+  const connection = connections.find((c) => c.id === profile.connection_id) ?? null;
+  const summary = settingsSummary(profile, connection, isIndex);
+  const save = (key: SettingKey, raw: string) => {
+    const body = settingPatch(profile, key, raw);
+    return body ? saveVoice(body) : false;
+  };
+  const options = connections.map(connectionOption);
+  return (
+    <section className="vo-panel vo-settings" aria-label="声音设置">
+      <button
+        type="button"
+        className="vo-settings-head"
+        aria-expanded={open}
+        aria-controls={bodyId}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="vo-title">声音设置</span>
+        {!open && (
+          <span className={`vo-note${summary.warn ? ' warn' : ''}`} title={summary.text}>
+            {summary.text}
+          </span>
+        )}
+        <span className="st-flex" />
+        <Icon name="chev" size={15} className={open ? 'vo-chev open' : 'vo-chev'} />
+      </button>
+      {open && (
+        <div id={bodyId} className="vo-settings-body">
+          <div className="vo-set-field">
+            <FieldLabel text="名字" />
+            <CommitInput label="声音名" value={profile.name} maxLength={LABEL_MAX} onCommit={(v) => save('name', v)} />
+          </div>
+          <div className="vo-set-field">
+            <FieldLabel text="语音服务" help={TERMS.ttsService} />
+            <SelectBox
+              label="语音服务"
+              value={profile.connection_id}
+              options={connection ? options : [{ value: profile.connection_id, label: '没选语音服务' }, ...options]}
+              disabled={connections.length === 0}
+              onChange={(v) => void save('connection_id', v)}
+            />
+          </div>
+          <div className="vo-set-field">
+            <FieldLabel text="语言" help={TERMS.voiceLang} />
+            <SelectBox
+              label="语言"
+              value={profile.text_lang}
+              options={langOptions(profile.text_lang, isIndex)}
+              onChange={(v) => void save('text_lang', v)}
+            />
+          </div>
+          <div className="vo-set-field">
+            <FieldLabel text="别名" help={TERMS.speakerAlias} />
+            <TagsField
+              values={profile.aliases}
+              onChange={(next) => {
+                const body = aliasesPatch(profile, next);
+                if (body) void saveVoice(body);
+              }}
+            />
+          </div>
+          {isIndex ? (
+            <div className="vo-set-field wide">
+              <FieldLabel text="音色参考" help={TERMS.speakerRef} />
+              <CommitInput
+                path
+                label="音色参考的路径"
+                value={profile.ref_path}
+                placeholder="D:/AnimaVoice/refs/角色/【平静】原文.wav"
+                onCommit={(v) => save('ref_path', v)}
+              />
+            </div>
+          ) : (
+            <>
+              <div className="vo-set-field">
+                <FieldLabel text="GPT 权重(.ckpt)" help={TERMS.gptWeights} />
+                <CommitInput
+                  path
+                  label="GPT 权重的路径"
+                  value={profile.gpt_weights}
+                  placeholder="D:/AnimaVoice/models/角色/角色-e10.ckpt"
+                  onCommit={(v) => save('gpt_weights', v)}
+                />
+              </div>
+              <div className="vo-set-field">
+                <FieldLabel text="SoVITS 权重(.pth)" help={TERMS.sovitsWeights} />
+                <CommitInput
+                  path
+                  label="SoVITS 权重的路径"
+                  value={profile.sovits_weights}
+                  placeholder="D:/AnimaVoice/models/角色/角色_e10_s230_l32.pth"
+                  onCommit={(v) => save('sovits_weights', v)}
+                />
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
 // ---------------------------------------------------------------- 试听
 
 interface Take extends Clip {
@@ -546,6 +712,8 @@ interface Take extends Clip {
   emotion: string;
   cache: 'hit' | 'miss';
   ms: number;
+  /** 用的固定种子;没固定是 null */
+  seed: number | null;
 }
 
 function Bench({
@@ -554,22 +722,30 @@ function Bench({
   emotionLabel,
   onEmotion,
   preview,
+  seed,
 }: {
   profile: VoiceProfile;
   isIndex: boolean;
   emotionLabel: string;
   onEmotion: (label: string) => void;
   preview: Preview;
+  /** 「更多参数」里填的固定种子(只有 GSV);填得不对时不让合成 */
+  seed: { seed: number | null; bad: boolean };
 }) {
   const samples = samplesFor(profile.text_lang);
   const [text, setText] = useState(samples[0].text);
+  // 「声音设置」里换了语言:框里还是内置例句的话换成同一句的这个语言版本(日语声音别去念中文例句)
+  const lang = sampleLangOf(profile.text_lang);
+  const [textLang, setTextLang] = useState(lang);
+  if (lang !== textLang) {
+    setTextLang(lang);
+    setText(sampleIn(text, lang));
+  }
   const [take, setTake] = useState<Take | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const missing = isIndex
-    ? !profile.ref_path && `「${profile.name}」还没填音色参考,念不了(在插件页「语音」里填)`
-    : profile.emotions.length === 0 && `「${profile.name}」还没有参考音频,念不了 · 在下面「新增情绪」贴一段参考音频的路径`;
-  const canRun = Boolean(text.trim()) && !busy && !missing;
+  const missing = benchBlocker(profile, isIndex);
+  const canRun = Boolean(text.trim()) && !busy && !missing && !seed.bad;
 
   const synth = async () => {
     if (!canRun) return;
@@ -578,9 +754,13 @@ function Bench({
     setBusy(true);
     setError(null);
     try {
-      const r = await debugApi.speak({ profile_id: profile.id, emotion: emotionLabel || null, text: text.trim() });
+      const r = await debugApi.speak(
+        { profile_id: profile.id, emotion: emotionLabel || null, text: text.trim() },
+        false,
+        benchTuning(profile, seed.seed, isIndex),
+      );
       const clip = await decode(r.audio, BENCH_BARS);
-      const next: Take = { ...clip, emotion: r.emotion, cache: r.cache, ms: r.ms };
+      const next: Take = { ...clip, emotion: r.emotion, cache: r.cache, ms: r.ms, seed: isIndex ? null : seed.seed };
       setTake(next);
       await preview.play('take', next);
     } catch (e) {
@@ -677,7 +857,12 @@ function Bench({
           {missing ||
             error ||
             (take &&
-              `用「${take.emotion || '默认'}」念 · ${take.cache === 'hit' ? '缓存里的' : '新合成'} · ${secs(take.ms)}`)}
+              [
+                `用「${take.emotion || '默认'}」念`,
+                take.cache === 'hit' ? '缓存里的' : '新合成',
+                secs(take.ms),
+                ...(take.seed !== null ? [`种子 ${take.seed}`] : []),
+              ].join(' · '))}
         </div>
       )}
     </section>
@@ -686,15 +871,25 @@ function Bench({
 
 // ---------------------------------------------------------------- 右栏
 
-/** 路径框:打字只改自己,回车 / 失焦才交出去;外面的值变了(换了一行)就跟着换 */
-function PathInput({
+/**
+ * 一行输入框:打字只改自己,回车 / 失焦才交出去,Esc 放弃;外面的值变了(换了一行、存好了)就跟着换。
+ * onCommit 回 false(没存成:重名、清空了名字)时退回原值。path = 路径的样子(等宽小字)
+ */
+function CommitInput({
   value,
+  label,
   placeholder,
+  path,
+  maxLength,
   onCommit,
 }: {
   value: string;
-  placeholder: string;
-  onCommit: (next: string) => void;
+  /** 读屏用的名字 */
+  label: string;
+  placeholder?: string;
+  path?: boolean;
+  maxLength?: number;
+  onCommit: (next: string) => Promise<boolean> | boolean | void;
 }) {
   const [draft, setDraft] = useState(value);
   const [base, setBase] = useState(value);
@@ -702,17 +897,20 @@ function PathInput({
     setBase(value);
     setDraft(value);
   }
+  const commit = async () => {
+    if (draft.trim() === value) return;
+    if ((await onCommit(draft)) === false) setDraft(value);
+  };
   return (
     <input
-      className="st-input vo-path"
+      className={`st-input${path ? ' vo-path' : ''}`}
       value={draft}
       placeholder={placeholder}
       spellCheck={false}
-      aria-label="参考音频的路径"
+      maxLength={maxLength}
+      aria-label={label}
       onChange={(e) => setDraft(e.target.value)}
-      onBlur={() => {
-        if (draft.trim() !== value) onCommit(draft);
-      }}
+      onBlur={() => void commit()}
       onKeyDown={(e) => {
         if (e.key === 'Enter' && !e.nativeEvent.isComposing) e.currentTarget.blur();
         else if (e.key === 'Escape') setDraft(value);
@@ -737,6 +935,7 @@ function EmotionInspector({
   onDelete,
   saveEmotion,
   saveVoice,
+  seed,
   notify,
 }: {
   profile: VoiceProfile;
@@ -754,6 +953,7 @@ function EmotionInspector({
   onDelete: (e: VoiceEmotion) => void;
   saveEmotion: (e: VoiceEmotion, body: VoiceEmotionPatch) => Promise<boolean>;
   saveVoice: (body: VoiceProfilePatch) => Promise<boolean>;
+  seed: SeedBox;
   notify: Notify;
 }) {
   const count = profile.emotions.length;
@@ -846,7 +1046,9 @@ function EmotionInspector({
                 {refClip ? progressText(preview.pos(key), refClip.duration) : refLoading ? '取回中…' : e.ref_path ? '▶ 原声' : ''}
               </span>
             </button>
-            <PathInput
+            <CommitInput
+              path
+              label="参考音频的路径"
               value={e.ref_path}
               placeholder={isIndex ? '可选。填了就照这段的语气念,向量不生效' : 'D:/AnimaVoice/refs/角色/【平静】原文.wav'}
               onCommit={(v) => void saveEmotion(e, refPatch(e, v))}
@@ -912,7 +1114,14 @@ function EmotionInspector({
         </>
       )}
 
-      <GlobalParams profile={profile} connection={connection} isIndex={isIndex} first={!e} saveVoice={saveVoice} />
+      <GlobalParams
+        profile={profile}
+        connection={connection}
+        isIndex={isIndex}
+        first={!e}
+        saveVoice={saveVoice}
+        seed={seed}
+      />
     </Inspector>
   );
 }
@@ -920,19 +1129,21 @@ function EmotionInspector({
 const TEMP = GSV_NUM_PARAMS.find((p) => p.key === 'temperature');
 const ALPHA = INDEX_NUM_PARAMS.find((p) => p.key === 'emo_alpha');
 
-/** 「全局参数」:作用于这个声音的全部情绪,改完直接存到声音上(插件页试音台里调的是同一组) */
+/** 「全局参数」:作用于这个声音的全部情绪,改完直接存到声音上;GPT-SoVITS 下面还有收起来的「更多参数」 */
 function GlobalParams({
   profile,
   connection,
   isIndex,
   first,
   saveVoice,
+  seed,
 }: {
   profile: VoiceProfile;
   connection: TtsConnection | null;
   isIndex: boolean;
   first: boolean;
   saveVoice: (body: VoiceProfilePatch) => Promise<boolean>;
+  seed: SeedBox;
 }) {
   // 拖的时候只改这里(跟手),松手才存
   const [draft, setDraft] = useState<{ speed?: number; temp?: number; alpha?: number }>({});
@@ -1007,7 +1218,137 @@ function GlobalParams({
               })
             }
           />
+          <MoreParams profile={profile} connSteps={connection?.sample_steps ?? 64} saveVoice={saveVoice} seed={seed} />
         </>
+      )}
+    </>
+  );
+}
+
+/** 「固定种子」框:字放在 Loaded 里,试听台和「更多参数」共用 */
+interface SeedBox {
+  text: string;
+  onText: (text: string) => void;
+}
+
+const MORE_HELP: Partial<Record<keyof VoiceParams, string>> = {
+  sample_steps: TERMS.sampleSteps,
+  top_p: TERMS.topP,
+  top_k: TERMS.topK,
+  repetition_penalty: TERMS.repPenalty,
+  fragment_interval: TERMS.fragInterval,
+};
+
+/**
+ * 「更多参数」(只有 GPT-SoVITS,默认收起,收着时写改过哪几项):旧试音台里有、上面没单独放的几项 ——
+ * 采样步数、top_p、top_k、重复惩罚、句间停顿、并行推理,存在声音上(调回默认就删掉那一项);
+ * 固定种子只用于上面的试听,不存
+ */
+function MoreParams({
+  profile,
+  connSteps,
+  saveVoice,
+  seed,
+}: {
+  profile: VoiceProfile;
+  /** 采样步数没设时跟的语音服务的步数 */
+  connSteps: number;
+  saveVoice: (body: VoiceProfilePatch) => Promise<boolean>;
+  seed: SeedBox;
+}) {
+  const [open, setOpen] = useState(false);
+  const bodyId = useId();
+  // 拖的时候只改这里(跟手),松手才存
+  const [draft, setDraft] = useState<Partial<Record<keyof VoiceParams, number>>>({});
+  const commit = async (key: (typeof MORE_GSV_PARAMS)[number]['key'], value: number, def: number) => {
+    await saveVoice({ params: withParam(profile.params, key, value, def) });
+    setDraft((d) => {
+      const next = { ...d };
+      delete next[key];
+      return next;
+    });
+  };
+  const parallel = profile.params.parallel_infer ?? true;
+  const { seed: seedValue, bad: seedBad } = parseSeed(seed.text);
+  const note =
+    [moreParamsSummary(profile.params), ...(seedValue !== null ? [`种子 ${seedValue}`] : [])].join(' · ') || '全部默认';
+  return (
+    <>
+      <button
+        type="button"
+        className="vo-more"
+        aria-expanded={open}
+        aria-controls={bodyId}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="st-section-title">更多参数</span>
+        <span className="vo-more-note" title={note}>
+          {note}
+        </span>
+        <span className="st-flex" />
+        <Icon name="chev" size={15} className={open ? 'vo-chev open' : 'vo-chev'} />
+      </button>
+      {open && (
+        <div id={bodyId} className="vo-more-body">
+          {MORE_GSV_PARAMS.map((p) => {
+            const def = paramDefault(p, connSteps);
+            const whole = p.step >= 1;
+            return (
+              <SliderRow
+                key={p.key}
+                label={p.name}
+                help={MORE_HELP[p.key]}
+                min={p.min}
+                max={p.max}
+                step={p.step}
+                value={draft[p.key] ?? profile.params[p.key] ?? def}
+                format={(v) =>
+                  // 带单位的(句间停顿「0.3秒」)去掉末尾的 0,放得下
+                  whole ? String(Math.round(v)) : p.unit ? `${round2(v)}${p.unit}` : v.toFixed(2)
+                }
+                onChange={(v) => setDraft((d) => ({ ...d, [p.key]: v }))}
+                onCommit={(v) => void commit(p.key, whole ? Math.round(v) : round2(v), def)}
+              />
+            );
+          })}
+          <div className="st-row">
+            <span className="st-row-label">
+              并行推理
+              <HelpTip text={TERMS.parallel} />
+            </span>
+            <span className="st-flex" />
+            <button
+              type="button"
+              role="switch"
+              aria-checked={parallel}
+              aria-label="并行推理"
+              className="vo-switch"
+              onClick={() =>
+                void saveVoice({ params: withParam(profile.params, 'parallel_infer', !parallel, true) })
+              }
+            >
+              <span className={`st-switch${parallel ? ' on' : ''}`} aria-hidden="true">
+                <span className="st-switch-knob" />
+              </span>
+            </button>
+          </div>
+          <div className="st-row">
+            <span className="st-row-label">
+              固定种子
+              <HelpTip text={TERMS.seed} />
+            </span>
+            <input
+              className={`st-input vo-seed${seedBad ? ' bad' : ''}`}
+              inputMode="numeric"
+              aria-label="固定种子"
+              aria-invalid={seedBad}
+              placeholder="随机"
+              value={seed.text}
+              onChange={(e) => seed.onText(e.target.value)}
+            />
+          </div>
+          {seedBad && <div className="vo-row-error">0 到 {SEED_MAX} 的整数</div>}
+        </div>
       )}
     </>
   );

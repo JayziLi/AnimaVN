@@ -165,6 +165,8 @@ export interface PageContext {
   openPlugin: (section: PluginSection) => void;
   /** 插件页该停在哪个插件;从导航直接点进来时是 null */
   pluginFocus: PluginFocus | null;
+  /** 换到菜单的「设置」页(插件页底部「游戏设置 · 音量」) */
+  openConfig: () => void;
   /** 设置里的「思考过程」:关了历史页也不显示 */
   showThinking: boolean;
 }
@@ -258,6 +260,11 @@ interface Props {
   switches?: PluginSwitches;
   /** 菜单里的「素材」:打开素材管理页(调试台的全屏页,盖在菜单上面);不给就没有这一项 */
   onOpenLibrary?: () => void;
+  /**
+   * 设置页「换声音 · 试音 · 调参数」、语音标签「换声音 · 试音」:打开素材管理的「声音」页签、选中这张卡的主声音
+   * (盖在游戏 / 菜单上面,关了回来)。不给就去菜单插件页的语音
+   */
+  onOpenVoiceAssets?: () => void;
 }
 
 interface Cursor {
@@ -661,6 +668,7 @@ export function VNScreen({
   illustrations: illustrationsInstalled = null,
   switches = DEFAULT_SWITCHES,
   onOpenLibrary,
+  onOpenVoiceAssets,
 }: Props) {
   // AI 出图关了:不画、不显示、画笔收起;设置里那一页照旧在(插件页能再打开)
   const illustrations = switches.illustrations ? illustrationsInstalled : null;
@@ -752,9 +760,8 @@ export function VNScreen({
 
   const typeKey = beat ? `${beat.entry.id}:${beat.entry.swipeIndex}:${line}` : 'none';
 
-  // 玩家台词插件:翻到玩家的台词先弹成选项,选中了(记下这句的 typeKey)才打进对话框
-  const [pickedKey, setPickedKey] = useState<string | null>(null);
-  const choosing = Boolean(current?.player) && pickedKey !== typeKey;
+  // 玩家的台词(<我>,Jev 认出来的或旧回复里的)照常打进对话框,名牌写玩家的名字、不念、不换立绘;
+  // 第 2 步起不再先弹成选项(设计稿 12.1「10-16 第 2 步」)
 
   // 翻回历史往下看:一条回复读完,后面是当时玩家发的话 —— 一句句弹成选项(让人看到当时
   // 说了什么),点了接着看下一条回复。最新那条后面没有回复,不弹
@@ -1213,14 +1220,14 @@ export function VNScreen({
     return () => window.clearTimeout(t);
   }, [jevGated, typeKey]);
 
-  // 等语音、等 Jev 时先不打字:好了文字和声音 / 画面一起出。玩家台词还没选的时候也不打
+  // 等语音、等 Jev 时先不打字:好了文字和声音 / 画面一起出
   const typer = useTypewriter(
     typeKey,
-    voice.gated || jevGated || choosing ? '' : (current?.text ?? ''),
+    voice.gated || jevGated ? '' : (current?.text ?? ''),
     // 自动播放开着倍速时打字也跟着快
     auto ? settings.textSpeed / settings.autoSpeed : settings.textSpeed,
   );
-  const typedDone = typer.done && !voice.gated && !jevGated && !choosing;
+  const typedDone = typer.done && !voice.gated && !jevGated;
 
   // ---- 立绘切换特效:往下读到这句、表情真的换了,而且换上的立绘设了特效 ----
 
@@ -1429,6 +1436,8 @@ export function VNScreen({
     setMenu('plugin');
     setLastPage('plugin');
   };
+  // 「换声音 · 试音」:素材管理的「声音」页签(插件页的语音只管声音在对话里怎么用,不再有这些)
+  const openVoice = onOpenVoiceAssets ?? (() => openPlugin('voice'));
 
   const advance = () => {
     if (uiHidden) {
@@ -1440,11 +1449,6 @@ export function VNScreen({
     if (userChoice !== null && userStep) {
       if (userStep.i + 1 < between.said.length) setUserStep({ key: typeKey, i: userStep.i + 1 });
       else continueToNext();
-      return;
-    }
-    // 选项:点哪里都算选中;流式时这句还没写完不能选
-    if (choosing) {
-      if (lineComplete) setPickedKey(typeKey);
       return;
     }
     if (jevGated) {
@@ -1480,26 +1484,23 @@ export function VNScreen({
 
   // 自动播放:一句打完停一会儿翻下一句;流式时等下一句写完再翻。
   // 设置里开着「等语音」时,这句的语音还在合成或正在念就先不翻(合成失败了照常翻)。
-  // 玩家台词的选项:这句写完了就停一会儿自动选掉。
-  // 翻回历史时一条回复读完接着往下:当时玩家发的话也一样停一会儿选掉
+  // 翻回历史时一条回复读完接着往下:当时玩家发的话停一会儿选掉
   const voiceHolds = settings.autoWaitVoice && (voice.speaking || voice.synthesizing);
   // 依赖里只放「有没有这句」:流式时每来一个字都会重新切句,current 每次都是新对象,
   // 放它进去计时器会被一直重置,要等生成完才翻得动
   const hasCurrent = current !== null;
   useEffect(() => {
     if (!auto || busyOverlay || uiHidden || skipping || !hasCurrent || !lineComplete) return;
-    const ready =
-      userChoice !== null || choosing || (typedDone && !voiceHolds && (hasNext || canContinue));
+    const ready = userChoice !== null || (typedDone && !voiceHolds && (hasNext || canContinue));
     if (!ready) return;
     const t = window.setTimeout(() => advanceRef.current(), settings.autoDelay / settings.autoSpeed);
     return () => window.clearTimeout(t);
-  }, [auto, busyOverlay, uiHidden, skipping, hasCurrent, userChoice, userStep, choosing, typedDone, voiceHolds, hasNext, canContinue, lineComplete, settings.autoDelay, settings.autoSpeed, typeKey]);
+  }, [auto, busyOverlay, uiHidden, skipping, hasCurrent, userChoice, userStep, typedDone, voiceHolds, hasNext, canContinue, lineComplete, settings.autoDelay, settings.autoSpeed, typeKey]);
 
-  // 跳过:连打带翻(选项直接选掉),翻到最新那条回复的最后一句自己停 —— 翻回历史时读过的
-  // 一路跳过去。依赖里要有 choosing:选完这句文字从头打,typedDone 没变,不重跑就停在这儿了
+  // 跳过:连打带翻(当时玩家发的话直接选掉),翻到最新那条回复的最后一句自己停 —— 翻回历史时读过的
+  // 一路跳过去
   useEffect(() => {
     if (!skipping || busyOverlay || !hasCurrent) return;
-    if (choosing && !lineComplete) return;
     const more = (hasNext && lineComplete) || canContinue || userChoice !== null;
     if (typedDone && !more) {
       if (!streaming && skip) setSkip(false);
@@ -1507,7 +1508,7 @@ export function VNScreen({
     }
     const t = window.setTimeout(() => advanceRef.current(), 60);
     return () => window.clearTimeout(t);
-  }, [skipping, skip, busyOverlay, hasCurrent, choosing, userChoice, userStep, canContinue, typedDone, hasNext, lineComplete, streaming, typeKey]);
+  }, [skipping, skip, busyOverlay, hasCurrent, userChoice, userStep, canContinue, typedDone, hasNext, lineComplete, streaming, typeKey]);
 
   // 等待页 / 换存档的黑场盖着的时候,键盘和滚轮也别动底下的故事:看不见的句子会被翻过去、
   // 语音照念;Esc 会在等待页底下开出一个看不见的菜单
@@ -1663,13 +1664,11 @@ export function VNScreen({
   }, [draft]);
 
   /**
-   * 跳到某条回复的某一句,关掉菜单。立绘、背景、音乐都是按光标累计的,跟着回到那一句的样子;
-   * 选过的玩家台词也忘掉,重玩时再弹一次选项
+   * 跳到某条回复的某一句,关掉菜单。立绘、背景、音乐都是按光标累计的,跟着回到那一句的样子
    */
   const jumpTo = (entryId: string, at = 0) => {
     const b = beats.find((x) => x.entry.id === entryId && x.parsed);
     if (b) setCursor({ id: b.entry.id, swipe: b.entry.swipeIndex, line: at });
-    setPickedKey(null);
     setUserStep(null);
     setMenu(null);
   };
@@ -1692,15 +1691,12 @@ export function VNScreen({
 
   // ---- 渲染 ----
 
-  // 选项弹着的时候,对话框里留着上一句(整句,不打字);这条回复第一句就是玩家台词时留空
-  const shown: VNLine | null = choosing ? (lines[line - 1] ?? null) : current;
+  const shown: VNLine | null = current;
   let speaker: string | null = shown?.speaker ?? null;
   let body: ReactNode;
   if (waiting) {
     speaker = charName;
     body = null;
-  } else if (choosing) {
-    body = shown ? shown.text : null;
   } else if (current) {
     body = (
       <>
@@ -1744,6 +1740,7 @@ export function VNScreen({
       lineView,
       openPlugin,
       pluginFocus,
+      openConfig: () => openMenu('config'),
       showThinking: settings.showThinking,
     });
 
@@ -1759,7 +1756,6 @@ export function VNScreen({
     !menu &&
     !title &&
     userChoice === null &&
-    !choosing &&
     turnClosed !== typeKey &&
     ((atEnd && (turnAt === typeKey || auto)) || (!current && entries.length === 0));
   // 回看历史、停在当时玩家说的话上:下面也放一条输入条,鼓励从这里接着说(会分出新的故事线)
@@ -1920,16 +1916,6 @@ export function VNScreen({
         </div>
       )}
 
-      {/* 玩家台词插件:翻到玩家的台词先弹成选项,点哪里都算选中 */}
-      {choosing && current && (
-        <div className="vn-choice-layer" inert={covered}>
-          <button className="vn-choice" onClick={advance} disabled={!lineComplete}>
-            {showJa && current.ja && <span className="vn-choice-ja">{unquote(current.ja)}</span>}
-            <span className="vn-choice-text">{unquote(current.text)}</span>
-          </button>
-        </div>
-      )}
-
       {((settings.showModel && modelLabel) || voice.paused || showVoiceChip || lens) && (
         <div className="vn-topbar" inert={covered}>
           {showVoiceChip && (
@@ -1944,7 +1930,7 @@ export function VNScreen({
                 openMenu('config');
                 setSettingsTab('sound');
               }}
-              onOpenPlugin={() => openPlugin('voice')}
+              onOpenVoice={openVoice}
             />
           )}
           {/* 语音标签关着时,断了还是要提示 */}
@@ -2157,7 +2143,7 @@ export function VNScreen({
               voiceCastName={
                 currentCardId ? (voiceCast.main?.name ?? voiceCast.extras[0]?.name ?? null) : undefined
               }
-              onOpenVoice={() => openPlugin('voice')}
+              onOpenVoice={openVoice}
               showJa={showJa}
               onChangeShowJa={onChangeShowJa}
               initialTab={settingsTab}
@@ -2384,7 +2370,7 @@ function ConsoleView({
     () =>
       (kind: string, label: string): { ok: boolean; text: string } => {
         if (kind === 'sprite') return describeMatch(emotion.resolve(label), sprites);
-        if (kind === 'player') return { ok: true, text: '✓ 玩家台词,弹选项,不念' };
+        if (kind === 'player') return { ok: true, text: '✓ 玩家台词,不念' };
         if (kind === 'cg' && isCgOff(label)) return { ok: true, text: '✓ 收起 CG' };
         const pool = kind === 'bg' ? backgroundsOf(sceneAssets) : kind === 'cg' ? cgsOf(sceneAssets) : bgmsOf(sceneAssets);
         const a = resolveByLabel(label, pool);

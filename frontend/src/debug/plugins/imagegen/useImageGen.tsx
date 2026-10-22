@@ -1,5 +1,5 @@
 /**
- * 生图卡带给内核的状态(cartridges.ts 的 IllustrationsState):插件页「生图 BETA」那一页,
+ * 生图卡带给内核的状态(cartridges.ts 的 IllustrationsState):插件页「AI 生图 BETA」那一页,
  * 和视觉小说要的几样(某句显示哪张图、「画」按钮、舞台上那一层、回复写完时的自动出图)。
  * 两边用同一份状态(ImageGenStore):插件页里一改,视觉小说里下一张就跟着。
  *
@@ -8,11 +8,13 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { DrawerCardFacts } from '../../components/drawer/cardView';
 import { apiUrl, debugApi } from '../../lib/api';
 import { currentText, type ChatEntry, type VnImageMark } from '../../lib/chatEntry';
 import type { VNLine } from '../../vn/script';
 import { SCENE_WIDTHS } from '../../generated/contracts';
 import type {
+  CartridgePanelProps,
   IllustrationsInput,
   IllustrationsState,
   StudioIllustrations,
@@ -49,6 +51,7 @@ import {
   type ImageGenConfig,
   type SizeKey,
 } from './config';
+import { ConsoleSettings } from './ConsoleSettings';
 import { ImageGenSettings } from './ImageGenSettings';
 import { addImage, blockedByCooldown, markAt, patchImage, repliesSinceImage } from './marks';
 import { StudioAlbum } from './StudioAlbum';
@@ -58,6 +61,24 @@ import { IgButton, IgStage } from './VnControls';
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const COARSE = typeof window !== 'undefined' && Boolean(window.matchMedia?.('(pointer: coarse)').matches);
 const SHOW_WIDTH = COARSE ? SCENE_WIDTHS.touch : SCENE_WIDTHS.desktop;
+/** 插件抽屉左栏:「AI 生图 BETA」在角色组的外语后面,行尾是 AI 出图的插件开关 */
+export const IMAGEGEN_PANEL = {
+  key: 'imagegen',
+  title: 'AI 生图',
+  beta: true,
+  after: 'lang',
+  group: 'role',
+  power: 'illustrations',
+  tip: 'imagegen',
+  studio: { slot: 'ai', label: '插图' },
+} as const;
+
+/** 这张卡在不在用:它自己那份设置里写了长相或角色名 */
+export function imagegenInUse(card: DrawerCardFacts): boolean {
+  const p = normalizeCardPrefs(card.prefs[IMAGEGEN_SETTING_KEY]);
+  return Boolean(p.look.trim() || p.nameTag.trim());
+}
+
 /** 手动画时给指导模型看光标前后几句 */
 const BEFORE = 10;
 // 后面几句给指导模型判断画面到哪一句结束(只判断,不画)
@@ -433,7 +454,7 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
       setDrawn((n) => n + 1);
       if (!img.sha) return img;
       if (latest.current.chatId !== chatAtStart) {
-        notify('ok', '图画好了,但已经换到别的对话:在插件页「生图」的画过的图里');
+        notify('ok', '图画好了,但已经换到别的对话:在插件页「AI 生图」的画过的图里');
         return img;
       }
       const until = typeof o.until === 'number' ? o.until : undefined;
@@ -645,12 +666,10 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
 
   const panel = useMemo(
     () => ({
-      key: 'imagegen',
-      title: '生图',
-      beta: true,
-      after: 'cg',
-      power: 'illustrations' as const,
-      render: () => <ImageGenSettings store={store} place="console" />,
+      ...IMAGEGEN_PANEL,
+      inUse: imagegenInUse,
+      // 抽屉里看的是另一张卡时,「这张卡」那几项读写那张卡(ConsoleSettings)
+      render: (p: CartridgePanelProps) => <ConsoleSettings store={store} card={p.card} />,
     }),
     [store],
   );
@@ -674,7 +693,7 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
       button: (ctx) => <IgButton store={store} ctx={ctx} />,
       stage: (ctx) => <IgStage store={store} ctx={ctx} />,
       settings: () => <ImageGenSettings store={store} place="game" />,
-      settingsName: '生图',
+      settingsName: 'AI 生图',
       onReplyDone: (entry, lines, place) => void onReplyDone(entry, lines, place),
       studio,
     }),

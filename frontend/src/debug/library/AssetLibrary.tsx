@@ -4,7 +4,8 @@
  *
  *   顶栏   ← · 「素材管理」· 页签(立绘 / 声音 / 背景 / BGM / CG 带个数 + 导入记录)· 搜索 · 主按钮「导入」
  *   提示条 导完没有卡可开时才有(importer/ImportBanner,和卡编辑器素材页的一样;没认出来的文件点「查看」就地选类型)
- *   左栏   这一类的包(不按角色分组)+ 排序 + 筛选 + 底部占用空间、清理(LibraryAside)
+ *   左栏   这一类的包(不按角色分组)+ 排序 + 筛选 + 底部占用空间、清理(LibraryAside);
+ *          声音页多一排「新建声音」「导入 refs.json」(声音不走拖进来导入;导入的小框是 VoiceImportDialog)
  *   中间 + 右栏   选中那个包的编辑器(卡编辑器里同一套,不带卡;LibraryEditor),顶上一行是 LibraryHeader
  *   左右两栏能拖宽、能收起(照调试台,studio/sidePanels.tsx;10-16 用户:窗口小时中间被挤得太窄)
  *   导入记录   ImportJobs(整次撤销)
@@ -21,6 +22,8 @@ import {
   type ImportJobSummary,
   type ImportUndoPreview,
   type StorageStatus,
+  type TtsConnection,
+  type VoiceProfile,
 } from '../lib/api';
 import { EnvBadge } from '../components/EnvBadge';
 import { ImportBanner } from '../importer/ImportBanner';
@@ -61,6 +64,8 @@ import {
   type LibraryUsage,
   type SortBy,
 } from './libraryModel';
+import { newVoiceName } from './voiceCreate';
+import { VoiceImportDialog } from './VoiceImportDialog';
 import '../studio/studio.css';
 import './library.css';
 
@@ -105,6 +110,7 @@ type Dialog =
   | { kind: 'delete'; item: LibraryItem; usage: LibraryUsage }
   | { kind: 'bind'; item: LibraryItem }
   | { kind: 'clean' }
+  | { kind: 'voiceImport' }
   | null;
 
 export interface AssetLibraryProps {
@@ -372,6 +378,71 @@ export function AssetLibrary(props: AssetLibraryProps) {
     }
   };
 
+  // ---- 声音页:新建一个空声音、导入 refs.json(声音不走拖进来导入) ----
+
+  // 新建用第一台语音服务,导入的小框里能选;进声音页时读一遍(插件页可能刚加了一台)
+  const [ttsConns, setTtsConns] = useState<TtsConnection[] | null>(null);
+  useEffect(() => {
+    if (kind !== 'voice') return;
+    let alive = true;
+    debugApi
+      .listTtsConnections()
+      .then((list) => alive && setTtsConns(list))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [kind]);
+  const [creatingVoice, setCreatingVoice] = useState(false);
+  // 导入合进了正开着的那个声音:编辑器换个 key 重读(它只在换声音时读)
+  const [voiceRev, setVoiceRev] = useState(0);
+  const voiceNames = (lists.voice ?? []).map((i) => i.name);
+
+  /** 新建 / 导入完:列表重读好再选中它;筛选、搜索放开,不然左边列表里看不到它 */
+  const showVoice = async (id: string) => {
+    await loadKind('voice');
+    sync.packs('voice');
+    setFilters((s) => ({ ...s, voice: 'all' }));
+    setQuery('');
+    onRoute({ tab: 'voice', id });
+  };
+
+  const createVoice = async () => {
+    setCreatingVoice(true);
+    try {
+      const conn = (ttsConns ?? (await debugApi.listTtsConnections()))[0];
+      if (!conn) {
+        notify('error', '还没有语音服务:先在插件页的「语音服务」里添加一台');
+        return;
+      }
+      const p = await debugApi.createVoice({ name: newVoiceName(voiceNames), connection_id: conn.id });
+      await showVoice(p.id);
+      notify('ok', `已新建「${p.name}」`);
+    } catch (e) {
+      notify('error', `新建声音失败: ${errText(e)}`);
+    } finally {
+      setCreatingVoice(false);
+    }
+  };
+
+  const voiceImported = async (p: VoiceProfile) => {
+    setDialog(null);
+    setVoiceRev((n) => n + 1);
+    await showVoice(p.id);
+    notify('ok', `已导入「${p.name}」,${p.emotions.length} 种情绪`);
+  };
+
+  const voiceActions = (
+    <>
+      <Btn small icon="plus" disabled={creatingVoice} onClick={() => void createVoice()}>
+        {creatingVoice ? '新建中…' : '新建声音'}
+      </Btn>
+      <Btn small icon="upload" onClick={() => setDialog({ kind: 'voiceImport' })}>
+        导入 refs.json
+      </Btn>
+    </>
+  );
+
   const undone = (result: ImportUndoPreview) => {
     reloadAll();
     for (const k of ['sprite', 'scene', 'cg'] as const) sync.packs(k);
@@ -503,6 +574,7 @@ export function AssetLibrary(props: AssetLibraryProps) {
           cleaning={cleaning}
           onClean={() => setDialog({ kind: 'clean' })}
           onCollapse={() => togglePanel('left')}
+          actions={kind === 'voice' ? voiceActions : undefined}
         />
         {/* 收起的那栏换成竖条;分隔线浮在栏和中间的交界上(都只在宽屏有,library.css) */}
         {!panels.leftOpen && <PanelRail side="left" label={info.pack} onOpen={() => togglePanel('left')} />}
@@ -510,7 +582,7 @@ export function AssetLibrary(props: AssetLibraryProps) {
           <div className="st-slot">
             {selected ? (
               <LibraryEditor
-                key={`${kind}:${selected.id}`}
+                key={`${kind}:${selected.id}${kind === 'voice' ? `:${voiceRev}` : ''}`}
                 kind={kind}
                 item={selected}
                 firstCardName={selected.card_ids.map((id) => cardNames.get(id)).find(Boolean) ?? null}
@@ -548,6 +620,12 @@ export function AssetLibrary(props: AssetLibraryProps) {
                       </>
                     ) : all === null ? (
                       <span className="st-empty-note">读取中…</span>
+                    ) : all.length === 0 && kind === 'voice' ? (
+                      <>
+                        <span className="st-empty-title">还没有声音</span>
+                        <span className="st-empty-note">新建一个空声音,或者导入语音机上的 refs.json</span>
+                        <span className="lib-empty-actions">{voiceActions}</span>
+                      </>
                     ) : all.length === 0 ? (
                       <>
                         <span className="st-empty-title">还没有{info.pack}</span>
@@ -597,6 +675,14 @@ export function AssetLibrary(props: AssetLibraryProps) {
       )}
       <div className="st-body">{body}</div>
       {kind && dialog && renderDialog(kind)}
+      {dialog?.kind === 'voiceImport' && (
+        <VoiceImportDialog
+          connections={ttsConns}
+          names={voiceNames}
+          onDone={(p) => void voiceImported(p)}
+          onCancel={() => setDialog(null)}
+        />
+      )}
       {dialog?.kind === 'clean' && (
         <ConfirmDialog
           title="清理没人用的文件?"
@@ -617,7 +703,7 @@ export function AssetLibrary(props: AssetLibraryProps) {
   );
 
   function renderDialog(k: LibraryKind) {
-    if (!dialog || dialog.kind === 'clean') return null;
+    if (!dialog || dialog.kind === 'clean' || dialog.kind === 'voiceImport') return null;
     const { item } = dialog;
     if (dialog.kind === 'rename') {
       return (

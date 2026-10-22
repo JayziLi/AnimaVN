@@ -1,16 +1,24 @@
 /**
  * 语音的扩展点(素材架构 2.8):装了提供它们的卡带就用,没装就是「没有这一层」——
- * 不换版本、不让 Jev 判档、不拆句拼接。用哪个在第一次用到时定下来、以后不变(cartridges.ts 的 lazyExtension),
+ * 不换版本、不让 Jev 判档(判档的开关关着、插件抽屉里没有那一页)、不拆句拼接。用哪个在第一次用到时定下来、以后不变(cartridges.ts 的 lazyExtension),
  * hook 的调用顺序不随卡带变。
  */
 
 import type { Notify } from '../components/pluginRunner';
 import type { VoiceExplain } from '../lib/api';
-import { lazyExtension, type SpliceState, type ToneAskContext, type VoiceDetailRow, type VoiceVersion } from './cartridges';
+import {
+  lazyExtension,
+  type SpliceState,
+  type ToneAskContext,
+  type ToneState,
+  type VoiceDetailRow,
+  type VoiceVersion,
+} from './cartridges';
 
 const versionExt = lazyExtension('versionOf');
 const asksToneExt = lazyExtension('asksTone');
 const spliceExt = lazyExtension('useSplice');
+const toneExt = lazyExtension('useTone');
 const detailExt = lazyExtension('voiceDetail');
 
 /** 挑好语气行以后换成某个版本(plugins/voice.ts 的 planVoiceLines 用);没有是 null = 不换 */
@@ -28,6 +36,18 @@ function useNoSplice(_notify: Notify): SpliceState {
 /** DebugApp 调:拆句拼接的开关(语音请求的 sfx)和插件页里它那一页 */
 export function useSplice(notify: Notify): SpliceState {
   const impl = spliceExt() ?? useNoSplice;
+  return impl(notify);
+}
+
+const NO_TONE: ToneState = { on: false, panel: null };
+
+function useNoTone(_notify: Notify): ToneState {
+  return NO_TONE;
+}
+
+/** DebugApp 调:判档的开关(关着时 asksTone 的结果不用)和插件抽屉里它那一页 */
+export function useTone(notify: Notify): ToneState {
+  const impl = toneExt() ?? useNoTone;
   return impl(notify);
 }
 

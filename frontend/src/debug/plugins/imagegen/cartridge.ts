@@ -10,7 +10,7 @@ import { useImageGen } from './useImageGen';
 
 const cartridge: Cartridge = {
   id: 'imagegen',
-  name: '生图',
+  name: 'AI 生图',
   beta: true,
   useIllustrations: useImageGen,
 };

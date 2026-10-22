@@ -161,6 +161,35 @@ def test_import_refs_json_creates_then_asks_before_touching_a_same_name_voice(cl
         assert r.status_code == 400, refs
 
 
+def test_import_refs_takes_the_language_when_the_list_says_it(client: TestClient):
+    conn = make_conn(client)
+
+    def ref(lang: str | None = None) -> dict:
+        return {"file": "D:/r/【平静】こんにちは。.wav", **({"lang": lang} if lang else {})}
+
+    def send(refs: dict, on_conflict: str | None = None) -> dict:
+        body = {"connection_id": conn["id"], "refs": refs, **({"on_conflict": on_conflict} if on_conflict else {})}
+        r = client.post("/api/voices/import", json=body)
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    # 每段参考都写着 ja(语音机上的清单就是这样):这个声音念日语
+    assert send({"character": "诺亚", "refs": [ref("ja"), ref("ja")]})["text_lang"] == "ja"
+    # 顶层写了 text_lang 就听它的
+    assert send({"character": "爱丽丝", "text_lang": " all_ja ", "refs": [ref("zh")]})["text_lang"] == "all_ja"
+    # 没写语言、或者几段不一样:新建的是默认中文,合进去的不动
+    assert send({"character": "刻晴", "refs": [ref()]})["text_lang"] == "zh"
+    assert send({"character": "诺亚", "refs": [ref("ja"), ref("zh")]}, "update")["text_lang"] == "ja"
+    assert send({"character": "诺亚", "refs": [ref()]}, "update")["text_lang"] == "ja"
+    assert send({"character": "诺亚", "lang": "zh", "refs": [ref()]}, "update")["text_lang"] == "zh"
+
+    r = client.post(
+        "/api/voices/import",
+        json={"connection_id": conn["id"], "refs": {"character": "x", "text_lang": "japanese-kansai", "refs": [ref()]}},
+    )
+    assert r.status_code == 400
+
+
 def test_aux_refs_are_cleaned_and_follow_the_main_reference(client: TestClient):
     v = make_voice(client, make_conn(client)["id"])
     base = f"/api/voices/{v['id']}/emotions"

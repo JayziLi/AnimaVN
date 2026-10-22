@@ -497,6 +497,51 @@
   color: var(--text-dim);
 }
 
+/* ── 声音页:「新建声音」「导入 refs.json」(左栏标题下面一排、没有声音时主区中间)和导入的小框 ── */
+
+.lib-aside-actions {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 18px 10px;
+}
+.lib-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.st-modal.lib-refs {
+  width: min(560px, 100%);
+}
+.lib-refs-field {
+  margin-bottom: 14px;
+}
+.lib-refs-json {
+  height: 200px;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.55;
+  field-sizing: fixed;
+}
+.lib-refs-note {
+  margin-top: 6px;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+.lib-refs-note.error {
+  color: var(--danger);
+}
+.lib-refs-conflict {
+  padding: 10px 12px 2px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-body);
+}
+
 /* ── 导入记录 ── */
 
 .lib-jobs {
@@ -643,6 +688,9 @@
   }
   .lib-aside-head {
     padding: 10px 12px 6px;
+  }
+  .lib-aside-actions {
+    padding: 0 12px 8px;
   }
   .lib-chips {
     flex-wrap: nowrap;

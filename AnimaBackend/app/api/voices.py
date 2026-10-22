@@ -123,6 +123,18 @@ def _free_name(name: str, db: Session) -> str:
     return f"{name} {n}"
 
 
+def _refs_lang(data: dict, refs: list) -> str | None:
+    """refs.json 写了这个声音念哪种语言:顶层的 text_lang(或 lang);没写就看每段参考的 lang
+    (语音机上的清单每条都带),几段都一样就用它。哪儿都没写、或者几段不一样是 None —— 不动原来的"""
+    for key in ("text_lang", "lang"):
+        value = data.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    langs = {r["lang"].strip() for r in refs if isinstance(r, dict) and isinstance(r.get("lang"), str)}
+    langs.discard("")
+    return langs.pop() if len(langs) == 1 else None
+
+
 def _check_emotion_names(
     profile_id: str, names: list[str], db: Session, exclude_id: str | None = None
 ) -> None:
@@ -175,7 +187,7 @@ def _profile_out(p: VoiceProfile, db: Session) -> VoiceProfileOut:
 
 @router.post(PROFILES + "/import", response_model=VoiceProfileOut)
 def import_refs(req: VoiceImportIn, db: Session = Depends(get_db)):
-    """导入一份 refs.json:更新权重路径和同名情绪,新情绪加在最后,不会重复添加。
+    """导入一份 refs.json:更新权重路径、语言(写了的话,见 _refs_lang)和同名情绪,新情绪加在最后,不会重复添加。
     清单带着 id(这里的声音编号)就合到那个声音里;没带、又已经有同名的声音时不再悄悄覆盖,
     回 409 问一句,按 on_conflict 更新那个或者另建一个(P21)。"""
     conn = db.get(TtsConnection, req.connection_id)
@@ -222,6 +234,9 @@ def import_refs(req: VoiceImportIn, db: Session = Depends(get_db)):
             items = [a.get("file") if isinstance(a, dict) else a for a in raw_aux]
             aux = clean_aux_refs([str(a) for a in items if a], path)
         rows.append((clean_label(label, "情绪名"), path, text, "emo_vector" in r, vector, aux))
+    lang = _refs_lang(data, refs)
+    if lang is not None and len(lang) > 12:
+        raise HTTPException(400, f"refs.json 的语言「{lang}」不对:写语言代码,比如 ja、zh")
 
     raw_id = data.get("id")
     profile = db.get(VoiceProfile, raw_id) if isinstance(raw_id, str) and raw_id else None
@@ -237,6 +252,9 @@ def import_refs(req: VoiceImportIn, db: Session = Depends(get_db)):
         db.add(profile)
         db.flush()
     profile.connection_id = req.connection_id
+    # 念哪种语言:清单里写了就用(外语插件看主声音是不是日语);没写不动,新建的是默认的中文
+    if lang is not None:
+        profile.text_lang = lang
     for key in ("gpt_weights", "sovits_weights"):
         value = data.get(key)
         if isinstance(value, str) and value.strip():

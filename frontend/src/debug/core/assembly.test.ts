@@ -1,13 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { PresetOrderEntry, PresetPrompt, TavernPreset } from '../lib/presetParser';
-import type { JevKinds } from '../plugins/jev';
+import { jevLangPrompt, type JevKinds } from '../plugins/jev';
 import { DEFAULT_LANG_BLOCK_PROMPT, LANG_BLOCK_ID } from '../plugins/lang';
-import { JEV_KINDS, PLUGIN_BLOCK_IDS } from '../plugins/registry';
+import { BLOCK_OF, JEV_KINDS, PLUGIN_BLOCK_IDS } from '../plugins/registry';
 import { vnTagKinds } from '../vn/tags';
-import { autoBlocksFor, autoInsertAt, moveToLastUserTurn, pluginAssemblyPass, type AutoFill } from './assembly';
+import { autoInsertAt, moveToLastUserTurn, pluginAssemblyPass, type AutoFill } from './assembly';
 import { legacyAssemblyPass } from './assemblyLegacy';
 
 const VN_KINDS = vnTagKinds('<sprite:{表情}>', '<bg:{场景}>', '<bgm:{音乐}>', '<cg:{CG}>');
+const PLAYER = 'anima_player';
+const TAG_KINDS = ['sprite', 'bg', 'bgm', 'cg'] as const;
 
 const oracle = (preset: TavernPreset | null, order: PresetOrderEntry[], jevKinds: JevKinds) =>
   legacyAssemblyPass(preset, order, jevKinds, VN_KINDS);
@@ -59,25 +61,68 @@ const allModes = (): JevKinds[] =>
     Object.fromEntries(JEV_KINDS.map((k, i) => [k, Boolean(m & (1 << i))])) as JevKinds,
   );
 
+const NONE = Object.fromEntries(JEV_KINDS.map((k) => [k, false])) as JevKinds;
+const ALL_MATERIAL = { sprite: true, bg: true, bgm: true, cg: true };
+const NO_SCENE = { sprite: true, bg: false, bgm: false, cg: false };
+const BLOCKS = Object.fromEntries(
+  [...PLUGIN_BLOCK_IDS].map((id) => [id, { identifier: id, name: `${id} 名`, content: `${id} 模板` }]),
+);
+/** 默认:开着自动补块、素材都有、没有主声音(外语块不发也不补) */
+const fill = (o: Partial<AutoFill> = {}): AutoFill => ({
+  enabled: true,
+  configuredJev: NONE,
+  material: ALL_MATERIAL,
+  mainVoiceLang: null,
+  blocks: BLOCKS,
+  lastUserTurn: false,
+  ...o,
+});
+/** 和以前「不传 autoFill」一样的情况:不补块、素材都有、主声音是日语(外语块照预设) */
+const AS_BEFORE = fill({ enabled: false, mainVoiceLang: 'ja' });
+
+/**
+ * 搬家以前的写法,叠上第 2 步有意改的两条规则 —— 别的一样都不许变:
+ * 1. 玩家块(P3 起是「别替玩家说话」)不受 Jev 影响:旧写法在 jevKinds.player 时把它关掉,现在照预设发。
+ * 2. 外语块只在「这次一块标签块都没发」时换精简版,而且只看开着的外语块:旧写法要「有在用 Jev 的、开着的标签块全是
+ *    Jev 的」,还把玩家块算成标签块、关着的外语块也换正文(反正不发)。
+ */
+function expected(preset: TavernPreset, order: PresetOrderEntry[], jevKinds: JevKinds) {
+  const old = oracle(preset, order, jevKinds);
+  const tagsSent = TAG_KINDS.some((k) => !jevKinds[k] && order.some((e) => e.enabled && e.identifier === BLOCK_OF[k]));
+  const short = !tagsSent && order.some((e) => e.enabled && e.identifier === LANG_BLOCK_ID);
+  return {
+    preset: short
+      ? { ...preset, prompts: preset.prompts.map((p) => (p.identifier === LANG_BLOCK_ID ? { ...p, content: jevLangPrompt(p.content, VN_KINDS) } : p)) }
+      : preset,
+    order: old.order.map((e, i) => (e.identifier === PLAYER ? order[i] : e)),
+    stripKinds: old.stripKinds,
+  };
+}
+
 describe('pluginAssemblyPass', () => {
-  it('gives exactly what DebugApp did before (every preset shape × every Jev mode)', () => {
+  it('gives what DebugApp did before, apart from the two rules changed on purpose (every preset shape × every Jev mode)', () => {
     let cases = 0;
+    let changed = 0;
     for (const { preset, order } of presets()) {
       for (const jevKinds of allModes()) {
-        const got = pluginAssemblyPass({ preset, order, jevKinds, vnKinds: VN_KINDS });
-        const want = oracle(preset, order, jevKinds);
+        const got = pluginAssemblyPass({ preset, order, jevKinds, vnKinds: VN_KINDS, autoFill: AS_BEFORE });
+        const want = expected(preset, order, jevKinds);
         expect({ preset: got.preset, order: got.order, stripKinds: got.stripKinds }).toEqual(want);
         expect([got.auto, got.lastUserTurn]).toEqual([[], []]);
+        const old = oracle(preset, order, jevKinds);
+        if (JSON.stringify(old) !== JSON.stringify(want)) changed++;
         cases++;
       }
     }
     expect(cases).toBeGreaterThan(1000);
-  });
+    // 两条改动真的碰到了(不是因为样本里没有才一样)
+    expect(changed).toBeGreaterThan(100);
+    // 穷举一千多种,机器忙时会超过默认的 5 秒
+  }, 60_000);
 
   it('keeps the same arrays when there is nothing to change, so memos do not redo work', () => {
     const [{ preset, order }] = presets();
-    const none = Object.fromEntries(JEV_KINDS.map((k) => [k, false])) as JevKinds;
-    const got = pluginAssemblyPass({ preset, order, jevKinds: none, vnKinds: VN_KINDS });
+    const got = pluginAssemblyPass({ preset, order, jevKinds: NONE, vnKinds: VN_KINDS, autoFill: AS_BEFORE });
     expect(got.order).toBe(order);
     expect(got.preset).toBe(preset);
     expect(got.stripKinds).toBeNull();
@@ -93,31 +138,19 @@ describe('pluginAssemblyPass', () => {
       squashSystemMessages: false,
     };
     const order = preset.prompts.map((p) => ({ identifier: p.identifier, enabled: true }));
-    const jevKinds = { ...(Object.fromEntries(JEV_KINDS.map((k) => [k, false])) as JevKinds), sprite: true };
-    const got = pluginAssemblyPass({ preset, order, jevKinds, vnKinds: VN_KINDS });
+    const got = pluginAssemblyPass({ preset, order, jevKinds: { ...NONE, sprite: true }, vnKinds: VN_KINDS, autoFill: AS_BEFORE });
     expect(got.order.find((o) => o.identifier === 'anima_sprite')?.enabled).toBe(false);
     expect(got.preset?.prompts.find((p) => p.identifier === LANG_BLOCK_ID)?.content).not.toBe(DEFAULT_LANG_BLOCK_PROMPT);
     expect(got.stripKinds?.map((k) => k.kind)).toEqual(['sprite']);
+    expect(got.plan.map((b) => [b.identifier, b.state, b.reason])).toEqual([
+      ['anima_sprite', 'skip', 'jev'],
+      [LANG_BLOCK_ID, 'short', 'lang-trim'],
+    ]);
   });
 });
 
-// ── 自动补块(设计稿 2.7)──
+// ── 第 2 步新加的不发(core/sendPlan.ts)──
 
-const NONE = Object.fromEntries(JEV_KINDS.map((k) => [k, false])) as JevKinds;
-const ALL_MATERIAL = { sprite: true, bg: true, bgm: true, cg: true };
-const NO_SCENE = { sprite: true, bg: false, bgm: false, cg: false };
-const BLOCKS = Object.fromEntries(
-  [...PLUGIN_BLOCK_IDS].map((id) => [id, { identifier: id, name: `${id} 名`, content: `${id} 模板` }]),
-);
-const fill = (o: Partial<AutoFill> = {}): AutoFill => ({
-  enabled: true,
-  configuredJev: NONE,
-  material: ALL_MATERIAL,
-  lang: false,
-  blocks: BLOCKS,
-  lastUserTurn: false,
-  ...o,
-});
 const presetOf = (prompts: PresetPrompt[], order: PresetOrderEntry[]): TavernPreset => ({
   name: 'x',
   prompts,
@@ -130,31 +163,78 @@ const on = (identifier: string) => ({ identifier, enabled: true });
 const off = (identifier: string) => ({ identifier, enabled: false });
 const ids = (blocks: readonly { identifier: string }[]) => blocks.map((a) => a.identifier);
 
-describe('autoBlocksFor', () => {
+describe('pluginAssemblyPass skips what this card cannot use', () => {
+  const prompts = [block('main'), block('chatHistory'), block('anima_sprite'), block('anima_cg'), block(LANG_BLOCK_ID)];
+  const order = prompts.map((p) => on(p.identifier));
+  const preset = presetOf(prompts, order);
+
+  it('turns off a tag block when the card has nothing for it, but keeps its tags (only Jev and switches strip)', () => {
+    const got = pluginAssemblyPass({ preset, order, jevKinds: NONE, vnKinds: VN_KINDS, autoFill: fill({ enabled: false, material: NO_SCENE, mainVoiceLang: 'ja' }) });
+    expect(got.order.find((o) => o.identifier === 'anima_cg')?.enabled).toBe(false);
+    expect(got.order.find((o) => o.identifier === 'anima_sprite')?.enabled).toBe(true);
+    expect(got.stripKinds).toBeNull();
+  });
+
+  it('turns off the language block without a Japanese main voice', () => {
+    for (const lang of [null, 'zh']) {
+      const got = pluginAssemblyPass({ preset, order, jevKinds: NONE, vnKinds: VN_KINDS, autoFill: fill({ enabled: false, mainVoiceLang: lang }) });
+      expect(got.order.find((o) => o.identifier === LANG_BLOCK_ID)?.enabled).toBe(false);
+    }
+  });
+});
+
+// ── 自动补块(设计稿 2.7)──
+
+/** 一份只有这几块的预设,这次自动补了哪几块 */
+const autoOf = (order: PresetOrderEntry[], jevKinds: JevKinds, o: AutoFill) =>
+  ids(pluginAssemblyPass({ preset: presetOf(order.map((e) => block(e.identifier)), order), order, jevKinds, vnKinds: VN_KINDS, autoFill: o }).auto);
+
+describe('auto-fill', () => {
   const order = [on('main'), on('chatHistory')];
 
   it('fills an AI-mode kind that has material and no block at all in the order', () => {
-    expect(ids(autoBlocksFor(order, NONE, fill()))).toEqual(['anima_sprite', 'anima_bg', 'anima_bgm', 'anima_cg']);
+    // 第 2 步起「别替玩家说话」块也补(以前玩家台词块只有预设里放了才有)
+    expect(autoOf(order, NONE, fill())).toEqual(['anima_sprite', 'anima_bg', 'anima_bgm', 'anima_cg', PLAYER]);
   });
 
   it('does not fill a block that is there but turned off, a Jev-mode kind, or a kind without material', () => {
-    expect(ids(autoBlocksFor([...order, off('anima_sprite')], NONE, fill()))).not.toContain('anima_sprite');
-    expect(ids(autoBlocksFor(order, { ...NONE, bg: true }, fill()))).not.toContain('anima_bg');
-    const noCg = fill({ material: { ...ALL_MATERIAL, cg: false } });
-    expect(ids(autoBlocksFor(order, NONE, noCg))).not.toContain('anima_cg');
-    expect(autoBlocksFor(order, NONE, fill({ enabled: false }))).toEqual([]);
+    expect(autoOf([...order, off('anima_sprite')], NONE, fill())).not.toContain('anima_sprite');
+    expect(autoOf(order, { ...NONE, bg: true }, fill())).not.toContain('anima_bg');
+    expect(autoOf(order, NONE, fill({ material: { ...ALL_MATERIAL, cg: false } }))).not.toContain('anima_cg');
+    expect(autoOf(order, NONE, fill({ enabled: false }))).toEqual([]);
   });
 
   it('says it is a temporary fill when Jev was chosen but has no key', () => {
-    const got = autoBlocksFor(order, NONE, fill({ configuredJev: { ...NONE, sprite: true } }));
-    expect(got.find((a) => a.identifier === 'anima_sprite')?.reason).toBe('no-key');
-    expect(got.find((a) => a.identifier === 'anima_bg')?.reason).toBe('ai');
+    const got = pluginAssemblyPass({
+      preset: presetOf([block('main')], order),
+      order,
+      jevKinds: NONE,
+      vnKinds: VN_KINDS,
+      autoFill: fill({ configuredJev: { ...NONE, sprite: true } }),
+    });
+    expect(got.auto.find((a) => a.identifier === 'anima_sprite')?.reason).toBe('no-key');
+    expect(got.auto.find((a) => a.identifier === 'anima_bg')?.reason).toBe('ai');
   });
 
-  it('fills the language block only when the card asks for it, and never the player block', () => {
-    expect(ids(autoBlocksFor(order, NONE, fill()))).not.toContain(LANG_BLOCK_ID);
-    expect(ids(autoBlocksFor(order, NONE, fill({ lang: true })))).toContain(LANG_BLOCK_ID);
-    expect(ids(autoBlocksFor(order, NONE, fill({ lang: true })))).not.toContain('anima_player');
+  it('fills the language block for a Japanese main voice only (the per-card switch is gone), and always the player block', () => {
+    // 第 2 步:外语块跟着主声音的语言走,不再看按卡的「预设缺外语块时补上」
+    expect(autoOf(order, NONE, fill())).not.toContain(LANG_BLOCK_ID);
+    expect(autoOf(order, NONE, fill({ mainVoiceLang: 'zh' }))).not.toContain(LANG_BLOCK_ID);
+    expect(autoOf(order, NONE, fill({ mainVoiceLang: 'ja' }))).toContain(LANG_BLOCK_ID);
+    expect(autoOf(order, NONE, fill({ mainVoiceLang: 'ja' }))).toContain(PLAYER);
+  });
+
+  it('fills the short language block when no tag block goes out', () => {
+    const allJev = { ...NONE, sprite: true, bg: true, bgm: true, cg: true };
+    const got = pluginAssemblyPass({
+      preset: presetOf([block('main'), block('chatHistory')], order),
+      order,
+      jevKinds: allJev,
+      vnKinds: VN_KINDS,
+      autoFill: fill({ mainVoiceLang: 'ja', blocks: { ...BLOCKS, [LANG_BLOCK_ID]: { identifier: LANG_BLOCK_ID, name: '外语', content: DEFAULT_LANG_BLOCK_PROMPT } } }),
+    });
+    expect(ids(got.auto)).toEqual([LANG_BLOCK_ID, PLAYER]);
+    expect(got.preset?.prompts.find((p) => p.identifier === LANG_BLOCK_ID)?.content).toBe(jevLangPrompt(DEFAULT_LANG_BLOCK_PROMPT, VN_KINDS));
   });
 });
 
@@ -196,38 +276,43 @@ describe('pluginAssemblyPass with auto-fill', () => {
   it('adds the missing blocks for this assembly only (the preset passed in is untouched)', () => {
     const autoFill = fill({ material: NO_SCENE });
     const got = pluginAssemblyPass({ preset, order, jevKinds: NONE, vnKinds: VN_KINDS, autoFill });
-    expect(got.auto).toEqual([{ identifier: 'anima_sprite', name: 'anima_sprite 名', reason: 'ai' }]);
-    expect(ids(got.order)).toEqual(['main', 'chatHistory', 'anima_sprite', 'jailbreak']);
+    // 第 2 步起「别替玩家说话」块也补
+    expect(got.auto).toEqual([
+      { identifier: 'anima_sprite', name: 'anima_sprite 名', reason: 'ai' },
+      { identifier: PLAYER, name: `${PLAYER} 名`, reason: 'ai' },
+    ]);
+    expect(ids(got.order)).toEqual(['main', 'chatHistory', 'anima_sprite', PLAYER, 'jailbreak']);
     const added = got.preset?.prompts.find((p) => p.identifier === 'anima_sprite');
     expect(added).toMatchObject({ role: 'system', content: 'anima_sprite 模板' });
     expect(preset.prompts).toHaveLength(3);
     expect(got.lastUserTurn).toEqual([]);
   });
 
-  it('with nothing to fill gives exactly what it gave before (all Jev, or blocks already there)', () => {
+  it('with nothing to fill gives what it gave before, apart from the two rules changed on purpose', () => {
     let compared = 0;
     for (const { preset: p, order: o } of presets()) {
       for (const jevKinds of allModes()) {
-        const autoFill = fill({ configuredJev: jevKinds });
+        const autoFill = fill({ configuredJev: jevKinds, mainVoiceLang: 'ja' });
         const got = pluginAssemblyPass({ preset: p, order: o, jevKinds, vnKinds: VN_KINDS, autoFill });
         if (got.auto.length > 0) continue;
-        expect({ preset: got.preset, order: got.order, stripKinds: got.stripKinds }).toEqual(oracle(p, o, jevKinds));
+        expect({ preset: got.preset, order: got.order, stripKinds: got.stripKinds }).toEqual(expected(p, o, jevKinds));
         compared++;
       }
     }
     expect(compared).toBeGreaterThan(100);
+    // 全是 Jev 也补「别替玩家说话」:Jev 只帮着认哪句是玩家说的,替不了这句提示
     const allJev = Object.fromEntries(JEV_KINDS.map((k) => [k, true])) as JevKinds;
-    expect(pluginAssemblyPass({ preset, order, jevKinds: allJev, vnKinds: VN_KINDS, autoFill: fill() }).auto).toEqual([]);
-  });
+    expect(ids(pluginAssemblyPass({ preset, order, jevKinds: allJev, vnKinds: VN_KINDS, autoFill: fill() }).auto)).toEqual([PLAYER]);
+  }, 60_000);
 
   it('for an Anthropic connection makes them user blocks at the end, to go into the last user turn', () => {
     const prefill = { ...block('prefill'), role: 'assistant' as const };
     const p = presetOf([...prompts, prefill], [...order, on('prefill')]);
     const autoFill = fill({ lastUserTurn: true, material: NO_SCENE });
     const got = pluginAssemblyPass({ preset: p, order: p.orderGroups[0].order, jevKinds: NONE, vnKinds: VN_KINDS, autoFill });
-    expect(ids(got.order)).toEqual(['main', 'chatHistory', 'jailbreak', 'anima_sprite', 'prefill']);
+    expect(ids(got.order)).toEqual(['main', 'chatHistory', 'jailbreak', 'anima_sprite', PLAYER, 'prefill']);
     expect(got.preset?.prompts.find((x) => x.identifier === 'anima_sprite')?.role).toBe('user');
-    expect(got.lastUserTurn).toEqual(['anima_sprite']);
+    expect(got.lastUserTurn).toEqual(['anima_sprite', PLAYER]);
   });
 });
 
@@ -268,14 +353,14 @@ describe('pluginAssemblyPass with plugins switched off in the game', () => {
   it('treats an off kind like a Jev one: no auto-fill, block off, its tags stripped', () => {
     const offKinds = { ...NONE, sprite: true, bg: true };
     const got = pluginAssemblyPass({ preset, order, jevKinds: NONE, offKinds, vnKinds: VN_KINDS, autoFill: fill() });
-    // 开着的音乐、CG 照补,关掉的立绘不补
-    expect(ids(got.auto)).toEqual(['anima_bgm', 'anima_cg']);
+    // 开着的音乐、CG 照补,关掉的立绘不补;「别替玩家说话」不归插件开关管(第 2 步起也补)
+    expect(ids(got.auto)).toEqual(['anima_bgm', 'anima_cg', PLAYER]);
     expect(got.order.find((o) => o.identifier === 'anima_bg')?.enabled).toBe(false);
     expect(got.stripKinds?.map((k) => k.kind)).toEqual(['sprite', 'bg']);
   });
 
   it('with nothing off gives the same as without the switches', () => {
-    const got = pluginAssemblyPass({ preset, order, jevKinds: NONE, offKinds: NONE, vnKinds: VN_KINDS });
-    expect(got).toEqual(pluginAssemblyPass({ preset, order, jevKinds: NONE, vnKinds: VN_KINDS }));
+    const got = pluginAssemblyPass({ preset, order, jevKinds: NONE, offKinds: NONE, vnKinds: VN_KINDS, autoFill: AS_BEFORE });
+    expect(got).toEqual(pluginAssemblyPass({ preset, order, jevKinds: NONE, vnKinds: VN_KINDS, autoFill: AS_BEFORE }));
   });
 });

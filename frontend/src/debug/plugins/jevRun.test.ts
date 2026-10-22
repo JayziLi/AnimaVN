@@ -19,7 +19,7 @@ const ALL: JevKinds = { sprite: true, bg: true, bgm: true, cg: false, player: tr
 /** 假后端:记下每次请求,按 answer 回(可以控制什么时候回) */
 function setup(
   answer: (req: AnnotateRequest) => Partial<JevDecision>[] | Error,
-  o: { jevKinds?: JevKinds; popup?: boolean; cg?: string | null; askTone?: boolean; twoQueues?: boolean; before?: BeforeLine[] } = {},
+  o: { jevKinds?: JevKinds; cg?: string | null; askTone?: boolean; twoQueues?: boolean; before?: BeforeLine[] } = {},
 ) {
   const calls: { req: AnnotateRequest; resolve: () => void; done?: boolean }[] = [];
   const snaps: JevSnapshot[] = [];
@@ -46,7 +46,6 @@ function setup(
     scene: { bg: '教室', bgm: null, cg: o.cg ?? null },
     placeOf: (bg) => (bg ? `${bg}(地点说明)` : ''),
     emotionBefore: '平静',
-    popup: o.popup ?? true,
     askTone: o.askTone,
     thresholds: { speaker: 0.8, bg: 0.6, bgm: 0.6, cg: 0.6 },
     prompts: { emotion: '表情?' },
@@ -159,12 +158,13 @@ describe('JevRun', () => {
     expect(last().record.kinds).toEqual(['bg']);
   });
 
-  it("marks the player's lines only when they pop up as choices", async () => {
-    for (const [popup, expected] of [
-      [true, '<我>「我送你回去。」'],
-      [false, '「我送你回去。」'],
+  it("marks the lines Jev says the player said with <我> (no popup any more: shown under the player's name, not voiced)", async () => {
+    // 第 2 步:不再有「弹成选项」的设置,认出来就写 <我>;player 这一路跟着立绘(liveJevKinds),没交给 Jev 时不写
+    for (const [jevKinds, expected] of [
+      [ALL, '<我>「我送你回去。」'],
+      [{ ...ALL, sprite: false, player: false }, '「我送你回去。」'],
     ] as const) {
-      const { run, calls, shown, flush } = setup(() => [{ speaker: 'user' }], { popup });
+      const { run, calls, shown, flush } = setup(() => [{ speaker: 'user' }], { jevKinds });
       run.feed('「我送你回去。」', false);
       calls[0].resolve();
       await flush();

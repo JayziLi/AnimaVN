@@ -222,21 +222,31 @@ export const isPluginBlock = (identifier: string) => PLUGIN_BLOCK_IDS.includes(i
  * 插件块的正文只认插件里的提示词模板,预设里存的那份只是副本:读预设时一律换成
  * 模板(identifier → 模板正文)。这样改一处模板,所有预设里的这块都跟着变,
  * 不会出现「插件里改了、预设里还是旧的」。
+ * names:名字也跟着同步的块(identifier → 名字;别替玩家说话块改过名,plugins/player.ts)。
  * 没有要换的就原样返回同一个对象,不引起多余的重算。
  */
 export function syncPluginBlocks(
   preset: TavernPreset | null,
   templates: Readonly<Record<string, string>>,
+  names: Readonly<Record<string, string>> = {},
 ): TavernPreset | null {
   if (!preset) return preset;
   const stale = preset.prompts.some(
-    (p) => p.identifier in templates && p.content !== templates[p.identifier],
+    (p) =>
+      (p.identifier in templates && p.content !== templates[p.identifier]) ||
+      (p.identifier in names && p.name !== names[p.identifier]),
   );
   if (!stale) return preset;
   return {
     ...preset,
     prompts: preset.prompts.map((p) =>
-      p.identifier in templates ? { ...p, content: templates[p.identifier] } : p,
+      p.identifier in templates || p.identifier in names
+        ? {
+            ...p,
+            ...(p.identifier in templates ? { content: templates[p.identifier] } : {}),
+            ...(p.identifier in names ? { name: names[p.identifier] } : {}),
+          }
+        : p,
     ),
   };
 }

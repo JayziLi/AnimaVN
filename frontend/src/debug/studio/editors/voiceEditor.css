@@ -101,6 +101,67 @@
   color: var(--text-faint);
 }
 
+/* ── 声音设置(主区最上面;收起时是一行摘要,缺东西时摘要是琥珀色) ── */
+
+.vo-settings {
+  /* 两列还是一列看面板本身多宽(左右栏都在时主区也窄) */
+  container-type: inline-size;
+}
+.vo-settings-head {
+  width: 100%;
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px 10px 18px;
+  border: 0;
+  border-radius: 14px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.vo-settings-head:hover {
+  background: rgba(255, 255, 255, 0.025);
+}
+.vo-settings-head:focus-visible {
+  outline: 1.5px solid var(--text-dim);
+  outline-offset: -2px;
+}
+.vo-note.warn {
+  color: var(--st-amber);
+}
+.vo-chev {
+  flex: none;
+  color: var(--text-faint);
+  transition: transform 0.15s;
+}
+.vo-chev.open {
+  transform: rotate(180deg);
+}
+.vo-settings-body {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 16px;
+  padding: 2px 18px 16px;
+}
+.vo-set-field {
+  min-width: 0;
+}
+.vo-set-field.wide {
+  grid-column: 1 / -1;
+}
+.vo-settings .st-input.vo-path {
+  height: 32px;
+  background: var(--bg-raised);
+}
+@container (max-width: 520px) {
+  .vo-settings-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* ── 试听 ── */
 
 .vo-bench {
@@ -413,6 +474,71 @@
 }
 .vo-aux-count {
   color: var(--text-faint);
+}
+
+/* 「全局参数」下面收起来的「更多参数」(只有 GSV):样子像一节的标题行,点了展开 */
+.vo-more {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 14px 0 10px;
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.vo-more:focus-visible {
+  outline: 1.5px solid var(--text-dim);
+  outline-offset: 2px;
+}
+.vo-more-note {
+  min-width: 0;
+  color: var(--text-faint);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.vo-more-body {
+  padding-top: 2px;
+}
+/* 名字长短不一(采样步数 / top_p),标签放一样宽,滑块对齐 */
+.vo-more-body .st-row-label {
+  min-width: 78px;
+}
+.vo-more-body .vo-row-error {
+  margin-left: 88px;
+}
+.vo-switch {
+  display: inline-flex;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.vo-switch:focus-visible .st-switch {
+  outline: 1.5px solid var(--text-dim);
+  outline-offset: 2px;
+}
+.st-input.vo-seed {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.st-input.vo-seed.bad {
+  border-color: var(--danger);
+}
+.vo-row-error {
+  margin: -2px 0 8px 62px;
+  color: var(--danger);
+  font-size: 11.5px;
 }
 .vo-aux {
   display: flex;

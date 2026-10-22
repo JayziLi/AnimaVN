@@ -138,10 +138,12 @@ import {
   type AssemblyConfig,
   type AutoFill,
 } from './core/assembly';
+import type { SendView } from './core/sendPlan';
 import { useForms } from './plugins/forms';
 import { useStates } from './plugins/useStates';
-import { asksTone, useSplice } from './plugins/voiceExtensions';
+import { asksTone, useSplice, useTone } from './plugins/voiceExtensions';
 import { useIllustrations } from './plugins/illustrations';
+import type { CartridgePanel } from './plugins/cartridges';
 import { useVoicePlugin } from './plugins/useVoicePlugin';
 import { enabledOnly, isPluginBlock, syncPluginBlocks } from './plugins/common';
 import { blockIdOf, pluginOfBlock } from './plugins/registry';
@@ -166,8 +168,10 @@ import {
   DEFAULT_JEV_CONFIG,
   JEV_SETTING_KEY,
   anyJev,
-  jevBlockIds,
+  chosenJevKinds,
+  jevLangPrompt,
   jevStripPrompt,
+  liveJevKinds,
   normalizeJevConfig,
   promptOverrides,
   type JevKinds,
@@ -184,13 +188,13 @@ import {
 import { cutJev, jevText } from './plugins/jevNotes';
 import { BUILTIN_EMOTIONS } from './plugins/emotions';
 import {
-  DEFAULT_PLAYER_CONFIG,
+  DEFAULT_PLAYER_BLOCK_PROMPT,
   PLAYER_BLOCK_ID,
-  PLAYER_SETTING_KEY,
+  PLAYER_BLOCK_NAME,
+  PLAYER_BLOCK_NAMES,
+  PLAYER_BLOCK_SYNC,
   insertPlayerBlock,
-  normalizePlayerConfig,
   playerBlockState,
-  type PlayerPluginConfig,
 } from './plugins/player';
 import {
   EMPTY_BINDINGS,
@@ -587,20 +591,11 @@ export default function DebugApp() {
   );
 
   /** 组装的设置(core/assembly.ts):自动补块的总开关 */
-  const { config: assemblyConfig } = usePluginConfig<AssemblyConfig>(
+  const { config: assemblyConfig, change: changeAssemblyConfig } = usePluginConfig<AssemblyConfig>(
     ASSEMBLY_SETTING_KEY,
     normalizeAssemblyConfig,
     DEFAULT_ASSEMBLY_CONFIG,
     notify,
-  );
-
-  /** 玩家台词插件(<我> 弹选项):全局配置,同样停手半秒再写库 */
-  const { config: playerConfig, change: changePlayerConfig } = usePluginConfig<PlayerPluginConfig>(
-    PLAYER_SETTING_KEY,
-    normalizePlayerConfig,
-    DEFAULT_PLAYER_CONFIG,
-    notify,
-    { load: '玩家台词插件配置读取失败' },
   );
 
   /**
@@ -637,10 +632,6 @@ export default function DebugApp() {
     () => effectiveOf(spriteConfig, cardPrefs, SPRITE_SETTING_KEY, normalizeSpriteConfig),
     [spriteConfig, cardPrefs],
   );
-  const playerEffective = useMemo(
-    () => effectiveOf(playerConfig, cardPrefs, PLAYER_SETTING_KEY, normalizePlayerConfig),
-    [playerConfig, cardPrefs],
-  );
 
   /** 背景 / BGM / CG 插件:配置(全局的 configs、这张卡实际用的 effective)、场景包、当前卡绑的包和素材 */
   const scenePlugin = useScenePlugin(cardId, notify, cardPrefs);
@@ -651,6 +642,8 @@ export default function DebugApp() {
   const voicePlugin = useVoicePlugin(cardId, notify);
   // 拆句拼接(卡带的 useSplice;没装是关着的):开关跟着语音请求走,插件页里它那一页用同一份状态
   const splice = useSplice(notify);
+  // 声线分档(卡带的 useTone;没装是关着的):开关关着时不让 Jev 判档,插件抽屉实验组里它那一页用同一份状态
+  const tone = useTone(notify);
   // 游戏、提示词、语音、存档缩略图只看没禁用的素材;插件抽屉拿完整列表,好重新打开
   const cardSprites = useMemo(() => enabledOnly(sprites), [sprites]);
   const cardSceneAssets = useMemo(() => enabledOnly(scenePlugin.assets), [scenePlugin.assets]);
@@ -689,7 +682,10 @@ export default function DebugApp() {
       void scenePlugin.refreshCgPacks();
     },
   });
-  const cartridgePanels = useMemo(() => (illustrations.panel ? [illustrations.panel] : []), [illustrations.panel]);
+  const cartridgePanels = useMemo(
+    () => [tone.panel, illustrations.panel].filter((p): p is CartridgePanel => p !== null),
+    [tone.panel, illustrations.panel],
+  );
   const activeSceneAssets = states.enabled ? states.assets : cardSceneAssets;
   const { current: formNow, spritesNow } = forms;
   const formSprites = useMemo(() => spritesNow(activeSprites), [spritesNow, activeSprites]);
@@ -717,7 +713,8 @@ export default function DebugApp() {
 
   // 插件块的正文只认插件里的提示词模板(全局一份)。预设里存的只是副本,读的时候
   // 换成模板 —— 组装、左栏显示、保存、导出用的都是这个同步过的 preset。
-  // 预设是几张卡共用的,所以这里用全局那份,不叠按卡设置(块的正文本来也不能按卡设)
+  // 预设是几张卡共用的,所以这里用全局那份,不叠按卡设置(块的正文本来也不能按卡设)。
+  // 别替玩家说话块的正文和名字一律是常量(plugins/player.ts),不读 plugin.player 里存的旧模板
   const pluginTemplates = useMemo(
     () => ({
       [SPRITE_BLOCK_ID]: spriteConfig.blockPrompt,
@@ -725,12 +722,12 @@ export default function DebugApp() {
       [SCENE.bgm.blockId]: scenePlugin.configs.bgm.blockPrompt,
       [SCENE.cg.blockId]: scenePlugin.configs.cg.blockPrompt,
       [LANG_BLOCK_ID]: langConfig.blockPrompt,
-      [PLAYER_BLOCK_ID]: playerConfig.blockPrompt,
+      ...PLAYER_BLOCK_SYNC,
     }),
-    [spriteConfig.blockPrompt, scenePlugin.configs, langConfig.blockPrompt, playerConfig.blockPrompt],
+    [spriteConfig.blockPrompt, scenePlugin.configs, langConfig.blockPrompt],
   );
   const preset = useMemo(
-    () => syncPluginBlocks(rawPreset, pluginTemplates),
+    () => syncPluginBlocks(rawPreset, pluginTemplates, PLAYER_BLOCK_NAMES),
     [rawPreset, pluginTemplates],
   );
 
@@ -747,30 +744,25 @@ export default function DebugApp() {
   );
 
   /**
-   * 哪几类标签在用 Jev:插件选了 Jev、而且后端有 key(没 key 时照旧由 AI 写)。
-   * 按这张卡实际用的模式算(这张卡可以另设 AI 写还是 Jev 标)
+   * 哪几类标签在用 Jev:插件选了 Jev、而且后端有 key(没 key 时照旧由 AI 写)、插件开着。
+   * 按这张卡实际用的模式算(这张卡可以另设 AI 写还是 Jev 标)。玩家台词没有自己的模式,跟着立绘
+   * (plugins/jev.ts 的 chosenJevKinds / liveJevKinds)
    */
   const hasJevKey = Boolean(jevKey?.has_key);
-  const jevKinds: JevKinds = useMemo(
-    () => ({
-      sprite: hasJevKey && switches.sprite && spriteEffective.mode === 'jev',
-      bg: hasJevKey && switches.bg && scenePlugin.effective.bg.mode === 'jev',
-      bgm: hasJevKey && switches.bgm && scenePlugin.effective.bgm.mode === 'jev',
-      cg: hasJevKey && switches.cg && scenePlugin.effective.cg.mode === 'jev',
-      player: hasJevKey && playerEffective.mode === 'jev',
-    }),
-    [hasJevKey, switches, spriteEffective.mode, scenePlugin.effective, playerEffective.mode],
+  const chosenJev: JevKinds = useMemo(
+    () =>
+      chosenJevKinds({
+        sprite: spriteEffective.mode,
+        bg: scenePlugin.effective.bg.mode,
+        bgm: scenePlugin.effective.bgm.mode,
+        cg: scenePlugin.effective.cg.mode,
+      }),
+    [spriteEffective.mode, scenePlugin.effective],
   );
+  const jevKinds: JevKinds = useMemo(() => liveJevKinds(chosenJev, hasJevKey, switches), [chosenJev, hasJevKey, switches]);
   const jevOn = anyJev(jevKinds);
   /** 插件页右上角关掉的那几路(组装时块不发、标签摘掉) */
   const offKinds = useMemo(() => offKindsOf(switches), [switches]);
-  /** 这次不发的插件块和原因:Jev 标的、插件关掉的。左栏显示成关着 */
-  const skippedBlocks = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const id of jevBlockIds(jevKinds)) m.set(id, 'Jev 标 · 不发');
-    for (const id of jevBlockIds(offKinds)) m.set(id, '插件关了 · 不发');
-    return m;
-  }, [jevKinds, offKinds]);
   /** 最新一条 AI 回复的 Jev 统计(插件页标题栏显示) */
   const lastJevStats = useMemo(() => {
     for (let i = entries.length - 1; i >= 0; i--) {
@@ -1672,24 +1664,15 @@ export default function DebugApp() {
       enabled: overrides[o.identifier] ?? o.enabled,
     }));
   }, [preset, groupIndex, overrides]);
-  // 组装期的插件规则(core/assembly.ts):在用 Jev 的插件块不发;开着的标签插件块全是 Jev 时,外语块换成
-  // 不提标签的版本;组装完摘掉 Jev 负责的标签。只影响发出去的提示词,左栏看到、保存的还是原来的
-  // 自动补块(设计稿 2.7):AI 模式的那一路、这张卡有跟着它走的素材、当前编排组里完全没有这块时,这次组装里补上
-  const langEffective = useMemo(
-    () => effectiveOf(langConfig, cardPrefs, LANG_SETTING_KEY, normalizeLangConfig),
-    [langConfig, cardPrefs],
-  );
+  // 组装期的插件规则(core/assembly.ts、core/sendPlan.ts):每个插件块这次发 / 精简版 / 自动补 / 不发 ——
+  // Jev 标的、插件关着的、这张卡没素材的块不发;外语块只跟着日语主声音发,一块标签块都没发时发精简版;
+  // 组装完摘掉 Jev 负责的标签。只影响发出去的提示词,左栏看到、保存的还是原来的
+  // 自动补块(设计稿 2.7):这一路能发、当前编排组里完全没有这块时,这次组装里补上
   const autoFill: AutoFill = useMemo(() => {
     const cgs = cgsOf(activeSceneAssets);
     return {
       enabled: assemblyConfig.autoFill,
-      configuredJev: {
-        sprite: spriteEffective.mode === 'jev',
-        bg: scenePlugin.effective.bg.mode === 'jev',
-        bgm: scenePlugin.effective.bgm.mode === 'jev',
-        cg: scenePlugin.effective.cg.mode === 'jev',
-        player: playerEffective.mode === 'jev',
-      },
+      configuredJev: chosenJev,
       material: {
         // 跟着表情走的:启用的立绘、能念的主声音、有差分的 CG
         sprite:
@@ -1700,28 +1683,27 @@ export default function DebugApp() {
         bgm: bgmsOf(activeSceneAssets).length > 0,
         cg: cgs.some((a) => !cgOkNow || cgOkNow(a)),
       },
-      lang: langEffective.autoFill,
+      // 外语块跟着主声音的语言走(日语声音才发);没有主声音是 null
+      mainVoiceLang: voicePlugin.cast.main?.text_lang ?? null,
       blocks: {
         [SPRITE_BLOCK_ID]: { identifier: SPRITE_BLOCK_ID, name: SPRITE_BLOCK_NAME, content: spriteConfig.blockPrompt },
         [SCENE.bg.blockId]: { identifier: SCENE.bg.blockId, name: SCENE.bg.blockName, content: scenePlugin.configs.bg.blockPrompt },
         [SCENE.bgm.blockId]: { identifier: SCENE.bgm.blockId, name: SCENE.bgm.blockName, content: scenePlugin.configs.bgm.blockPrompt },
         [SCENE.cg.blockId]: { identifier: SCENE.cg.blockId, name: SCENE.cg.blockName, content: scenePlugin.configs.cg.blockPrompt },
         [LANG_BLOCK_ID]: { identifier: LANG_BLOCK_ID, name: LANG_BLOCK_NAME, content: langConfig.blockPrompt },
+        [PLAYER_BLOCK_ID]: { identifier: PLAYER_BLOCK_ID, name: PLAYER_BLOCK_NAME, content: DEFAULT_PLAYER_BLOCK_PROMPT },
       },
       // Anthropic 格式的连接(库里的 kimi、glm):补的块并进最后一个 user 回合,不进开头的 system
       lastUserTurn: connections.find((c) => c.id === connectionId)?.api_type === 'anthropic',
     };
   }, [
     assemblyConfig.autoFill,
-    spriteEffective.mode,
-    scenePlugin.effective,
+    chosenJev,
     scenePlugin.configs,
-    playerEffective.mode,
     activeSprites,
     voicePlugin.cast.main,
     activeSceneAssets,
     cgOkNow,
-    langEffective.autoFill,
     spriteConfig.blockPrompt,
     langConfig.blockPrompt,
     connections,
@@ -1730,6 +1712,21 @@ export default function DebugApp() {
   const assemblyPass = useMemo(
     () => pluginAssemblyPass({ preset, order, jevKinds, offKinds, vnKinds, autoFill }),
     [preset, order, jevKinds, offKinds, vnKinds, autoFill],
+  );
+  /**
+   * 「这次怎么发」(core/sendPlan.ts),给插件抽屉的外语页、自动补块页看:当前聊天这张卡、当前预设。
+   * 预设左栏直接拿 assemblyPass.plan
+   */
+  const sendView: SendView = useMemo(
+    () => ({
+      card: cardId && card ? { id: cardId, name: card.name } : null,
+      presetName: preset?.name ?? null,
+      plan: assemblyPass.plan,
+      auto: assemblyPass.auto,
+      mainVoiceLang: autoFill.mainVoiceLang,
+      lang: { full: langConfig.blockPrompt, short: jevLangPrompt(langConfig.blockPrompt, vnKinds) },
+    }),
+    [cardId, card, preset?.name, assemblyPass.plan, assemblyPass.auto, autoFill, langConfig.blockPrompt, vnKinds],
   );
   const {
     preset: assemblyPreset,
@@ -1911,7 +1908,7 @@ export default function DebugApp() {
         : kind === 'lang'
           ? insertLangBlock(preset, groupIndex, langConfig.blockPrompt)
           : kind === 'player'
-            ? insertPlayerBlock(preset, groupIndex, playerConfig.blockPrompt)
+            ? insertPlayerBlock(preset, groupIndex)
             : insertSceneBlock(kind, preset, groupIndex, scenePlugin.configs[kind].blockPrompt),
     );
     // 块在库里、却在编排里被关着的情况,覆盖层里可能记着 false —— 加入就是要开
@@ -2491,9 +2488,8 @@ export default function DebugApp() {
         return b ? (b.description.trim() ? `${b.label}(${b.description.trim()})` : b.label) : '';
       },
       emotionBefore: jevStartEmotion(before, targetId),
-      popup: playerEffective.jev.popup,
       // 要不要给角色的台词多判一道档(卡带的 asksTone,plugins/voiceExtensions.ts);语音按它换版本
-      askTone: asksTone({ form: formNow, voice: voicePlugin.cast.main }),
+      askTone: tone.on && asksTone({ form: formNow, voice: voicePlugin.cast.main }),
       thresholds: {
         speaker: jevConfig.speakerThreshold,
         bg: bg.jev.threshold,
@@ -2976,7 +2972,12 @@ export default function DebugApp() {
   };
 
   /** 插件抽屉:调试台聊天区上一份,视觉小说菜单的插件页一份,只有打开到哪、怎么关不同 */
-  const renderPluginsDrawer = (focus: PluginFocus | null, onClose: () => void) => (
+  const renderPluginsDrawer = (
+    focus: PluginFocus | null,
+    onClose: () => void,
+    /** 只在游戏菜单里有:「游戏设置 · 音量」那个链接 */
+    extra?: { gameSettings?: () => void },
+  ) => (
     <PluginsDrawer
       presetName={preset?.name ?? null}
       presetDirty={presetDirty}
@@ -2990,7 +2991,11 @@ export default function DebugApp() {
         packs: spritePacks,
         layout: spriteLayout,
       }}
-      cards={savedCards.map((c) => ({ id: c.id, name: c.name }))}
+      cards={savedCards.map((c) => ({ id: c.id, name: c.name, note: c.creator_notes }))}
+      assembly={{
+        autoFill: assemblyConfig.autoFill,
+        onChange: (autoFill) => changeAssemblyConfig({ ...assemblyConfig, autoFill }),
+      }}
       scene={scenePlugin}
       sceneBlocks={{ bg: blockControls('bg'), bgm: blockControls('bgm'), cg: blockControls('cg') }}
       sceneMacros={sceneMacroValues}
@@ -2998,11 +3003,20 @@ export default function DebugApp() {
       splice={splice}
       panels={cartridgePanels}
       switches={{ value: switches, onChange: changeSwitches }}
-      lang={{ config: langConfig, onChangeConfig: changeLangConfig, block: blockControls('lang') }}
-      player={{
-        config: playerConfig,
-        onChangeConfig: changePlayerConfig,
-        block: blockControls('player'),
+      lang={{ config: langConfig, onChangeConfig: changeLangConfig }}
+      chat={{ entries, kinds: vnKinds, userName }}
+      send={sendView}
+      links={{
+        // 去卡编辑器 / 素材管理:抽屉先关,卡编辑器编辑的是看的那张卡(不是当前卡就先换过去)
+        studio: (slot, id) => {
+          onClose();
+          openStudio({ tab: 'assets', slot }, id);
+        },
+        library: (tab) => {
+          onClose();
+          routeLibrary({ tab, id: null });
+        },
+        gameSettings: extra?.gameSettings,
       }}
       jev={{
         config: jevConfig,
@@ -3449,7 +3463,7 @@ export default function DebugApp() {
     onDeleteBlock: deleteBlock,
     isPluginBlock,
     autoBlocks: autoBlockRows,
-    skippedBlocks,
+    sendPlan: assemblyPass.plan,
     onPinAuto: (identifier) => insertPluginBlock(pluginOfBlock(identifier)),
     overridden: overriddenIdentifiers,
     resolveMarker,
@@ -4022,6 +4036,11 @@ export default function DebugApp() {
           illustrations={illustrations.vn}
           switches={switches}
           onOpenLibrary={openLibrary}
+          // 游戏里「换声音 · 试音」:素材管理的声音页签,选中这张卡的主声音(没绑就是列表里第一个)
+          onOpenVoiceAssets={() => {
+            setMobileMenu(false);
+            routeLibrary({ tab: 'voice', id: voicePlugin.binding.main });
+          }}
           renderPage={(page, ctx) => {
             if (page === 'log') {
               return (
@@ -4137,7 +4156,7 @@ export default function DebugApp() {
               // 调试台的插件抽屉原样嵌进来:同一个组件、同一份数据,两边改动互通
               return (
                 <div className="vn-embed vn-plugin-embed">
-                  {renderPluginsDrawer(ctx.pluginFocus, ctx.close)}
+                  {renderPluginsDrawer(ctx.pluginFocus, ctx.close, { gameSettings: ctx.openConfig })}
                 </div>
               );
             }

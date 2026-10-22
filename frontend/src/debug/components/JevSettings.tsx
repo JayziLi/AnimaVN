@@ -296,7 +296,7 @@ export function TrialTable({ trial, kinds, keep }: { trial: JevTrial; kinds: Jev
               {(kinds.sprite || kinds.player) && <th>谁说的</th>}
               {kinds.sprite && <th>表情</th>}
               {kinds.bg && <th>场景</th>}
-              {kinds.bgm && <th>音乐</th>}
+              {kinds.bgm && <th>BGM</th>}
               {kinds.cg && <th>CG</th>}
             </tr>
           </thead>

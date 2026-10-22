@@ -90,11 +90,11 @@ export function IgButton({ store, ctx }: { store: ImageGenStore; ctx: VnIllustra
       onPointerLeave={unpress}
       onPointerCancel={unpress}
       aria-pressed={store.panelOpen}
-      aria-label="画这一幕(生图 BETA)"
+      aria-label="画这一幕(AI 生图 BETA)"
       title={
         busy
           ? `正在画:${store.jobs[0].label}(点一下再排一张)`
-          : `点一下:${what.join('')} · 右键 / 长按:先设置再画(生图 BETA)`
+          : `点一下:${what.join('')} · 右键 / 长按:先设置再画(AI 生图 BETA)`
       }
     >
       <BrushIcon />
@@ -144,7 +144,7 @@ function Status({ store }: { store: ImageGenStore }) {
   const secs = useSeconds(first?.started ?? null);
   if (!first) return null;
   return (
-    <span className="vn-chip ig-status" title="生图 BETA">
+    <span className="vn-chip ig-status" title="AI 生图 BETA">
       <span className="ig-dot" aria-hidden="true" />
       {first.label} · {secs.toFixed(0)} 秒{store.jobs.length > 1 && ` · 还有 ${store.jobs.length - 1} 个排着`}
     </span>
@@ -239,7 +239,7 @@ function DrawPanel({ store, ctx }: { store: ImageGenStore; ctx: VnIllustrationCo
             close();
             ctx.openSettings();
           }}
-          title="菜单 → 设置 → 生图"
+          title="菜单 → 设置 → AI 生图"
         >
           全部设置
         </button>

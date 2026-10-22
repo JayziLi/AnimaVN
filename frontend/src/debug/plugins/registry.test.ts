@@ -74,38 +74,36 @@ describe('插件总表', () => {
     expect(pluginOfBlock('chatHistory')).toBe('sprite');
   });
 
-  it('插件抽屉左栏:先后和原来一样,名字用统一叫法(只有 BGM 改叫音乐)', () => {
+  it('插件抽屉左栏的角色组(第 2 步第四版):语音挪到立绘后面,音乐改叫 BGM,玩家台词不单独一页', () => {
     expect(navItems(null).map((p) => [p.id, p.name, p.beta])).toEqual([
       ['sprite', '立绘', false],
-      ['bg', '背景', false],
-      ['bgm', '音乐', false],
-      ['cg', 'CG', false],
       ['voice', '语音', false],
+      ['bg', '背景', false],
+      ['bgm', 'BGM', false],
+      ['cg', 'CG', false],
       ['lang', '外语', false],
-      ['player', '玩家台词', false],
     ]);
   });
 
   it('卡带的那一页插在它说的插件后面,说的插件不在就排最后', () => {
     const panel = (after: string) => ({ key: 'x', title: '某页', beta: true, after });
-    expect(navItems(panel('bg')).map((p) => p.id)).toEqual(['sprite', 'bg', 'x', 'bgm', 'cg', 'voice', 'lang', 'player']);
+    expect(navItems(panel('bg')).map((p) => p.id)).toEqual(['sprite', 'voice', 'bg', 'x', 'bgm', 'cg', 'lang']);
     expect(navItems(panel('nope')).map((p) => p.id).at(-1)).toBe('x');
-    expect(navItems(panel('bg'))[2]).toEqual({ id: 'x', name: '某页', beta: true });
+    expect(navItems(panel('bg'))[3]).toEqual({ id: 'x', name: '某页', beta: true });
   });
 
   it('几个卡带的页各插各的位置,同一个插件后面按传进来的先后', () => {
     const page = (key: string, after: string) => ({ key, title: key, after });
     expect(navItems([page('a', 'cg'), page('b', 'voice'), page('c', 'cg'), page('d', 'nope')]).map((p) => p.id)).toEqual([
       'sprite',
+      'voice',
+      'b',
       'bg',
       'bgm',
       'cg',
       'a',
       'c',
-      'voice',
-      'b',
       'lang',
-      'player',
       'd',
     ]);
   });
@@ -133,7 +131,7 @@ describe('插件总表', () => {
   });
 
   it('kindName:聊天区、视觉小说控制台用的统一叫法', () => {
-    expect(['sprite', 'bg', 'bgm', 'cg', 'player'].map(kindName)).toEqual(['立绘', '背景', '音乐', 'CG', '玩家台词']);
+    expect(['sprite', 'bg', 'bgm', 'cg', 'player'].map(kindName)).toEqual(['立绘', '背景', 'BGM', 'CG', '玩家台词']);
     expect(kindName('什么')).toBe('什么');
   });
 });

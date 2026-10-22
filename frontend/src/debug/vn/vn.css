@@ -1494,6 +1494,60 @@
   opacity: 0.45;
   cursor: not-allowed;
 }
+/* 开 / 关的设置用的滑块开关(VnSwitch):关是和 vn-seg 一样的细边暗底,开是主题色;
+   36 × 20,比一排按钮矮一截,放在同一列里左边对齐 */
+.vn-toggle {
+  position: relative;
+  flex: none;
+  box-sizing: border-box;
+  width: 36px;
+  height: 20px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid var(--vn-border);
+  background: rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s;
+}
+.vn-toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--vn-text-dim);
+  transition:
+    transform 0.15s,
+    background-color 0.15s;
+}
+.vn-toggle.on {
+  border-color: transparent;
+  background: var(--vn-accent);
+}
+.vn-toggle.on .vn-toggle-knob {
+  transform: translateX(16px);
+  background: var(--vn-accent-ink);
+}
+.vn-toggle:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.vn-toggle:focus {
+  outline: none;
+}
+.vn-toggle:focus-visible {
+  outline: 2px solid var(--vn-accent);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .vn-toggle,
+  .vn-toggle-knob {
+    transition: none;
+  }
+}
 /* 设置页里选项太多、放不进一排按钮的(封面音乐) */
 .vn-set-select {
   font: inherit;
@@ -2097,10 +2151,6 @@
   flex: none;
   font-size: 12px;
   color: var(--vn-text-dim);
-}
-.vn-vq-row .vn-seg button {
-  font-size: 12px;
-  padding: 4px 11px;
 }
 .vn-vq-volume {
   display: flex;

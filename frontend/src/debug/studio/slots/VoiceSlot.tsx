@@ -2,7 +2,8 @@
  * 卡编辑器素材页的「声音」栏(照 V4AttachVoice.png):顶上一行是这张卡挂的声音(主声音在前、备用在后)+「＋」+「⋯」,
  * 下面整块交给 VoiceEditor(试听、情绪参考、右栏)。
  *
- * 绑定走 DebugApp 的 useVoicePlugin(和插件页「语音」同一份状态),改完它自己刷新声音列表。
+ * 绑定走 DebugApp 的 useVoicePlugin(插件抽屉的「语音」页看的也是这一份),改完它自己刷新声音列表。
+ * 新建声音、导入 refs.json 在素材管理的「声音」页;名字、权重这些在 VoiceEditor 的「声音设置」里改。
  * 主声音念这张卡角色自己的台词,情绪跟着差分换;备用声音念卡里别的角色、只用默认情绪 ——
  * 所以只有主声音才拿差分去对情绪。
  */
@@ -123,7 +124,7 @@ export function VoiceSlot({ voice, cardName, spriteLabels, notify }: VoiceSlotPr
           </p>
           <Section title="声音从哪来" />
           <p className="vo-help">
-            声音列表里没有合适的,在插件页「语音」里添加,或者导入语音机上的 refs.json。
+            声音列表里没有合适的,去素材管理 · 声音里新建,或导入语音机上的 refs.json。
           </p>
         </Inspector>
         {dialogs}
@@ -157,6 +158,7 @@ export function VoiceSlot({ voice, cardName, spriteLabels, notify }: VoiceSlotPr
     <>
       <VoiceEditor
         voiceId={tab.id}
+        name={profiles.find((p) => p.id === tab.id)?.name}
         header={header}
         spriteLabels={tab.main ? spriteLabels : null}
         onChanged={() => void refresh()}
@@ -189,7 +191,7 @@ function VoicePicker({
           : '加成备用声音:念卡里别的角色(台词前写了「名字：」、名字或别名对得上才念)。要换主声音,挂上以后在「⋯」里设为主声音。'}
       </p>
       {choices.length === 0 ? (
-        <div className="vo-pick-empty">声音列表是空的。先在插件页「语音」里添加声音,或者导入语音机上的 refs.json。</div>
+        <div className="vo-pick-empty">声音列表是空的。去素材管理 · 声音里新建,或导入语音机上的 refs.json。</div>
       ) : (
         <div className="vo-pick-list" role="list">
           {choices.map((c) => (

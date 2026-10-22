@@ -307,7 +307,7 @@ export function emoVectorProblem(v: readonly number[]): string | null {
 
 export const EMO_MODE_TEXT: Record<EmoMode, string> = { ref: '参考', vector: '向量', none: '不控制' };
 
-// ---- 合成参数(存在声音上;插件页的试音台里调) ----
+// ---- 合成参数(存在声音上;卡编辑器 / 素材管理的声音编辑器里「全局参数」调) ----
 
 /** 决定一个声音念出来什么样的全部设置。变了,之前合成好、还留在内存里的句子就作废 */
 export function voiceSignature(p: VoiceProfile, connections: readonly TtsConnection[]): string {

@@ -4,6 +4,7 @@
 接口不查库。判断逻辑在 app/annotate/judge.py,设计见 docs/superpowers/specs/2026-10-01-jev-director-design.md
 """
 
+from dataclasses import replace
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response
@@ -196,12 +197,9 @@ async def _ask(db: Session, state, questions: dict) -> jev.Answer:
     return answer
 
 
-@router.post("/lines", response_model=AnnotateResponse)
-async def annotate_lines(req: AnnotateRequest, db: Session = Depends(get_db)):
-    key, _ = jev.key_source(db)
-    if not key:
-        raise HTTPException(503, "还没设 Jev 的 key(插件抽屉「Jev 标注」页里填)")
-    inp = AnnotateInput(
+def _input(req: AnnotateRequest) -> AnnotateInput:
+    """请求 → 出题要的输入。真判(/lines)和只看题(/preview)用的是同一份"""
+    return AnnotateInput(
         char=req.char,
         user=req.user,
         prev=req.prev,
@@ -227,6 +225,14 @@ async def annotate_lines(req: AnnotateRequest, db: Session = Depends(get_db)):
         prompts={k: v for k, v in req.prompts.items() if v.strip()},
         before=[Line(x.text, x.speaker) for x in req.before],
     )
+
+
+@router.post("/lines", response_model=AnnotateResponse)
+async def annotate_lines(req: AnnotateRequest, db: Session = Depends(get_db)):
+    key, _ = jev.key_source(db)
+    if not key:
+        raise HTTPException(503, "还没设 Jev 的 key(插件抽屉「Jev 标注」页里填)")
+    inp = _input(req)
     state, questions = build_request(inp)
     answers, tokens, ms = {}, 0, 0
     if questions:
@@ -235,6 +241,26 @@ async def annotate_lines(req: AnnotateRequest, db: Session = Depends(get_db)):
     return AnnotateResponse(
         lines=[LineDecisionOut(**d.__dict__) for d in decide(inp, answers)], ms=ms, tokens=tokens
     )
+
+
+class PreviewOut(BaseModel):
+    # 题名(e1 第 1 句的表情、bg1、bgm1、cg1、s1……)→ 那道题的问法和选项,和发给 Jev 的一样
+    prompts: dict[str, str]
+
+
+def _question_text(question: dict) -> str:
+    """一道题拼成给人看的样子:问法,下面一行一个选项(有说明的带上说明)"""
+    options = [label if desc == label else f"{label}:{desc}" for label, desc in question["criteria"].items()]
+    return question["instructions"] + "\n选项:\n" + "\n".join(f"- {o}" for o in options)
+
+
+@router.post("/preview", response_model=PreviewOut)
+def preview(req: AnnotateRequest):
+    """只拼题、不问 Jev、不记用量:插件抽屉「高级 · 问法」看改过的问法代入一句以后 Jev 实际收到什么。
+    请求和 /lines 一样,只出第一个要判的句子的题;不要 key"""
+    inp = _input(req)
+    _, questions = build_request(replace(inp, targets=inp.targets[:1]))
+    return PreviewOut(prompts={name: _question_text(q) for name, q in questions.items()})
 
 
 class DefaultsOut(BaseModel):

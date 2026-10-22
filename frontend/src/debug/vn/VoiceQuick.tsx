@@ -4,7 +4,7 @@
  * 标签:圆点颜色看语音连没连上(绿 = 通、红 = 断、黄 = 在测、灰 = 关了),合成中圆点会呼吸。
  * 进来、换卡时测一次主声音用的语音服务(只请求 /docs,很轻);测不通每 15 秒再测,
  * 台式机开机、服务起来之后自己变绿。播放器连续失败暂停(paused)也算断。
- * 面板:连接详情 + 重新检测,语音开关和音量;念法等更细的去完整设置或插件页。
+ * 面板:连接详情 + 重新检测,语音开关和音量;念法等更细的去完整设置,换声音、试音去素材管理的「声音」页签。
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -12,7 +12,7 @@ import { debugApi, type TtsConnection } from '../lib/api';
 import { normalizeVoiceConfig, type VoiceCast, type VoicePluginConfig } from '../plugins/voice';
 import { PROBE_INTERVAL_MS } from './useVoiceLine';
 import { useVoice, voicePlayer } from './voice';
-import { Seg } from './VNSettingsPage';
+import { VnSwitch } from './VnSwitch';
 
 type Probe =
   | { state: 'idle' }
@@ -40,8 +40,8 @@ interface Props {
   onRetry: () => void;
   /** 菜单设置页的「声音」一栏 */
   onOpenSettings: () => void;
-  /** 插件页的语音:换声音、试音、调参数 */
-  onOpenPlugin: () => void;
+  /** 打开素材管理的「声音」页签、选中这张卡的主声音:换声音、试音、调参数 */
+  onOpenVoice: () => void;
 }
 
 export function VoiceQuick({
@@ -52,7 +52,7 @@ export function VoiceQuick({
   synthesizing,
   onRetry,
   onOpenSettings,
-  onOpenPlugin,
+  onOpenVoice,
 }: Props) {
   const voice = useVoice();
   const [open, setOpen] = useState(false);
@@ -177,7 +177,7 @@ export function VoiceQuick({
             <span className={`vn-vq-dot ${status}`} aria-hidden="true" />
             <span className="vn-vq-state">
               {status === 'off'
-                ? '语音合成已关闭'
+                ? '语音已关闭'
                 : status === 'fail'
                   ? paused
                     ? '连续失败,暂停中'
@@ -224,15 +224,8 @@ export function VoiceQuick({
 
           <div className="vn-vq-rows">
             <div className="vn-vq-row">
-              <span className="vn-vq-label">语音合成</span>
-              <Seg
-                options={[
-                  { value: true, name: '开' },
-                  { value: false, name: '关' },
-                ]}
-                value={config.enabled}
-                onPick={(v) => setVoice('enabled', v)}
-              />
+              <span className="vn-vq-label">语音</span>
+              <VnSwitch label="语音" checked={config.enabled} onChange={(v) => setVoice('enabled', v)} />
             </div>
             {config.enabled && (
               <div className="vn-vq-row">
@@ -275,7 +268,7 @@ export function VoiceQuick({
               className="vn-pill"
               onClick={() => {
                 setOpen(false);
-                onOpenPlugin();
+                onOpenVoice();
               }}
             >
               换声音 · 试音

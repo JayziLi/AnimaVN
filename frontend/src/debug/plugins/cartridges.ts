@@ -14,10 +14,13 @@
  */
 
 import type { ComponentType, ReactNode } from 'react';
+import type { DrawerCardFacts } from '../components/drawer/cardView';
+import type { TipKey } from '../components/drawer/tips';
 import type { Notify } from '../components/pluginRunner';
 import type { FormsLens } from '../core/timeline';
 import type { SceneAsset, VoiceExplain, VoiceProfile } from '../lib/api';
 import type { ChatEntry } from '../lib/chatEntry';
+import type { SlotKey } from '../studio/types';
 import type { VNLine } from '../vn/script';
 import type { SwitchKind } from './switches';
 
@@ -139,9 +142,21 @@ export interface SpliceState {
   panel: CartridgePanel | null;
 }
 
+/** 「声线分档」(useTone 的结果):开关,和插件页里它那一页(两样用同一份状态) */
+export interface ToneState {
+  /** 开着才让 Jev 判档(关着时 asksTone 的结果不用) */
+  on: boolean;
+  /** 插件页里它那一页;没有是 null */
+  panel: CartridgePanel | null;
+}
+
 /** 插件页里卡带的那一页拿到的东西 */
 export interface CartridgePanelProps {
   profiles: readonly VoiceProfile[];
+  /** 抽屉里正在看的那张卡;没有是 null */
+  card: { id: string; name: string } | null;
+  /** 正在看的那张卡的主声音;没有是 null */
+  mainVoice: VoiceProfile | null;
 }
 
 /** 插件页里卡带的那一页 */
@@ -151,10 +166,20 @@ export interface CartridgePanel {
   /** 左栏的名字 */
   title: string;
   beta?: boolean;
-  /** 左栏排在哪个插件后面(插件总表 plugins/registry.ts 的 id) */
+  /** 排在哪一页后面:角色组是插件总表(plugins/registry.ts)的 id,实验组是别的卡带的 key */
   after: string;
-  /** 这一页右上角放哪个插件开关(plugins/switches.ts);不给 = 没有开关 */
+  /** 左栏哪一组;不给 = 'role' */
+  group?: 'role' | 'lab';
+  /** 左栏这一行行尾放哪个插件开关(plugins/switches.ts);和 toggle 二选一,都不给 = 没有开关 */
   power?: SwitchKind;
+  /** 卡带自己的开关(实验组的卡带);和 power 二选一 */
+  toggle?: { on: boolean; set: (on: boolean) => void };
+  /** 这张卡在不在用(左栏圆点);不给 = 不画圆点 */
+  inUse?: (card: DrawerCardFacts) => boolean;
+  /** 页头名字旁的问号:内核问号的键,或者卡带自己带的一句话(公开版会删掉的卡带,字放卡带里) */
+  tip?: TipKey | { text: string };
+  /** 页面底部「卡编辑器 · {卡}的{label}」去卡编辑器的哪一栏;不给 = 没有这个链接 */
+  studio?: { slot: SlotKey; label: string };
   render: (p: CartridgePanelProps) => ReactNode;
 }
 
@@ -296,6 +321,8 @@ export interface CartridgeExtensions {
   versionOf?: VoiceVersion;
   /** 这条回复要不要让 Jev 判档(Jev 请求里那个开关的来源);没有 = 不问 */
   asksTone?: (ctx: ToneAskContext) => boolean;
+  /** DebugApp 调的 hook,规矩同 useForms:判档的开关和插件页里那一页;没有 = 关着、没有那一页 */
+  useTone?: (notify: Notify) => ToneState;
 
   // —— 语音的「拆句拼接」(H4)——
   /** DebugApp 调的 hook,规矩同 useForms;没有 = 不拼 */

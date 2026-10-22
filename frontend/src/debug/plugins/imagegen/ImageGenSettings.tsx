@@ -1,12 +1,13 @@
 /**
  * 生图的全部设置,像游戏设置那样分页(10-12 用户:「设置都在一面,像游戏那样分页设置」):
  * 画面 / 角色 / 自动出图 / 服务 / 高级 / 相册。
- * 游戏里在「菜单 → 设置 → 生图」,调试台插件页「生图」也是这一套;place="console" 时自带一块深色底和视觉小说的配色变量。
+ * 游戏里在「菜单 → 设置 → AI 生图」,调试台插件页「AI 生图」也是这一套;place="console" 时自带一块深色底和视觉小说的配色变量。
  * 设计见 docs/superpowers/specs/2026-10-11-novelai-image-gen-design.md。
  */
 
 import { useEffect, useRef, useState } from 'react';
 import { apiUrl, debugApi, spriteImageUrl, type PackSprite } from '../../lib/api';
+import { Tip } from '../../components/drawer/Tip';
 import { imagegenApi } from './api';
 import {
   anlasCost,
@@ -36,7 +37,9 @@ import {
   type ResPreset,
 } from './config';
 import './imagegen.css';
-import { Group, Row, Seg, Toggle } from './ui';
+import { IG_TIPS } from './tips';
+import { ConsoleTips } from './consoleTips';
+import { Group, Para, Row, Seg, Toggle } from './ui';
 import type { ImageGenStore } from './useImageGen';
 
 type Page = 'picture' | 'cast' | 'auto' | 'service' | 'advanced' | 'album';
@@ -107,10 +110,10 @@ function StyleRows({ config, onChange }: { config: ImageGenConfig; onChange: (ne
       <Row label="名字">
         <input className="ig-input" value={style.name} onChange={(e) => setStyle({ name: e.target.value })} />
       </Row>
-      <Row label="画风标签" note="英文,逗号隔开">
+      <Row label="画风标签" tip={IG_TIPS.style_tags}>
         <textarea className="ig-input" rows={2} value={style.tags} onChange={(e) => setStyle({ tags: e.target.value })} />
       </Row>
-      <Row label="画师串" note="可不填。NovelAI 认得的画师,比如 artist:kobuichi、artist:mignon;几位用逗号连起来是混搭">
+      <Row label="画师串" tip={IG_TIPS.artists}>
         <input className="ig-input" value={style.artists} onChange={(e) => setStyle({ artists: e.target.value })} />
       </Row>
       <Row label="不想要的">
@@ -182,7 +185,7 @@ function PicturePage({ store, go }: { store: ImageGenStore; go: (p: Page) => voi
       <Row
         label="模型"
         en="Model"
-        note={v5 ? 'V5:新,画得细;Opus 走一根每天回满的额度条;不能用参考图' : 'V4.5:Opus 在免费范围里不限张数,能用立绘当参考图'}
+        tip={v5 ? IG_TIPS.model_v5 : IG_TIPS.model_v45}
       >
         <select className="vn-set-select" value={config.model} onChange={(e) => set({ ...config, model: e.target.value })}>
           {MODELS.map((m) => (
@@ -193,7 +196,7 @@ function PicturePage({ store, go }: { store: ImageGenStore; go: (p: Page) => voi
         </select>
       </Row>
 
-      <Group title="基础提示词" en="Base Prompt" note="每张的场景由指导模型现写,下面这些每张都加" />
+      <Group title="基础提示词" en="Base Prompt" tip={IG_TIPS.base} />
       <StyleRows config={config} onChange={set} />
       <Row label="质量词" en="Quality Tags" note={qualityText ? `加在最后:${qualityText}` : '不加'}>
         <Seg options={qualityOptions(config.model)} value={qualityValue} onPick={(v) => set({ ...config, quality: v })} />
@@ -203,11 +206,11 @@ function PicturePage({ store, go }: { store: ImageGenStore; go: (p: Page) => voi
       <Row label="反向预设" en="UC Preset" note={ucText ? `加在最前:${ucText}` : '不加预设'}>
         <Seg options={UC_PRESETS} value={config.ucPreset} onPick={(v) => set({ ...config, ucPreset: v })} />
       </Row>
-      <Row label="另外加的" note="接在预设后面;画风、两个人各自的「不想画出来的」也会加上">
+      <Row label="另外加的" tip={IG_TIPS.uc_extra}>
         <textarea className="ig-input" rows={2} value={config.uc} onChange={(e) => set({ ...config, uc: e.target.value })} />
       </Row>
 
-      <Group title="角色提示词" en="Character Prompts" note="每个人一条,位置按人数从左到右排(相当于网页的 AI's Choice)" />
+      <Group title="角色提示词" en="Character Prompts" tip={IG_TIPS.char_prompts} />
       <Row label={store.cardId ? `她 · ${store.cardName}` : '她'}>
         <div className="ig-inline">
           <span className="ig-grow vn-set-note">{herText}</span>
@@ -230,7 +233,7 @@ function PicturePage({ store, go }: { store: ImageGenStore; go: (p: Page) => voi
       </Row>
       <Row
         label="镜头"
-        note="第一人称:画面就是你的眼睛,不画你,牵手、摸头时只画出你的手 · 第三人称:你也画进去 · 让指导模型挑:一对一看着你的时刻用第一人称,两个人都要入镜时用第三人称 · 画之前右键画笔能临时换"
+        tip={IG_TIPS.camera}
       >
         <Seg options={CAMERAS} value={config.camera} onPick={(v) => set({ ...config, camera: v })} />
       </Row>
@@ -310,7 +313,7 @@ function PicturePage({ store, go }: { store: ImageGenStore; go: (p: Page) => voi
           </button>
         </div>
       )}
-      <Row label="种子" en="Seed" note="空着 = 每张随机;固定了同一幅画面每次画得几乎一样(「换一张」也一样)">
+      <Row label="种子" en="Seed" tip={IG_TIPS.seed}>
         <div className="ig-inline">
           <input
             className="ig-input ig-seed"
@@ -382,7 +385,7 @@ function PicturePage({ store, go }: { store: ImageGenStore; go: (p: Page) => voi
       )}
 
       <Group title="在游戏里怎么显示" />
-      <Row label="放在哪" note="对话框上面:整张图放在对话框上方那一块,居中,不被挡住(隐藏界面时铺满)· 铺满屏幕:整张铺到全屏,对话框压在图上">
+      <Row label="放在哪" tip={IG_TIPS.place}>
         <Seg
           options={[
             { value: 'above' as const, name: '对话框上面' },
@@ -392,8 +395,8 @@ function PicturePage({ store, go }: { store: ImageGenStore; go: (p: Page) => voi
           onPick={(v) => set({ ...config, place: v })}
         />
       </Row>
-      <p className="vn-set-note ig-pad">下面两项是显示多久,都含画的那一句。</p>
-      <Row label="最少显示" value={`${config.hold.min} 句`}>
+      <Para text={IG_TIPS.hold} />
+      <Row label="最少显示" value={`${config.hold.min} 句`} tip={IG_TIPS.hold}>
         <input
           type="range"
           min={1}
@@ -403,7 +406,7 @@ function PicturePage({ store, go }: { store: ImageGenStore; go: (p: Page) => voi
           onChange={(e) => set({ ...config, hold: { ...config.hold, min: Number(e.target.value) } })}
         />
       </Row>
-      <Row label="没判结束时" value={`${config.hold.fallback} 句`}>
+      <Row label="没判结束时" value={`${config.hold.fallback} 句`} tip={IG_TIPS.hold_end}>
         <input
           type="range"
           min={1}
@@ -413,9 +416,7 @@ function PicturePage({ store, go }: { store: ImageGenStore; go: (p: Page) => voi
           onChange={(e) => set({ ...config, hold: { ...config.hold, fallback: Number(e.target.value) } })}
         />
       </Row>
-      <p className="vn-set-note ig-pad">
-        指导模型会判画面到哪一句结束(换地方、换姿势、换衣服、有人来走):判得太早也至少挂「最少显示」那么多句,没判时挂「没判结束时」那么多句;下一张出来就换成下一张。
-      </p>
+      <Para text={IG_TIPS.hold_end} />
     </div>
   );
 }
@@ -492,11 +493,7 @@ function ReferenceRows({ store }: { store: ImageGenStore }) {
     <>
       <Row
         label="参考图"
-        note={
-          supportsReference(config.model)
-            ? '带参考图时长相交给参考图,上面写的长相不加,衣服照常;每张扣 5 Anlas'
-            : '只有 V4.5 能用参考图:现在的模型用不上,画的时候用上面写的长相(「画面」里换模型)'
-        }
+        tip={supportsReference(config.model) ? IG_TIPS.ref : IG_TIPS.ref_unsupported}
       >
         <div className="ig-inline">
           <Seg
@@ -574,13 +571,18 @@ function CastPage({ store }: { store: ImageGenStore }) {
       ) : (
         <>
           <Group
-            title={`她 · ${store.cardName}`}
-            note="长相和平时穿的每张图都会加上;这一刻穿得不一样(睡衣、泳装)时指导模型写的会换掉平时的衣服"
+            tip={IG_TIPS.her}
+            title={
+              <span className="ig-card-only">
+                她 · {store.cardName} <span className="ig-card-tag">这张卡</span>
+                <Tip k="card_only" />
+              </span>
+            }
           />
-          <Row label="角色名" note="游戏 / 动漫里的角色写 danbooru 角色名,比如 keqing (genshin impact),NovelAI 认得的写名字最像;原创角色空着">
+          <Row label="角色名" tip={IG_TIPS.name_tag}>
             <input className="ig-input" value={prefs.nameTag} onChange={(e) => changePrefs({ ...prefs, nameTag: e.target.value })} />
           </Row>
-          <Row label="长相" note="英文标签:发型发色、瞳色、身材;成年角色写上 adult。空着时第一次画会让指导模型读卡写一版">
+          <Row label="长相" tip={IG_TIPS.look}>
             <textarea
               className="ig-input"
               rows={3}
@@ -620,7 +622,7 @@ function CastPage({ store }: { store: ImageGenStore }) {
               ))}
             </select>
           </Row>
-          <Row label="画师串" note="空着 = 跟画风;比如原作画师">
+          <Row label="画师串" tip={IG_TIPS.card_artists}>
             <input className="ig-input" value={prefs.artists} onChange={(e) => changePrefs({ ...prefs, artists: e.target.value })} />
           </Row>
           <ReferenceRows store={store} />
@@ -635,11 +637,11 @@ function CastPage({ store }: { store: ImageGenStore }) {
         </>
       )}
 
-      <Group title="你(玩家)" note="第三人称时你画成这个样子;第一人称时只用「平时穿的」定你的手的袖子颜色" />
+      <Group title="你(玩家)" tip={IG_TIPS.player} />
       <Row label="样子">
         <input className="ig-input" value={player.look} onChange={(e) => setPlayer({ look: e.target.value })} />
       </Row>
-      <Row label="平时穿的" note="日常场景会加上(不写会被画成光膀子)">
+      <Row label="平时穿的" tip={IG_TIPS.player_outfit}>
         <input className="ig-input" value={player.outfit} onChange={(e) => setPlayer({ outfit: e.target.value })} />
       </Row>
       <Row label="性别">
@@ -671,7 +673,7 @@ function AutoPage({ store }: { store: ImageGenStore }) {
     <div className="vn-set-list">
       <Group
         title="自动出图"
-        note={`每条回复写完以后,指导模型当导演判一次要不要配图:${AUTO_WHEN.join('、')}`}
+        tip={`${IG_TIPS.auto}${AUTO_WHEN.join('、')}`}
       />
       <Row label="自动出图">
         <Seg
@@ -683,7 +685,7 @@ function AutoPage({ store }: { store: ImageGenStore }) {
           onPick={(v) => set({ ...config, auto: { ...config.auto, enabled: v } })}
         />
       </Row>
-      <Row label="至少隔几条" value={config.auto.cooldown === 0 ? '不隔' : `${config.auto.cooldown} 条`}>
+      <Row label="至少隔几条" value={config.auto.cooldown === 0 ? '不隔' : `${config.auto.cooldown} 条`} tip={IG_TIPS.cooldown}>
         <input
           type="range"
           min={0}
@@ -693,12 +695,13 @@ function AutoPage({ store }: { store: ImageGenStore }) {
           onChange={(e) => set({ ...config, auto: { ...config.auto, cooldown: Number(e.target.value) } })}
         />
       </Row>
-      <p className="vn-set-note ig-pad">出过图以后至少隔这么多条回复再出;第一次到某地、第一次身体接触、告白这种重要时刻不受限制。</p>
+      <Para text={IG_TIPS.cooldown} />
       {store.cardId && (
         <Row label="这张卡">
           <Toggle checked={prefs.autoOff} onChange={(v) => changePrefs({ ...prefs, autoOff: v })}>
             {store.cardName} 不自动出图
           </Toggle>
+          <Tip k="card_only" />
         </Row>
       )}
     </div>
@@ -721,8 +724,8 @@ function ServicePage({ store }: { store: ImageGenStore }) {
   const writerMissing = config.writer.connectionId !== null && !store.connections.some((c) => c.id === config.writer.connectionId);
   return (
     <div className="vn-set-list">
-      <Group title="NovelAI" note="Opus 的免费范围:面积不超过 1024×1024、不超过 28 步" />
-      <Row label="Token" note="novelai.net 登录后:左下角设置 → Account → Get Persistent API Token。只存在本机后端,不会显示出来">
+      <Group title="NovelAI" tip={IG_TIPS.nai} />
+      <Row label="Token" tip={IG_TIPS.token}>
         <div className="ig-inline">
           <input
             className="ig-input ig-grow"
@@ -762,7 +765,7 @@ function ServicePage({ store }: { store: ImageGenStore }) {
         </Toggle>
       </Row>
 
-      <Group title="指导模型" note="读剧情写画面、自动出图时判要不要画的模型。便宜快的就够(DeepSeek flash 约 1.3 秒);关思考快很多" />
+      <Group title="指导模型" tip={IG_TIPS.writer} />
       <Row label="用哪个连接" note={writerMissing ? '选的连接不在了,现在跟聊天用同一个' : undefined}>
         <select
           className="vn-set-select"
@@ -778,7 +781,7 @@ function ServicePage({ store }: { store: ImageGenStore }) {
           ))}
         </select>
       </Row>
-      <Row label="思考" note="关不掉思考的模型会自动照连接自己的设置">
+      <Row label="思考" tip={IG_TIPS.thinking}>
         <Seg
           options={[
             { value: 'off' as const, name: '关(推荐)' },
@@ -796,17 +799,19 @@ function ServicePage({ store }: { store: ImageGenStore }) {
 
 function SkillRow({
   label,
+  tip,
   value,
   fallback,
   onChange,
 }: {
   label: string;
+  tip?: string;
   value: string | null;
   fallback: string | undefined;
   onChange: (v: string | null) => void;
 }) {
   return (
-    <Row label={label}>
+    <Row label={label} tip={tip}>
       <textarea
         className="ig-input"
         rows={10}
@@ -829,7 +834,7 @@ function AdvancedPage({ store }: { store: ImageGenStore }) {
   const { config, changeConfig: set, defaults } = store;
   return (
     <div className="vn-set-list">
-      <Group title="说明书" note="教指导模型怎么写画面的那段话。输出格式写在代码里,改说明书不会把格式改坏" />
+      <Group title="说明书" tip={IG_TIPS.manual} />
       <SkillRow
         label="画这一幕"
         value={config.skills.manual}
@@ -859,7 +864,7 @@ function AlbumPage({ store }: { store: ImageGenStore }) {
     <div className="vn-set-list">
       <Group
         title={store.cardId ? `${store.cardName} 画过的图` : '画过的图'}
-        note="包括换掉的。点「收藏」放进这张卡的「AI 生图」CG 包,以后 AI / Jev 能直接选;删掉的只是记录,收藏进 CG 包的那张还在"
+        tip={IG_TIPS.album}
       />
       {!cardId ? (
         <p className="vn-set-note ig-pad">先选一张角色卡。</p>
@@ -908,38 +913,42 @@ export function ImageGenSettings({ store, place }: { store: ImageGenStore; place
     setPageState(p);
   };
   return (
-    <div className={`ig-settings ${place}`}>
-      {place === 'console' && (
-        <div className="ig-settings-head">
-          <span className="ig-settings-title">
-            生图 <span className="vn-beta">BETA</span>
-          </span>
-          <span className="vn-set-note">游戏里「菜单 → 设置 → 生图」是同一套</span>
+    <ConsoleTips.Provider value={place === 'console'}>
+      <div className={`ig-settings ${place}`}>
+        {place === 'console' && (
+          <div className="ig-settings-head">
+            <span className="ig-settings-title">
+              AI 生图 <span className="vn-beta">BETA</span>
+            </span>
+            <span className="vn-set-note">游戏里「菜单 → 设置 → AI 生图」是同一套</span>
+          </div>
+        )}
+        {place === 'game' && (
+          <p className="vn-set-note ig-intro">
+            点对话框里发送右边的画笔,指导模型读剧情写这一幕画什么,NovelAI 画出来,在那一句像 CG 一样淡入;右键画笔先设置再画。
+          </p>
+        )}
+        <div className="ig-subtabs" role="tablist">
+          {PAGES.map((p) => (
+            <button
+              key={p.key}
+              type="button"
+              role="tab"
+              aria-selected={page === p.key}
+              className={`ig-subtab${page === p.key ? ' active' : ''}`}
+              onClick={() => setPage(p.key)}
+            >
+              {p.name}
+            </button>
+          ))}
         </div>
-      )}
-      <p className="vn-set-note ig-intro">
-        点对话框里发送右边的画笔,指导模型读剧情写这一幕画什么,NovelAI 画出来,在那一句像 CG 一样淡入;右键画笔先设置再画。
-      </p>
-      <div className="ig-subtabs" role="tablist">
-        {PAGES.map((p) => (
-          <button
-            key={p.key}
-            type="button"
-            role="tab"
-            aria-selected={page === p.key}
-            className={`ig-subtab${page === p.key ? ' active' : ''}`}
-            onClick={() => setPage(p.key)}
-          >
-            {p.name}
-          </button>
-        ))}
+        {page === 'picture' && <PicturePage store={store} go={setPage} />}
+        {page === 'cast' && <CastPage store={store} />}
+        {page === 'auto' && <AutoPage store={store} />}
+        {page === 'service' && <ServicePage store={store} />}
+        {page === 'advanced' && <AdvancedPage store={store} />}
+        {page === 'album' && <AlbumPage store={store} />}
       </div>
-      {page === 'picture' && <PicturePage store={store} go={setPage} />}
-      {page === 'cast' && <CastPage store={store} />}
-      {page === 'auto' && <AutoPage store={store} />}
-      {page === 'service' && <ServicePage store={store} />}
-      {page === 'advanced' && <AdvancedPage store={store} />}
-      {page === 'album' && <AlbumPage store={store} />}
-    </div>
+    </ConsoleTips.Provider>
   );
 }

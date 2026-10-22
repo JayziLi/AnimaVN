@@ -125,6 +125,26 @@ describe('SettingRow', () => {
     expect(html).toContain('会影响:预设里的「CG 指令」块这次不发');
   });
 
+  it('draws no scope tag when scopes are not given (plugin drawer, step 2: everything there is global)', () => {
+    const html = renderToStaticMarkup(
+      <SettingRow label="人物大小" control={{ kind: 'slider', min: 0.1, max: 0.4, step: 0.005 }} value={0.21} default={0.21} onChange={noop} />,
+    );
+    expect(html).not.toContain('全局');
+    expect(html).not.toContain('set-scope');
+  });
+
+  it('puts the explanation behind a 「?」 next to the name instead of a help line', () => {
+    const byKey = renderToStaticMarkup(
+      <SettingRow label="标签格式" tip="tag_format" control={{ kind: 'text', mono: true }} value="<sprite:{表情}>" onChange={noop} />,
+    );
+    expect(byKey).toContain('aria-label="说明"');
+    expect(byKey).not.toContain('set-help');
+    const byText = renderToStaticMarkup(
+      <SettingRow label="试一下" tip="一句还没改写的草稿" control={{ kind: 'toggle' }} value={false} onChange={noop} />,
+    );
+    expect(byText).toContain('aria-label="说明"');
+  });
+
   it('marks a bad text value on the spot', () => {
     const html = renderToStaticMarkup(
       <SettingRow label="标签格式" control={{ kind: 'text', error: '模板里必须有且只有一个 {CG}' }} value="<cg>" onChange={noop} />,

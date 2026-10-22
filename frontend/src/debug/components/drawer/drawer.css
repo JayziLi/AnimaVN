@@ -1,0 +1,1099 @@
+/* ══════════ 插件抽屉(第 2 步第四版,components/drawer/)══════════
+   样子照画布 docs/design/canvas/step2/project/V6*.dc.html(生成脚本 v6_drawer.py)。
+   工具界面:颜色只用 debug.css 的 :root 变量,不按角色变色;只有「在用」的绿色是画布定的,记在 --dw-ok。 */
+
+/* 抽屉的根(PluginsDrawer.tsx 的 .dw);「在用」的绿色是画布定的,只在抽屉里用 */
+.dw {
+  --dw-ok: #9fd29a;
+}
+
+/* ── 名词旁的小问号(Tip.tsx)── */
+.dw-tip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  flex: none;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: help;
+}
+.dw-tip:hover,
+.dw-tip:focus-visible,
+.dw-tip.open {
+  border-color: var(--text);
+  color: var(--text);
+  background: var(--bg-hover);
+}
+.dw-tip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+/* 弹层挂在 body 上(抽屉 overflow: hidden 会裁掉),按按钮位置摆 */
+.dw-tip-pop {
+  position: fixed;
+  z-index: 1000;
+  width: 260px;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: #262626;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.6);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.7;
+  letter-spacing: 0;
+  text-align: left;
+  white-space: normal;
+  pointer-events: none;
+}
+
+/* ── 每一页的骨架(frame.tsx)── */
+.dw-flex {
+  flex: 1;
+}
+.dw-page-head {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.dw-page-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-height: 30px;
+}
+.dw-page-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--text);
+}
+.dw-beta {
+  padding: 0 5px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  color: var(--text-faint);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  line-height: 15px;
+}
+.dw-inuse {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-dim);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.dw-inuse.on {
+  background: color-mix(in srgb, var(--dw-ok) 14%, transparent);
+  color: var(--dw-ok);
+}
+.dw-tags {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.dw-chip {
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-dim);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.dw-page-note {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--text-faint);
+  font-size: 11.5px;
+}
+.dw-page-note .dw-inline-link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-body);
+  font-size: 11.5px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+/* 一块:快速预览、常用、高级 */
+.dw-card {
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg-panel);
+}
+.dw-card-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 4px 12px;
+  color: var(--text-body);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.dw-card-body {
+  padding-bottom: 2px;
+}
+.dw-fold {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+  cursor: pointer;
+}
+.dw-fold:hover {
+  color: var(--text);
+  background: var(--bg-raised);
+}
+.dw-chev,
+.dw-arrow {
+  fill: none;
+  stroke: var(--text-faint);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.dw-chev.up {
+  transform: rotate(180deg);
+}
+
+/* 卡片里的设置行:比 SettingRow 默认的紧一点,照画布的 row() */
+.dw-card .set-row {
+  grid-template-columns: 104px minmax(0, 1fr) auto;
+  column-gap: 12px;
+  min-height: 34px;
+  padding: 6px 12px;
+  border-bottom: none;
+  border-top: 1px solid var(--border);
+}
+.dw-card .set-label {
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.dw-card .set-help {
+  grid-column: 2 / 4;
+}
+/* 用不上的滑条(比如「先出文字」时的最多等)变灰 */
+.dw-card .set-slider:has(input:disabled) {
+  opacity: 0.4;
+}
+.dw-card-body > .dw-pad {
+  padding: 0 12px 10px;
+}
+.dw-card-body > .dw-line {
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+/* 高级:页签 */
+.dw-tabs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 0 12px 10px;
+}
+.dw-tabs.open {
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.dw-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.dw-tab:hover {
+  color: var(--text);
+}
+.dw-tab.on {
+  background: var(--bg-hover);
+  color: var(--text);
+  font-weight: 500;
+}
+.dw-tab-badge {
+  font-family: var(--mono);
+  color: var(--text-faint);
+  font-size: 11px;
+}
+.dw-tab-badge.changed {
+  padding: 0 5px;
+  border-radius: 4px;
+  background: #33302a;
+  color: #e0c98f;
+  font-family: var(--sans);
+  font-size: 10.5px;
+  line-height: 16px;
+}
+.dw-tab-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px 12px;
+}
+
+/* 底部链接 */
+.dw-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.dw-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-body);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.dw-link:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+/* ── 外壳(PluginsDrawer.tsx):页头、左栏三组、右边一页 ── */
+.conn-drawer.dw {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  container-type: inline-size;
+}
+.dw-head {
+  height: 36px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px 0 14px;
+  border-bottom: 1px solid var(--border);
+}
+.dw-title {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--text-body);
+  white-space: nowrap;
+}
+.dw-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text-dim);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.dw-pick-select {
+  min-width: 0;
+  max-width: 200px;
+  padding: 2px 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  color: var(--text);
+  font-size: 12px;
+}
+.dw-close {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+.dw-close svg {
+  fill: none;
+  stroke: var(--text-dim);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+.dw-close:hover {
+  background: var(--bg-raised);
+}
+.dw-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.dw-nav {
+  width: 184px;
+  flex: none;
+  padding: 2px 0 10px;
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+}
+.dw-group-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px 3px;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+.dw-group-name {
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+}
+.dw-group-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.dw-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 31px;
+  padding: 0 9px 0 0;
+  margin: 0 6px;
+  border-radius: 7px;
+}
+.dw-row:hover {
+  background: var(--bg-raised);
+}
+.dw-row.on {
+  background: var(--bg-hover);
+}
+.dw-row.on::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 7px;
+  bottom: 7px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent);
+}
+.dw-row-main {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 0 0 12px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-body);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.dw-row.on .dw-row-main {
+  color: var(--text);
+  font-weight: 500;
+}
+.dw-row-main:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.dw-row-name {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dw-row-end {
+  color: var(--text-faint);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+/* 圆点:实心 = 这张卡在用,空心 = 没在用 */
+.dw-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 1.5px solid #5a5a5a;
+}
+.dw-dot.on {
+  border: none;
+  background: var(--dw-ok);
+}
+.dw-dot.bad {
+  border: none;
+  background: var(--danger);
+}
+/* 左栏行尾的小开关 */
+.dw-switch {
+  position: relative;
+  width: 30px;
+  height: 17px;
+  flex: none;
+  padding: 0;
+  border: none;
+  border-radius: 17px;
+  background: #3a3a3a;
+  cursor: pointer;
+}
+.dw-switch .knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: #9a9a9a;
+  transition: transform 0.12s;
+}
+.dw-switch.on {
+  background: var(--accent);
+}
+.dw-switch.on .knob {
+  background: #161616;
+  transform: translateX(13px);
+}
+.dw-switch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.dw-body {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 16px;
+  overflow-y: auto;
+}
+.dw-muted {
+  color: var(--text-faint);
+  font-size: 11.5px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.dw-bad {
+  color: var(--danger);
+}
+
+/* 语音服务页:一台一块 */
+.dw-conn {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px 10px;
+  border-top: 1px solid var(--border);
+}
+.dw-conn-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+}
+.dw-conn-name {
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.dw-conn-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 6px 12px;
+}
+
+/* 中等宽(抽屉 480–720,调试台预设栏和角色卡栏都开着时常见):左栏收窄,组标题旁的小字收进问号 */
+@container (max-width: 720px) {
+  .dw-nav {
+    width: 148px;
+  }
+  .dw-note-text {
+    display: none;
+  }
+  .dw-row {
+    gap: 5px;
+    padding-right: 6px;
+    margin: 0 4px;
+  }
+  .dw-row-main {
+    gap: 6px;
+    padding-left: 9px;
+  }
+  .dw-beta {
+    padding: 0 3px;
+    font-size: 9px;
+    letter-spacing: 0;
+  }
+  .dw-body {
+    padding: 10px 12px;
+  }
+  /* 设置行:名字那列收窄;滑条两头的「多换 / 少换」小字去掉,数值和「恢复默认」不再叠在一起 */
+  .dw .set-row,
+  .dw-card .set-row {
+    grid-template-columns: 92px minmax(0, 1fr) auto;
+    column-gap: 10px;
+  }
+  .dw .set-slider-end {
+    display: none;
+  }
+  .dw .set-slider input[type='range'] {
+    min-width: 56px;
+  }
+  .dw .set-ctl input:not([type='range']):not([type='checkbox']) {
+    min-width: 0;
+    flex: 1 1 120px;
+  }
+}
+
+/* 窄(抽屉宽不到 480):左栏变成顶上一排横着滚的标签,组名变小字前缀 */
+@container (max-width: 480px) {
+  .dw-main {
+    flex-direction: column;
+  }
+  .dw-nav {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 8px;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  .dw-group {
+    display: flex;
+    align-items: center;
+    flex: none;
+    gap: 2px;
+  }
+  .dw-group-head {
+    padding: 0 2px 0 8px;
+    font-size: 10px;
+  }
+  .dw-group-head .dw-flex,
+  .dw-group-note {
+    display: none;
+  }
+  .dw-row {
+    flex: none;
+    margin: 0;
+  }
+  .dw-row.on::before {
+    left: 10px;
+    right: 10px;
+    top: auto;
+    bottom: 0;
+    width: auto;
+    height: 2px;
+    border-radius: 2px;
+  }
+  .dw-body {
+    padding: 10px 12px;
+  }
+  .dw-pick > span {
+    display: none;
+  }
+}
+
+/* ── 嵌进游戏菜单的插件页(vn-plugin-embed):跟着菜单整页滚,左栏贴顶;不按角色变色 ── */
+.vn-plugin-embed .dw {
+  --accent: #e8e8e8;
+  --accent-dim: #3d3d3d;
+}
+/* 菜单里的 --bg 是半透明的,选中的那一格字看不清:写死深色字 */
+.vn-plugin-embed .dw .set-seg button.on {
+  color: #141414;
+}
+.vn-plugin-embed .conn-drawer.dw {
+  height: auto;
+  overflow: visible;
+}
+.vn-plugin-embed .dw-close {
+  display: none;
+}
+.vn-plugin-embed .dw-main {
+  align-items: flex-start;
+}
+.vn-plugin-embed .dw-nav {
+  position: sticky;
+  top: 0;
+  max-height: 100vh;
+}
+.vn-plugin-embed .dw-body {
+  overflow: visible;
+}
+
+/* ── 角色组的页(pages/):AI 写 / Jev 标、空着时的提示、页签里的小标题、预设里有没有这块 ── */
+.dw-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.dw-inline-link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-body);
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.dw-inline-link:hover {
+  color: var(--text);
+}
+.dw-empty {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 10px 12px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 9px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.dw-empty-text {
+  color: var(--text);
+  font-weight: 500;
+}
+.dw-tab-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.dw-tab-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text);
+}
+.dw-macro {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+/* 宏展开出来可能很长(十几张立绘、十几张背景):限高,自己滚 */
+.dw-macro .pl-preview {
+  max-height: 160px;
+  overflow: auto;
+  margin: 0;
+}
+.dw-block {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--bg-raised);
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.dw-block-text {
+  flex: 1;
+  min-width: 160px;
+}
+.dw-block-text b {
+  color: var(--text);
+  font-weight: 600;
+}
+/* 页签里放的老组件(认词记录、配对表)自带的外框去掉一层 */
+.dw-tab-stack > .sp-group {
+  gap: 8px;
+}
+/* 卡带自己画的内容:生图那一套自带标题,和页头重复 */
+.dw-cart .ig-settings-head {
+  display: none;
+}
+.dw-cart {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* ── 快速预览(pages/*Preview.tsx):输入一句 → 试一下 → 一行结果。抽屉 570 宽时正文只剩四百来宽,都要能折行 ── */
+.dw-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 12px 10px;
+  min-width: 0;
+}
+.dw-try {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.dw-try-input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  border-radius: 7px;
+  font-size: 13px;
+}
+.dw-try select {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 120px;
+}
+.dw-recent {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+.dw-recent-chip {
+  max-width: 170px;
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.dw-recent-chip:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.dw-result {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: var(--bg-raised);
+  min-width: 0;
+}
+.dw-result-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+.dw-result-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+.dw-result-tags {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.dw-mono {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.dw-face-44 {
+  width: 44px;
+  height: 44px;
+  border-radius: 9px;
+}
+.dw-face-26 {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+}
+.dw-play {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0 0 1px;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+}
+.dw-play svg {
+  fill: #141414;
+}
+.dw-wave {
+  flex: 1 1 120px;
+  min-width: 80px;
+  height: 20px;
+}
+.dw-wave rect {
+  fill: rgba(255, 255, 255, 0.22);
+}
+.dw-wave rect.on {
+  fill: var(--accent);
+}
+.dw-thumbs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+  gap: 6px;
+}
+.dw-thumb {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.dw-thumb-img,
+.dw-thumb-more {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 5px;
+  object-fit: cover;
+  display: block;
+  background: var(--bg-hover);
+}
+.dw-thumb-name {
+  color: var(--text-dim);
+  font-size: 10.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dw-thumb-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--border-strong);
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 11.5px;
+}
+.dw-thumb-72 {
+  width: 72px;
+  height: 40px;
+  flex: none;
+  border-radius: 6px;
+  object-fit: cover;
+  display: block;
+  background: var(--bg-hover);
+}
+
+/* ── 高级 · 问法(pages/AskTab.tsx):输入框、宏小块、Jev 实际收到的 ── */
+.dw-ask {
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.dw-macros {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.dw-macro-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+.dw-macro-chip code {
+  font-family: var(--mono);
+  color: var(--text);
+  font-size: 11.5px;
+}
+.dw-macro-chip span {
+  color: var(--text-faint);
+  font-size: 11.5px;
+}
+.dw-macro-chip:hover {
+  border-color: var(--border-strong);
+}
+.dw-received {
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+  padding: 9px 11px;
+  border-radius: 7px;
+  background: var(--bg-raised);
+  color: var(--text-body);
+  font-family: var(--sans);
+  font-size: 12.5px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.dw-received.bad {
+  color: var(--danger);
+}
+
+/* ── 高级 · 认词记录(pages/RecordsTab.tsx)── */
+.dw-records-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.dw-search {
+  flex: 0 1 140px;
+  min-width: 90px;
+  padding: 4px 9px;
+  border-radius: 7px;
+  font-size: 12px;
+}
+.dw-rec-table {
+  display: flex;
+  flex-direction: column;
+  margin: 0 -12px;
+}
+.dw-rec-row {
+  display: grid;
+  grid-template-columns: minmax(64px, 1fr) minmax(0, 1.3fr) 64px auto;
+  column-gap: 8px;
+  align-items: center;
+  min-height: 38px;
+  padding: 2px 12px;
+  border-top: 1px solid var(--border);
+}
+.dw-rec-row.head {
+  min-height: 24px;
+  border-top: none;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+.dw-rec-row.on {
+  background: var(--bg-raised);
+}
+.dw-rec-word {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--text);
+}
+.dw-rec-pick {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.dw-rec-select {
+  min-width: 0;
+  flex: 1;
+  padding: 3px 6px;
+  font-size: 12px;
+}
+.dw-rec-who {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.dw-rec-who.src-player {
+  color: var(--text);
+}
+.dw-rec-who.guessed {
+  color: #e0c98f;
+}
+.dw-rec-menu {
+  display: flex;
+  justify-content: flex-end;
+}
+.dw-dots {
+  padding: 0 6px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 16px;
+  line-height: 22px;
+  cursor: pointer;
+}
+.dw-dots:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.dw-rec-error {
+  grid-column: 1 / -1;
+  font-size: 11.5px;
+}
+.dw-rec-more,
+.dw-rec-empty {
+  padding: 8px 12px 2px;
+  text-align: left;
+}
+
+/* Jev 页(E1):通用问法那一段的小标题;表情认法页(E3):「怎么装」点开的那几行 */
+.jev-prompts-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.dw-how {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  background: var(--bg-raised);
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.7;
+}

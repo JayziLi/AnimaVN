@@ -2,7 +2,7 @@
  * 菜单里的「设置」页。视觉小说自己的偏好存 vnSettings;回车键和调试台聊天框共用,
  * 改的是 chatSettings;BGM 和语音的音量直接交给各自的播放器;
  * 语音开关、等不等语音是语音插件的配置(全局一份,和调试台插件抽屉里的是同一个)。
- * 换声音、试音、调参数在菜单的插件页(语音),这里只放个入口。
+ * 换声音、试音、调参数在素材管理的「声音」页签(这张卡的主声音),这里只放个入口。
  */
 
 import { useEffect, useState, type ReactNode } from 'react';
@@ -34,6 +34,7 @@ import {
   type VNSettings,
 } from './vnSettings';
 import { VN_ACCENTS } from './accent';
+import { VnSwitch } from './VnSwitch';
 import {
   describeBackup,
   describeCheck,
@@ -84,7 +85,7 @@ interface Props {
   onChangeVoiceConfig: (next: VoicePluginConfig) => void;
   /** 这张卡念台词用的声音;没绑是 null,还没选角色是 undefined */
   voiceCastName: string | null | undefined;
-  /** 去插件页的语音:换声音、试音、调参数 */
+  /** 打开素材管理的「声音」页签、选中这张卡的主声音:换声音、试音、调参数 */
   onOpenVoice: () => void;
   /** 字幕:外语插件的「显示日语」(全局一份,和调试台插件里的是同一个开关) */
   showJa: boolean;
@@ -153,11 +154,6 @@ export function Seg<T extends string | number | boolean>({
     </div>
   );
 }
-
-const ON_OFF = [
-  { value: true, name: '显示' },
-  { value: false, name: '不显示' },
-];
 
 const ENGINES: { value: TimelineEngine; name: string }[] = [
   { value: 'legacy', name: '旧算法' },
@@ -454,15 +450,8 @@ export function VNSettingsPage({
               }}
             />
           </Row>
-          <Row label="BGM">
-            <Seg
-              options={[
-                { value: false, name: '有声' },
-                { value: true, name: '静音' },
-              ]}
-              value={bgm.muted}
-              onPick={(v) => bgmPlayer.setMuted(v)}
-            />
+          <Row label="BGM 静音">
+            <VnSwitch label="BGM 静音" checked={bgm.muted} onChange={(v) => bgmPlayer.setMuted(v)} />
           </Row>
           <Row label="念台词时">
             <div className="vn-set-stack">
@@ -475,16 +464,9 @@ export function VNSettingsPage({
           <div className="vn-set-group">音效</div>
           <Row label="立绘特效">
             <div className="vn-set-stack">
-              <Seg
-                options={[
-                  { value: true, name: '开' },
-                  { value: false, name: '关' },
-                ]}
-                value={settings.spriteFx}
-                onPick={(v) => set('spriteFx', v)}
-              />
+              <VnSwitch label="立绘特效" checked={settings.spriteFx} onChange={(v) => set('spriteFx', v)} />
               <span className="vn-set-note">
-                换表情时跳一下、头顶冒气泡、响一声 · 每张立绘放什么在插件页的立绘包里设 · 往回翻和跳过时不放
+                换表情时跳一下、头顶冒气泡、响一声 · 每张立绘放什么在卡编辑器的立绘里设 · 往回翻和跳过时不放
               </span>
             </div>
           </Row>
@@ -545,16 +527,9 @@ export function VNSettingsPage({
               换声音 · 试音 · 调参数
             </button>
           </div>
-          <Row label="语音合成">
+          <Row label="语音">
             <div className="vn-set-stack">
-              <Seg
-                options={[
-                  { value: true, name: '开' },
-                  { value: false, name: '关' },
-                ]}
-                value={voiceConfig.enabled}
-                onPick={(v) => setVoice('enabled', v)}
-              />
+              <VnSwitch label="语音" checked={voiceConfig.enabled} onChange={(v) => setVoice('enabled', v)} />
               <span className="vn-set-note">
                 关掉就不再请求语音服务 · 所有角色通用,和调试台插件里的开关是同一个
               </span>
@@ -575,15 +550,8 @@ export function VNSettingsPage({
                   }}
                 />
               </Row>
-              <Row label="语音">
-                <Seg
-                  options={[
-                    { value: false, name: '有声' },
-                    { value: true, name: '静音' },
-                  ]}
-                  value={voice.muted}
-                  onPick={(v) => voicePlayer.setMuted(v)}
-                />
+              <Row label="语音静音">
+                <VnSwitch label="语音静音" checked={voice.muted} onChange={(v) => voicePlayer.setMuted(v)} />
               </Row>
               <Row label="文字和语音">
                 <div className="vn-set-stack">
@@ -691,7 +659,7 @@ export function VNSettingsPage({
         <div className="vn-set-list">
           <Row label="思考过程">
             <div className="vn-set-stack">
-              <Seg options={ON_OFF} value={settings.showThinking} onPick={(v) => set('showThinking', v)} />
+              <VnSwitch label="思考过程" checked={settings.showThinking} onChange={(v) => set('showThinking', v)} />
               <span className="vn-set-note">
                 {settings.showThinking
                   ? '回复第一句上留「已思考 N 秒」,点开能看模型想了什么'
@@ -700,11 +668,11 @@ export function VNSettingsPage({
             </div>
           </Row>
           <Row label="模型标签">
-            <Seg options={ON_OFF} value={settings.showModel} onPick={(v) => set('showModel', v)} />
+            <VnSwitch label="模型标签" checked={settings.showModel} onChange={(v) => set('showModel', v)} />
           </Row>
           <Row label="语音标签">
             <div className="vn-set-stack">
-              <Seg options={ON_OFF} value={settings.showVoice} onPick={(v) => set('showVoice', v)} />
+              <VnSwitch label="语音标签" checked={settings.showVoice} onChange={(v) => set('showVoice', v)} />
               <span className="vn-set-note">
                 卡绑了声音时右上角显示语音连没连上,点开能快速开关语音、调音量;关掉之后语音断了照样会提示
               </span>

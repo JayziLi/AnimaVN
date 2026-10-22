@@ -36,7 +36,6 @@ import {
   withCell,
   type Choice,
 } from '../plugins/pairingView';
-import type { VoicePluginState } from '../plugins/useVoicePlugin';
 import { DEFAULT_VOICE_SAMPLE, sampleIn, sampleLangOf } from '../plugins/voice';
 import { audioBus } from '../vn/audioBus';
 import { fillPairingTable, savePairingCell } from '../vn/usePairings';
@@ -106,13 +105,17 @@ function usePairingTables(follower: PairingFollower, listRef: string | null, tar
 // ─────────────────────────── 语音 ───────────────────────────
 
 export function VoicePairingGroup({
-  voice,
+  main,
+  fixedEmotion,
   card,
   sprites,
   packName,
   cards,
 }: {
-  voice: VoicePluginState;
+  /** 这张卡的主声音;没有是 null */
+  main: VoiceProfile | null;
+  /** 语音情绪设成了「不变」 */
+  fixedEmotion: boolean;
   card: CardRef;
   /** 当前立绘包里启用的立绘 */
   sprites: readonly PackSprite[];
@@ -121,7 +124,6 @@ export function VoicePairingGroup({
   cards: CardList;
 }) {
   const engine = useTimelineEngine();
-  const main = voice.cast.main;
   const listRef = sprites.length > 0 ? emotionListRef(sprites) : null;
   const ready = card !== null && main !== null && main.emotions.length > 0;
   const { tables, error, setTable } = usePairingTables('voice', ready ? listRef : null, main?.id);
@@ -146,13 +148,10 @@ export function VoicePairingGroup({
     <div className="sp-group">
       <div className="sp-group-head">
         <span className="sp-group-title">配对表{packName && main ? ` · ${packName} × ${main.name}` : ''}</span>
-        <span className="sp-group-note">
-          每张立绘念主声音的哪段语气,改了马上生效。下拉里只列基础的语气,声线版本不单列。▶ 用那段念一句试听。
-          {table && ` ${usedByText(table.cards)}。`}
-        </span>
+        {table && <span className="sp-group-note">{usedByText(table.cards)}</span>}
       </div>
       {engine === 'legacy' && <div className="sp-group-note">{LEGACY_NOTE}</div>}
-      {voice.config.fixedEmotion && (
+      {fixedEmotion && (
         <div className="sp-group-note">语音情绪设成了「不变」:每句都用排第一的那段念,这张表现在用不上。</div>
       )}
       {!card ? (
@@ -271,9 +270,6 @@ export function CgPairingGroup({
     <div className="sp-group">
       <div className="sp-group-head">
         <span className="sp-group-title">配对表 · CG{packName ? ` · ${packName}` : ''}</span>
-        <span className="sp-group-note">
-          每个有差分的构图一张表:每张立绘显示这个构图的哪张差分,「构图本身」就是不换差分。点构图名展开。
-        </span>
       </div>
       {engine === 'legacy' && <div className="sp-group-note">{LEGACY_NOTE}</div>}
       {!card ? (

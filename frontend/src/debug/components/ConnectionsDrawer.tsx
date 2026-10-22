@@ -504,7 +504,7 @@ export function ConnectionsDrawer({ connections: shared, notify, onClose, onChan
         <div className="conn-jev">
           <span className={`jev-dot ${jev.status?.has_key ? 'ok' : 'missing'}`} aria-hidden="true" />
           <span className="conn-jev-text">
-            判断模型 Jev(给立绘、背景、音乐、CG 标标签):
+            判断模型 Jev(给立绘、背景、BGM、CG 标标签):
             {jev.status === null
               ? '正在问后端…'
               : jev.status.has_key

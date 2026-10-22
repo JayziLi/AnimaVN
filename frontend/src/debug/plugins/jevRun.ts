@@ -154,8 +154,6 @@ export interface JevRunOptions {
   /** 一个场景名 → 告诉 Jev 的地点(名字 + 说明);CG 题用 */
   placeOf: (bg: string | null) => string;
   emotionBefore: string | null;
-  /** Jev 认出的玩家台词弹成选项(玩家台词插件的设置);关了不标 <我> */
-  popup: boolean;
   /** 这条回复角色的台词多判一道档(asksTone),答案记在标注的 tone 上 */
   askTone?: boolean;
   thresholds: AnnotateThresholds;
@@ -578,8 +576,7 @@ export class JevRun {
             }
           : {
               ...d,
-              // 玩家台词不弹选项:不标 <我>,也不标立绘(照常显示、不念)
-              speaker: d.speaker === 'user' && !this.o.popup ? ('other' as const) : d.speaker,
+              // 认出是玩家说的:写 <我>(jevKinds.player,跟着立绘),显示成玩家的名字、不念、不换立绘
               bg: bg?.line === i ? d.bg : null,
               bgm: bgm?.line === i ? d.bgm : null,
               cg: step?.cg ?? null,

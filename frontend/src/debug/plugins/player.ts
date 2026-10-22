@@ -1,15 +1,16 @@
 /**
- * 玩家台词插件 —— 模型替玩家({{user}})写的台词,在视觉小说里弹成 galgame 式的选项。
+ * 玩家台词 —— 默认叫主模型别替玩家({{user}})说话(设计稿 12.1「10-16 第 2 步」:玩家台词不做设置)。
  *
- * 模型在 {{user}} 说的每一句前面写一个 <我>(半角、全角尖括号都认,里面可以夹空格)。
- * 切句时这句标成 player、说话人换成玩家名字:不念、不切立绘,翻到时弹选项,
- * 选中后以玩家的名义打进对话框(规则在 vn/script.ts 的 parseReply 里)。
+ * 提示词块 anima_player 叫「别替玩家说话 · 插件」,正文和名字一律是这里的两个常量:块同步不读
+ * plugin.player.blockPrompt(库里存着以前的 <我> 模板,数据留着不删)。预设里没有这块时组装自动补上
+ * (core/sendPlan.ts),不受 Jev、插件开关、素材影响。
+ *
+ * 哪句是玩家说的交给 Jev:立绘交给 Jev 时它本来就在判谁说的,顺手认出玩家(jevKinds.player 跟着立绘,
+ * plugins/jev.ts 的 chosenJevKinds / liveJevKinds)。认出来的那句前面写 <我>(半角、全角尖括号都认,里面可以夹空格);
+ * 切句时这句标成 player、说话人换成玩家名字:不念、不切立绘、不弹选项(规则在 vn/script.ts 的 parseReply 里)。
+ * 没有 Jev key 时只靠块里那句话。旧回复里的 <我> 照旧认。
  *
  * 标签不叫 <user>:酒馆的老宏 <USER> 会被换成玩家名字,很多卡也用它指代玩家。
- *
- * 插件本身只有提示词模板,全局一份,存在后端 app_settings(键 plugin.player)。
- * 提示词块写进预设,identifier 固定为 anima_player,正文跟着插件模板同步(和立绘插件一样)。
- * 玩家在预设里开关这一块来选:开着弹选项;关着,玩家台词没带立绘标签,照常显示、不念。
  */
 
 import type { PresetOrderEntry, TavernPreset } from '../lib/presetParser';
@@ -27,21 +28,27 @@ import { PLUGIN } from './registry';
 export const PLAYER_SETTING_KEY = PLUGIN.player.settingKey;
 export const PLAYER_BLOCK_ID = PLUGIN.player.blockId;
 
-export const DEFAULT_PLAYER_BLOCK_PROMPT = `[玩家台词]
-{{user}} 说的每一句话，都必须以 <我> 开头。
-<我> 只写在 {{user}} 说的话前面：{{char}} 和其他角色的台词不写，旁白也不写。{{user}} 的话前面不要写立绘标签。
-标签单独写，不要放进引号或括号里；要求日中对照时，<我> 和其他标签一样写在这一对（日语 + 中文）的前面。
+export const DEFAULT_PLAYER_BLOCK_PROMPT = `[不替玩家说话]
+{{user}} 由玩家自己扮演。不要替 {{user}} 写台词、动作和心理活动，也不要替 {{user}} 做决定。`;
 
-示例：
-<我>「今天就到这里吧，我送你回去。」`;
+/** 别替玩家说话块在预设里的名字 */
+export const PLAYER_BLOCK_NAME = '别替玩家说话 · 插件';
 
+/** 块同步(plugins/common.ts 的 syncPluginBlocks)用的正文和名字:一律是常量 */
+export const PLAYER_BLOCK_SYNC: Readonly<Record<string, string>> = { [PLAYER_BLOCK_ID]: DEFAULT_PLAYER_BLOCK_PROMPT };
+export const PLAYER_BLOCK_NAMES: Readonly<Record<string, string>> = { [PLAYER_BLOCK_ID]: PLAYER_BLOCK_NAME };
+
+/**
+ * 库里 plugin.player 存的设置。第 2 步起都不再用来组装、标注(插件抽屉的旧玩家台词页还读写它,抽屉线会拿掉那一页);
+ * 读法不改,存着的数据不删
+ */
 export interface PlayerPluginConfig {
-  /** 「加入当前预设」时写进块里的内容;预设里的这块始终跟着它 */
+  /** 以前「加入当前预设」时写进块里的内容;现在块正文一律是 DEFAULT_PLAYER_BLOCK_PROMPT */
   blockPrompt: string;
-  /** AI 写 <我> / Jev 认出玩家说的台词(plugins/jev.ts) */
+  /** 以前的 AI 写 <我> / Jev 认出玩家说的台词;现在跟着立绘的模式 */
   mode: TagMode;
   jev: {
-    /** Jev 认出的玩家台词弹成选项;关了这种台词照常显示、不念 */
+    /** 以前:Jev 认出的玩家台词弹成选项;现在不弹 */
     popup: boolean;
   };
 }
@@ -69,12 +76,12 @@ export const playerBlockState = (
   order: readonly PresetOrderEntry[],
 ): BlockState => pluginBlockState(preset, order, PLAYER_BLOCK_ID);
 
-/** 把玩家台词块加进预设(插在哪见 insertPluginBlock) */
-export const insertPlayerBlock = (preset: TavernPreset, groupIndex: number, content: string) =>
+/** 把别替玩家说话块加进预设(插在哪见 insertPluginBlock) */
+export const insertPlayerBlock = (preset: TavernPreset, groupIndex: number) =>
   insertPluginBlock(preset, groupIndex, {
     identifier: PLAYER_BLOCK_ID,
-    name: '玩家台词 · 插件',
-    content,
+    name: PLAYER_BLOCK_NAME,
+    content: DEFAULT_PLAYER_BLOCK_PROMPT,
   });
 
 /** <我> 标签。模板写死,不给改;带捕获组是因为 extractTags 取 m[1] 当标签名 */

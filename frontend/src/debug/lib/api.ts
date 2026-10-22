@@ -782,6 +782,17 @@ export const debugApi = {
       signal,
     }),
 
+  /**
+   * 只拼题、不问 Jev(插件抽屉「高级 · 问法」):请求和 annotateLines 一样,只出第一个要判的句子的题,
+   * 回题名(e1、bg1……)→ 问法和选项,和真发给 Jev 的一样。不要 key、不记用量
+   */
+  annotatePreview: (req: AnnotateRequest, signal?: AbortSignal) =>
+    request<{ prompts: Record<string, string> }>('/api/annotate/preview', {
+      method: 'POST',
+      body: JSON.stringify(req),
+      signal,
+    }),
+
   /** 玩家发消息时叫一声:LLM 还在想的时候先把到 Jev 的连接连好 */
   annotateWarmup: () => request<void>('/api/annotate/warmup', { method: 'POST' }),
 

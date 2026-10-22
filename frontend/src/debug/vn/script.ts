@@ -30,7 +30,7 @@ export interface VNLine {
   ja?: string;
   /** 外语插件:这句本身就是日语(模型只写了日语、没写中文) */
   jaOnly?: boolean;
-  /** 玩家台词插件:这句前面写了 <我>,是玩家说的(speaker 是玩家名字)。不念,翻到时弹选项 */
+  /** 玩家台词:这句前面写了 <我>(Jev 认出来的或旧回复里的),是玩家说的(speaker 是玩家名字)。不念、不切立绘 */
   player?: boolean;
   /** 回复里有立绘标签、这句台词却没带,不算角色的台词:speaker 是 null,不念、不切立绘 */
   untagged?: boolean;

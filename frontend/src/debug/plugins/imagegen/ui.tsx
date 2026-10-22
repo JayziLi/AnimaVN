@@ -4,7 +4,9 @@
  * 不 import 设置页的同名组件:卡带加载时会绕回一大串内核模块(见 imagegen.test.ts 开头)。
  */
 
-import type { ReactNode } from 'react';
+import { useContext, type ReactNode } from 'react';
+import { Tip } from '../../components/drawer/Tip';
+import { ConsoleTips } from './consoleTips';
 
 /** 一排单选按钮 */
 export function Seg<T extends string | number | boolean>({
@@ -41,20 +43,27 @@ export function Row({
   en,
   value,
   note,
+  tip,
   children,
 }: {
   label: string;
   en?: string;
   value?: string;
   note?: ReactNode;
+  /** 说明:游戏设置里写在行下面,插件抽屉里收进名字旁的「?」 */
+  tip?: string;
   children: ReactNode;
 }) {
+  const asTip = useContext(ConsoleTips);
   const name = (
     <span className="vn-set-label">
       {label}
+      {tip && asTip && <Tip text={tip} />}
       {en && <span className="ig-en">{en}</span>}
     </span>
   );
+  // 滑块那种行(value)下面本来就不写字:说明只在抽屉里出问号
+  const line = !asTip && tip ? tip : null;
   if (value !== undefined) {
     return (
       <div className="vn-set">
@@ -69,6 +78,7 @@ export function Row({
       {name}
       <div className="vn-set-stack">
         {children}
+        {line && <span className="vn-set-note">{line}</span>}
         {note && <span className="vn-set-note">{note}</span>}
       </div>
     </div>
@@ -76,16 +86,25 @@ export function Row({
 }
 
 /** 一页里分几组:组名(主题色,en 是 NovelAI 网页上的叫法)+ 一句说明 */
-export function Group({ title, en, note }: { title: ReactNode; en?: string; note?: ReactNode }) {
+export function Group({ title, en, note, tip }: { title: ReactNode; en?: string; note?: ReactNode; tip?: string }) {
+  const asTip = useContext(ConsoleTips);
   return (
     <div className="vn-set-group">
-      <span>
+      <span className="ig-group-title">
         {title}
         {en && <span className="ig-en inline">{en}</span>}
+        {tip && asTip && <Tip text={tip} />}
       </span>
+      {tip && !asTip && <span className="vn-set-note">{tip}</span>}
       {note && <span className="vn-set-note">{note}</span>}
     </div>
   );
+}
+
+/** 两行之间的一段说明:游戏设置里照旧是一段;抽屉里不显示(收进旁边那一行的问号) */
+export function Para({ text }: { text: string }) {
+  const asTip = useContext(ConsoleTips);
+  return asTip ? null : <p className="vn-set-note ig-pad">{text}</p>;
 }
 
 /** 开关:勾选框 + 一句话 */

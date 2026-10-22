@@ -10,9 +10,11 @@
  *   tagKind     视觉小说认的那类标签(vn/script.ts 的 TagKind.kind)
  *   jevKind     能让 Jev 标的那一类。存档里 swipe_info.jev.kinds 记的就是它,写死、不跟着 id 改
  *   beta        插件抽屉里标 BETA
+ *   drawer      false = 插件抽屉左栏不画这一页(玩家台词:第 2 步起不单独放设置,块和 Jev 的那一类照旧)
  *
- * 表的先后就是插件抽屉左栏的先后(卡带的那一页按它说的 after 插进来);从里面挑出来的清单也保持这个先后 —— PLUGIN_BLOCK_IDS 的先后有用
- * (新插件块插在已有插件块后面,见 common.ts 的 insertPluginBlock)。
+ * 表的先后就是插件抽屉左栏「角色」组的先后(卡带的那一页按它说的 after 插进来,见 components/drawer/navModel.ts);
+ * 从里面挑出来的清单也保持这个先后 —— PLUGIN_BLOCK_IDS 的先后有用(新插件块插在已有插件块后面,见 common.ts 的
+ * insertPluginBlock;语音没有块,挪到立绘后面不影响块的先后)。
  *
  * 这个文件不 import 别的插件文件:插件文件反过来从这里取自己的块和设置键,免得互相 import 绕圈。
  */
@@ -26,16 +28,25 @@ export interface PluginRow {
   tagKind?: string;
   jevKind?: string;
   beta?: boolean;
+  drawer?: false;
 }
 
 export const PLUGINS = [
   { id: 'sprite', name: '立绘', blockId: 'anima_sprite', settingKey: 'plugin.sprite', tagKind: 'sprite', jevKind: 'sprite' },
-  { id: 'bg', name: '背景', blockId: 'anima_bg', settingKey: 'plugin.bg', tagKind: 'bg', jevKind: 'bg' },
-  { id: 'bgm', name: '音乐', blockId: 'anima_bgm', settingKey: 'plugin.bgm', tagKind: 'bgm', jevKind: 'bgm' },
-  { id: 'cg', name: 'CG', blockId: 'anima_cg', settingKey: 'plugin.cg', tagKind: 'cg', jevKind: 'cg' },
   { id: 'voice', name: '语音', settingKey: 'plugin.voice' },
+  { id: 'bg', name: '背景', blockId: 'anima_bg', settingKey: 'plugin.bg', tagKind: 'bg', jevKind: 'bg' },
+  { id: 'bgm', name: 'BGM', blockId: 'anima_bgm', settingKey: 'plugin.bgm', tagKind: 'bgm', jevKind: 'bgm' },
+  { id: 'cg', name: 'CG', blockId: 'anima_cg', settingKey: 'plugin.cg', tagKind: 'cg', jevKind: 'cg' },
   { id: 'lang', name: '外语', blockId: 'anima_lang', settingKey: 'plugin.lang' },
-  { id: 'player', name: '玩家台词', blockId: 'anima_player', settingKey: 'plugin.player', tagKind: 'player', jevKind: 'player' },
+  {
+    id: 'player',
+    name: '玩家台词',
+    blockId: 'anima_player',
+    settingKey: 'plugin.player',
+    tagKind: 'player',
+    jevKind: 'player',
+    drawer: false,
+  },
 ] as const satisfies readonly PluginRow[];
 
 type Row = (typeof PLUGINS)[number];
@@ -60,7 +71,7 @@ const JEV_ROWS = PLUGINS.filter((p): p is JevRow => 'jevKind' in p);
 /** 所有插件块的 identifier。新的插件块插在已有插件块后面,几块挨在一起 */
 export const PLUGIN_BLOCK_IDS: readonly string[] = BLOCK_ROWS.map((p) => p.blockId);
 
-/** 插件块的 identifier:立绘、背景、音乐、CG、外语、玩家台词各一块 */
+/** 插件块的 identifier:立绘、背景、BGM、CG、外语、玩家台词各一块 */
 export const blockIdOf = (id: BlockPluginId): string => PLUGIN[id].blockId;
 
 /** 预设里的插件块 → 它属于哪个插件;不是插件块的当立绘(和原来的写法一样) */
@@ -92,7 +103,7 @@ interface NavPanel {
 }
 
 /**
- * 插件抽屉左栏:照总表的先后;卡带的页(一页或几页)各插在它说的 after 那个插件后面,
+ * 插件抽屉左栏「角色」组:照总表的先后(drawer: false 的不画);卡带的页(一页或几页)各插在它说的 after 那个插件后面,
  * 同一个插件后面有几页时按传进来的先后;after 不在表里就排最后
  */
 export function navItems(panels: NavPanel | readonly NavPanel[] | null): NavItem[] {
@@ -100,7 +111,7 @@ export function navItems(panels: NavPanel | readonly NavPanel[] | null): NavItem
   const own = (p: NavPanel): NavItem => ({ id: p.key, name: p.title, beta: Boolean(p.beta) });
   const out: NavItem[] = [];
   for (const p of ROWS) {
-    out.push({ id: p.id, name: p.name, beta: Boolean(p.beta) });
+    if (p.drawer !== false) out.push({ id: p.id, name: p.name, beta: Boolean(p.beta) });
     for (const c of list) if (c.after === p.id) out.push(own(c));
   }
   for (const c of list) if (!ROWS.some((p) => p.id === c.after)) out.push(own(c));

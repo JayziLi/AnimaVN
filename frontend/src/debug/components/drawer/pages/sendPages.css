@@ -1,0 +1,88 @@
+/* ══════════ 插件抽屉:这次怎么发(第 2 步 P4、P5;core/sendPlan.ts)══════════
+   自动补块页「{卡}这次会补」、外语页「这次发出去的」。颜色只用 debug.css 的 :root 变量;
+   删除线的两种灰是画布 V6Lang 定的,记在 .dw 上(和 drawer.css 的 --dw-ok 一样) */
+
+.dw {
+  --dw-struck-line: #8a6a6a;
+  --dw-struck-text: #6f6f6f;
+}
+
+.dw-send-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 12px 10px;
+}
+.dw-send-empty {
+  color: var(--text-dim);
+  font-size: 12.5px;
+}
+
+/* 自动补块页:这次会补的块,一行一块 */
+.dw-send-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.dw-send-item {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  padding: 6px 10px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 6px;
+  background: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.025) 0 6px, transparent 6px 12px);
+}
+.dw-send-name {
+  color: var(--text);
+  font-size: 12.5px;
+}
+.dw-send-note {
+  color: var(--text-faint);
+  font-size: 11.5px;
+}
+
+/* 外语页「这次发出去的」:块的原文,精简版删掉的字画删除线,后面跟「这次不发」;不发时整段灰 */
+.dw-send-text {
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--text-body);
+  font-size: 12px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.dw-send-text.off {
+  color: var(--text-faint);
+  opacity: 0.6;
+}
+.dw-struck {
+  text-decoration: line-through;
+  text-decoration-color: var(--dw-struck-line);
+  color: var(--dw-struck-text);
+}
+.dw-send-skip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 6px;
+  padding: 0 3px 0 6px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-dim);
+  font-size: 10.5px;
+  line-height: 18px;
+  white-space: nowrap;
+  vertical-align: 1px;
+}
+.dw-send-why {
+  color: var(--text-dim);
+  font-size: 12px;
+}

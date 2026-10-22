@@ -70,6 +70,7 @@ export function LibraryEditor(props: LibraryEditorProps) {
   return (
     <VoiceEditor
       voiceId={item.id}
+      name={item.name}
       header={header}
       spriteLabels={null}
       onChanged={() => {

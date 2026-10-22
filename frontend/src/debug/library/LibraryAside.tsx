@@ -1,12 +1,12 @@
 /**
- * 素材管理页左栏(照 V4Library 的 lib_aside):「立绘包 27 个」+ 排序、筛选小按钮、包列表、底部占用空间。
+ * 素材管理页左栏(照 V4Library 的 lib_aside):「立绘包 27 个」+ 排序、(声音页)新建 / 导入按钮、筛选小按钮、包列表、底部占用空间。
  * 列表按包列、不按角色分组(一个角色可能绑别人的包);每行缩略图、名字、「22 张 · 58 MB」、「2 张卡」/「未绑定」,
  * CG 页 AI 生成的包标「AI 生成」。
  * 底部:文件仓库总共多大、这一类大约占多少、有重复的包时「重复 N 套」(点了筛出来),「清理」由外面接(先确认)。
  * 窄屏时列表变成一排横着滚的小卡片(library.css)。
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { Icon, type IconName } from '../studio/icons';
 import { PanelCollapseButton } from '../studio/panelParts';
 import { Chip } from '../studio/ui';
@@ -56,6 +56,8 @@ export interface LibraryAsideProps {
   onClean: () => void;
   /** 收起左栏(sidePanels.tsx);不给就没有收起按钮 */
   onCollapse?: () => void;
+  /** 标题下面、筛选上面的一排按钮(声音页的「新建声音」「导入 refs.json」);不给就没有这一排 */
+  actions?: ReactNode;
 }
 
 export function LibraryAside({
@@ -75,6 +77,7 @@ export function LibraryAside({
   cleaning,
   onClean,
   onCollapse,
+  actions,
 }: LibraryAsideProps) {
   const info = KIND_INFO[kind];
   // 中文里夹的英文前后空一格:「立绘约 210 MB」「BGM 约 40 MB」
@@ -104,6 +107,7 @@ export function LibraryAside({
         </label>
         {onCollapse && <PanelCollapseButton side="left" label="左栏" onClick={onCollapse} />}
       </div>
+      {actions && <div className="lib-aside-actions">{actions}</div>}
       <div className="lib-chips" role="group" aria-label="筛选">
         {chips.map((c) => (
           <button

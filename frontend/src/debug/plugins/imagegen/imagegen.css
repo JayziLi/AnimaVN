@@ -492,3 +492,29 @@
     padding-left: 94px;
   }
 }
+
+/* 「这张卡」那几项:标签 + 问号(第 2 步,插件抽屉里看的那张卡) */
+.ig-card-only {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.ig-card-tag {
+  padding: 0 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+/* 插件抽屉里(place="console")说明收进名字旁的问号(第 2 步 E2) */
+.ig-group-title {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.vn-set-label > .dw-tip {
+  margin-left: 6px;
+  vertical-align: middle;
+}
