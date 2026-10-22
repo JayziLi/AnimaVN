@@ -85,6 +85,27 @@ function setup(
 }
 
 describe('JevRun', () => {
+  it('settles after stop followed by the final buffered text flush', async () => {
+    const { run, calls, last } = setup(() => []);
+    run.feed('First line.\nunfinished', true);
+    run.abort();
+    const sent = calls.length;
+    run.feed('First line.\nFinal buffered line.', true);
+    run.abort();
+    await run.settle(1);
+    expect(calls).toHaveLength(sent);
+    expect(last().pendingFrom).toBeNull();
+    expect(last().voicePendingFrom).toBeNull();
+  });
+
+  it('does not wait again when a cancelled run receives a final feed', async () => {
+    const { run } = setup(() => []);
+    run.abort();
+    run.feed('Late text.', false);
+    await run.settle(1);
+    await run.settle(1);
+  });
+
   it('judges each line once it is written and records its tags as a note', async () => {
     const { run, calls, last, shown, flush } = setup((req) =>
       req.targets.map((k) => (req.lines[k].speaker === '星绘' ? { speaker: 'char' as const, emotion: '微笑' } : { bg: k === 0 ? '食堂' : null })),

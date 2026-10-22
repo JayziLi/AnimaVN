@@ -1,8 +1,9 @@
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 // api.ts 加载时就要读地址栏(后端地址跟着 hostname 走),测试环境没有 location
 let filenameFromDisposition: (h: string) => string | null;
 let api: typeof import('./api');
+afterEach(() => vi.unstubAllGlobals());
 beforeAll(async () => {
   (globalThis as { location?: unknown }).location ??= { hostname: 'localhost' };
   api = await import('./api');
@@ -74,5 +75,38 @@ describe('asset urls', () => {
 describe('exportPackUrl', () => {
   it('points at the single-pack export with an encoded id', () => {
     expect(api.exportPackUrl('scene', 'a b')).toBe('http://localhost:8000/api/export/pack/scene/a%20b');
+  });
+});
+
+describe('stream completion and cancellation', () => {
+  const encode = (text: string) => new TextEncoder().encode(text);
+  const done = { total_ms: 10, reasoning_type: null, reasoning_ms: null };
+
+  it('finishes on the done frame even if the server keeps the connection open', async () => {
+    const cancel = vi.fn();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(encode(`event: delta\ndata: {"text":"Hello"}\n\nevent: done\ndata: ${JSON.stringify(done)}\n\n`));
+      },
+      cancel,
+    }))));
+    const onDelta = vi.fn();
+    await expect(api.debugApi.streamComplete([], undefined, undefined, undefined, { onDelta })).resolves.toEqual(done);
+    expect(onDelta).toHaveBeenCalledExactlyOnceWith('Hello');
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it('stops a stalled reader and allows the next generation to complete', async () => {
+    const cancel = vi.fn();
+    const controller = new AbortController();
+    const onDelta = vi.fn(() => controller.abort());
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(new ReadableStream({
+      start(stream) { stream.enqueue(encode('event: delta\ndata: {"text":"Partial"}\n\n')); },
+      cancel,
+    }))).mockResolvedValueOnce(new Response(`event: done\ndata: ${JSON.stringify(done)}\n\n`));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(api.debugApi.streamComplete([], undefined, undefined, controller.signal, { onDelta })).rejects.toMatchObject({ name: 'AbortError' });
+    expect(cancel).toHaveBeenCalledOnce();
+    await expect(api.debugApi.streamComplete([], undefined, undefined, new AbortController().signal, {})).resolves.toEqual(done);
   });
 });

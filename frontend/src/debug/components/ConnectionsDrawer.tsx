@@ -215,7 +215,7 @@ export function ConnectionsDrawer({ connections: shared, notify, onClose, onChan
   const refreshModels = async () => {
     setBusy('refresh');
     try {
-      if (selectedId) {
+      if (selectedId && !formDirty) {
         const models = await debugApi.refreshConnectionModels(selectedId);
         setCachedModels(models);
         setConnections((prev) =>
@@ -230,7 +230,7 @@ export function ConnectionsDrawer({ connections: shared, notify, onClose, onChan
           api_type: form.api_type,
           base_url: form.base_url || null,
           api_key: form.api_key.trim() || null,
-          connection_id: null,
+          connection_id: selectedId,
         });
         setCachedModels(models);
       }
@@ -261,6 +261,16 @@ export function ConnectionsDrawer({ connections: shared, notify, onClose, onChan
     if (!selectedId) return;
     setBusy('ping');
     try {
+      if (formDirty) {
+        const models = await debugApi.previewConnectionModels({
+          api_type: form.api_type,
+          base_url: form.base_url || null,
+          api_key: form.api_key.trim() || null,
+          connection_id: selectedId,
+        });
+        notify('ok', `连接成功，探测到 ${models.length} 个可用模型`);
+        return;
+      }
       const result = await debugApi.pingConnection(selectedId);
       notify(result.ok ? 'ok' : 'error', result.message);
     } catch (e) {

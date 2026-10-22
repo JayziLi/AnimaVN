@@ -253,15 +253,18 @@ async function streamComplete(
   if (!res.body) throw new Error('这个浏览器不支持流式读取(ReadableStream)');
 
   const reader = res.body.getReader();
+  const cancelReader = () => { void reader.cancel().catch(() => undefined); };
   const decoder = new TextDecoder();
   let buffer = '';
-  let done: StreamDone | null = null;
 
   // 中途抛错(error 帧、解析失败)时把连接关掉,别让它挂着等后端自己断
   let ended = false;
+  signal?.addEventListener('abort', cancelReader, { once: true });
   try {
     for (;;) {
+      signal?.throwIfAborted();
       const { value, done: finished } = await reader.read();
+      signal?.throwIfAborted();
       if (finished) {
         ended = true;
         break;
@@ -270,6 +273,7 @@ async function streamComplete(
 
       let split = buffer.indexOf('\n\n');
       while (split !== -1) {
+        signal?.throwIfAborted();
         const { event, data } = parseFrame(buffer.slice(0, split));
         buffer = buffer.slice(split + 2);
         const payload: unknown = data ? JSON.parse(data) : {};
@@ -277,18 +281,18 @@ async function streamComplete(
         if (event === 'meta') handlers.onMeta?.(payload as StreamMeta);
         else if (event === 'reasoning') handlers.onReasoning?.((payload as { text: string }).text);
         else if (event === 'delta') handlers.onDelta?.((payload as { text: string }).text);
-        else if (event === 'done') done = payload as StreamDone;
+        else if (event === 'done') return payload as StreamDone;
         else if (event === 'error') throw new Error((payload as { message: string }).message);
 
         split = buffer.indexOf('\n\n');
       }
     }
   } finally {
+    signal?.removeEventListener('abort', cancelReader);
     if (!ended) void reader.cancel().catch(() => undefined);
   }
 
-  if (!done) throw new Error('流意外中断——没有收到结束帧');
-  return done;
+  throw new Error('流意外中断——没有收到结束帧');
 }
 
 export interface HealthResult {

@@ -236,13 +236,18 @@ export class JevRun {
 
   feed(body: string, streaming: boolean): void {
     this.body = body;
+    // 停了以后,节流攒着的最后一次写入还可能进来:正文照收,没判的句子当判失败,不再重新排队
+    if (this.controller.signal.aborted) {
+      this.abort();
+      return;
+    }
     this.streaming = streaming;
     this.step();
   }
 
   /** 等还没回来的判断;过了 ms 还没回来的当判失败 */
   settle(ms: number): Promise<void> {
-    if (this.done()) return Promise.resolve();
+    if (this.controller.signal.aborted || this.done()) return Promise.resolve();
     // CG 一句一句排队判:还没判的句子多,就多等一会儿(一句按 0.4 秒算)
     const wait = this.o.jevKinds.cg ? Math.max(ms, (this.twoQueues ? this.cgUndecided() : this.undecided()) * 400) : ms;
     return new Promise((resolve) => {
@@ -256,7 +261,6 @@ export class JevRun {
 
   /** 不等了(停止生成、插话、等太久):写到哪算哪,没判完的句子当判失败 */
   abort(): void {
-    if (this.controller.signal.aborted) return;
     this.controller.abort();
     this.streaming = false;
     const { parsed } = this.parse();
