@@ -4,7 +4,10 @@
 1. 拿掉加到原有卡上的绑定(bound,倒着来);当前立绘包是这次换的,换回原来那套;
 2. 删这次建的包(连同所有卡上的绑定,已经被别的卡用上的也照删 —— undo-preview 先列出来给确认框)和卡
    (和删卡接口一样:状态卡、绑定、按卡设置一起删,对话留着);删法和各 router 的删除接口是同一套函数;
-3. 选了「更新这张卡」的,字段改回导入前的样子。
+3. 选了「更新这张卡」的,字段改回导入前的样子;
+4. 角色包(第 3 步)多建的:预设(连同 app_settings 的 preset.bindings 里指着这次的卡、这次的预设的项;preset.bindings 是这次
+   才建的、删完空了就整个删)、状态组、补进内置名单的认词记录;这次建的立绘包的认词记录、配对表,指着这次的 CG 的配对表也删
+   (包删了它们就没有用了,删包接口本身不删它们)。按卡设置跟着卡删。
 """
 
 from __future__ import annotations
@@ -13,7 +16,7 @@ import shutil
 from datetime import datetime, timezone
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from app import bindings
@@ -25,7 +28,25 @@ from app.importer import staging
 from app.importer.apply import ImportContext, empty_created
 from app.importer.audio import CONVERTED
 from app.importer.staging import StagedTree
-from app.models import CgPack, ImportJob, ScenePack, SpritePack, TavernCard
+from app.models import (
+    AppSetting,
+    CardState,
+    CardStateGroup,
+    CgAsset,
+    CgPack,
+    DebugChat,
+    ImportJob,
+    Pairing,
+    PairingRow,
+    PromptPreset,
+    SceneAsset,
+    ScenePack,
+    SpritePack,
+    TavernCard,
+    WordRecord,
+)
+
+PRESET_BINDINGS = "preset.bindings"
 
 LIST_LIMIT = 50
 # 记录里的包类型 → (created 里的键, 模型, 绑定的 kind, 叫什么)
@@ -172,6 +193,9 @@ def describe(db: Session, job: ImportJob) -> dict:
         side = {bindings.PART_BG: "(背景)", bindings.PART_BGM: "(BGM)"}.get(e.get("parts") or "", "")
         lines.append(f"从「{card_name}」上拿掉{noun}「{target.name}」{side}")
 
+    presets = [{"id": p.id, "name": p.name} for pid in created["presets"] if (p := db.get(PromptPreset, pid)) is not None]
+    lines += [f"删掉这次新建的预设「{p['name']}」" for p in presets]
+
     restore = [
         {"id": cid, "name": name} for cid in (job.replaced_cards or {}) if (name := _card_name(db, cid)) is not None
     ]
@@ -182,6 +206,7 @@ def describe(db: Session, job: ImportJob) -> dict:
         "status": job.status,
         "cards": cards,
         "packs": packs,
+        "presets": presets,
         "unbind": unbind,
         "restore_cards": restore,
         "lines": lines,
@@ -217,6 +242,7 @@ def undo(db: Session, job: ImportJob) -> dict:
     """撤销这次导入;不提交。返回做了什么(同 describe,status 是 undone)"""
     out = describe(db, job)
     created = _created(job)
+    _forget_followers(db, created)
     for e in reversed(job.bound or []):
         _unbind(db, e)
     for pid in created["cg_packs"]:
@@ -227,6 +253,7 @@ def undo(db: Session, job: ImportJob) -> dict:
         delete_sprite_pack(db, pid)
     for cid in created["cards"]:
         delete_card_cascade(db, cid)
+    _forget_bundle_extras(db, created)
     for cid, fields in (job.replaced_cards or {}).items():
         card = db.get(TavernCard, cid)
         if card is not None:
@@ -236,3 +263,50 @@ def undo(db: Session, job: ImportJob) -> dict:
     job.undone_at = datetime.now(timezone.utc)
     db.flush()
     return {**out, "status": job.status}
+
+
+def _forget_followers(db: Session, created: dict) -> None:
+    """包删掉以前:这次建的立绘包的认词记录、配对表,指着这次的 CG(CG 包、场景包里的)的配对表"""
+    lists = [f"pack:{pid}" for pid in created["sprite_packs"]]
+    cgs = list(db.scalars(select(CgAsset.id).where(CgAsset.pack_id.in_(created["cg_packs"]))).all())
+    cgs += list(db.scalars(select(SceneAsset.id).where(SceneAsset.pack_id.in_(created["scene_packs"]), SceneAsset.kind == "cg")).all())
+    if lists:
+        db.execute(delete(WordRecord).where(WordRecord.list_ref.in_(lists)))
+    pairings = list(
+        db.scalars(select(Pairing.id).where((Pairing.list_ref.in_(lists)) | (Pairing.target.in_(cgs)) | (Pairing.card_id.in_(created["cards"])))).all()
+    )
+    if pairings:
+        db.execute(delete(PairingRow).where(PairingRow.pairing_id.in_(pairings)))
+        db.execute(delete(Pairing).where(Pairing.id.in_(pairings)))
+    if created["word_records"]:
+        db.execute(delete(WordRecord).where(WordRecord.id.in_(created["word_records"])))
+    db.flush()
+
+
+def _forget_bundle_extras(db: Session, created: dict) -> None:
+    """卡和包删完以后:预设和它的绑定、状态组(主卡删了一般已经拆掉了)、这次新建的设置键"""
+    presets = set(created["presets"])
+    cards = set(created["cards"])
+    for pid in presets:
+        preset = db.get(PromptPreset, pid)
+        if preset is not None:
+            db.execute(update(DebugChat).where(DebugChat.preset_id == pid).values(preset_id=None))
+            db.delete(preset)
+    row = db.get(AppSetting, PRESET_BINDINGS)
+    if row is not None and isinstance(row.value, dict) and (presets or cards):
+        value = dict(row.value)
+        bound = value.get("cards")
+        if isinstance(bound, dict):
+            value["cards"] = {c: p for c, p in bound.items() if c not in cards and p not in presets}
+        if value.get("default") in presets:
+            value["default"] = None
+        if PRESET_BINDINGS in created["settings"] and not value.get("cards") and not value.get("default"):
+            db.delete(row)
+        elif value != row.value:
+            row.value = value
+    for gid in created["state_groups"]:
+        db.execute(delete(CardState).where(CardState.group_id == gid))
+        group = db.get(CardStateGroup, gid)
+        if group is not None:
+            db.delete(group)
+    db.flush()

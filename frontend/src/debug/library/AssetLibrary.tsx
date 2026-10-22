@@ -26,6 +26,7 @@ import {
   type VoiceProfile,
 } from '../lib/api';
 import { EnvBadge } from '../components/EnvBadge';
+import { packExportItem } from '../components/export/packExport';
 import { ImportBanner } from '../importer/ImportBanner';
 import type { SpriteStage } from '../plugins/spriteLayout';
 import { Icon, type IconName } from '../studio/icons';
@@ -550,8 +551,20 @@ export function AssetLibrary(props: AssetLibraryProps) {
     const menu = selected
       ? [
           { label: '重命名', onClick: () => setDialog({ kind: 'rename', item: selected }) },
-          ...(kind === 'voice' ? [] : [{ label: '创建副本', onClick: () => setDialog({ kind: 'duplicate', item: selected }) }]),
-          { label: asking ? '读取中…' : '删除', danger: true, disabled: asking, onClick: () => void askDelete(kind, selected) },
+          ...(kind === 'voice'
+            ? []
+            : [
+                { label: '创建副本', onClick: () => setDialog({ kind: 'duplicate', item: selected }) },
+                // 声音第 4 步再导
+                packExportItem(kind, selected.id, notify),
+              ]),
+          {
+            label: asking ? '读取中…' : '删除',
+            danger: true,
+            divider: true,
+            disabled: asking,
+            onClick: () => void askDelete(kind, selected),
+          },
         ]
       : [];
     const jobTitle = selected?.import_job_id ? (jobs?.find((j) => j.id === selected.import_job_id)?.title ?? null) : null;

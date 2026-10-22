@@ -25,6 +25,7 @@ import {
 import type { Notify } from '../studio/types';
 import { NO_TARGET, type ImportTarget } from './dropTarget';
 import {
+  fileName,
   importErrorText,
   isAbort,
   nothingToImport,
@@ -48,6 +49,8 @@ export interface ImportConfirmState {
   sprites: TargetSprites | null;
   busy: boolean;
   error: string | null;
+  /** 拖进来的文件名(只有一个文件时;角色包的确认框写它) */
+  source: string | null;
 }
 
 interface Deps {
@@ -58,9 +61,9 @@ interface Deps {
   onApplied: (done: ImportDone) => void | Promise<void>;
 }
 
-/** 选文件时能选的:卡(PNG / JSON)、图、音频、zip。文件夹选不了(普通的文件框不行),拖进来可以 */
+/** 选文件时能选的:卡(PNG / JSON)、角色包(.animavn)、单包(.animapack)、图、音频、zip。文件夹选不了(普通的文件框不行),拖进来可以 */
 const ACCEPT = [
-  '.png,.json,.zip,.webp,.jpg,.jpeg,.gif,.avif,.bmp',
+  '.png,.json,.zip,.animavn,.animapack,.webp,.jpg,.jpeg,.gif,.avif,.bmp',
   '.mp3,.ogg,.oga,.opus,.m4a,.aac,.wav,.flac',
   'image/*,audio/*,application/json,application/zip',
 ].join(',');
@@ -128,7 +131,7 @@ export function useImporter(deps: Deps) {
       }
       // 库里什么都没改,拖进来的文件还在:框留着(没弹过就弹出来),写上原因,能再试一次
       setPhase(IDLE);
-      setConfirm({ plan, target, sprites, busy: false, error: importErrorText(e) });
+      setConfirm({ plan, target, sprites, busy: false, error: importErrorText(e), source: asked?.source ?? null });
       return;
     }
     finish();
@@ -178,7 +181,7 @@ export function useImporter(deps: Deps) {
     const check = spritesToCheck(plan, target);
     const sprites = check ? await readSprites(check) : null;
     setPhase(IDLE);
-    setConfirm({ plan, target, sprites, busy: false, error: null });
+    setConfirm({ plan, target, sprites, busy: false, error: null, source: files.length === 1 ? fileName(files[0].path) : null });
   };
 
   // 回调都经 ref 读最新的东西,交出去的函数不用每次渲染换

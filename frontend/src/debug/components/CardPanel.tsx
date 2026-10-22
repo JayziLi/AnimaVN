@@ -6,6 +6,7 @@ import { dropTarget } from '../importer/dropTarget';
 import type { StudioTab } from '../studio/types';
 import { CharacterList } from './CharacterList';
 import { AnimaIcon } from './AnimaIcon';
+import { ExportMenu } from './export/ExportMenu';
 
 /**
  * 右栏角色卡 —— 两层结构,和酒馆一致:
@@ -42,7 +43,10 @@ interface Props {
   onDuplicate: () => void;
   onDelete: () => void;
   onImport: () => void;
+  /** 只导卡(.json) */
   onExport: () => void;
+  /** 导出角色包(.animavn);卡还没存进库时不给 */
+  onExportBundle?: () => void;
   /** 打开卡编辑器(全屏页)的「资料」或「素材」页;工具行的滑块图标也开「资料」 */
   onOpenStudio: (tab: StudioTab) => void;
   onPickAvatar: () => void;
@@ -76,6 +80,7 @@ export function CardPanel({
   onDelete,
   onImport,
   onExport,
+  onExportBundle,
   onOpenStudio,
   onPickAvatar,
   bindings,
@@ -141,9 +146,13 @@ export function CardPanel({
         >
           <AnimaIcon name="import" size={16} />
         </button>
-        <button className="icon-btn" onClick={onExport} disabled={busy || !card} title="导出角色卡">
-          <AnimaIcon name="export" size={16} />
-        </button>
+        <ExportMenu
+          variant="icon"
+          disabled={busy || !card}
+          bundleDisabled={!onExportBundle}
+          onBundle={() => onExportBundle?.()}
+          onJson={onExport}
+        />
         <button
           className="icon-btn danger"
           onClick={onDelete}

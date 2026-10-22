@@ -2,6 +2,7 @@ import { SCENE_WIDTHS, SPRITE_WIDTHS } from '../generated/contracts';
 import type { AnnotateRequest, AnnotateResponse } from '../plugins/jevRun';
 import type { AssemblyResult } from './assembler';
 import type { StoredChatMessage } from './chatEntry';
+import { saveResponse, type SavedFile } from './download';
 
 /** 地址、模型名从哪来:环境变量 / Jev 页里填的 / 官方默认 */
 export type JevEndpointSource = 'env' | 'settings' | 'default';
@@ -106,38 +107,13 @@ export const apiRequest = request;
 /** 后端的完整地址(卡带的音频链接一类) */
 export const apiUrl = (path: string) => `${BASE_URL}${path}`;
 
-/**
- * Content-Disposition 里的文件名。后端两个都给:filename*=UTF-8''… 是完整的(带中文),
- * filename="…" 是把非 ASCII 字符剥掉的兜底 —— 先认前者,不然中文名的对话全导出成 chat.jsonl
- */
-export function filenameFromDisposition(disposition: string): string | null {
-  const star = /filename\*\s*=\s*(?:UTF-8|utf-8)''([^;]+)/.exec(disposition);
-  if (star) {
-    try {
-      const decoded = decodeURIComponent(star[1].trim());
-      if (decoded) return decoded;
-    } catch {
-      // 编码坏了就退回普通的 filename
-    }
-  }
-  const plain = /filename\s*=\s*"?([^";]+)"?/.exec(disposition);
-  return plain?.[1].trim() || null;
-}
+export { filenameFromDisposition } from './download';
 
 /** 后端返回 attachment 的下载:拉成 blob,再从 Content-Disposition 取文件名存盘 */
-async function downloadAttachment(url: string, fallbackName: string): Promise<void> {
-  const res = await fetch(url);
+async function downloadAttachment(url: string, fallbackName: string, init?: RequestInit): Promise<SavedFile> {
+  const res = await fetch(url, init);
   if (!res.ok) throw await failure(res);
-  const blob = await res.blob();
-  const name = filenameFromDisposition(res.headers.get('Content-Disposition') ?? '') ?? fallbackName;
-  const objectUrl = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = objectUrl;
-  a.download = name;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(objectUrl);
+  return saveResponse(res, fallbackName);
 }
 
 /**
@@ -1097,6 +1073,24 @@ export const debugApi = {
   importUndo: (jobId: string) =>
     request<ImportUndoPreview>(`/api/import/jobs/${encodeURIComponent(jobId)}/undo`, { method: 'POST' }),
 
+  // ---- 导出(素材架构第 3 步;后端 app/api/export.py) ----
+
+  /** 导出面板要列的:会带上哪些包、各多大、建议的预设、能当预览图的几张 */
+  exportBundleSummary: (cardId: string) =>
+    request<ExportBundleSummary>(`/api/export/bundle/${encodeURIComponent(cardId)}/summary`),
+
+  /** 导出角色包(.animavn)并存到本地;fallbackName 是后端没给文件名时用的 */
+  exportBundle: (cardId: string, body: ExportBundleBody, fallbackName = 'character.animavn') =>
+    downloadAttachment(`${BASE_URL}/api/export/bundle/${encodeURIComponent(cardId)}`, fallbackName, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+
+  /** 导出一个包(.animapack)并存到本地 */
+  exportPack: (kind: ExportPackKind, packId: string, fallbackName = 'pack.animapack') =>
+    downloadAttachment(exportPackUrl(kind, packId), fallbackName),
+
   // ---- 全局设置(插件配置) ----
 
   /** 没存过返回 null,由调用方用默认值 */
@@ -1825,7 +1819,8 @@ export interface ImportPlanOptions {
 /** 导入以后会建出来的一样东西 */
 export interface ImportGroup {
   key: string;
-  type: 'card' | 'sprite_pack' | 'scene_pack' | 'cg_pack';
+  /** bundle = 一个角色包(.animavn),pack_file = 一个单包(.animapack):都照包里的清单另建一份 */
+  type: 'card' | 'sprite_pack' | 'scene_pack' | 'cg_pack' | 'bundle' | 'pack_file';
   /** 建议的名字(撞名时执行那一步再加「 2」) */
   name: string;
   /** 卡 1;立绘张数;背景 + 曲子的数目;CG 构图数 */
@@ -1838,6 +1833,37 @@ export interface ImportGroup {
   bgm_count?: number;
   /** CG 包:差分一共几张 */
   variant_count?: number;
+  /** bundle 组是 ImportBundleDetail,pack_file 组是 ImportPackDetail;别的组没有 */
+  detail?: ImportBundleDetail | ImportPackDetail;
+}
+
+/** 角色包、单包里的一个包(导入确认那一行) */
+export interface ImportPackDetail {
+  kind: ExportPackKind;
+  name: string;
+  /** 「14 张」「16 张背景、7 首 BGM」 */
+  detail: string;
+  /** 几张缩略图的地址(暂存目录里的,GET /api/import/{plan_id}/file?path=…) */
+  thumbs: string[];
+  /** 单包才有:文件多大 */
+  bytes?: number;
+}
+
+/** 角色包(.animavn)里有什么:导入确认照它画 */
+export interface ImportBundleDetail {
+  /** 作者写的分享说明 */
+  note: string;
+  /** 作者选的预览图(暂存目录里的地址);没有是 null */
+  preview: string | null;
+  /** 会新建的卡:new_name 是撞名后接了「 2」的名字(没撞名就和 name 一样);state = 状态卡的状态名 */
+  cards: { name: string; new_name: string; state: string | null }[];
+  packs: ImportPackDetail[];
+  /** 「认词记录 32 条」「配对表 2 张」 */
+  follows: string[];
+  /** 作者建议的预设;没带是 null */
+  preset: { name: string } | null;
+  has_voice: boolean;
+  bytes: number;
 }
 
 export interface ImportPlan {
@@ -1856,6 +1882,8 @@ export interface ImportApplyBody {
   classify?: Record<string, ClassifyKind>;
   /** 拖到原有的卡上时,挂上以后直接换成这次的第一套立绘 */
   make_current?: boolean;
+  /** 角色包那一组的选项(组的 key → 选项):preset = 也导入作者建议的预设 */
+  options?: Record<string, { preset?: boolean }>;
 }
 
 /** 素材页顶上那一行提示 */
@@ -1871,6 +1899,9 @@ export interface ImportCreated {
   sprite_packs: string[];
   scene_packs: string[];
   cg_packs: string[];
+  /** 导入角色包时另建的预设、状态组;后端是旧版时没有 */
+  presets?: string[];
+  state_groups?: string[];
 }
 
 export interface ImportResult {
@@ -1930,4 +1961,62 @@ export interface ImportUndoPreview {
   restore_cards: { id: string; name: string }[];
   /** 一句一条,确认框照着列 */
   lines: string[];
+}
+
+// ---- 导出(素材架构第 3 步) ----
+
+/** 单包导出的种类:背景和 BGM 是同一个场景包 */
+export type ExportPackKind = 'sprite' | 'scene' | 'cg';
+
+/** 导出面板里一个包 */
+export interface ExportBundleItem {
+  /** 「sprite:<id>」:点掉时放进 exclude */
+  key: string;
+  kind: ExportPackKind;
+  name: string;
+  /** 「14 张」「16 张背景、7 首 BGM」 */
+  detail: string;
+  bytes: number;
+  /** 立绘包:是不是现在用的那套 */
+  current?: boolean;
+  /** 缩略图地址(已有的缩略图接口);没有是 null */
+  thumb: string | null;
+}
+
+/** 能当预览图的:卡头像,或者某张立绘 */
+export type ExportPreview = { kind: 'avatar' } | { kind: 'sprite'; id: string };
+
+/** GET /api/export/bundle/{card_id}/summary */
+export interface ExportBundleSummary {
+  title: string;
+  /** 「刻晴.animavn」 */
+  file_name: string;
+  /** 卡头像(data URL);没有是 null */
+  avatar: string | null;
+  /** 一起带走的卡:有状态组时整组都在,main = 打开导出的那张 */
+  cards: { id: string; name: string; state: string | null; main: boolean }[];
+  /** 卡本身(连头像、世界书)多大 */
+  card_bytes: number;
+  items: ExportBundleItem[];
+  /** 「认词记录 32 条」「配对表 2 张」「立绘位置和特效」 */
+  follows: string[];
+  /** 这张卡绑的预设;没绑是 null */
+  preset: { id: string; name: string; bytes: number } | null;
+  /** 能换的预览图,第一张是卡头像 */
+  previews: (ExportPreview & { thumb?: string })[];
+  /** 「声音(第 4 步再加)」「人设」…… */
+  not_included: string[];
+}
+
+/** POST /api/export/bundle/{card_id} 的请求体 */
+export interface ExportBundleBody {
+  exclude: string[];
+  preset: boolean;
+  note: string;
+  preview: ExportPreview;
+}
+
+/** 单包导出的地址(GET 直接回 .animapack 文件) */
+export function exportPackUrl(kind: ExportPackKind, packId: string): string {
+  return `${BASE_URL}/api/export/pack/${kind}/${encodeURIComponent(packId)}`;
 }

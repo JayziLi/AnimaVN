@@ -15,6 +15,7 @@ import { Icon, type IconName } from '../icons';
 import { PackPicker } from '../PackPicker';
 import type { Notify, PackSync } from '../types';
 import { Btn, ConfirmDialog, Inspector, MoreMenu, PackTabs, PromptDialog, TypeLabel } from '../ui';
+import { packExportItem } from '../../components/export/packExport';
 
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -348,9 +349,10 @@ export function ScenePackSlot({ side, cardName, scene, sync, notify, renderEdito
       <PackTabs items={tabs} onSelect={setPick} onAdd={openPicker} addLabel={t.addLabel} label={t.tabsLabel} />
       <span className="st-flex" />
       <MoreMenu
-        label="更多:重命名、解除绑定"
+        label="更多:重命名、导出这个包、解除绑定"
         items={[
           { label: '重命名', onClick: () => setDialog({ kind: 'rename', id: shown }) },
+          packExportItem(side, shown, notify),
           {
             label: alsoOther ? `解除绑定(只从${side === 'bg' ? '背景' : ' BGM '}拿掉)` : '解除绑定',
             onClick: () => setDialog({ kind: 'unbind', id: shown }),

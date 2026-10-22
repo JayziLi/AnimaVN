@@ -3,8 +3,12 @@
 - POST /api/import/plan               multipart:files、paths(JSON,和 files 一一对应的相对路径;没给用文件名)、
                                       target_card_id(拖到的卡)、kind(拖到素材页的哪一栏:sprite / bg / bgm / cg)
                                       → {plan_id, groups, unknown, skipped, needs_confirm}
-- POST /api/import/{plan_id}/apply    {decisions, classify, make_current} → {job_id, card_id, notice, report, created}
-                                      (created = 这次新建的卡和包的编号 {cards, sprite_packs, scene_packs, cg_packs})
+- POST /api/import/{plan_id}/apply    {decisions, classify, make_current, options} → {job_id, card_id, notice, report, created}
+                                      (created = 这次新建的卡和包的编号 {cards, sprite_packs, scene_packs, cg_packs},
+                                      角色包另有 presets、state_groups、word_records、settings);
+                                      options = {组的 key: {"preset": true | false}}(角色包组要不要另建建议的预设,默认要)
+- GET  /api/import/{plan_id}/file?path=&w=  暂存目录里的一个文件(导入确认里角色包的预览图、缩略图;只许取暂存目录里的;
+                                      图片带 w 时缩成 WebP)
 - DELETE /api/import/{plan_id}        确认框点了取消:删掉暂存(执行过的回 409)
 - POST /api/import/jobs/{id}/classify {path, kind} → 同 apply 的返回(notice 是认领以后的)
 - GET  /api/import/jobs               最近 50 条 {id, created_at, title, status, card_id, counts}
@@ -19,14 +23,17 @@ import json
 import logging
 import re
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.assets.common import sniff_image_mime
 from app.db import get_db
+from app.images import MAX_WIDTH, MIN_WIDTH, shrink_image
 from app.importer import jobs, staging
 from app.importer.apply import CLASSIFY_KINDS, apply_plan, result_of
-from app.importer.classify import FORCED_KINDS, ImportPlan, build_plan
+from app.importer.classify import BUNDLE_TYPES, FORCED_KINDS, ImportPlan, build_plan
 from app.models import ImportJob, TavernCard
 
 router = APIRouter(prefix="/api/import", tags=["import"])
@@ -42,6 +49,7 @@ class ImportApplyIn(BaseModel):
     decisions: dict[str, str] = {}
     classify: dict[str, str] = {}
     make_current: bool = False
+    options: dict[str, dict] = {}
 
 
 class ImportClassifyIn(BaseModel):
@@ -73,6 +81,10 @@ def _tops(paths: list[str]) -> list[list]:
 
 def _group_out(g) -> dict:
     d = g.detail
+    if g.type in BUNDLE_TYPES:
+        # 角色包 / 单包:导入确认照 detail 画(技术计划「接口」);count = 几张卡 / 包里几行
+        count = len(d.get("cards", [])) if g.type == "bundle" else int(d.get("count") or 0)
+        return {"key": g.key, "type": g.type, "name": g.name, "count": count, "owner": None, "duplicate_of": None, "detail": d}
     count = {
         "card": 1,
         "sprite_pack": len(g.files),
@@ -127,7 +139,10 @@ def make_plan(
         "unknown": plan.unknown,
         "skipped": plan.skipped,
         # 拖到某张卡上、或者有和库里一样的,先弹确认框
-        "needs_confirm": bool(plan.target_card_id) or any(g.duplicate_of for g in plan.groups),
+        # 角色包要给人看作者的说明、选要不要预设,也先弹
+        "needs_confirm": bool(plan.target_card_id)
+        or any(g.duplicate_of for g in plan.groups)
+        or any(g.type == "bundle" for g in plan.groups),
     }
 
 
@@ -173,7 +188,7 @@ def apply_import(plan_id: str, req: ImportApplyIn | None = None, db: Session = D
     except (OSError, ValueError, AttributeError):
         tops = []
     try:
-        job = apply_plan(db, tree, plan, tops, req.decisions, req.classify, req.make_current)
+        job = apply_plan(db, tree, plan, tops, req.decisions, req.classify, req.make_current, req.options)
         db.commit()
     except HTTPException:
         db.rollback()
@@ -183,6 +198,26 @@ def apply_import(plan_id: str, req: ImportApplyIn | None = None, db: Session = D
     db.refresh(job)
     jobs.prune_staging(tree, list(job.unknown or []))
     return result_of(job)
+
+
+@router.get("/{plan_id}/file")
+def staged_file(plan_id: str, path: str, w: int | None = Query(None, ge=MIN_WIDTH, le=MAX_WIDTH)):
+    """暂存目录里的一个文件(角色包的预览图、包的缩略图)。只许取这次导入暂存目录里的;路径不安全、不在都是 404"""
+    tree = _open(plan_id)
+    try:
+        file = tree.path(path)
+    except staging.StagingError as e:
+        raise HTTPException(404, "没有这个文件") from e
+    if not file.is_file():
+        raise HTTPException(404, "没有这个文件")
+    with open(file, "rb") as f:
+        mime = sniff_image_mime(f.read(64))
+    headers = {"X-Content-Type-Options": "nosniff", "Cache-Control": "private, max-age=3600"}
+    if w and mime:
+        small = shrink_image(file.read_bytes(), w)
+        if small:
+            return Response(content=small, media_type="image/webp", headers=headers)
+    return FileResponse(file, media_type=mime or "application/octet-stream", headers=headers)
 
 
 @router.get("/jobs")

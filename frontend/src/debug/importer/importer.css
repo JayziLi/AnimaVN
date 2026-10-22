@@ -451,3 +451,259 @@
   color: var(--text-faint);
   font-size: 12px;
 }
+
+/* ── 角色包的导入确认(ImportBundle.tsx,画布 step3 ImportBundle) ── */
+
+.st-modal.imp-bundle {
+  width: min(780px, 100%);
+  border-radius: 12px;
+}
+.imp-bundle .st-modal-title {
+  padding: 14px 16px 14px 20px;
+  border-bottom: 1px solid var(--border);
+  font-size: 17px;
+}
+.imp-bundle .st-modal-body {
+  padding: 0;
+  color: var(--text);
+  line-height: 1.5;
+}
+.imp-bundle .st-modal-foot {
+  align-items: center;
+  gap: 10px;
+  padding: 14px 20px;
+}
+.imp-b-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.imp-b-meta {
+  font-family: var(--mono);
+  color: var(--text-faint);
+  font-size: 12px;
+  font-weight: 400;
+}
+.imp-b-close {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.imp-b-close:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.imp-b-intro {
+  display: flex;
+  gap: 18px;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--bg-raised);
+}
+.imp-b-preview {
+  width: 132px;
+  height: 132px;
+  flex: none;
+  border-radius: 10px;
+  object-fit: cover;
+  object-position: center top;
+  background: var(--bg-raised);
+}
+.imp-b-preview.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+}
+.imp-b-who {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.imp-b-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 20px;
+  font-weight: 700;
+}
+.imp-b-badge {
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-dim);
+  font-size: 11.5px;
+  font-weight: 400;
+}
+.imp-b-cap {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.imp-b-faint {
+  color: var(--text-faint);
+  font-size: 11.5px;
+}
+.imp-b-note {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--bg-raised);
+  color: var(--text-body);
+  font-size: 12.5px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.imp-b-new {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 20px;
+}
+.imp-b-new-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.imp-b-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  overflow: hidden;
+}
+.imp-b-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 6px 12px;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--bg-raised);
+}
+.imp-b-row:last-child {
+  border-bottom: 0;
+}
+.imp-b-kind {
+  width: 70px;
+  flex: none;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.imp-b-what {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.imp-b-what.body {
+  color: var(--text-body);
+}
+.imp-b-text {
+  min-width: 0;
+  margin-left: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.imp-b-what > .imp-b-text:first-child {
+  margin-left: 0;
+}
+.imp-b-thumb {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: 6px;
+  object-fit: cover;
+  object-position: center top;
+  background: var(--bg-raised);
+}
+.imp-b-thumb.wide {
+  width: 44px;
+  height: 25px;
+  border-radius: 5px;
+  object-position: center;
+}
+.imp-b-warn {
+  flex: none;
+  max-width: 50%;
+  color: var(--imp-amber);
+  font-size: 11.5px;
+}
+.imp-b-preset {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--bg-raised);
+  cursor: pointer;
+}
+.imp-b-preset > input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+.imp-b-preset-label {
+  flex: 1;
+  min-width: 0;
+}
+.imp-b-foot-note {
+  min-width: 0;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+/* 窄屏:预览图缩小,黄字换到下一行 */
+@media (max-width: 640px) {
+  .imp-b-preview {
+    width: 88px;
+    height: 88px;
+  }
+  .imp-b-row {
+    flex-wrap: wrap;
+  }
+  .imp-b-warn {
+    max-width: none;
+    width: 100%;
+    padding-left: 66px;
+  }
+  .imp-bundle .st-modal-foot {
+    flex-wrap: wrap;
+  }
+  .imp-b-foot-note {
+    width: 100%;
+  }
+  .imp-b-kind {
+    width: 56px;
+  }
+  .imp-b-text {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  /* 一类只留一张缩略图,给字腾地方 */
+  .imp-b-thumb + .imp-b-thumb {
+    display: none;
+  }
+  .imp-b-preset {
+    flex-wrap: wrap;
+  }
+  .imp-b-preset > .imp-b-faint {
+    width: 100%;
+    padding-left: 23px;
+  }
+}

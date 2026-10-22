@@ -40,7 +40,10 @@ export interface ProfileTabProps {
   busy: boolean;
   onChange: (patch: Partial<TavernCard>) => void;
   onPickAvatar: () => void;
+  /** 只导卡(.json) */
   onExport: () => void;
+  /** 导出角色包(.animavn):打开导出面板;卡还没存进库时不给 */
+  onExportBundle?: () => void;
   onDuplicate: () => void;
   /** 删这张卡(已经点过两下,不用再问) */
   onDelete: () => void;
@@ -215,6 +218,7 @@ export function ProfileTab(props: ProfileTabProps) {
             busy={props.busy}
             onChange={props.onChange}
             onExport={props.onExport}
+            onExportBundle={props.onExportBundle}
             onDuplicate={props.onDuplicate}
           />
           <ProfileSide

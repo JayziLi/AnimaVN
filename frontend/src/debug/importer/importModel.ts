@@ -9,10 +9,13 @@
 
 import type {
   ClassifyKind,
+  ExportPackKind,
   ImportApplyBody,
+  ImportBundleDetail,
   ImportDecision,
   ImportGroup,
   ImportKind,
+  ImportPackDetail,
   ImportPlan,
   ImportResult,
   ScenePack,
@@ -115,7 +118,119 @@ function titleOf(g: ImportGroup): { icon: RowIcon; title: string } {
       const v = g.variant_count ?? 0;
       return { icon: 'cg', title: `CG 包「${g.name}」· ${g.count} 张构图${v > 0 ? ` · 差分 ${v} 张` : ''}` };
     }
+    case 'bundle':
+      return { icon: 'card', title: `角色包「${g.name}」` };
+    case 'pack_file': {
+      const d = packDetail(g);
+      const kind = d?.kind ?? 'sprite';
+      return { icon: PACK_ICON[kind], title: `${PACK_WORD[kind]}「${d?.name ?? g.name}」${d?.detail ? `· ${d.detail}` : ''}` };
+    }
   }
+}
+
+// ---------------------------------------------------------------- 角色包 / 单包(第 3 步)
+
+const PACK_ICON: Record<ExportPackKind, RowIcon> = { sprite: 'sprite', scene: 'scene', cg: 'cg' };
+const PACK_WORD: Record<ExportPackKind, string> = { sprite: '立绘包', scene: '背景和 BGM', cg: 'CG 包' };
+/** 导入确认里一类包那一行左边写什么(和导出面板一样) */
+const PACK_LABEL: Record<ExportPackKind, string> = { sprite: '立绘', scene: '背景 · BGM', cg: 'CG' };
+
+const bundleDetail = (g: ImportGroup): ImportBundleDetail | null =>
+  g.type === 'bundle' && g.detail && 'cards' in g.detail ? g.detail : null;
+const packDetail = (g: ImportGroup): ImportPackDetail | null =>
+  g.type === 'pack_file' && g.detail && 'kind' in g.detail ? g.detail : null;
+
+/** 计划里只有一个角色包(拖进来的就是一个 .animavn):确认框照画布 ImportBundle 画 */
+export function bundleOnly(plan: ImportPlan): ImportGroup | null {
+  const g = plan.groups[0];
+  return plan.groups.length === 1 && plan.unknown.length === 0 && g && bundleDetail(g) ? g : null;
+}
+
+/** 角色包确认框里的一行 */
+export interface BundleRow {
+  key: string;
+  /** 左边那一格:「角色卡」「立绘」;同一类第二行起是空的 */
+  label: string;
+  text: string;
+  /** 黄字:「你已经有一张「刻晴」,这张叫「刻晴 2」」 */
+  warn: string | null;
+  thumbs: string[];
+  /** 背景、CG 的缩略图是横的 */
+  wide: boolean;
+}
+
+export interface BundleView {
+  key: string;
+  name: string;
+  /** 一组状态卡时写「普通 / 约会」 */
+  badge: string | null;
+  note: string;
+  preview: string | null;
+  rows: BundleRow[];
+  /** 作者建议的预设(勾选框的字);没带是 null */
+  preset: { label: string; hint: string } | null;
+  /** 底部那行灰字;带了声音时是 null */
+  voiceNote: string | null;
+  bytes: number;
+}
+
+/** 一类包最多放几张缩略图 */
+const MAX_THUMBS = 3;
+
+export function bundleView(g: ImportGroup): BundleView {
+  const d = bundleDetail(g);
+  if (!d) throw new Error('不是角色包');
+  const cardRows = d.cards.map(
+    (c, i): BundleRow => ({
+      key: `card-${i}`,
+      label: i === 0 ? '角色卡' : '',
+      text: c.state ? `${c.new_name}(${c.state})` : c.new_name,
+      warn: c.new_name !== c.name ? `你已经有一张「${c.name}」,这张叫「${c.new_name}」` : null,
+      thumbs: [],
+      wide: false,
+    }),
+  );
+  const kinds: ExportPackKind[] = ['sprite', 'scene', 'cg'];
+  const packRows = kinds.flatMap((kind): BundleRow[] => {
+    const packs = d.packs.filter((p) => p.kind === kind);
+    if (packs.length === 0) return [];
+    return [
+      {
+        key: `pack-${kind}`,
+        label: PACK_LABEL[kind],
+        text: packs.map((p) => (p.detail ? `${p.name} · ${p.detail}` : p.name)).join('、'),
+        warn: null,
+        thumbs: packs.flatMap((p) => p.thumbs).slice(0, MAX_THUMBS),
+        wide: kind !== 'sprite',
+      },
+    ];
+  });
+  const follows: BundleRow[] =
+    d.follows.length > 0
+      ? [{ key: 'follows', label: '跟着走', text: d.follows.join('、'), warn: null, thumbs: [], wide: false }]
+      : [];
+  const states = d.cards.map((c) => c.state).filter((s): s is string => !!s);
+  return {
+    key: g.key,
+    name: g.name,
+    badge: d.cards.length > 1 && states.length > 0 ? states.join(' / ') : null,
+    note: d.note.trim(),
+    preview: d.preview,
+    rows: [...cardRows, ...packRows, ...follows],
+    preset: d.preset ? { label: `也导入作者建议的预设「${d.preset.name}」`, hint: '另建一套,绑到这张卡' } : null,
+    voiceNote: d.has_voice ? null : '这个包里没有声音:导入后在卡编辑器的声音栏挂一个',
+    bytes: d.bytes,
+  };
+}
+
+/** 角色包的预设默认勾着(作者建议的) */
+export function defaultBundlePresets(plan: ImportPlan): Record<string, boolean> {
+  return Object.fromEntries(
+    plan.groups.flatMap((g) => {
+      const d = bundleDetail(g);
+      return d?.preset ? [[g.key, true] as const] : [];
+    }),
+  );
 }
 
 /** 拖到的卡上要挂的立绘包(按计划里的先后);make_current 换成的是第一套 */
@@ -188,6 +303,11 @@ export function confirmModel(
   };
 
   const effectOf = (g: ImportGroup): string => {
+    if (g.type === 'bundle') {
+      const packs = bundleDetail(g)?.packs.length ?? 0;
+      return `新建角色卡${packs > 0 ? `和 ${packs} 个包` : ''},都是另存的一份`;
+    }
+    if (g.type === 'pack_file') return '另建一个新的包,先放进素材库,不绑到卡上';
     if (g.type === 'card') {
       if (g.duplicate_of) return '';
       const owns = plan.groups.some((x) => x.owner === g.key);
@@ -234,20 +354,30 @@ export function applyBody(
   decisions: Readonly<Record<string, ImportDecision>>,
   classify: Readonly<Record<string, ClassifyKind | null>>,
   makeCurrent: boolean,
+  bundlePresets: Readonly<Record<string, boolean>> = {},
 ): ImportApplyBody {
   const choosable = new Set(model.rows.filter((r) => r.choice).map((r) => r.key));
+  const groups = new Set(model.rows.map((r) => r.key));
+  const options = Object.entries(bundlePresets).filter(([k]) => groups.has(k));
   return {
     decisions: Object.fromEntries(Object.entries(decisions).filter(([k]) => choosable.has(k))),
     classify: Object.fromEntries(
       Object.entries(classify).filter((e): e is [string, ClassifyKind] => e[1] !== null),
     ),
     make_current: makeCurrent && model.makeCurrent !== null,
+    // 角色包那一组:要不要也导入作者建议的预设
+    ...(options.length > 0 ? { options: Object.fromEntries(options.map(([k, preset]) => [k, { preset }])) } : {}),
   };
 }
 
-/** 要不要先弹确认框:计划说要(拖到卡上、有重复),或者什么都没认出来、只剩认不出的文件 */
+/** 要不要先弹确认框:计划说要(拖到卡上、有重复)、有角色包,或者什么都没认出来、只剩认不出的文件 */
 export function shouldConfirm(plan: ImportPlan): boolean {
-  return plan.needs_confirm || (plan.groups.length === 0 && plan.unknown.length > 0);
+  return (
+    plan.needs_confirm ||
+    // 角色包一律先给人看一眼:作者的说明、会新建什么、要不要那套预设
+    plan.groups.some((g) => g.type === 'bundle') ||
+    (plan.groups.length === 0 && plan.unknown.length > 0)
+  );
 }
 
 /** 一样都没认出来(全是无关文件):不用执行 */

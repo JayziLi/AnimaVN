@@ -8,6 +8,8 @@ kind_of(path) 的结果:
 - cg_manifest JSON 数组,每一项都是带 name 和 file 的对象(「角色素材/<角色>/CG/import.json」)
 - bgm_picks   名字叫 picks.json、值都是文件名列表的 JSON 对象(「BGM候选/picks.json」:{"封面": ["原神.m4a"], …})
 - voice_refs  有 character 和 refs 列表的 JSON 对象(语音机上的 refs.json;这次不导,只在报告里提一句)
+- bundle_manifest  format 是 animavn 的 JSON 对象(角色包 .animavn 的 animavn.json,app/bundle/)
+- pack_manifest    format 是 animapack 的 JSON 对象(单包 .animapack 的 pack.json;角色包里每个包也有一份)
 - other       别的(包括没解开的第三层 zip、坏掉的 JSON、文本)
 """
 
@@ -21,7 +23,20 @@ from app.api.scenes import sniff_audio_mime
 from app.assets.common import sniff_image_mime
 from app.importer.cards import CARD_KEYS, PNG_SIGNATURE, iter_png_text
 
-Kind = Literal["card_png", "card_json", "image", "audio", "cg_manifest", "bgm_picks", "voice_refs", "other"]
+Kind = Literal[
+    "card_png",
+    "card_json",
+    "image",
+    "audio",
+    "cg_manifest",
+    "bgm_picks",
+    "voice_refs",
+    "bundle_manifest",
+    "pack_manifest",
+    "other",
+]
+# 角色包 / 单包清单的 format(同 app/bundle/collect.py 的 FORMAT_BUNDLE / FORMAT_PACK)
+_MANIFEST_FORMATS = {"animavn": "bundle_manifest", "animapack": "pack_manifest"}
 
 HEAD = 64
 # 再大的 JSON 不当清单 / 卡读(Risu 那种把图 base64 塞进卡里的也到不了这么大)
@@ -66,6 +81,9 @@ def _json_kind(path: Path) -> Kind:
     except ValueError:  # 不是 UTF-8 也算(UnicodeDecodeError 是 ValueError)
         return "other"
     if isinstance(value, dict):
+        fmt = value.get("format")
+        if isinstance(fmt, str) and fmt in _MANIFEST_FORMATS:
+            return _MANIFEST_FORMATS[fmt]
         spec = value.get("spec")
         if isinstance(spec, str) and spec.startswith("chara_card"):
             return "card_json"

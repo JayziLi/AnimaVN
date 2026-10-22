@@ -19,7 +19,16 @@ import type { ClassifyKind, ImportApplyBody, ImportDecision, ImportPlan } from '
 import { Icon, type IconName } from '../studio/icons';
 import { Btn, Modal } from '../studio/ui';
 import type { ImportTarget } from './dropTarget';
-import { applyBody, confirmModel, defaultDecisions, type RowIcon, type TargetSprites } from './importModel';
+import { ImportBundle } from './ImportBundle';
+import {
+  applyBody,
+  bundleOnly,
+  confirmModel,
+  defaultBundlePresets,
+  defaultDecisions,
+  type RowIcon,
+  type TargetSprites,
+} from './importModel';
 import { KindButtons } from './KindButtons';
 import './importer.css';
 
@@ -41,18 +50,39 @@ interface Props {
   busy: boolean;
   /** 上一次执行失败的原因 */
   error: string | null;
+  /** 拖进来的文件名(只有一个文件时);角色包的确认框标题旁写它 */
+  source?: string | null;
   onCancel: () => void;
   onConfirm: (body: ImportApplyBody) => void;
 }
 
-export function ImportConfirm({ plan, target, sprites, busy, error, onCancel, onConfirm }: Props) {
+export function ImportConfirm({ plan, target, sprites, busy, error, source = null, onCancel, onConfirm }: Props) {
   const [decisions, setDecisions] = useState<Record<string, ImportDecision>>(() => defaultDecisions(plan));
   const [classify, setClassify] = useState<Record<string, ClassifyKind | null>>({});
   const [makeCurrent, setMakeCurrent] = useState(false);
+  const [presets, setPresets] = useState<Record<string, boolean>>(() => defaultBundlePresets(plan));
   const model = confirmModel(plan, target, sprites, makeCurrent);
   const cancel = () => {
     if (!busy) onCancel();
   };
+  const confirm = () => onConfirm(applyBody(model, decisions, classify, makeCurrent, presets));
+
+  // 拖进来的就是一个角色包:照画布 ImportBundle 画(作者的预览图、说明、会新建什么)
+  const only = bundleOnly(plan);
+  if (only) {
+    return (
+      <ImportBundle
+        group={only}
+        source={source}
+        withPreset={presets[only.key] ?? false}
+        onPreset={(on) => setPresets((p) => ({ ...p, [only.key]: on }))}
+        busy={busy}
+        error={error}
+        onCancel={cancel}
+        onConfirm={confirm}
+      />
+    );
+  }
 
   return (
     <Modal
@@ -68,7 +98,7 @@ export function ImportConfirm({ plan, target, sprites, busy, error, onCancel, on
             kind="primary"
             autoFocus
             disabled={busy}
-            onClick={() => onConfirm(applyBody(model, decisions, classify, makeCurrent))}
+            onClick={confirm}
           >
             {busy ? '正在导入…' : error ? '再试一次' : model.confirmLabel}
           </Btn>
@@ -105,6 +135,17 @@ export function ImportConfirm({ plan, target, sprites, busy, error, onCancel, on
                     </label>
                   ))}
                 </div>
+              )}
+              {r.key in presets && (
+                <label className="imp-check">
+                  <input
+                    type="checkbox"
+                    checked={presets[r.key]}
+                    disabled={busy}
+                    onChange={(e) => setPresets((p) => ({ ...p, [r.key]: e.target.checked }))}
+                  />
+                  也导入作者建议的预设(另建一套)
+                </label>
               )}
               {model.makeCurrent?.key === r.key && (
                 <label className="imp-check">

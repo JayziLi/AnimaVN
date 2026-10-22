@@ -1,5 +1,6 @@
 import { useState, type ReactNode, type Ref } from 'react';
 import { BookEditor } from '../../components/BookEditor';
+import { ExportMenu } from '../../components/export/ExportMenu';
 import type { AssemblyResult } from '../../lib/assembler';
 import type { TavernCard } from '../../lib/cardParser';
 import type { PresetOrderEntry, TavernPreset } from '../../lib/presetParser';
@@ -36,7 +37,10 @@ export interface CardFieldsViewProps {
   mainRef: Ref<HTMLElement>;
   busy: boolean;
   onChange: (patch: Partial<TavernCard>) => void;
+  /** 「导出 → 只导卡(.json)」 */
   onExport: () => void;
+  /** 「导出 → 角色包(.animavn)…」;不给 = 这一项灰着(卡还没存进库) */
+  onExportBundle?: () => void;
   onDuplicate: () => void;
 }
 
@@ -135,9 +139,13 @@ export function CardFieldsView(props: CardFieldsViewProps) {
         <h2 className="pf-title">角色卡</h2>
         <span className="pf-title-note">改了 0.6 秒后自动保存</span>
         <span className="st-flex" />
-        <Btn icon="export" onClick={props.onExport} disabled={busy}>
-          导出
-        </Btn>
+        <ExportMenu
+          variant="button"
+          disabled={busy}
+          bundleDisabled={!props.onExportBundle}
+          onBundle={() => props.onExportBundle?.()}
+          onJson={props.onExport}
+        />
         <Btn onClick={props.onDuplicate} disabled={busy}>
           复制这张卡
         </Btn>

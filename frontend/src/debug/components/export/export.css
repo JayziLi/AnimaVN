@@ -1,0 +1,371 @@
+/* ══════════ 导出:「导出」下拉菜单、导出角色包的面板(画布 step3 ExportMenu / Main) ══════════
+   颜色只用 debug.css 的 :root 变量(画布上「当前」是淡绿,这里照调试台的黑白灰改成灰底白字)。
+   面板是 studio/ui 的 Modal(层级 96),菜单和「⋯」菜单一样 99。 */
+
+/* ── 下拉菜单 ── */
+
+.exp-trigger.open {
+  border-color: var(--accent);
+  background: var(--bg-hover);
+}
+.exp-trigger > .st-icon:last-child {
+  color: var(--text-dim);
+}
+
+.exp-menu {
+  width: 396px;
+  padding: 6px;
+}
+.exp-menu-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.exp-menu-item:hover:not(:disabled),
+.exp-menu-item:focus-visible {
+  background: var(--bg-hover);
+  outline: none;
+}
+.exp-menu-label {
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.exp-menu-note {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.exp-menu-item:disabled {
+  cursor: default;
+  color: var(--text-faint);
+}
+.exp-menu-item:disabled .exp-menu-label {
+  font-weight: 400;
+}
+.exp-menu-item:disabled .exp-menu-note {
+  color: var(--text-faint);
+}
+
+/* ── 面板 ── */
+
+.st-modal.exp-dialog {
+  width: min(860px, 100%);
+  border-radius: 12px;
+}
+.exp-dialog .st-modal-title {
+  padding: 14px 16px 14px 20px;
+  border-bottom: 1px solid var(--border);
+  font-size: 17px;
+}
+.exp-dialog .st-modal-body {
+  padding: 18px 20px;
+  color: var(--text);
+  line-height: 1.5;
+}
+.exp-dialog .st-modal-foot {
+  align-items: center;
+  gap: 10px;
+  padding: 14px 20px;
+}
+
+.exp-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.exp-badge {
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-dim);
+  font-size: 11.5px;
+  font-weight: 400;
+}
+.exp-close {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.exp-close:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.exp-loading {
+  padding: 40px 0;
+  color: var(--text-dim);
+  text-align: center;
+}
+.exp-loading.error {
+  color: var(--danger);
+}
+
+.exp-body {
+  display: flex;
+  gap: 20px;
+}
+.exp-side {
+  width: 236px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.exp-cap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.exp-note-cap {
+  margin-top: 6px;
+}
+.exp-preview {
+  width: 236px;
+  height: 236px;
+  border-radius: 10px;
+  object-fit: cover;
+  /* 立绘是全身的:方框里留头和上半身 */
+  object-position: center top;
+  background: var(--bg-raised);
+}
+.exp-preview.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+.exp-side-btns {
+  display: flex;
+  gap: 8px;
+}
+.exp-side-btns > .st-btn {
+  flex: 1;
+  justify-content: center;
+}
+.exp-note {
+  height: 128px;
+  box-sizing: border-box;
+  resize: none;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.exp-note:focus {
+  outline: none;
+  border-color: var(--border-strong);
+}
+.exp-note::placeholder {
+  color: var(--text-faint);
+}
+
+.exp-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.exp-list-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.exp-faint {
+  color: var(--text-faint);
+  font-size: 11.5px;
+}
+.exp-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  overflow: hidden;
+}
+.exp-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+  padding: 6px 12px;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--bg-raised);
+}
+.exp-row:last-child {
+  border-bottom: 0;
+}
+label.exp-row {
+  cursor: pointer;
+}
+label.exp-row:has(input:disabled) {
+  cursor: default;
+}
+.exp-row > input[type='checkbox'] {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  flex: none;
+  accent-color: var(--accent);
+}
+.exp-box-gap {
+  width: 13px;
+  flex: none;
+}
+.exp-row.dim {
+  min-height: 40px;
+  color: var(--text-faint);
+}
+.exp-row.dim .exp-kind {
+  color: var(--text-faint);
+}
+.exp-row.off .exp-what,
+.exp-row.off .exp-size {
+  opacity: 0.4;
+}
+.exp-kind {
+  width: 70px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.exp-what {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.exp-what.body {
+  color: var(--text-body);
+}
+.exp-what.stack {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.exp-what-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.exp-thumb {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: 6px;
+  object-fit: cover;
+  object-position: center top;
+  background: var(--bg-raised);
+}
+.exp-thumb.wide {
+  width: 44px;
+  height: 26px;
+  border-radius: 5px;
+  object-position: center;
+}
+.exp-current {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--accent-dim);
+  color: var(--text);
+  font-size: 11px;
+}
+.exp-size {
+  flex: none;
+  font-family: var(--mono);
+  color: var(--text-faint);
+  font-size: 11.5px;
+}
+
+.exp-not {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--bg-raised);
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.exp-not > b {
+  flex: none;
+  color: var(--text);
+  font-weight: 500;
+}
+.exp-error {
+  color: var(--danger);
+  font-size: 12.5px;
+}
+
+.exp-total {
+  font-family: var(--mono);
+  color: var(--text);
+  font-size: 13px;
+}
+.exp-file {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+/* 窄屏:左右两栏改上下排;预览图缩小,说明框矮一点,长名字折行不截断 */
+@media (max-width: 760px) {
+  .exp-body {
+    flex-direction: column;
+  }
+  .exp-side {
+    width: auto;
+  }
+  .exp-preview {
+    width: 112px;
+    height: 112px;
+  }
+  .exp-side-btns {
+    max-width: 236px;
+  }
+  .exp-note {
+    height: 84px;
+  }
+  .exp-kind {
+    width: 52px;
+  }
+  .exp-what-text {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .exp-current,
+  .exp-row > .exp-faint {
+    display: none;
+  }
+}

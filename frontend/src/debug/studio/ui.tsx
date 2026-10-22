@@ -8,6 +8,7 @@
  */
 
 import {
+  Fragment,
   useCallback,
   useContext,
   useEffect,
@@ -839,6 +840,10 @@ export interface MenuItem {
   onClick: () => void;
   danger?: boolean;
   disabled?: boolean;
+  /** 名字下面一行小字(「只有这套立绘,连认词记录和位置」) */
+  note?: string;
+  /** 上面画一条分隔线(「删除」和别的隔开) */
+  divider?: boolean;
 }
 
 /** 「⋯」更多:点开一列操作(重命名、解除绑定、删除……);label 是按钮的说明,比如「更多:重命名、导出、解除绑定」 */
@@ -888,20 +893,23 @@ export function MoreMenu({ label, items, size = 34 }: { label: string; items: re
             }}
           >
             {items.map((it) => (
-              <button
-                key={it.label}
-                type="button"
-                role="menuitem"
-                className={`st-menu-item${it.danger ? ' danger' : ''}`}
-                disabled={it.disabled}
-                onClick={() => {
-                  setOpen(false);
-                  btn.current?.focus();
-                  it.onClick();
-                }}
-              >
-                {it.label}
-              </button>
+              <Fragment key={it.label}>
+                {it.divider && <div className="st-menu-sep" aria-hidden="true" />}
+                <button
+                  type="button"
+                  role="menuitem"
+                  className={`st-menu-item${it.danger ? ' danger' : ''}${it.note ? ' has-note' : ''}`}
+                  disabled={it.disabled}
+                  onClick={() => {
+                    setOpen(false);
+                    btn.current?.focus();
+                    it.onClick();
+                  }}
+                >
+                  {it.label}
+                  {it.note && <span className="st-menu-note">{it.note}</span>}
+                </button>
+              </Fragment>
             ))}
           </div>,
           document.body,

@@ -34,6 +34,9 @@
    名字 = 文件名,名字里有「封面」(其次是 title、片头、主题曲、opening)的设为封面曲。
 9. CG 清单(import.json):名字、说明、forms、焦点(focus,有才写)、差分的名字和别名照抄;清单里的路径(常是别的电脑上的
    绝对路径,分隔符混着用)按「末尾几段路径对得上最多」在这个文件夹里找,找不到、对不准的写进说明;清单没列的图不导。
+0. 角色包 / 单包(第 3 步):放着 animavn.json(format = animavn)的文件夹是一个角色包,出一个 bundle 组;不在角色包里、
+   放着 pack.json(format = animapack)的文件夹是一个单包,出一个 pack_file 组。这两种文件夹整个不走下面的规则;
+   读不了(app/bundle/read.py 校验不过)的写一句进 skipped,也不导。拖到某张卡、某一栏时也照样另建,不挂到那张卡上。
 10. 重复:立绘包 / 场景包 / CG 包按「全部文件的指纹排好序」和库里比,一模一样的填 duplicate_of {id, name, card_count};
     卡按「名字 + 描述 + 开场白」比,填 {id, name}。指纹按文件存进库的样子算:要转成 m4a 的曲子(audio.py)在这里就转好,
     算转好的那份(执行导入时直接用它)。
@@ -44,6 +47,9 @@ detail 的样子:
            files 按导入后的顺序,默认差分排第一
 - 场景包   {bg: [path], bgm: [path], cover: path | None, labels: {path: 名字}};files = bg + bgm
 - CG 包    {compositions: [{label, desc, file, aliases, forms, variants: [{label, aliases, file}], focus?}]}
+- 角色包   {note, preview, cards: [{name, new_name, state}], packs: [{kind, name, detail, thumbs}], follows, preset: {name} | None,
+           has_voice, bytes, folder};files = [清单的路径]。preview、thumbs 是 /api/import/{plan_id}/file?path=… 的地址
+- 单包     {kind, name, detail, thumbs, bytes, folder};files = [pack.json 的路径]
 所有名字都已经去掉禁用字符、截好长度、在各自的范围里不重名(立绘:整个包的名字和别名;背景、曲子各算各的;
 CG:构图之间,差分在同一个构图里),apply 照着建就行。
 """
@@ -58,21 +64,28 @@ from collections.abc import Iterator
 from dataclasses import asdict, dataclass, field
 from pathlib import PurePosixPath
 from typing import Literal
+from urllib.parse import quote
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import bindings
 from app.assets.common import PACK_NAME_MAX
+from app.bundle import read as bundle_read
+from app.bundle.restore import follows as bundle_follows
+from app.bundle.restore import pack_detail
 from app.contracts import LABEL_FORBIDDEN, LABEL_MAX, REF_NAME_PATTERN
 from app.importer import aliases
 from app.importer.audio import stored_file as stored_audio
-from app.importer.cards import CardError, parse_card
+from app.importer.cards import CardError, normalize, parse_card
 from app.importer.staging import StagedFile, StagedTree, _safe_part
 from app.models import CgAsset, CgPack, PackSprite, SceneAsset, ScenePack, SpritePack, TavernCard
 from app.storage import refs
 
-GroupType = Literal["card", "sprite_pack", "scene_pack", "cg_pack"]
+GroupType = Literal["card", "sprite_pack", "scene_pack", "cg_pack", "bundle", "pack_file"]
+BUNDLE_TYPES = ("bundle", "pack_file")
+# 导入确认里的缩略图:几张、多宽
+THUMBS, THUMB_W = 4, 256
 # 拖到素材页的哪一栏(forced_kind)能认的
 FORCED_KINDS = ("sprite", "bg", "bgm", "cg")
 # 六成以上的图名是表情词,才当立绘(规则 4)
@@ -975,8 +988,9 @@ def build_plan(
     """照暂存目录出导入计划;只读库。forced_kind 是 sprite / bg / bgm / cg 之一或 None,别的抛 ValueError"""
     if forced_kind is not None and forced_kind not in FORCED_KINDS:
         raise ValueError(f"不认识的素材类型:{forced_kind}")
+    bundles, rest, bundle_notes = _bundle_groups(tree, db)
     planner = _Planner(tree, db, target_card_id, forced_kind)
-    root, hidden = _build_tree(tree.files)
+    root, hidden = _build_tree(rest)
     if forced_kind:
         planner.visit_forced(root)
     else:
@@ -985,9 +999,100 @@ def build_plan(
     planner.mark_duplicates(groups)
     return ImportPlan(
         id=tree.plan_id,
-        groups=groups,
+        groups=bundles + groups,
         unknown=sorted(planner.unknown),
-        skipped=planner.skipped_lines(hidden),
+        skipped=bundle_notes + planner.skipped_lines(hidden),
         target_card_id=target_card_id,
         forced_kind=forced_kind,
     )
+
+
+# ── 角色包 / 单包(规则 0)──
+
+
+def staged_url(plan_id: str, path: str, w: int | None = None) -> str:
+    """暂存目录里一个文件的地址(GET /api/import/{plan_id}/file)"""
+    return f"/api/import/{plan_id}/file?path={quote(path, safe='')}" + (f"&w={w}" if w else "")
+
+
+def _under(path: str, folder: str) -> bool:
+    return not folder or path.startswith(folder + "/")
+
+
+def _join_rel(folder: str, rel: str) -> str:
+    return f"{folder}/{rel}" if folder else rel
+
+
+def _pack_out(tree: StagedTree, folder: str, pack: dict) -> dict:
+    images = [
+        i["file"]
+        for i in pack.get("items") or []
+        if isinstance(i, dict) and i.get("file") and str(i.get("mime") or "").startswith("image/") and not i.get("parent_id")
+    ]
+    return {
+        "kind": pack["kind"],
+        "name": str(pack["pack"].get("name") or ""),
+        "detail": pack_detail(pack["kind"], pack),
+        "count": len(pack.get("items") or []),
+        "thumbs": [staged_url(tree.plan_id, _join_rel(folder, f), THUMB_W) for f in images[:THUMBS]],
+    }
+
+
+def _bundle_groups(tree: StagedTree, db: Session) -> tuple[list[PlanGroup], list[StagedFile], list[str]]:
+    """认出角色包、单包:(它们的组, 剩下走规则 1–10 的文件, 读不了的说明)"""
+    found: list[tuple[str, StagedFile]] = []
+    for kind in ("bundle_manifest", "pack_manifest"):
+        for f in sorted((f for f in tree.files if f.kind == kind), key=lambda f: (f.path.count("/"), f.path)):
+            folder = f.path.rsplit("/", 1)[0] if "/" in f.path else ""
+            if any(_under(f.path, other) for other, _ in found):
+                continue  # 角色包里每个包的 pack.json;包里又套的包
+            found.append((folder, f))
+    groups, notes = [], []
+    taken = {n.casefold() for n in db.scalars(select(TavernCard.name)).all()}
+    for folder, f in found:
+        root = tree.path(folder) if folder else tree.root
+        label = folder.rsplit("/", 1)[-1] if folder else _basename(f.path)
+        size = sum(x.size for x in tree.files if _under(x.path, folder))
+        try:
+            if f.kind == "bundle_manifest":
+                groups.append(_bundle_group(tree, folder, f, bundle_read.read_manifest(root), size, taken, len(groups) + 1))
+            else:
+                pack = bundle_read.read_pack(root)
+                detail = {**_pack_out(tree, folder, pack), "bytes": size, "folder": folder}
+                groups.append(PlanGroup(f"pack_file:{len(groups) + 1}", "pack_file", detail["name"], [f.path], None, detail))
+        except bundle_read.BundleError as e:
+            what = "角色包" if f.kind == "bundle_manifest" else "素材包"
+            notes.append(f"「{label}」不是能导入的{what}:{e}")
+    claimed = [folder for folder, _ in found]
+    rest = [x for x in tree.files if not any(_under(x.path, c) for c in claimed)]
+    return groups, rest, notes
+
+
+def _bundle_group(
+    tree: StagedTree, folder: str, f: StagedFile, m: bundle_read.Manifest, size: int, taken: set[str], n: int
+) -> PlanGroup:
+    data = m.data
+    states = {s["card"]: s.get("name") for s in (data.get("state_group") or {}).get("states") or []}
+    order = [data["main_card"], *[k for k in m.cards if k != data["main_card"]]]
+    cards = []
+    for key in order:
+        name = normalize(m.cards[key])["name"].strip() or "角色"
+        new, i = name, 2
+        while new.casefold() in taken:
+            new, i = f"{name} {i}", i + 1
+        cards.append({"name": name, "new_name": new, "state": states.get(key)})
+    packs = [m.packs[p["key"]] for p in data.get("packs") or [] if p.get("key") in m.packs]
+    preview = data.get("preview")
+    title = str(data.get("title") or cards[0]["name"])
+    detail = {
+        "note": str(data.get("note") or ""),
+        "preview": staged_url(tree.plan_id, _join_rel(folder, preview)) if preview else None,
+        "cards": cards,
+        "packs": [_pack_out(tree, folder, p) for p in packs],
+        "follows": bundle_follows(data, packs),
+        "preset": {"name": str(data["preset"].get("name") or "")} if m.preset is not None else None,
+        "has_voice": False,
+        "bytes": size,
+        "folder": folder,
+    }
+    return PlanGroup(f"bundle:{n}", "bundle", title, [f.path], None, detail)

@@ -1335,6 +1335,23 @@ button.st-drop-hint:hover {
   opacity: 0.4;
   cursor: not-allowed;
 }
+/* 带一行小字的那项(「导出这个包」):两行高 */
+.st-menu-item.has-note {
+  height: auto;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 10px;
+}
+.st-menu-note {
+  color: var(--text-dim);
+  font-size: 11.5px;
+}
+.st-menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border-strong);
+}
 
 /* ── 从卡编辑器里打开的插件抽屉(PluginSheet.tsx):开在这一页上面,顶栏 52 不盖 ── */
 

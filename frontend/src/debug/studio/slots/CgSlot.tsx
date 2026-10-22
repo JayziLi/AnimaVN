@@ -16,6 +16,7 @@ import { Icon } from '../icons';
 import { PackPicker } from '../PackPicker';
 import type { Notify, PackSync } from '../types';
 import { Btn, ConfirmDialog, Inspector, InspectorHead, MoreMenu, PackTabs, PromptDialog, Section, TypeLabel } from '../ui';
+import { packExportItem } from '../../components/export/packExport';
 
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -295,9 +296,10 @@ export function CgSlot({ cardName, scene, emotions, sync, notify }: CgSlotProps)
       />
       <span className="st-flex" />
       <MoreMenu
-        label="更多:重命名、解除绑定"
+        label="更多:重命名、导出这个包、解除绑定"
         items={[
           { label: '重命名', onClick: () => setDialog({ kind: 'rename', id: shown }) },
+          packExportItem('cg', shown, notify),
           { label: '解除绑定', onClick: () => setDialog({ kind: 'unbind', id: shown }) },
         ]}
       />

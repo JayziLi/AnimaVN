@@ -14,6 +14,7 @@ from app.api import (
     debug,
     debug_chats,
     emotion,
+    export,
     importer,
     library,
     meta,
@@ -127,6 +128,7 @@ app.include_router(meta.router)
 app.include_router(blobs.router)
 app.include_router(importer.router)
 app.include_router(library.router)
+app.include_router(export.router)
 
 # 卡带(app/plugins):在的才挂它们的接口;公开版删掉了卡带,这里什么都不多挂
 for cartridge in load_cartridges():

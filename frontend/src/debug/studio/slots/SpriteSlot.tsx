@@ -19,6 +19,7 @@ import { BackgroundChip } from '../preview/BackgroundChip';
 import { SPRITE_ACCEPT, SpritePackEditor } from '../editors/SpritePackEditor';
 import type { Notify, PackSync } from '../types';
 import { Btn, ConfirmDialog, Inspector, MoreMenu, PackTabs, PromptDialog, TypeLabel } from '../ui';
+import { packExportItem } from '../../components/export/packExport';
 
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -307,7 +308,7 @@ export function SpriteSlot({ card, userName, sprite, stage, backgrounds, sync, n
       />
       <span className="st-flex" />
       <MoreMenu
-        label="更多:设为当前服装、重命名、解除绑定"
+        label="更多:设为当前服装、重命名、导出这个包、解除绑定"
         items={[
           {
             label: shown === currentId ? '已是当前服装' : '设为当前服装',
@@ -315,6 +316,7 @@ export function SpriteSlot({ card, userName, sprite, stage, backgrounds, sync, n
             onClick: () => void sprite.switchPack(shown),
           },
           { label: '重命名', onClick: () => setDialog({ kind: 'rename', id: shown }) },
+          packExportItem('sprite', shown, notify),
           { label: '解除绑定', onClick: () => setDialog({ kind: 'unbind', id: shown }) },
         ]}
       />

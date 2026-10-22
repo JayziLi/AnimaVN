@@ -70,3 +70,9 @@ describe('asset urls', () => {
     expect(api.spriteImageUrl({ ...sprite, has_image: false, image_sha: sha })).toBeNull();
   });
 });
+
+describe('exportPackUrl', () => {
+  it('points at the single-pack export with an encoded id', () => {
+    expect(api.exportPackUrl('scene', 'a b')).toBe('http://localhost:8000/api/export/pack/scene/a%20b');
+  });
+});

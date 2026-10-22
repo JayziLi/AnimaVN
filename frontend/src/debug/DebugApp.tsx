@@ -5,6 +5,7 @@ import { ChatHistoryOverlay, type ChatOp } from './components/ChatHistoryOverlay
 import { CardBindings } from './components/CardBindings';
 import { CardPanel, type CardView, type SaveState } from './components/CardPanel';
 import { EnvBadge } from './components/EnvBadge';
+import { ExportBundleDialog } from './components/export/ExportBundleDialog';
 import { CardStudio } from './studio/CardStudio';
 import { DropLayer } from './importer/DropLayer';
 import { ImportConfirm } from './importer/ImportConfirm';
@@ -326,6 +327,8 @@ export default function DebugApp() {
   // 角色卡持久化 —— 和预设不同,这边是自动保存
   const [savedCards, setSavedCards] = useState<StoredCard[]>([]);
   const [cardId, setCardId] = useState<string | null>(null);
+  /** 导出角色包的面板开着时:导哪张卡 */
+  const [exportBundleFor, setExportBundleFor] = useState<{ id: string; name: string } | null>(null);
   const [cardBusy, setCardBusy] = useState(false);
   /**
    * 导入/导出的遮罩文案。这类动作要解析文件、写库、再把卡和它的对话接上,
@@ -3192,6 +3195,7 @@ export default function DebugApp() {
   const afterImportUndone = async (result: ImportUndoPreview) => {
     setLibraryNotice((n) => (n?.jobId === result.job_id ? null : n));
     try {
+      await reloadPresetSide();
       const list = await debugApi.listCards();
       setSavedCards(list);
       const current = syncTargets.current.cardId;
@@ -3255,7 +3259,20 @@ export default function DebugApp() {
   //      (没有卡就打开素材管理页,选中新建的包) ----
 
   /** 执行完了:卡列表、包列表都刷一遍(可能有新卡、新包),再打开那张卡的卡编辑器素材页;没有卡就打开素材管理页 */
+  /**
+   * 角色包导入 / 撤销会新建或删掉预设、改 preset.bindings(后端写的):内存里那份换成库里的,
+   * 不然之后一保存绑定就把它盖掉。presetRef 也马上换,接着 selectCard 时能按新绑定载入预设
+   */
+  const reloadPresetSide = async () => {
+    await refreshPresets();
+    const v = await debugApi.getSetting(PRESET_BINDING_KEY).catch(() => null);
+    if (v === null) return;
+    const next = normalizePresetBindings(v);
+    setPresetBindings(next);
+    presetRef.current = { ...presetRef.current, bindings: next };
+  };
   const finishImport = async ({ result, plan, target, body }: ImportDone) => {
+    if (result.created?.presets?.length) await reloadPresetSide();
     const t = syncTargets.current;
     void t.spritePacks.refreshPacks();
     void t.scenePlugin.refreshPacks();
@@ -3346,6 +3363,7 @@ export default function DebugApp() {
         onChange={changeCard}
         onPickAvatar={() => pickAvatarFor({ kind: 'card' })}
         onExport={() => void exportCard()}
+        onExportBundle={cardId ? () => setExportBundleFor({ id: cardId, name: card?.name ?? '' }) : undefined}
         onDuplicate={() => void duplicateCard()}
         // 删的就是正在编辑的这张:删完回到原来的界面,别停在下一张卡的资料页上
         onDelete={() => void removeCard().then((ok) => ok && setStudio(null))}
@@ -3928,6 +3946,7 @@ export default function DebugApp() {
             onDelete={deleteCard}
             onImport={() => importer.pick()}
             onExport={() => void exportCard()}
+            onExportBundle={cardId ? () => setExportBundleFor({ id: cardId, name: card?.name ?? '' }) : undefined}
             onOpenStudio={(tab) => openStudio({ tab, slot: 'sprite' })}
             onPickAvatar={() => pickAvatarFor({ kind: 'card' })}
             bindings={cardBindings}
@@ -4145,6 +4164,7 @@ export default function DebugApp() {
                     onDelete={deleteCard}
                     onImport={() => importer.pick()}
                     onExport={() => void exportCard()}
+                    onExportBundle={cardId ? () => setExportBundleFor({ id: cardId, name: card?.name ?? '' }) : undefined}
                     onOpenStudio={(tab) => openStudio({ tab, slot: 'sprite' })}
                     onPickAvatar={() => pickAvatarFor({ kind: 'card' })}
                     bindings={cardBindings}
@@ -4251,6 +4271,15 @@ export default function DebugApp() {
         onRefuse={(reason) => notify('error', reason)}
       />
       <ImportProgress phase={importer.phase} onCancel={importer.cancelUpload} />
+      {exportBundleFor && (
+        <ExportBundleDialog
+          key={exportBundleFor.id}
+          cardId={exportBundleFor.id}
+          cardName={exportBundleFor.name}
+          notify={notify}
+          onClose={() => setExportBundleFor(null)}
+        />
+      )}
       {importer.confirm && (
         <ImportConfirm
           key={importer.confirm.plan.plan_id}
@@ -4259,6 +4288,7 @@ export default function DebugApp() {
           sprites={importer.confirm.sprites}
           busy={importer.confirm.busy}
           error={importer.confirm.error}
+          source={importer.confirm.source}
           onCancel={importer.cancelConfirm}
           onConfirm={importer.confirmApply}
         />
