@@ -87,4 +87,13 @@ describe('appendSwipe', () => {
     const only = { ...entry(), swipeInfo: [{ sendDate: '1' }, { sendDate: '2', vn: { images } }] } as unknown as ChatEntry;
     expect('vn' in appendSwipe(only, snap).swipeInfo[2]).toBe(false);
   });
+
+  it('leaves out the image state note too: it was written for the old reply', () => {
+    const forms = [{ line: 2, form: 'h' }];
+    const imageNote = { place: '客厅', people: [{ who: 'Wikira', look: 'pink hair', clothes: 'barefoot', notes: '' }], story: '涂指甲' };
+    const both = { ...entry(), swipeInfo: [{ sendDate: '1' }, { sendDate: '2', vn: { forms, imageNote } }] } as unknown as ChatEntry;
+    expect(appendSwipe(both, snap).swipeInfo[2].vn).toEqual({ forms });
+    const only = { ...entry(), swipeInfo: [{ sendDate: '1' }, { sendDate: '2', vn: { imageNote } }] } as unknown as ChatEntry;
+    expect('vn' in appendSwipe(only, snap).swipeInfo[2]).toBe(false);
+  });
 });

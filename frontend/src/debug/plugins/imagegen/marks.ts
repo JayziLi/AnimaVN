@@ -6,9 +6,11 @@
  * 这次新画好、还没显示过的那张,玩家已经读过它那句了也照样显示(10-17 用户:图画好时玩家早读过去了,刚出来就跳过)。
  * 同时有几张能显示时显示新的那张:这次画的比以前的新,后画的比先画的新,同样以前的看句号靠后的。
  * 收起(hidden)的那张不显示,它之前的也不冒回来。同一句画了新的,新的顶掉旧的(旧的还在相册里)。
+ *
+ * 状态笔记(10-22)也挂在这里:swipe_info[分支].vn.imageNote,每条回复写完记一次,画下一张时拿前一条的。
  */
 
-import type { ChatEntry, SwipeInfo, VnImageMark, VnMarks } from '../../lib/chatEntry';
+import type { ChatEntry, SwipeInfo, VnImageMark, VnImageNote, VnMarks } from '../../lib/chatEntry';
 
 const valid = (m: unknown): m is VnImageMark =>
   m !== null &&
@@ -69,17 +71,48 @@ export function markAt(
   return best;
 }
 
-function withImages(entry: ChatEntry, swipe: number, images: VnImageMark[]): ChatEntry {
+function withVn(entry: ChatEntry, swipe: number, edit: (vn: VnMarks) => void): ChatEntry {
   const info = entry.swipeInfo[swipe] ?? ({} as SwipeInfo);
   const vn: VnMarks = { ...info.vn };
-  if (images.length) vn.images = images;
-  else delete vn.images;
+  edit(vn);
   const next: SwipeInfo = { ...info };
   if (Object.keys(vn).length) next.vn = vn;
   else delete next.vn;
   const n = Math.max(entry.swipeInfo.length, swipe + 1);
   const swipeInfo = Array.from({ length: n }, (_, i) => (i === swipe ? next : (entry.swipeInfo[i] ?? ({} as SwipeInfo))));
   return { ...entry, swipeInfo };
+}
+
+const withImages = (entry: ChatEntry, swipe: number, images: VnImageMark[]) =>
+  withVn(entry, swipe, (vn) => {
+    if (images.length) vn.images = images;
+    else delete vn.images;
+  });
+
+const validNote = (n: unknown): n is VnImageNote =>
+  n !== null && typeof n === 'object' && Array.isArray((n as VnImageNote).people);
+
+/** 这个分支记下的状态笔记;没有(还没记、老对话)是 null */
+export function noteOf(entry: ChatEntry, swipe = entry.swipeIndex): VnImageNote | null {
+  const raw = entry.swipeInfo[swipe]?.vn?.imageNote;
+  return validNote(raw) ? raw : null;
+}
+
+/** 第 swipe 个分支记下(换掉)状态笔记 */
+export const withNote = (entry: ChatEntry, swipe: number, note: VnImageNote): ChatEntry =>
+  withVn(entry, swipe, (vn) => {
+    vn.imageNote = note;
+  });
+
+/** 第 index 条之前最近的状态笔记(各条的当前分支;中间有条没记成就往前找);一条都没有是 null */
+export function noteBefore(entries: readonly ChatEntry[], index: number): VnImageNote | null {
+  for (let i = index - 1; i >= 0; i--) {
+    const e = entries[i];
+    if (e.role !== 'assistant') continue;
+    const note = noteOf(e);
+    if (note) return note;
+  }
+  return null;
 }
 
 /** 在第 swipe 个分支的 mark.line 句挂一张;同一句已有的被顶掉 */

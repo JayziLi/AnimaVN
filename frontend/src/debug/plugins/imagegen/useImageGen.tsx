@@ -5,6 +5,8 @@
  *
  * 一张图的流程:指导模型(/plan)写画面 → NovelAI(/generate)画 → 记号挂在那条消息上(marks.ts),
  * DebugApp 照常把消息写库。同一个 NovelAI 账号一次只能画一张,后端排队;这里只记「正在画几张」给画面看。
+ * 每条回复写完还让指导模型记一次状态笔记(/note,也挂在那条消息上),画下一张时把前一条的笔记带给它
+ * (docs/superpowers/specs/2026-10-22-imagegen-state-notes-design.md)。
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -61,8 +63,10 @@ import {
   lastImageBefore,
   markAt,
   newShowLog,
+  noteBefore,
   patchImage,
   repliesSinceImage,
+  withNote,
   type ShowLog,
 } from './marks';
 import { StudioAlbum } from './StudioAlbum';
@@ -96,6 +100,8 @@ const BEFORE = 10;
 const AFTER = 8;
 /** 自动判时整条回复最多给几句 */
 const AUTO_LINES = 80;
+/** 记状态笔记时整条回复最多给几句(后端最多收 120 句) */
+const NOTE_LINES = 120;
 
 /** 图挂在哪:哪条消息的哪个分支第几句;lines / place 是给指导模型看的 */
 export interface DrawTarget {
@@ -428,6 +434,7 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
       const { config: c, prefs: p, entries: es } = latest.current;
       const from = Math.max(0, target.line - BEFORE);
       const drawn = await drawnNear(target.entry, from);
+      const index = es.findIndex((e) => e.id === target.entry.id);
       const req: PlanRequest = {
         mode: 'manual',
         connection_id: writerConnection(),
@@ -440,6 +447,7 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
         want,
         user_text: userTextBefore(es, target.entry.id),
         drawn,
+        note: noteBefore(es, index < 0 ? es.length : index),
         sfw_only: p.sfwOnly,
         camera: camera ?? c.camera,
       };
@@ -590,16 +598,45 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
     }
   }, [cardId, changePrefs, notify, track, writerConnection]);
 
+  // ---- 状态笔记:每条回复写完记一次(10-22 用户:总结每个人的长相、衣服、特殊的地方和发生了什么,下一张图照它画) ----
+  const takeNote = useCallback(
+    async (entry: ChatEntry, lines: readonly VNLine[], place: VnIllustrationContext['place']) => {
+      const { config: c, entries: es, chatId: chatNow } = latest.current;
+      const index = es.findIndex((e) => e.id === entry.id);
+      const swipe = entry.swipeIndex;
+      try {
+        const r = await imagegenApi.note({
+          connection_id: writerConnection(),
+          thinking: c.writer.thinking,
+          skill: c.skills.note,
+          cast: cast(),
+          lines: linesFor(lines, 0, NOTE_LINES),
+          prev: noteBefore(es, index < 0 ? es.length : index),
+          place: placeText(place),
+          user_text: userTextBefore(es, entry.id),
+        });
+        if (latest.current.chatId !== chatNow) return;
+        patchEntry(entry.id, (e) => withNote(e, swipe, { place: r.place, people: r.people, story: r.story }));
+      } catch (e) {
+        notify('error', `状态笔记没记成(下一张图照卡上写的参考画): ${errText(e)}`);
+      }
+    },
+    [cast, notify, patchEntry, writerConnection],
+  );
+
   // ---- 自动出图:回复写完以后让指导模型当导演判一次 ----
   const autoBusy = useRef(new Set<string>());
   const onReplyDone = useCallback(
     async (entry: ChatEntry, lines: readonly VNLine[], place: VnIllustrationContext['place']) => {
       const { config: c, prefs: p, entries: es, chatId: chatNow } = latest.current;
-      if (!c.auto.enabled || p.autoOff || !status?.has_token || !cardId || lines.length === 0) return;
+      if (!status?.has_token || !cardId || lines.length === 0) return;
       const key = `${entry.id}:${entry.swipeIndex}`;
       if (autoBusy.current.has(key)) return;
       autoBusy.current.add(key);
       try {
+        // 笔记和自动出图一起跑:自动出图用的是上一条回复的笔记
+        void takeNote(entry, lines, place);
+        if (!c.auto.enabled || p.autoOff) return;
         const index = es.findIndex((e) => e.id === entry.id);
         const since = repliesSinceImage(es, index < 0 ? es.length : index);
         const drawn = await drawnNear(entry, 0);
@@ -614,6 +651,7 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
           user_text: userTextBefore(es, entry.id),
           since,
           drawn,
+          note: noteBefore(es, index < 0 ? es.length : index),
           sfw_only: p.sfwOnly,
           camera: c.camera,
         };
@@ -641,7 +679,7 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
         autoBusy.current.delete(key);
       }
     },
-    [cardId, cast, draw, drawnNear, notify, status?.has_token, track, writerConnection],
+    [cardId, cast, draw, drawnNear, notify, status?.has_token, takeNote, track, writerConnection],
   );
 
   const store: ImageGenStore = useMemo(

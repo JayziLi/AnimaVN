@@ -1,6 +1,7 @@
 /** 生图卡带的接口(后端 app/plugins/imagegen/api.py) */
 
 import { apiRequest } from '../../lib/api';
+import type { VnImageNote } from '../../lib/chatEntry';
 
 export interface ImageGenStatus {
   has_token: boolean;
@@ -22,6 +23,7 @@ export interface ImageGenDefaults {
     manual: string;
     auto: string;
     look: string;
+    note: string;
   };
   models: string[];
   quality: string;
@@ -35,8 +37,10 @@ export interface ImageGenDefaults {
 export interface Person {
   who: string;
   tags: string;
-  /** 这一刻穿的;空 = 照平时的 */
+  /** 这一刻穿的 */
   clothes?: string;
+  /** 这一刻的长相(10-22 起指导模型写);没有 / null = 老的画面,拼提示词时照老规矩补卡上的长相和平时的衣服 */
+  look?: string | null;
 }
 
 /** 一幅画面:指导模型写的、玩家在「先看提示词」里改过的 */
@@ -81,6 +85,8 @@ export interface PlanRequest {
   last?: string;
   /** 前后已经画过的图(接上连贯):line 是在 lines 里的编号,null = 上一条回复的,越界 = 这条回复更前 / 更后面 */
   drawn?: Drawn[];
+  /** 上一条回复结束时的状态笔记;没有不传 */
+  note?: VnImageNote | null;
   sfw_only?: boolean;
   /** 镜头:pov 第一人称 / third 第三人称 / auto 指导模型挑 */
   camera?: 'pov' | 'third' | 'auto';
@@ -101,6 +107,24 @@ export interface PlanResult {
   connection: string;
 }
 
+/** 记一条回复的状态笔记 */
+export interface NoteRequest {
+  connection_id: string | null;
+  thinking: 'off' | 'conn';
+  skill: string | null;
+  cast: Who[];
+  lines: { speaker: string | null; text: string }[];
+  /** 上一次的笔记;没有不传 */
+  prev?: VnImageNote | null;
+  place?: string;
+  user_text?: string;
+}
+
+export interface NoteResult extends VnImageNote {
+  ms: number;
+  connection: string;
+}
+
 export interface RefIn {
   kind: 'sprite' | 'upload';
   /** 立绘 / 上传的编号;不传 = 当前立绘包的默认立绘 */
@@ -109,6 +133,7 @@ export interface RefIn {
 }
 
 export interface LookIn {
+  /** 卡上写的长相、平时的衣服:10-22 起只给老画面补(新画面照指导模型写的) */
   tags: string;
   outfit: string;
   negative: string;
@@ -220,6 +245,7 @@ export const imagegenApi = {
   account: () => apiRequest<NaiAccount>('/api/imagegen/account'),
   defaults: () => apiRequest<ImageGenDefaults>('/api/imagegen/defaults'),
   plan: (req: PlanRequest) => apiRequest<PlanResult>('/api/imagegen/plan', json(req)),
+  note: (req: NoteRequest) => apiRequest<NoteResult>('/api/imagegen/note', json(req)),
   look: (req: { card_id: string; connection_id: string | null; thinking: 'off' | 'conn' }) =>
     apiRequest<LookResult>('/api/imagegen/look', json(req)),
   generate: (req: GenerateRequest) => apiRequest<GeneratedImage>('/api/imagegen/generate', json(req)),

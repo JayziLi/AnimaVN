@@ -36,6 +36,9 @@ from app.plugins.imagegen.schemas import (
     KeepOut,
     LookAskIn,
     LookAskOut,
+    NoteIn,
+    NoteIO,
+    NoteOut,
     PictureIO,
     PlanIn,
     PlanOut,
@@ -135,11 +138,22 @@ def _connection(db: Session, connection_id: str | None) -> ApiConnection:
 def _picture(plan: Plan) -> PictureIO:
     return PictureIO(
         scene=plan.scene,
-        people=[{"who": p.who, "tags": p.tags, "clothes": p.clothes} for p in plan.people],
+        people=[{"who": p.who, "tags": p.tags, "clothes": p.clothes, "look": p.look} for p in plan.people],
         nsfw=plan.nsfw,
         pov=plan.pov,
         composition=plan.composition,
     )
+
+
+def _who(req_cast) -> list[writer.Who]:
+    return [writer.Who(name=w.name, gender=w.gender, look=w.look, outfit=w.outfit, player=w.player) for w in req_cast]
+
+
+def _note_in(note: NoteIO | None) -> writer.Note | None:
+    if note is None:
+        return None
+    people = tuple(writer.NotePerson(who=p.who, look=p.look, clothes=p.clothes, notes=p.notes) for p in note.people)
+    return writer.Note(place=note.place, people=people, story=note.story)
 
 
 @router.post("/plan", response_model=PlanOut)
@@ -147,7 +161,7 @@ async def plan(req: PlanIn, db: Session = Depends(get_db)):
     """问指导模型:手动 = 画这一幕写什么;自动 = 要不要出、在哪一句、写什么。不出图,不花 Anlas"""
     conn = _connection(db, req.connection_id)
     ctx = writer.Context(
-        cast=[writer.Who(name=w.name, gender=w.gender, look=w.look, outfit=w.outfit, player=w.player) for w in req.cast],
+        cast=_who(req.cast),
         lines=[writer.Line(speaker=line.speaker, text=line.text) for line in req.lines],
         focus=req.focus,
         place=req.place,
@@ -156,6 +170,7 @@ async def plan(req: PlanIn, db: Session = Depends(get_db)):
         since=req.since,
         last=req.last,
         drawn=[writer.Drawn(line=d.line, title=d.title, description=d.description, clothes=d.clothes) for d in req.drawn],
+        note=_note_in(req.note),
         sfw_only=req.sfw_only,
         camera=req.camera,
     )
@@ -188,6 +203,33 @@ async def plan(req: PlanIn, db: Session = Depends(get_db)):
         title=result.title,
         description=result.description,
         picture=_picture(result.plan),
+        ms=ms,
+        connection=conn.name,
+    )
+
+
+@router.post("/note", response_model=NoteOut)
+async def note(req: NoteIn, db: Session = Depends(get_db)):
+    """记一条回复的状态笔记(每条回复写完时前端调):每个人现在的长相、衣服、特殊的地方,到现在发生了什么。不存库,前端挂在消息上"""
+    conn = _connection(db, req.connection_id)
+    ctx = writer.NoteContext(
+        cast=_who(req.cast),
+        lines=[writer.Line(speaker=line.speaker, text=line.text) for line in req.lines],
+        prev=_note_in(req.prev),
+        place=req.place,
+        user_text=req.user_text,
+    )
+    try:
+        text, ms = await writer.ask(conn, writer.note_messages(ctx, req.skill), req.thinking)
+        result = writer.to_note(writer.parse_json(text))
+    except LLMError as e:
+        raise HTTPException(502, f"指导模型({conn.name})出错:{e.message}") from e
+    except writer.WriterError as e:
+        raise HTTPException(502, f"{e.message}。它回的是:{e.raw}") from e
+    return NoteOut(
+        place=result.place,
+        people=[{"who": p.who, "look": p.look, "clothes": p.clothes, "notes": p.notes} for p in result.people],
+        story=result.story,
         ms=ms,
         connection=conn.name,
     )
@@ -292,7 +334,7 @@ async def generate(req: GenerateIn, db: Session = Depends(get_db)):
     picture = req.picture
     plan_ = Plan(
         scene=picture.scene,
-        people=tuple(Person(p.who, p.tags, p.clothes) for p in picture.people),
+        people=tuple(Person(p.who, p.tags, p.clothes, p.look) for p in picture.people),
         nsfw=picture.nsfw,
         pov=picture.pov,
         composition=picture.composition,

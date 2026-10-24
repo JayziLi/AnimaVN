@@ -160,7 +160,7 @@ export const DEFAULT_STYLE_ID = 'fuzi_rella';
 
 export interface PlayerLook {
   look: string;
-  /** 平时穿的(日常场景加上;指导模型写了这一刻穿什么、或者 nsfw 场面时不加) */
+  /** 平时穿的(10-22 起只当参考给指导模型看,画的时候照它写的这一刻穿的) */
   outfit: string;
   negative: string;
   gender: Gender;
@@ -204,6 +204,8 @@ export interface ImageGenConfig {
   skills: {
     manual: string | null;
     auto: string | null;
+    /** 每条回复写完记状态笔记的说明书 */
+    note: string | null;
   };
   auto: { enabled: boolean; cooldown: number };
   /** 镜头(10-12 用户定默认第一人称;只有这一个全局设置,临时换在右键画笔的设置里) */
@@ -244,6 +246,7 @@ export const DEFAULT_IMAGEGEN_CONFIG: ImageGenConfig = {
   skills: {
     manual: null,
     auto: null,
+    note: null,
   },
   auto: { enabled: true, cooldown: 3 },
   camera: 'pov',
@@ -400,6 +403,7 @@ export function normalizeImageGenConfig(raw: unknown): ImageGenConfig {
     skills: {
       manual: nullableText(skills.manual),
       auto: nullableText(skills.auto),
+      note: nullableText(skills.note),
     },
     auto: { enabled: bool(auto.enabled, d.auto.enabled), cooldown: Math.round(num(auto.cooldown, d.auto.cooldown, 0, 20)) },
     camera: isCamera(raw.camera) ? raw.camera : d.camera,

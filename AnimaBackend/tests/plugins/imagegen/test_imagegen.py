@@ -17,8 +17,8 @@ from app.plugins.imagegen.assemble import (
     Plan,
     Style,
     assemble,
+    explicit,
     join,
-    sleeves,
 )
 from app.plugins.imagegen.models import IMAGE_REF, UPLOAD_REF
 from app.storage import refs
@@ -147,80 +147,85 @@ PLAYER = Look(tags="faceless male, short black hair", gender="male", player=True
 
 def test_name_tag_goes_first_artists_after_count_and_reference_drops_the_face():
     keqing = Look(tags="purple hair, twintails", outfit="purple dress", name_tag="keqing (genshin impact)")
-    out = assemble(Plan(scene="tea house", people=(Person("刻晴", "smile"),)), {"刻晴": keqing},
+    she = Person("刻晴", "smile", clothes="white hanfu", look="purple hair, hair down")
+    out = assemble(Plan(scene="tea house", people=(she,)), {"刻晴": keqing},
                    Style("flat color", artists="artist:foo, artist:bar"), model=nai.V45_FULL, quality="")
     assert out.prompt == "1girl, solo, artist:foo, artist:bar, tea house, flat color"
-    assert out.chars[0].prompt == "girl, keqing (genshin impact), purple hair, twintails, purple dress, smile"
-    ref = assemble(Plan(people=(Person("刻晴", "smile"),)), {"刻晴": Look(**{**keqing.__dict__, "ref": True})},
-                   Style(), model=nai.V45_FULL)
-    assert ref.chars[0].prompt == "girl, keqing (genshin impact), purple dress, smile"
+    # 角色名标签照旧由代码加;长相和衣服是指导模型写的这一刻的,卡上的(twintails、purple dress)不补
+    assert out.chars[0].prompt == "girl, keqing (genshin impact), purple hair, hair down, white hanfu, smile"
+    # 带参考图也写这一刻的长相(10-22 对比:不写的话发型变化画不出来);老画面带参考图时照旧不补卡上的长相
+    with_ref = {"刻晴": Look(**{**keqing.__dict__, "ref": True})}
+    ref = assemble(Plan(people=(she,)), with_ref, Style(), model=nai.V45_FULL)
+    assert ref.chars[0].prompt == "girl, keqing (genshin impact), purple hair, hair down, white hanfu, smile"
+    old = assemble(Plan(people=(Person("刻晴", "smile"),)), with_ref, Style(), model=nai.V45_FULL)
+    assert old.chars[0].prompt == "girl, keqing (genshin impact), purple dress, smile"
 
 
 def tags_of(text: str) -> set[str]:
     return {t.strip() for t in text.split(",")}
 
 
-def test_first_person_drops_the_player_and_dresses_his_hands():
+def test_first_person_drops_the_player_and_adds_nothing_for_his_hands():
     plan = Plan(scene="street, night, pov hands, holding hands",
-                people=(Person("Wikira", "looking back, smile"), Person("玩家", "walking")), pov=True)
+                people=(Person("Wikira", "looking back, smile", look=""), Person("玩家", "walking", look="")), pov=True)
     out = assemble(plan, {"Wikira": WIKIRA, "玩家": PLAYER}, Style("flat color"), model=nai.V45_FULL, quality="")
-    assert out.prompt == "1girl, pov, street, night, pov hands, holding hands, black sleeves, flat color"
-    assert [c.prompt.split(", ")[0] for c in out.chars] == ["girl"]
+    # 10-22 起不按玩家的衣服补袖子颜色
+    assert out.prompt == "1girl, pov, street, night, pov hands, holding hands, flat color"
+    assert [c.prompt for c in out.chars] == ["girl, looking back, smile"] and out.chars[0].negative == ""
     neg = tags_of(out.negative)
     assert "multiple boys" in neg and "1boy" not in neg and "solo" not in out.prompt
-    # 袖子是玩家的手的:她自己的反向挡掉,别串到她身上
-    assert "black sleeves" in tags_of(out.chars[0].negative)
-
-
-def test_first_person_without_hands_adds_no_sleeves():
-    out = assemble(Plan(scene="cafe, close-up", people=(Person("Wikira", "leaning forward"),), pov=True),
-                   {"Wikira": WIKIRA, "玩家": PLAYER}, Style(), model=nai.V5_FULL, quality="")
-    assert out.prompt == "1girl, pov, cafe, close-up"
-    assert sleeves("white t-shirt, jeans") == "white sleeves" and sleeves("hoodie") == ""
-    waist = assemble(Plan(scene="pov hands on her waist", people=(Person("Wikira", "arms around neck"),), pov=True),
-                     {"Wikira": WIKIRA, "玩家": PLAYER}, Style(), model=nai.V45_FULL, quality="")
-    assert waist.prompt == "1girl, pov, pov hands on her waist, black sleeves"
 
 
 def test_join_drops_empties_and_duplicates():
     assert join("a, b", "", "B, c,, ") == "a, b, c"
 
 
-def test_one_girl_gets_solo_and_her_look():
-    out = assemble(Plan(scene="beach, sunset", people=(Person("Wikira", "sitting, smile"),)), {"Wikira": WIKIRA},
+def test_the_writers_look_and_clothes_are_drawn_as_written():
+    """10-22 Wikira 那张:剧情里光着脚,以前代码照样补 pantyhose, flats。现在长相衣服全听指导模型的"""
+    she = Person("Wikira", "sitting on sofa, curled toes", clothes="casual dress, cardigan, barefoot", look="adult, pink hair, hair down")
+    out = assemble(Plan(scene="living room, night", people=(she,)), {"Wikira": WIKIRA},
                    Style("rough sketch, monochrome"), model=nai.V5_FULL, uc="lowres")
-    assert out.prompt.startswith("1girl, solo, beach, sunset, rough sketch, monochrome, very aesthetic")
-    assert out.chars[0].prompt == "girl, adult, pink hair, side braid, off-shoulder blouse, long skirt, sitting, smile"
+    assert out.prompt.startswith("1girl, solo, living room, night, rough sketch, monochrome, very aesthetic")
+    assert out.chars[0].prompt == "girl, adult, pink hair, hair down, casual dress, cardigan, barefoot, sitting on sofa, curled toes"
     assert out.chars[0].x == 0.5
     for guard in ("lowres", ADULT_GUARD.split(",")[0], "1boy", "2girls"):
         assert guard in out.negative
     assert out.model == nai.V5_FULL
+    # 指导模型什么都没写也不补卡上的
+    bare = assemble(Plan(people=(Person("Wikira", "sitting", look=""),)), {"Wikira": WIKIRA}, Style(), model=nai.V5_FULL)
+    assert bare.chars[0].prompt == "girl, sitting"
 
 
-def test_couple_with_player_dresses_him_on_ordinary_days():
-    plan = Plan(scene="park", people=(Person("Wikira", "hug"), Person("Lj", "hug")))
+def test_old_pictures_still_get_the_card_look_and_usual_outfit():
+    """10-22 以前存的画面没有 look:「换一张」照老规矩补,画出来和以前一样"""
+    out = assemble(Plan(people=(Person("Wikira", "sitting, smile"),)), {"Wikira": WIKIRA}, Style(), model=nai.V5_FULL)
+    assert out.chars[0].prompt == "girl, adult, pink hair, side braid, off-shoulder blouse, long skirt, sitting, smile"
+    pajamas = assemble(Plan(people=(Person("Wikira", "lying", clothes="pajamas"),)), {"Wikira": WIKIRA}, Style(), model=nai.V5_FULL)
+    assert pajamas.chars[0].prompt == "girl, adult, pink hair, side braid, pajamas, lying"
+    # nsfw 场面没写这一刻穿什么:不加平时的衣服
+    bed = assemble(Plan(scene="bed", people=(Person("Wikira", "lying"),), nsfw=True), {"Wikira": WIKIRA}, Style(), model=nai.V5_FULL)
+    assert "long skirt" not in bed.chars[0].prompt
+
+
+def test_couple_and_the_player_gets_no_extra_clothes():
+    plan = Plan(scene="park", people=(Person("Wikira", "hug", look=""), Person("Lj", "hug", clothes="black shirt", look="faceless male")))
     out = assemble(plan, {"Wikira": WIKIRA, "Lj": PLAYER}, Style(), model=nai.V5_CURATED)
     assert out.prompt.startswith("1girl, 1boy, couple, park")
     assert {(c.x, c.y) for c in out.chars} == {(0.5, 0.5)}  # 不给坐标
-    assert "black shirt" in out.chars[1].prompt and "fully clothed" in out.chars[1].prompt
-    assert "shirtless" in out.chars[1].negative
+    # 10-22 起不补 fully clothed、不挡 shirtless
+    assert out.chars[1].prompt == "boy, faceless male, black shirt, hug" and out.chars[1].negative == ""
     assert "1boy" not in out.negative.split(", ")[:3]  # 两个人时不挡男的
+    old = assemble(Plan(people=(Person("Wikira", "hug"), Person("Lj", "hug"))), {"Wikira": WIKIRA, "Lj": PLAYER}, Style(), model=nai.V5_CURATED)
+    assert "fully clothed" not in old.chars[1].prompt and "black shirt" in old.chars[1].prompt
 
 
-def test_nsfw_scene_says_hetero_and_leaves_clothes_alone():
-    plan = Plan(scene="bed", people=(Person("Wikira", "lying"), Person("Lj", "")), nsfw=True)
-    out = assemble(plan, {"Wikira": WIKIRA, "Lj": PLAYER}, Style(), model=nai.V5_FULL)
-    assert "hetero" in out.prompt and "fully clothed" not in out.chars[1].prompt
-    # nsfw 场面没写这一刻穿什么:不加平时的衣服
-    assert "long skirt" not in out.chars[0].prompt and "black shirt" not in out.chars[1].prompt
-
-
-def test_clothes_of_the_moment_replace_the_usual_outfit():
-    plan = Plan(scene="bedroom", people=(Person("Wikira", "lying", clothes="pajamas"), Person("Lj", "sitting", clothes="t-shirt")))
-    out = assemble(plan, {"Wikira": WIKIRA, "Lj": PLAYER}, Style(), model=nai.V5_CURATED)
-    assert out.chars[0].prompt == "girl, adult, pink hair, side braid, pajamas, lying"
-    assert "t-shirt" in out.chars[1].prompt and "black shirt" not in out.chars[1].prompt
-    assert "fully clothed" not in out.chars[1].prompt
+def test_explicit_tags_make_it_nsfw_without_asking_the_writer():
+    nude = Plan(scene="bed", people=(Person("Wikira", "lying, spread legs", clothes="nude", look=""), Person("Lj", "sex", look="")))
+    out = assemble(nude, {"Wikira": WIKIRA, "Lj": PLAYER}, Style(), model=nai.V5_FULL)
+    assert "hetero" in out.prompt and "nsfw" in tags_of(out.prompt) and "uncensored" in tags_of(out.prompt)
+    # 整词才算:sexy、analog 不算
+    assert not explicit(Plan(scene="sexy pose, analog clock", people=(Person("Wikira", "smile", look="medium breasts"),)))
+    assert not assemble(nude, {"Wikira": WIKIRA}, Style(), model=nai.V5_FULL, sfw_only=True).prompt.count("nsfw")
 
 
 def test_sfw_only_switches_to_curated_and_blocks_nsfw():
@@ -241,11 +246,14 @@ def test_nobody_is_scenery_and_unknown_people_guess_gender_from_tags():
 
 def test_parse_fenced_json_and_coerce_fields():
     text = '```json\n{"draw": "true", "at": 99, "importance": 5, "reason": "第一次牵手", "title": "河堤牵手", "description": "河堤上第一次牵手",' \
-           ' "scene": ["riverbank", "sunset"], "people": [{"who": "Wikira", "tags": ["holding hands", "blush"], "clothes": "yukata"}, "Lj"], "nsfw": "false"}\n```'
+           ' "scene": ["riverbank", "sunset"], "people": [{"who": "Wikira", "look": ["pink hair", "wet hair"], "tags": ["holding hands", "blush"],' \
+           ' "clothes": "yukata"}, "Lj"], "nsfw": "true"}\n```'
     r = writer.to_result(writer.parse_json(text), mode="auto", n_lines=10)
     assert r.draw is True and r.at == 9 and r.importance == 3
     assert r.plan.scene == "riverbank, sunset"
-    assert r.plan.people == (Person("Wikira", "holding hands, blush", "yukata"), Person("Lj", ""))
+    # look 一律是字符串(没写是空串),None 只留给老画面
+    assert r.plan.people == (Person("Wikira", "holding hands, blush", "yukata", "pink hair, wet hair"), Person("Lj", look=""))
+    # nsfw 不再听它的(10-22:不让模型管 nsfw)
     assert r.plan.nsfw is False and r.title == "河堤牵手" and r.description == "河堤上第一次牵手"
 
 
@@ -270,16 +278,23 @@ def test_camera_note_follows_the_skill_even_when_rewritten():
     for camera, word in (("pov", "第一人称"), ("third", "第三人称"), ("auto", "你来挑")):
         system = writer.messages_for(writer.Context(**{**ctx.__dict__, "camera": camera}), "manual", "我自己写的说明书")[0].content
         assert system.startswith("我自己写的说明书") and word in system
+        # 镜头放在字段前面(10-22 用户)
+        assert system.index("镜头") < system.index("字段：")
         # 镜头定死时格式里不让它写 pov(以前示例写着 pov true,和第三人称打架)
         assert ('"pov"' in system) == (camera == "auto")
+    # 第一人称不提手(10-22 用户:一提手,每张都画手)
+    for note in writer.CAMERA_NOTES.values():
+        assert "手" not in note.replace("玩家", "") and "pov hands" not in note
 
 
 def test_format_asks_for_the_storyboard_before_the_english():
     for mode in ("manual", "auto"):
         fmt = writer.format_for(mode, "third")
-        order = [fmt.index(f'"{k}"') for k in ("until", "description", "composition", "scene", "people", "nsfw")]
-        assert order == sorted(order) and '"x"' not in fmt
+        order = [fmt.index(f'"{k}"') for k in ("until", "description", "composition", "scene", "people", "look", "clothes", "tags")]
+        assert order == sorted(order) and '"x"' not in fmt and '"nsfw"' not in fmt
+        assert fmt.index("字段：") < fmt.index("{")
     assert writer.format_for("auto", "pov").index('"draw"') < writer.format_for("auto", "pov").index('"description"')
+    assert "at：" in writer.format_for("auto", "pov") and "at：" not in writer.format_for("manual", "pov")
     assert '"draw"' not in writer.format_for("manual", "pov")
 
 
@@ -288,7 +303,7 @@ def test_writer_composition_is_read_and_coordinates_are_ignored():
             "people": [{"who": "星绘", "x": 0.3}, {"who": "Lj"}]}
     r = writer.to_result(data, mode="manual", camera="third")
     assert r.plan.composition == "A girl crouches by a glowing vending machine."
-    assert r.plan.people == (Person("星绘"), Person("Lj"))  # 写了坐标也不用
+    assert r.plan.people == (Person("星绘", look=""), Person("Lj", look=""))  # 写了坐标也不用
 
 
 def test_composition_goes_in_whole_after_the_scene():
@@ -338,7 +353,10 @@ def test_messages_mark_the_focus_line_and_keep_the_format_fixed():
     assert '"people"' in system.content  # 输出格式改不掉
     assert "1. [>] Wikira:「好美……」" in user.content and "0. (旁白)海风吹过。" in user.content
     assert '"until"' in system.content
-    assert "Lj(玩家,男)" in user.content and "想看什么:她坐在沙滩上" in user.content
+    assert "Lj(玩家,男)" in user.content and user.content.endswith("想看什么:她坐在沙滩上")
+    # 卡上的长相只当参考
+    assert "出场人物参考描述:\nWikira 的参考长相(平时的样子):pink hair" in user.content
+    assert "角色现在的状态" not in user.content and "前情" not in user.content
     auto = writer.messages_for(writer.Context(cast=[], lines=[writer.Line(None, "a")], since=2, last="牵手"), "auto")
     assert '"draw"' in auto[0].content and "0. (旁白)a" in auto[1].content and "2 条回复以前" in auto[1].content
     assert "画的是:牵手" in auto[1].content
@@ -349,13 +367,54 @@ def test_writer_hears_what_was_drawn_before_and_after():
     drawn = [writer.Drawn(None, "路灯靠肩", "她靠在你肩上"), writer.Drawn(-3, "更早", "x"), writer.Drawn(1, "巷中贩卖机", "她指着贩卖机"),
              writer.Drawn(4, "分享一口可可", "递可可", clothes="星绘穿 white coat"), writer.Drawn(9, "更晚", "y")]
     user = writer.messages_for(writer.Context(cast=[], lines=lines, focus=2, drawn=drawn), "manual")[1].content
-    assert "- 上一条回复:【路灯靠肩】她靠在你肩上" in user
+    assert "已经画过的 CG:\n- 上一张(上一条回复):【路灯靠肩】她靠在你肩上" in user
     assert "- 这条回复更前面:【更早】x" in user and "- 这条回复更后面:【更晚】y" in user
     assert "- 第 1 句(在玩家读到的这句前面):【巷中贩卖机】她指着贩卖机" in user
     assert "- 第 4 句(在玩家读到的这句后面):【分享一口可可】递可可(星绘穿 white coat)" in user
-    # 有了画过的图清单,自动那行就不再重复「画的是」
+    # 只有上一张时一句话说完(10-22 用户:「强调上一张是这个就好」);有了它,自动那行就不再重复「画的是」
     auto = writer.messages_for(writer.Context(cast=[], lines=lines, since=1, last="旧的", drawn=drawn[:1]), "auto")[1].content
-    assert "画的是" not in auto and "- 上一条回复:【路灯靠肩】" in auto and "- 第" not in auto
+    assert "画的是" not in auto and "上一张 CG:【路灯靠肩】她靠在你肩上" in auto and "- " not in auto
+
+
+NOTE = writer.Note(
+    place="客厅,夜里,台灯暖光",
+    people=(writer.NotePerson("Wikira", "adult, pink hair", "casual dress, barefoot", "(变了:袜子脱了,光着脚)抱着抱枕"),
+            writer.NotePerson("Lj", "faceless male", "black shirt")),
+    story="Lj 给她按脚,她坦白早就知道他喜欢脚。",
+)
+CAST = [writer.Who("Wikira", look="adult, pink hair", outfit="casual dress, pantyhose, flats"),
+        writer.Who("Lj", gender="male", look="faceless male", outfit="black shirt", player=True)]
+
+
+def test_state_comes_first_then_the_story_then_the_reference():
+    ctx = writer.Context(cast=CAST, lines=[writer.Line("Wikira", "「可以帮我涂吗？」")], place="客厅夜", user_text="恋足", note=NOTE)
+    user = writer.messages_for(ctx, "auto")[1].content
+    order = [user.index(s) for s in ("画面里可能出现的人", "角色现在的状态(上一条回复结束时):", "Wikira —— 长相:adult, pink hair",
+                                    "前情:Lj 给她按脚", "现在的地点:客厅夜", "玩家刚说:恋足", "这条回复(按句编号):",
+                                    "出场人物参考描述:", "Wikira 的参考衣服(平时的样子):casual dress, pantyhose, flats")]
+    assert order == sorted(order)
+    assert "  衣服:casual dress, barefoot\n  特殊:(变了:袜子脱了,光着脚)抱着抱枕" in user
+    assert "Lj —— 长相:faceless male\n  衣服:black shirt\n\n" in user  # 没有特殊的不写那一行
+
+
+def test_note_messages_carry_the_last_note_and_the_reply():
+    ctx = writer.NoteContext(cast=CAST, lines=[writer.Line(None, "她脱掉了袜子。")], prev=NOTE, place="客厅夜", user_text="恋足")
+    system, user = writer.note_messages(ctx)
+    assert system.content.startswith(writer.SKILL_NOTE) and system.content.endswith(writer.FORMAT_NOTE)
+    assert "上一次的笔记:\n地点:客厅,夜里,台灯暖光" in user.content and "前情:Lj 给她按脚" in user.content
+    assert "背景图:客厅夜" in user.content and "玩家这次说:恋足" in user.content and "0. (旁白)她脱掉了袜子。" in user.content
+    assert user.content.index("这条回复(按句编号):") < user.content.index("出场人物参考描述:")
+    first = writer.note_messages(writer.NoteContext(cast=CAST, lines=[writer.Line(None, "a")]), skill="自己写的")
+    assert first[0].content.startswith("自己写的") and "上一次的笔记:还没有,这是第一次。" in first[1].content
+
+
+def test_note_is_read_leniently_but_must_say_something():
+    note = writer.to_note({"place": "卧室", "people": [{"who": "Wikira", "look": ["pink hair", "wet hair"], "clothes": "bath towel"},
+                                                      {"who": ""}, "Lj"], "story": "洗完澡出来"})
+    assert note.people == (writer.NotePerson("Wikira", "pink hair, wet hair", "bath towel", ""),)
+    assert note.place == "卧室" and note.story == "洗完澡出来"
+    with pytest.raises(writer.WriterError):
+        writer.to_note({"place": "卧室"})
 
 
 # ── 接口 ──
@@ -581,7 +640,7 @@ def test_plan_asks_the_chosen_connection_with_thinking_off(client: TestClient, m
     )
     assert r.status_code == 200, r.text
     out = r.json()
-    assert out["picture"]["people"] == [{"who": "Wikira", "tags": "smile", "clothes": ""}]
+    assert out["picture"]["people"] == [{"who": "Wikira", "tags": "smile", "clothes": "", "look": ""}]
     assert out["ms"] == 1234 and out["connection"] == "导演" and out["draw"] is True
     assert asked[0][:2] == ("导演", "off")
     # 默认第一人称;改成第三人称时说明和结果都跟着变
@@ -591,6 +650,49 @@ def test_plan_asks_the_chosen_connection_with_thinking_off(client: TestClient, m
         json={"connection_id": conn["id"], "camera": "third", "cast": [{"name": "Wikira"}], "lines": [{"text": "好美"}]},
     ).json()
     assert third["picture"]["pov"] is False and "第三人称" in asked[1][2][0].content
+    # 带上上一条回复的状态笔记
+    note = {"place": "海边", "people": [{"who": "Wikira", "look": "wet hair", "clothes": "swimsuit", "notes": "刚游完泳"}], "story": "去海边玩"}
+    client.post("/api/imagegen/plan", json={"connection_id": conn["id"], "cast": [{"name": "Wikira"}], "lines": [{"text": "a"}], "note": note})
+    user = asked[2][2][1].content
+    assert "Wikira —— 长相:wet hair\n  衣服:swimsuit\n  特殊:刚游完泳" in user and "前情:去海边玩" in user
+
+
+def test_note_asks_the_writer_and_returns_the_state(client: TestClient, make_connection, monkeypatch):
+    conn = make_connection(name="导演", api_type="openai_compatible", base_url="http://x/v1", api_key="k", model="flash")
+    asked = []
+
+    async def fake_ask(c, messages, thinking="off"):
+        asked.append(messages)
+        return ('{"place": "客厅,夜里", "people": [{"who": "Wikira", "look": "pink hair", "clothes": ["casual dress", "barefoot"],'
+                ' "notes": "(变了:光着脚)"}], "story": "她让他涂指甲。"}', 900)
+
+    monkeypatch.setattr(writer, "ask", fake_ask)
+    prev = {"place": "客厅", "people": [{"who": "Wikira", "look": "pink hair", "clothes": "casual dress, pantyhose"}], "story": "按脚"}
+    body = {"connection_id": conn["id"], "cast": [{"name": "Wikira", "look": "pink hair", "outfit": "casual dress, pantyhose"}],
+            "lines": [{"text": "她脱掉了袜子。"}], "prev": prev, "place": "客厅夜", "user_text": "恋足"}
+    r = client.post("/api/imagegen/note", json=body)
+    assert r.status_code == 200, r.text
+    out = r.json()
+    assert out["people"] == [{"who": "Wikira", "look": "pink hair", "clothes": "casual dress, barefoot", "notes": "(变了:光着脚)"}]
+    assert out["place"] == "客厅,夜里" and out["story"] == "她让他涂指甲。" and out["ms"] == 900 and out["connection"] == "导演"
+    assert "上一次的笔记:" in asked[0][1].content and "0. (旁白)她脱掉了袜子。" in asked[0][1].content
+
+    async def nothing(c, messages, thinking="off"):
+        return '{"place": "客厅"}', 5
+
+    monkeypatch.setattr(writer, "ask", nothing)
+    assert client.post("/api/imagegen/note", json=body).status_code == 502
+
+
+def test_generate_draws_the_writers_look_and_keeps_old_pictures_working(client: TestClient, fake_nai):
+    client.put("/api/imagegen/token", json={"token": "pst-x"})
+    picture = {"scene": "living room", "people": [{"who": "Wikira", "tags": "sitting", "clothes": "barefoot", "look": "pink hair, hair down"}]}
+    img = client.post("/api/imagegen/generate", json=generate_payload(picture=picture)).json()
+    assert img["chars"][0]["prompt"] == "girl, pink hair, hair down, barefoot, sitting"
+    assert img["picture"]["people"][0]["look"] == "pink hair, hair down"
+    # 老画面(没有 look)「换一张」照老规矩补卡上的
+    old = client.post("/api/imagegen/generate", json=generate_payload()).json()
+    assert old["chars"][0]["prompt"] == "girl, pink hair, blouse, looking back, smile"
 
 
 def test_plan_reports_what_the_model_said_when_it_is_not_json(client: TestClient, make_connection, monkeypatch):

@@ -56,6 +56,22 @@ class DrawnIn(BaseModel):
     clothes: str = Field("", max_length=300)
 
 
+class NotePersonIO(BaseModel):
+    who: str = Field(..., min_length=1, max_length=80)
+    look: str = Field("", max_length=1000)
+    clothes: str = Field("", max_length=1000)
+    # 和平时不一样的地方(中文)
+    notes: str = Field("", max_length=600)
+
+
+class NoteIO(BaseModel):
+    """状态笔记:一条回复结束时每个人的样子、在哪、到那时为止发生了什么(存在那条回复的 swipe_info[分支].vn.imageNote)"""
+
+    place: str = Field("", max_length=300)
+    people: list[NotePersonIO] = Field(default_factory=list, max_length=6)
+    story: str = Field("", max_length=1200)
+
+
 class PlanIn(BaseModel):
     mode: Literal["manual", "auto"] = "manual"
     # 不传 = 当前的聊天连接
@@ -73,16 +89,40 @@ class PlanIn(BaseModel):
     since: int | None = None
     last: str = Field("", max_length=400)
     drawn: list[DrawnIn] = Field(default_factory=list, max_length=8)
+    # 上一条回复结束时的状态笔记;没有不传
+    note: NoteIO | None = None
     sfw_only: bool = False
     # 镜头:pov 第一人称(默认)/ third 第三人称 / auto 指导模型挑
     camera: Literal["pov", "third", "auto"] = "pov"
 
 
+class NoteIn(BaseModel):
+    """记一条回复的状态笔记"""
+
+    connection_id: str | None = None
+    thinking: Literal["off", "conn"] = "off"
+    # 改写过的状态笔记说明书;不传 = 默认的
+    skill: str | None = Field(None, max_length=8000)
+    cast: list[WhoIn] = Field(default_factory=list, max_length=6)
+    lines: list[LineIn] = Field(default_factory=list, max_length=120)
+    # 上一次的笔记;没有不传
+    prev: NoteIO | None = None
+    place: str = Field("", max_length=400)
+    user_text: str = Field("", max_length=2000)
+
+
+class NoteOut(NoteIO):
+    ms: int
+    connection: str
+
+
 class PersonIO(BaseModel):
     who: str = Field(..., min_length=1, max_length=80)
     tags: str = Field("", max_length=2000)
-    # 这一刻穿的;空 = 照平时的
+    # 这一刻穿的
     clothes: str = Field("", max_length=1000)
+    # 这一刻的长相(10-22 起指导模型写);null = 老的画面,拼提示词时照老规矩补卡上的长相和平时的衣服
+    look: str | None = Field(None, max_length=2000)
 
 
 class PictureIO(BaseModel):
@@ -90,6 +130,7 @@ class PictureIO(BaseModel):
 
     scene: str = Field("", max_length=2000)
     people: list[PersonIO] = Field(default_factory=list, max_length=4)
+    # 要求画成人向(标签里有裸露的词时拼提示词也会当成 nsfw)
     nsfw: bool = False
     # 第一人称:玩家是镜头,不画玩家这个人
     pov: bool = False
@@ -122,8 +163,8 @@ class RefIn(BaseModel):
 
 
 class LookIn(BaseModel):
+    # 卡上写的长相、平时的衣服:10-22 起只给老画面补(新画面照指导模型写的)
     tags: str = Field("", max_length=2000)
-    # 平时的衣服(指导模型没写这一刻穿什么时加上)
     outfit: str = Field("", max_length=2000)
     negative: str = Field("", max_length=2000)
     gender: Literal["female", "male"] = "female"

@@ -835,6 +835,13 @@ function AdvancedPage({ store }: { store: ImageGenStore }) {
         fallback={defaults?.skills.auto}
         onChange={(v) => set({ ...config, skills: { ...config.skills, auto: v } })}
       />
+      <SkillRow
+        label="状态笔记"
+        tip={IG_TIPS.note}
+        value={config.skills.note}
+        fallback={defaults?.skills.note}
+        onChange={(v) => set({ ...config, skills: { ...config.skills, note: v } })}
+      />
     </div>
   );
 }

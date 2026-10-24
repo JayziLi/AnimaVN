@@ -1,8 +1,10 @@
-"""指导模型:读剧情,写这一幕画什么(场景、每个人的动作表情)。自动出图时它也是导演,顺便判要不要出。
+"""指导模型:读剧情,写这一幕画什么(场景、每个人这一刻的长相衣服和动作表情)。自动出图时它也是导演,顺便判要不要出。
+每条回复写完还让它记一次状态笔记(每个人现在的长相、衣服、特殊的地方,到现在发生了什么),下一张图照着画。
 
-发给它的话分三段:说明书(玩家能改,插件页「高级」)+ 输出格式(写死在这里,改说明书也不会把格式改坏)+ 这次的剧情。
+发给它的话分三段:说明书(玩家能改,插件页「高级」)+ 镜头、字段和输出格式(写死在这里,改说明书也不会把格式改坏)+ 这次的剧情。
 默认关思考(10-09 实测:Haiku 5.5 开着思考一次 3.6–4.8 秒,关掉 1.2–1.5 秒;DeepSeek flash 关思考约 1.25 秒);
 连接不认「关思考」时(有的模型关不掉)退回连接自己的思考设置再试一次。
+设计:docs/superpowers/specs/2026-10-22-imagegen-state-notes-design.md
 """
 
 from __future__ import annotations
@@ -20,59 +22,42 @@ from app.plugins.imagegen.assemble import Person, Plan
 
 MAX_PEOPLE = 4
 
-# 10-18 改成「给这场戏拍一张 CG」:用户嫌以前像给某一句配插图、没有导演感(构图平、总是中景、两人并排);
-# 说明书只讲想要什么样的 CG,不列规则和词表(用户:「描述清楚需求就好,不需要太严格的限制」,初稿交给 GPT 压短)。
-# 先写中文分镜(description)再写英文:一句英文构图(composition,NovelAI V4.5 读得懂句子,谁站在哪也写在这里)+ 标签。
-# 不让它写坐标:10-18 试过,两个人常被挤在一起画糊(nai.py 的 use_coords)
+# 10-18 改成「给这场戏拍一张 CG」:用户嫌以前像给某一句配插图、没有导演感(构图平、总是中景、两人并排)。
+# 10-22 用户改了一版:开头强调分镜和讲故事,「怎么拍」分点写,「上一张」只说接上它
+_ROLE = "你是视觉小说的 CG 导演，负责分镜和画面设计，用一张图把故事讲好。"
+_SERIES = "用户消息里写了上一张 CG 画的是什么：这张要和它连得上（地点、衣服、光线一致），景别和构图换一换。"
 _HOW = (
-    "怎么拍：先用 description 写两三句中文分镜，想清楚这一刻的情绪和视觉重点，再写英文描述与标签。"
-    "根据情绪选择景别、机位、人物位置、光线和前后景的虚实，让构图表现人物的关系与距离。"
-    "需要看清表情时靠近，需要环境承载情绪时拉开，不必总用中景或让两人左右并排。"
-    "画面服务于整场戏，不要把某句话逐字画出来，也不要让无关的小物件或宏大背景抢走主体。"
-)
-_UNTIL = (
-    "until 是显示结束的句号编号。换地方、换姿势、换衣服或有人来去时，写变化前一句；一直没变写最后一句。"
-    "说话、表情和手上的小动作不算变化。"
-)
-_FIELDS = (
-    "- composition 用一句英文自然语言描述整张画面的镜头、人物在画面里的位置与关系、动作和光线；"
-    "scene 用英文 danbooru 标签写景别、机位、环境、光影与景深；人物 tags 写姿势、动作、表情、视线和互动。"
-    "标签用逗号隔开，与分镜保持一致。\n"
-    "- people 只列画面中出现的人，who 只能用给定的名字；无人风景写 []。\n"
-    "- 不写头发、眼睛、身材，代码会自动补充。衣服和平时一样时 clothes 写空字符串；不一样时，用英文标签写这一刻的全部穿着。"
-)
-# 10-18 用户:「要知道之后画了什么、前面画了什么,这样大概能出一个连续的图」:用户消息里列出前后画过的图
-_SERIES = (
-    "用户消息里会列出前后已经画过的图：让这张和它们连得上（地点、衣服、光线一致），像同一组 CG 里的一张，"
-    "景别和构图别和它们重复。"
+    "怎么拍：\n"
+    "1. 先在 description 里用两三句中文写分镜：这一刻是什么情绪，画面重点是什么。\n"
+    "2. 景别跟着情绪走：要看清表情就靠近，要让环境说话就拉远；别总是中景，别总让两人左右并排。\n"
+    "3. 用机位、站位、光线和前后景的虚实，表现人物的关系和距离。\n"
+    "4. 画整场戏的情绪，不要把某一句台词照字面画出来。\n"
+    "5. 主体是人，别让小道具或大背景抢戏。"
 )
 
 
-def _manual(nsfw: str) -> str:
+def _manual() -> str:
     # 10-18 用户:点画笔「不是完全这一句,而是这一段附近的重要的画面内容」;重要的那一拍在还没读到的后几句里也画
     return (
-        "你是视觉小说的 CG 导演。玩家读到「[>]」那一句时点了「画」：为这一段剧情选出最重要、最打动人的画面，"
-        "设计一张值得留下的 CG。不一定是「[>]」这一句本身，可以是它前后附近的那一拍。"
-        "玩家写了「想看什么」时以它为准。\n"
-        f"{_SERIES}\n\n"
-        f"{_HOW}\n\n字段约定：\n- {_UNTIL}\n{_FIELDS}\n- {nsfw}"
+        f"{_ROLE}\n"
+        "玩家读到「[>]」那一句时点了「画」：为这一段剧情选出最重要、最打动人的画面，可以是它前后附近的那一拍；"
+        "玩家写了「想看什么」就照它画。\n"
+        f"{_SERIES}\n\n{_HOW}"
     )
 
 
-def _auto(when: str, top: str, nsfw: str) -> str:
+def _auto(when: str, top: str) -> str:
     return (
-        "你是视觉小说的 CG 导演。读完整条按句编号的回复，决定是否配一张 CG；要出图，就为这场戏选出最打动人的一刻，"
-        "设计一张值得玩家留下的画面。\n"
-        f"{_SERIES}\n\n"
-        f"什么时候出图：{when}或玩家明说想看时，考虑出图。普通闲聊、和上一张 CG 差不多的场面不出，拿不准也不出。"
-        f"importance：3 = 很重要，如第一次到某地、第一次身体接触、告白、{top}玩家明说想看；2 = 值得出；1 = 可出可不出。\n\n"
-        f"{_HOW}\n\n字段约定：\n- at 是选中这一刻开始的句号编号；{_UNTIL}\n{_FIELDS}\n- {nsfw}"
+        f"{_ROLE}\n"
+        "读完这条按句编号的回复，决定要不要配一张 CG；要配，就选出这场戏最打动人的一刻。\n"
+        f"什么时候出图：{when}或玩家明说想看时。普通闲聊、和上一张差不多的场面不出，拿不准也不出。\n"
+        f"importance：3 = 很重要，如第一次到某地、第一次身体接触、告白、{top}玩家明说想看；2 = 值得出；1 = 可出可不出。\n"
+        f"{_SERIES}\n\n{_HOW}"
     )
 
 
-_NSFW = "nsfw：画面里有裸露写 true，否则写 false。"
-SKILL_MANUAL = _manual(_NSFW)
-SKILL_AUTO = _auto("情绪浓烈、关系推进、有氛围的新地点、换装", "", _NSFW)
+SKILL_MANUAL = _manual()
+SKILL_AUTO = _auto("情绪浓烈、关系推进、有氛围的新地点、换装", "")
 
 SKILL_LOOK = """根据角色卡,写这个角色平时的外貌,给 NovelAI(动漫画风的生图模型)用。
 只要英文 danbooru 标签,逗号隔开,分三栏:
@@ -82,14 +67,35 @@ SKILL_LOOK = """根据角色卡,写这个角色平时的外貌,给 NovelAI(动�
 - outfit 平时穿的:衣服、鞋、配饰。
 不要写表情、动作、地点、性格。"""
 
-DEFAULT_SKILLS = {"manual": SKILL_MANUAL, "auto": SKILL_AUTO, "look": SKILL_LOOK}
+# 10-22 用户:每条回复写完总结一次角色状态(外貌、衣服、特殊的地方)和发生了什么,下一张图照它画。
+# 推断那句是 10-22 实测加的:Wikira 涂脚趾甲那段没明说脱了袜子,笔记照参考抄了 pantyhose,画出来又光脚又穿连裤袜
+SKILL_NOTE = """你给视觉小说的 CG 导演记笔记：读上一次的笔记、玩家这次说的话和这条回复，写出这条回复结束时每个人的样子、在哪、到目前为止发生了什么。下一张 CG 照这份笔记画，长相和穿着一定要写准。
+- 每个人（只写给定的人）写：look 这一刻的长相（发型、发色、发饰、瞳色、身材、妆容）；clothes 这一刻身上穿戴的全部（光脚、脱掉的也写）；notes 和平时不一样的地方、身上的痕迹、手里拿的、位置和姿势，变了的写「（变了：……）」，没有就空着。
+- look 只写长相，不写表情；clothes 只写身上穿戴的，不写手里拿的。
+- 看不到的变化按剧情推断：在按脚、涂脚指甲就是光着脚，洗完澡头发是湿的。
+- 上一次笔记里的变化，这条回复没改回来的继续保留；没变化的照参考写。
+- place：在哪、白天还是晚上、光线。
+- story：之前的经过加上这条回复，三到五句，写到这条回复结束为止。
+- look、clothes 用英文 danbooru 标签，逗号隔开；notes、place、story 用中文。"""
 
-_PICTURE_FIELDS = """  "description": "两三句中文分镜，说明选中的瞬间、情绪及画面安排",
+DEFAULT_SKILLS = {"manual": SKILL_MANUAL, "auto": SKILL_AUTO, "look": SKILL_LOOK, "note": SKILL_NOTE}
+
+# 字段和输出格式写死(10-22 用户:字段约定简单些,强调格式;镜头放在字段前面)。
+# 10-22 起不问 nsfw:要不要加 nsfw 标签由代码看标签定(assemble.explicit)
+_FIELDS = (
+    "- until：画面持续到第几句。换地方、换姿势、换衣服、有人来去时写变化的前一句，没变就写最后一句。\n"
+    "- composition：一句全英文，写清镜头、人物位置与关系、动作、光线。\n"
+    "- scene：景别、机位、环境、光影、景深。\n"
+    "- people：画面里出现的人，who 只能用给定的名字，没人写 []。每人写 look（这一刻的长相）、"
+    "clothes（这一刻身上穿戴的全部，光脚、脱掉的也写）、tags（姿势、动作、表情、视线、互动）。\n"
+    "- 除了 description 和 title，都用英文 danbooru 标签，逗号隔开。长相和衣服代码不会补，没写就画不出来；"
+    "角色名标签代码会加，不用写。"
+)
+_PICTURE_FIELDS = """  "description": "两三句中文分镜",
   "title": "四到八个字的中文短名",
   "composition": "One English sentence describing the whole picture.",
-  "scene": "英文 danbooru 标签，逗号隔开",
-  "people": [{"who": "给定的名字", "tags": "英文 danbooru 标签，逗号隔开", "clothes": ""}],
-  "nsfw": false"""
+  "scene": "英文标签",
+  "people": [{"who": "给定的名字", "look": "英文标签", "clothes": "英文标签", "tags": "英文标签"}]"""
 _AUTO_HEAD = """  "draw": true,
   "importance": 2,
   "reason": "一句中文说明为什么出图",
@@ -98,9 +104,10 @@ _AUTO_HEAD = """  "draw": true,
 
 
 def format_for(mode: str, camera: str) -> str:
-    """输出格式(写死,改说明书也改不坏)。pov 只在「指导模型挑」镜头时让它写
+    """字段和输出格式(写死,改说明书也改不坏)。pov 只在「指导模型挑」镜头时让它写
     (10-18:定死第三人称时示例里还写着 pov true,自相矛盾)"""
-    out = "只输出一个 JSON，不要代码块或其他文字。字段按以下顺序排列，description 放在英文画面描述与标签之前：\n{\n"
+    fields = ("- at：这一刻从第几句开始。\n" if mode == "auto" else "") + _FIELDS
+    out = f"字段：\n{fields}\n\n只输出一个 JSON，不要代码块或其他文字，按这个顺序：\n{{\n"
     out += (_AUTO_HEAD if mode == "auto" else "") + '  "until": 0,\n' + _PICTURE_FIELDS
     out += ',\n  "pov": false\n}' if camera == "auto" else "\n}"
     if mode == "auto":
@@ -112,19 +119,20 @@ FORMAT_LOOK = (
     '只输出一个 JSON,不要代码块、不要别的字:\n'
     '{"name_tag": "角色名标签,原创角色空串", "tags": "长相的英文标签", "outfit": "平时穿的英文标签", "gender": "female 或 male"}'
 )
-SFW_NOTE = "这张卡只画全年龄:nsfw 一律写 false,不要写任何色情或裸露的标签。"
-# 镜头(插件页「镜头」,10-12 用户定默认第一人称):由代码加在说明书后面,玩家改说明书也照样生效
-_POV_HOW = (
-    "people 里不要写玩家;她看着玩家写 looking at viewer;玩家的手入镜时(牵手、摸头、递东西、喂食、被她拉着走)"
-    "在 scene 里写 pov hands 和手在做什么(holding hands、headpat、incoming food);"
-    "不要写 from side、from behind 这类从旁边看的镜头"
+FORMAT_NOTE = (
+    "只输出一个 JSON，不要代码块或其他文字：\n"
+    '{"place": "中文", "people": [{"who": "给定的名字", "look": "英文标签", "clothes": "英文标签", "notes": "中文"}], "story": "中文"}'
 )
+SFW_NOTE = "这张卡只画全年龄：不要写任何色情或裸露的标签。"
+# 镜头(插件页「镜头」,10-12 用户定默认第一人称):由代码加在说明书后面,玩家改说明书也照样生效。
+# 10-22 用户:第一人称不提手(一提手,每张都画手)
+_POV_HOW = "people 里不写玩家；她看着玩家时写 looking at viewer"
 CAMERA_NOTES = {
-    "pov": f"镜头:第一人称 —— 画面就是玩家的眼睛。{_POV_HOW}。",
-    "third": "镜头:第三人称 —— 玩家出现时写进 people(用玩家的名字),不要写 pov。",
+    "pov": f"镜头：第一人称，画面就是玩家的眼睛。{_POV_HOW}；不要用 from side、from behind 这类从旁边看的镜头。",
+    "third": "镜头：第三人称。玩家出现时写进 people（用玩家的名字）。",
     "auto": (
-        "镜头你来挑:一对一、她对着玩家的时刻(看着你、喂你、牵手、摸头、凑过来)用第一人称:pov 写 true,"
-        f"{_POV_HOW};两个人的身体都要入镜时(背后抱、并肩走的远景、从侧面看接吻)用第三人称:pov 写 false,玩家写进 people。"
+        f"镜头你来挑：一对一、她对着玩家的时刻用第一人称（pov 写 true）：{_POV_HOW}；"
+        "两个人的身体都要入镜时（背后抱、并肩走的远景、从侧面看接吻）用第三人称（pov 写 false），玩家写进 people。"
     ),
 }
 CAMERAS = tuple(CAMERA_NOTES)
@@ -145,7 +153,7 @@ class Line:
 
 @dataclass(frozen=True)
 class Who:
-    """画面里可能出现的人:名字、性别、平时的样子(只给指导模型参考,别让它重复写)"""
+    """画面里可能出现的人:名字、性别、平时的样子(给指导模型当参考)"""
 
     name: str
     gender: str = "female"
@@ -162,8 +170,26 @@ class Drawn:
     line: int | None
     title: str = ""
     description: str = ""
-    # 这一张里谁穿得和平时不一样(「星绘穿 pajamas」)
+    # 这一张里每个人穿的(「星绘穿 pajamas」)
     clothes: str = ""
+
+
+@dataclass(frozen=True)
+class NotePerson:
+    who: str
+    look: str = ""
+    clothes: str = ""
+    # 和平时不一样的地方(中文)
+    notes: str = ""
+
+
+@dataclass(frozen=True)
+class Note:
+    """状态笔记:一条回复结束时每个人的样子、在哪、到那时为止发生了什么"""
+
+    place: str = ""
+    people: tuple[NotePerson, ...] = ()
+    story: str = ""
 
 
 @dataclass
@@ -180,9 +206,21 @@ class Context:
     last: str = ""
     # 前后已经画过的图
     drawn: list[Drawn] = field(default_factory=list)
+    # 上一条回复结束时的状态笔记;没有(老对话、第一条回复)是 None
+    note: Note | None = None
     sfw_only: bool = False
     # pov 第一人称 / third 第三人称 / auto 指导模型挑
     camera: str = "pov"
+
+
+@dataclass
+class NoteContext:
+    cast: list[Who]
+    lines: list[Line]
+    # 上一次的笔记;没有是 None
+    prev: Note | None = None
+    place: str = ""
+    user_text: str = ""
 
 
 @dataclass
@@ -203,14 +241,48 @@ def _speaker(line: Line) -> str:
     return f"{line.speaker}:" if line.speaker else "(旁白)"
 
 
+def _numbered(lines: list[Line], focus: int | None = None) -> list[str]:
+    return [f"{i}. {'[>] ' if i == focus else ''}{_speaker(line)}{line.text}" for i, line in enumerate(lines)]
+
+
+def _cast_text(cast: list[Who]) -> str:
+    return "、".join(f"{w.name}({'玩家,' if w.player else ''}{'男' if w.gender == 'male' else '女'})" for w in cast)
+
+
+def _note_text(note: Note) -> list[str]:
+    out = [f"地点:{note.place}"] if note.place else []
+    for p in note.people:
+        out.append(f"{p.who} —— 长相:{p.look or '(没写)'}")
+        out.append(f"  衣服:{p.clothes or '(没写)'}")
+        if p.notes:
+            out.append(f"  特殊:{p.notes}")
+    return out
+
+
+def _reference_text(cast: list[Who], changes: str) -> list[str]:
+    rows = []
+    for w in cast:
+        if w.look:
+            rows.append(f"{w.name} 的参考长相(平时的样子):{w.look}")
+        if w.outfit:
+            rows.append(f"{w.name} 的参考衣服(平时的样子):{w.outfit}")
+    if not rows:
+        return []
+    return ["", "出场人物参考描述:", *rows, f"(参考只是平时的样子。{changes}都要照着改,别照抄参考。)"]
+
+
 def _drawn_text(ctx: Context, mode: str) -> list[str]:
     if not ctx.drawn:
         return []
-    out = ["\n前后已经画过的图:"]
+    # 10-22 用户:「强调上一张是这个就好」:只有上一张时一句话说完
+    if len(ctx.drawn) == 1 and ctx.drawn[0].line is None:
+        d = ctx.drawn[0]
+        return ["", f"上一张 CG:【{d.title}】{d.description}" + (f"({d.clothes})" if d.clothes else "")]
+    out = ["", "已经画过的 CG:"]
     n = len(ctx.lines)
     for d in ctx.drawn:
         if d.line is None:
-            where = "上一条回复"
+            where = "上一张(上一条回复)"
         elif d.line < 0:
             where = "这条回复更前面"
         elif d.line >= n:
@@ -224,13 +296,13 @@ def _drawn_text(ctx: Context, mode: str) -> list[str]:
 
 
 def context_text(ctx: Context, mode: str) -> str:
-    cast = "、".join(f"{w.name}({'玩家,' if w.player else ''}{'男' if w.gender == 'male' else '女'})" for w in ctx.cast)
-    out = [f"画面里可能出现的人:{cast}"]
-    for w in ctx.cast:
-        if w.look:
-            out.append(f"{w.name}的长相(代码会自动加上,不要重复写):{w.look}")
-        if w.outfit:
-            out.append(f"{w.name}平时穿的(代码会自动加上;穿得不一样时才写 clothes):{w.outfit}")
+    """用户消息:谁可能出现 → 上一条回复结束时的状态 → 前情和这一条(上下文)→ 画过的图 → 参考 → 想看什么"""
+    out = [f"画面里可能出现的人:{_cast_text(ctx.cast)}"]
+    if ctx.note is not None:
+        out += ["", "角色现在的状态(上一条回复结束时):", *_note_text(ctx.note)]
+    out.append("")
+    if ctx.note is not None and ctx.note.story:
+        out.append(f"前情:{ctx.note.story}")
     if ctx.place:
         out.append(f"现在的地点:{ctx.place}")
     if ctx.user_text:
@@ -241,17 +313,13 @@ def context_text(ctx: Context, mode: str) -> str:
         else:
             last = f",画的是:{ctx.last}" if ctx.last and not ctx.drawn else ""
             out.append(f"上一张图在 {ctx.since} 条回复以前{last}。")
-        out.append("\n这条回复(按句编号):")
-        out += [f"{i}. {_speaker(line)}{line.text}" for i, line in enumerate(ctx.lines)]
-        out += _drawn_text(ctx, mode)
+        out += ["这条回复(按句编号):", *_numbered(ctx.lines)]
     else:
-        out.append("\n剧情(按句编号;「[>]」是玩家现在读到的这一句):")
-        for i, line in enumerate(ctx.lines):
-            mark = "[>] " if i == ctx.focus else ""
-            out.append(f"{i}. {mark}{_speaker(line)}{line.text}")
-        out += _drawn_text(ctx, mode)
-        if ctx.want.strip():
-            out.append(f"\n想看什么:{ctx.want.strip()}")
+        out += ["剧情(按句编号;「[>]」是玩家现在读到的这一句):", *_numbered(ctx.lines, ctx.focus)]
+    out += _drawn_text(ctx, mode)
+    out += _reference_text(ctx.cast, "状态里记着的变化、这段剧情里的新变化")
+    if mode == "manual" and ctx.want.strip():
+        out += ["", f"想看什么:{ctx.want.strip()}"]
     return "\n".join(out)
 
 
@@ -260,6 +328,7 @@ def messages_for(
     mode: str,
     skill: str | None = None,
 ) -> list[ChatMessage]:
+    """system:说明书 → 镜头 → (只画全年龄)→ 字段和格式;user:剧情"""
     system = (skill or DEFAULT_SKILLS[mode]).strip()
     system += "\n\n" + CAMERA_NOTES.get(ctx.camera, CAMERA_NOTES["pov"])
     if ctx.sfw_only:
@@ -267,6 +336,26 @@ def messages_for(
     system += "\n\n" + format_for(mode, ctx.camera)
     user = context_text(ctx, mode)
     return [ChatMessage(role="system", content=system), ChatMessage(role="user", content=user)]
+
+
+def note_messages(ctx: NoteContext, skill: str | None = None) -> list[ChatMessage]:
+    """记状态笔记:上一次的笔记 + 背景图 + 玩家这次说的 + 这条回复 + 参考"""
+    out = [f"会出现的人:{_cast_text(ctx.cast)}", ""]
+    if ctx.prev is not None:
+        out += ["上一次的笔记:", *_note_text(ctx.prev)]
+        if ctx.prev.story:
+            out.append(f"前情:{ctx.prev.story}")
+    else:
+        out.append("上一次的笔记:还没有,这是第一次。")
+    out.append("")
+    if ctx.place:
+        out.append(f"背景图:{ctx.place}")
+    if ctx.user_text:
+        out.append(f"玩家这次说:{ctx.user_text}")
+    out += ["这条回复(按句编号):", *_numbered(ctx.lines)]
+    out += _reference_text(ctx.cast, "上一次笔记里的变化、这条回复里的新变化")
+    system = (skill or SKILL_NOTE).strip() + "\n\n" + FORMAT_NOTE
+    return [ChatMessage(role="system", content=system), ChatMessage(role="user", content="\n".join(out))]
 
 
 def card_text(card: TavernCard) -> str:
@@ -331,16 +420,24 @@ def to_result(
     focus: int | None = None,
 ) -> Result:
     """校验、补齐:字段类型不对的按能用的读(列表当逗号串、"true" 当真),读不出的给默认值。
-    镜头定死第一人称 / 第三人称时 pov 照设置,不看它写的;只有「指导模型挑」时听它的"""
+    镜头定死第一人称 / 第三人称时 pov 照设置,不看它写的;只有「指导模型挑」时听它的。
+    每个人的 look 一律是字符串(没写是空串):None 只留给 10-22 以前存的老画面(拼提示词时照老规矩补长相)"""
     people: list[Person] = []
     raw_people = data.get("people")
     for p in raw_people if isinstance(raw_people, list) else []:
         if isinstance(p, dict) and _text(p.get("who")):
-            people.append(Person(who=_text(p.get("who")), tags=_text(p.get("tags")), clothes=_text(p.get("clothes"))))
+            people.append(
+                Person(
+                    who=_text(p.get("who")),
+                    tags=_text(p.get("tags")),
+                    clothes=_text(p.get("clothes")),
+                    look=_text(p.get("look")),
+                )
+            )
         elif isinstance(p, str) and p.strip():
-            people.append(Person(who=p.strip()))
+            people.append(Person(who=p.strip(), look=""))
     pov = camera == "pov" or (camera == "auto" and _bool(data.get("pov")))
-    nsfw = _bool(data.get("nsfw"))
+    nsfw = False
     plan = Plan(
         scene=_text(data.get("scene")),
         people=tuple(people[:MAX_PEOPLE]),
@@ -363,6 +460,26 @@ def to_result(
     if result.draw and not plan.scene and not plan.people:
         raise WriterError("指导模型没写画面(scene 和 people 都是空的)", json.dumps(data, ensure_ascii=False)[:300])
     return result
+
+
+def to_note(data: dict) -> Note:
+    """状态笔记:字段类型不对的按能用的读;一个人都没写、也没写经过的算没记成"""
+    people: list[NotePerson] = []
+    raw_people = data.get("people")
+    for p in raw_people if isinstance(raw_people, list) else []:
+        if isinstance(p, dict) and _text(p.get("who")):
+            people.append(
+                NotePerson(
+                    who=_text(p.get("who"))[:80],
+                    look=_text(p.get("look"))[:1000],
+                    clothes=_text(p.get("clothes"))[:1000],
+                    notes=_text(p.get("notes"))[:600],
+                )
+            )
+    note = Note(place=_text(data.get("place"))[:300], people=tuple(people[:MAX_PEOPLE]), story=_text(data.get("story"))[:1200])
+    if not note.people and not note.story:
+        raise WriterError("指导模型没记下状态(people 和 story 都是空的)", json.dumps(data, ensure_ascii=False)[:300])
+    return note
 
 
 def _with_thinking(conn: ApiConnection, thinking: str | None) -> ApiConnection:

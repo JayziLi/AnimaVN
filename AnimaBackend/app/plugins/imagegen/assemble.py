@@ -1,27 +1,28 @@
-"""指导模型写的(场景、每个人这次在做什么)+ 不会变的(画风、每个人的外貌)→ 发给 NovelAI 的提示词。纯函数。
+"""指导模型写的画面(场景、每个人这一刻的长相衣服和动作表情)+ 不会变的(人数、画风、角色名)→ 发给 NovelAI 的提示词。纯函数。
 
-指导模型只写会变的东西,长相、画风每次由这里拼,所以每张是同一个人、同一种画风
-(10-09 星绘整段剧情的 C 线就是这样:发箍、白发紫眼、蝴蝶结每张都在)。
+10-22 起长相和衣服全听指导模型的(用户:代码每次补平时的衣服发型,剧情里光着脚还补上 pantyhose, flats),
+卡上写的长相、平时的衣服只当参考给它看(writer.py);这里不再补。设计:docs/superpowers/specs/2026-10-22-imagegen-state-notes-design.md
 - 人数标签按每个人的性别算(1girl / 1boy …),一个人时加 solo,一男一女时日常加 couple、nsfw 时加 hetero
   (10-06 发现日常写 hetero 会往成人向带);一个人都没有是风景(no humans, scenery)。
-- 每个人一条分角色提示词:girl / boy + 外貌 + 这次的动作表情;不给坐标,NovelAI 自己摆(nai.py 的 use_coords)。
+- 每个人一条分角色提示词:girl / boy + 角色名标签 + 这一刻的长相 + 这一刻穿的 + 动作表情;不给坐标,NovelAI 自己摆(nai.py 的 use_coords)。
   10-09 起是从左到右排开(两个人 0.35 / 0.65),10-18 试过让指导模型定坐标,两个人常被挤在一起画糊,
   最后改成谁在哪写进构图句,NovelAI 自己排。
-- 指导模型写的一句英文构图(composition)原样接在场景标签后面。
+- 角色名标签(keqing (genshin impact) 这种)照旧由这里加在这个人提示词的最前面:NovelAI 认得的角色写名字最像。
+- 用了参考图的那个人也写指导模型写的长相(10-22 对比:不写的话扎马尾、头发放下来这些变化画不出来,写了照样像立绘;
+  10-09 那时长相是卡上写死的,不写最像)。
+- 老的画面(10-22 以前存的,person.look 是 None)照老规矩:补卡上的长相(用了参考图的不补),没写这一刻穿的就补平时的衣服
+  (nsfw 时不补),「换一张」画出来和以前一样。
+- 指导模型写的一句英文构图(composition)原样接在场景标签后面;画师串放在人数标签后面、场景前面。
+- nsfw 不问指导模型:plan.nsfw 开着,或者标签里写了裸露 / 性器官的词,就加 nsfw, uncensored
+  (NovelAI 要有这个才放开画成人内容,10-12 试过不加画出来完全不是)。只画全年龄的卡一律不加。
 - 反向:反向预设 + 画风的反向 + 成人保护词 + 人数保护(单人挡多出来的人);只画全年龄时再挡成人向的词。
-- 衣服:每个人平时穿什么(outfit)单独放;指导模型写了这一刻穿什么(clothes:睡衣、泳装、脱了外套、nude)就换掉平时的,
-  没写就照平时的。nsfw 场面没写时不加平时的衣服(多半是脱了,写进去两边打架)。
-- 男主日常要写衣服、挡光膀子(10-06:不写会被画成没穿上衣)。
-- 角色名标签(keqing (genshin impact) 这种)放在这个人提示词的最前面:NovelAI 认得的角色写名字最像。
-- 用了参考图的那个人不写长相标签(10-09:V4.5 + 立绘、提示词不写长相最像),衣服照常。
-- 画师串放在人数标签后面、场景前面。
-- 第一人称(plan.pov,10-12 用户定的默认):画面就是玩家的眼睛 —— 不画玩家这个人(指导模型写了也去掉),
-  加 pov、不加 solo;画到玩家的手(scene 里有 pov hands)时按玩家平时的衣服加袖子颜色(black shirt → black sleeves);
-  反向不挡 1boy(手是男的),只挡 multiple boys。10-12 试画牵手 / 摸头 / 凑近 / 喂你四张都对。
+- 第一人称(plan.pov):画面就是玩家的眼睛 —— 不画玩家这个人(指导模型写了也去掉),加 pov、不加 solo;
+  反向不挡 1boy(手是男的),只挡 multiple boys。
 """
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 from app.plugins.imagegen.nai import SFW_OF, CharPrompt
@@ -29,15 +30,17 @@ from app.plugins.imagegen.nai import SFW_OF, CharPrompt
 QUALITY = "very aesthetic, masterpiece, no text"
 ADULT_GUARD = "loli, child, chibi, aged down"
 SFW_GUARD = "nsfw, nude, nipples, pussy, penis, sex, cum"
-PLAYER_DRESSED = "fully clothed"
-PLAYER_DRESSED_NEG = "topless male, shirtless"
 MALE_WORDS = ("1boy", "boy", "male", "man")
-COLORS = ("black", "white", "grey", "gray", "navy", "blue", "red", "brown", "green", "beige", "pink", "purple", "yellow", "orange")
+# 标签里有这些词(整词)就算成人向的画面:sexy、analog 这种不算
+_EXPLICIT = re.compile(
+    r"\b(nude|naked|nipples?|pussy|penis|sex|vaginal|anal|anus|topless|bottomless|cum|fellatio|paizuri|handjob|erection)\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
 class Look:
-    """一个人不会变的样子:长相标签、平时的衣服、反向、性别(female / male);player = 玩家本人"""
+    """一个人卡上写的样子:长相标签、平时的衣服(只给老画面补)、反向、性别(female / male);player = 玩家本人"""
 
     tags: str = ""
     negative: str = ""
@@ -46,7 +49,7 @@ class Look:
     outfit: str = ""
     # 角色名标签(danbooru 的写法,原创角色空着)
     name_tag: str = ""
-    # 长相交给参考图:不写 tags
+    # 带了参考图:老画面不补卡上的长相
     ref: bool = False
 
 
@@ -54,8 +57,10 @@ class Look:
 class Person:
     who: str
     tags: str = ""
-    # 这一刻穿的(和平时不一样时才写);空 = 照平时的
+    # 这一刻穿的
     clothes: str = ""
+    # 这一刻的长相(10-22 起指导模型写);None = 老的画面,照老规矩补卡上的长相和平时的衣服
+    look: str | None = None
 
 
 @dataclass(frozen=True)
@@ -64,6 +69,7 @@ class Plan:
 
     scene: str = ""
     people: tuple[Person, ...] = field(default_factory=tuple)
+    # 要求画成人向
     nsfw: bool = False
     # 第一人称:玩家是镜头
     pov: bool = False
@@ -111,22 +117,25 @@ def _count(word: str, n: int) -> str:
     return f"{n}{word}" if n == 1 else f"{n}{word}s"
 
 
-def _tags(text: str) -> set[str]:
-    return {t.strip().lower() for t in (text or "").split(",") if t.strip()}
-
-
-def sleeves(outfit: str) -> str:
-    """第一人称画到玩家的手时袖子什么颜色:平时穿的衣服里第一个颜色词(black shirt → black sleeves);没有就不写"""
-    for word in outfit.lower().replace(",", " ").split():
-        if word in COLORS:
-            return f"{word} sleeves"
-    return ""
+def explicit(plan: Plan) -> bool:
+    """画面里写了裸露 / 性器官 / 性行为的标签(场景、构图、每个人的长相衣服动作)"""
+    parts = [plan.scene, plan.composition, *(f"{p.tags} {p.clothes} {p.look or ''}" for p in plan.people)]
+    return any(_EXPLICIT.search(x) for x in parts if x)
 
 
 def sentence_of(text: str) -> str:
     """构图句子:压成一行,去掉 NovelAI 当加权用的括号,太长截断"""
     flat = " ".join((text or "").translate(str.maketrans("", "", "{}[]")).split())
     return flat[:600].rstrip(" ,")
+
+
+def _wears(person: Person, look: Look | None, nsfw: bool) -> tuple[str, str]:
+    """这个人的(长相, 衣服):新画面照指导模型写的;老画面补卡上的长相(用了参考图的不补,和以前一样)和平时的衣服"""
+    if person.look is not None:
+        return person.look, person.clothes
+    face = "" if look is None or look.ref else look.tags
+    outfit = person.clothes or ("" if nsfw or look is None else look.outfit)
+    return face, outfit
 
 
 def assemble(
@@ -140,8 +149,7 @@ def assemble(
     sfw_only: bool = False,
 ) -> Assembled:
     """uc = 反向预设 + 玩家另外写的反向;quality = 质量词原文(空串 = 不加),都由调用方按最后用的模型挑好"""
-    nsfw = plan.nsfw and not sfw_only
-    player = next((v for v in looks.values() if v.player), None)
+    nsfw = (plan.nsfw or explicit(plan)) and not sfw_only
     people = list(plan.people)
     if plan.pov:
         people = [p for p in people if not (looks.get(p.who) and looks[p.who].player)]
@@ -161,13 +169,8 @@ def assemble(
         count.append("solo")
     elif girls and boys:
         count.append("hetero" if nsfw else "couple")
-    # NovelAI 要提示词里有 nsfw 才放开画成人内容(10-12 试过:不加的话画出来完全不是)
     if nsfw:
         count.append("nsfw, uncensored")
-    hands = ""
-    # 指导模型有时写成一个连着的标签(pov hands on her waist):包含就算
-    if plan.pov and any("pov hands" in t for t in _tags(plan.scene)) and player is not None:
-        hands = sleeves(player.outfit)
 
     guards = [ADULT_GUARD]
     if people:
@@ -186,21 +189,13 @@ def assemble(
     chars: list[CharPrompt] = []
     for person, gender in zip(people, genders, strict=True):
         look = looks.get(person.who)
+        face, outfit = _wears(person, look, nsfw)
         base = "girl" if gender == "female" else "boy"
-        outfit = person.clothes or ("" if nsfw or look is None else look.outfit)
-        face = "" if look is None or look.ref else look.tags
         prompt = join(base, look.name_tag if look else "", face, outfit, person.tags)
-        negative = look.negative if look else ""
-        if hands and not (look is not None and look.player):
-            # 玩家手的袖子颜色写在主提示词里,会串到她身上(10-12 两张实测她都穿上了黑袖子):她的反向挡掉
-            negative = join(negative, hands)
-        if look is not None and look.player and gender == "male" and not nsfw and not person.clothes:
-            prompt = join(prompt, PLAYER_DRESSED)
-            negative = join(negative, PLAYER_DRESSED_NEG)
-        chars.append(CharPrompt(prompt=prompt, negative=negative))
+        chars.append(CharPrompt(prompt=prompt, negative=look.negative if look else ""))
 
     # 构图那句接在场景标签后面、画风前面;句子里有逗号,不能进 join(会被拆开去重)
-    head = join(", ".join(count), style.artists, plan.scene, hands)
+    head = join(", ".join(count), style.artists, plan.scene)
     tail = join(head, style.tags, quality)[len(head):]
     sentence = sentence_of(plan.composition)
     return Assembled(

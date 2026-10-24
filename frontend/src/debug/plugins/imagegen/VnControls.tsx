@@ -219,7 +219,7 @@ function DrawPanel({ store, ctx }: { store: ImageGenStore; ctx: VnIllustrationCo
     });
   };
 
-  const setPerson = (i: number, patch: { tags?: string; clothes?: string }) =>
+  const setPerson = (i: number, patch: { tags?: string; clothes?: string; look?: string }) =>
     preview &&
     setPreview({
       ...preview,
@@ -254,7 +254,7 @@ function DrawPanel({ store, ctx }: { store: ImageGenStore; ctx: VnIllustrationCo
         <>
           <p className="ig-note">
             指导模型({preview.plan.connection},{(preview.plan.ms / 1000).toFixed(1)} 秒)写的画面,可以改了再画。
-            外貌和画风不用写,画的时候自动加。
+            画风和角色名自动加,长相、衣服照这里写的画。
           </p>
           <div className="ig-pair">
             <label className="ig-field">
@@ -277,7 +277,7 @@ function DrawPanel({ store, ctx }: { store: ImageGenStore; ctx: VnIllustrationCo
               checked={Boolean(preview.picture.pov)}
               onChange={(e) => setPreview({ ...preview, picture: { ...preview.picture, pov: e.target.checked } })}
             />
-            第一人称(玩家是镜头,不画玩家;玩家的手入镜时场景里写 pov hands)
+            第一人称(玩家是镜头,不画玩家)
           </label>
           <label className="ig-field">
             <span>场景 · 镜头</span>
@@ -300,13 +300,19 @@ function DrawPanel({ store, ctx }: { store: ImageGenStore; ctx: VnIllustrationCo
           {preview.picture.people.map((p, i) => (
             <div className="ig-field" key={`${p.who}-${i}`}>
               <span>{p.who}</span>
-              <textarea className="ig-input" rows={2} value={p.tags} onChange={(e) => setPerson(i, { tags: e.target.value })} />
+              <input
+                className="ig-input"
+                value={p.look ?? ''}
+                placeholder="这一刻的长相(发型、发色、瞳色……)"
+                onChange={(e) => setPerson(i, { look: e.target.value })}
+              />
               <input
                 className="ig-input"
                 value={p.clothes ?? ''}
-                placeholder="这一刻穿的(空着 = 平时的衣服)"
+                placeholder="这一刻穿的(全部写上,光脚也写)"
                 onChange={(e) => setPerson(i, { clothes: e.target.value })}
               />
+              <textarea className="ig-input" rows={2} value={p.tags} onChange={(e) => setPerson(i, { tags: e.target.value })} />
             </div>
           ))}
           <div className="ig-actions">

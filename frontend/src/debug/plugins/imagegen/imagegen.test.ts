@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ChatEntry, SwipeInfo, VnImageMark } from '../../lib/chatEntry';
+import type { ChatEntry, SwipeInfo, VnImageMark, VnImageNote } from '../../lib/chatEntry';
 // 先加载登记处(它再加载各卡带),和内核加载的顺序一样
 import { cartridge, extension } from '../cartridges';
 import type { DrawerCardFacts } from '../../components/drawer/cardView';
@@ -31,8 +31,11 @@ import {
   lastImageBefore,
   markAt,
   newShowLog,
+  noteBefore,
+  noteOf,
   patchImage,
   repliesSinceImage,
+  withNote,
 } from './marks';
 
 const entry = (id: string, role: 'user' | 'assistant', images?: VnImageMark[], swipes = 1): ChatEntry => ({
@@ -284,6 +287,27 @@ describe('生图卡带 · 图挂在消息上', () => {
     expect(blockedByCooldown(4, 3, 2)).toBe(false);
     expect(blockedByCooldown(1, 3, 3)).toBe(false);
     expect(blockedByCooldown(null, 3, 1)).toBe(false);
+  });
+
+  it('状态笔记:记在那个分支上,图和别的记号不动;画下一张时拿前面最近那条记下的', () => {
+    const note = (story: string): VnImageNote => ({
+      place: '客厅',
+      people: [{ who: 'Wikira', look: 'pink hair', clothes: 'barefoot', notes: '' }],
+      story,
+    });
+    const e = entry('a1', 'assistant', [m(2, 'img')], 2);
+    const noted = withNote(e, 1, note('涂指甲'));
+    expect(noteOf(noted)?.story).toBe('涂指甲');
+    expect(imagesOf(noted).map((x) => x.id)).toEqual(['img']);
+    expect(noteOf(noted, 0)).toBeNull();
+    expect(noteOf(e)).toBeNull();
+    // 格式不对的不算
+    const bad = withNote(e, 1, { place: 'x' } as unknown as VnImageNote);
+    expect(noteOf(bad)).toBeNull();
+    const es = [withNote(entry('b1', 'assistant'), 0, note('第一段')), entry('u1', 'user'), entry('b2', 'assistant'), entry('u2', 'user'), entry('b3', 'assistant')];
+    // 第二条没记成:往前找到第一条的
+    expect(noteBefore(es, 4)?.story).toBe('第一段');
+    expect(noteBefore(es, 0)).toBeNull();
   });
 });
 
