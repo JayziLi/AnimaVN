@@ -1,0 +1,236 @@
+<!doctype html>
+<!-- README 里 architecture.webp 的源文件。改完在仓库根目录起个静态服务(python -m http.server),
+     用宽 1300 的浏览器窗口打开这页,2 倍像素截 #sheet,缩到 2000 宽存成 docs/images/architecture.webp。 -->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>AnimaVN 架构</title>
+<style>
+@font-face { font-family: 'AnimaSerif'; src: url('../../frontend/public/vn/fonts/nss-extra.woff2') format('woff2'); font-weight: 200 900; unicode-range: U+4E00-9FFF; }
+@font-face { font-family: 'AnimaSerif'; src: url('../../frontend/public/vn/fonts/nss-core.woff2') format('woff2'); font-weight: 200 900; }
+@font-face { font-family: 'AnimaLatin'; src: url('../../frontend/public/vn/fonts/cormorant-italic.woff2') format('woff2'); font-weight: 300 700; font-style: italic; }
+
+:root {
+  --paper: #fbfaf8;
+  --card: #ffffff;
+  --ink: #2a2a33;
+  --dim: rgba(42, 42, 51, 0.62);
+  --faint: rgba(42, 42, 51, 0.42);
+  --hair: rgba(42, 42, 51, 0.14);
+  --lav: #8f88b8;
+  --lav-soft: #eeedf6;
+  --sans: 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', 'Noto Sans SC', sans-serif;
+  --serif: 'AnimaSerif', 'Noto Serif SC', 'Songti SC', serif;
+}
+* { box-sizing: border-box; margin: 0; }
+body { background: #e9e7e2; font-family: var(--sans); color: var(--ink); }
+
+#sheet {
+  width: 1200px;
+  padding: 40px 44px 36px;
+  background: var(--paper);
+}
+
+header { display: flex; align-items: baseline; gap: 16px; margin-bottom: 6px; }
+h1 { font-family: var(--serif); font-weight: 700; font-size: 30px; letter-spacing: 0.12em; }
+.en { font-family: 'AnimaLatin', serif; font-style: italic; font-size: 19px; color: var(--faint); letter-spacing: 0.04em; }
+.lead { font-size: 16px; color: var(--dim); margin-bottom: 26px; }
+.lead b { color: var(--ink); font-weight: 600; }
+
+/* 三栏:浏览器 | 后端 | 外面;中间两条是箭头 */
+.grid {
+  display: grid;
+  grid-template-columns: 64px 1fr 118px 1fr 118px 0.82fr;
+  column-gap: 0;
+  row-gap: 12px;
+  align-items: stretch;
+}
+.colhead { padding: 0 0 4px; }
+.colhead .t { font-family: var(--serif); font-weight: 700; font-size: 19px; letter-spacing: 0.08em; }
+.colhead .s { font-size: 13px; color: var(--faint); margin-top: 3px; }
+.rule { grid-column: 2 / -1; height: 1px; background: var(--hair); margin-bottom: 2px; }
+
+.rowlab {
+  font-family: var(--serif); font-weight: 600; font-size: 15px; color: var(--dim);
+  writing-mode: vertical-rl; letter-spacing: 0.3em;
+  display: flex; align-items: center; justify-content: center;
+  border-right: 1px solid var(--hair); margin-right: 14px;
+}
+
+.box {
+  background: var(--card);
+  border-radius: 10px;
+  box-shadow: 0 0 0 1px var(--hair), 0 1px 2px rgba(42, 42, 51, 0.04);
+  padding: 13px 16px 14px;
+}
+.box h3 { font-size: 17px; font-weight: 700; margin-bottom: 5px; }
+.box h3 .opt { font-size: 12px; font-weight: 400; color: var(--faint); margin-left: 6px; }
+.box p { font-size: 14.5px; line-height: 1.6; color: var(--dim); }
+.box code {
+  font-family: Consolas, 'Cascadia Mono', monospace; font-size: 13px; color: var(--ink); white-space: nowrap;
+  background: var(--lav-soft); border-radius: 4px; padding: 0 4px;
+}
+.ext { background: transparent; box-shadow: 0 0 0 1px var(--hair) inset; }
+.ext.none { box-shadow: none; display: flex; align-items: center; }
+.ext.none p { color: var(--faint); }
+
+/* 箭头:上面一条往右,下面一条往左,字写在线上 */
+.arrow { display: flex; flex-direction: column; justify-content: center; gap: 12px; padding: 0 8px; }
+.arrow.one { gap: 0; }
+.ln { position: relative; height: 1.5px; background: var(--lav); }
+.ln::after {
+  content: ''; position: absolute; top: -4px; width: 0; height: 0;
+  border-top: 4.75px solid transparent; border-bottom: 4.75px solid transparent;
+}
+.ln.r::after { right: -1px; border-left: 8px solid var(--lav); }
+.ln.l::after { left: -1px; border-right: 8px solid var(--lav); }
+.ln span {
+  position: absolute; left: 50%; transform: translateX(-50%); white-space: nowrap;
+  font-size: 13px; color: var(--ink); background: var(--paper); padding: 0 5px; line-height: 1;
+}
+.ln.r span { top: -18px; }
+.ln.l span { top: 7px; }
+.ln.dash { background: none; border-top: 1.5px dashed var(--lav); height: 0; }
+.ln.dash::after { top: -5.5px; }
+
+footer {
+  margin-top: 22px; padding-top: 14px; border-top: 1px solid var(--hair);
+  display: flex; justify-content: space-between; font-size: 13px; color: var(--faint);
+}
+footer b { color: var(--dim); font-weight: 600; }
+</style>
+</head>
+<body>
+<div id="sheet">
+  <header>
+    <h1>AnimaVN 架构</h1>
+    <span class="en">How it works</span>
+  </header>
+  <p class="lead">和酒馆一样，<b>提示词在浏览器里组装</b>；后端只做三件事：把请求转给模型、存数据、合成语音。语音、生图、Jev 都是可选的，不接也能玩。</p>
+
+  <div class="grid">
+    <div></div>
+    <div class="colhead"><div class="t">浏览器</div><div class="s">React + TypeScript + Vite</div></div>
+    <div></div>
+    <div class="colhead"><div class="t">后端</div><div class="s">Python + FastAPI + SQLite，跑在你的电脑上</div></div>
+    <div></div>
+    <div class="colhead"><div class="t">外面的服务</div><div class="s">自己选、自己填 key</div></div>
+    <div class="rule"></div>
+
+    <!-- 写剧情 -->
+    <div class="rowlab">写剧情</div>
+    <div class="box">
+      <h3>组装提示词</h3>
+      <p>酒馆兼容层：角色卡、预设、宏、世界书，加上立绘 / 场景 / 语音这些插件自动补的说明，拼成一份完整的提示词。和酒馆 1.18 逐条对过答案。</p>
+    </div>
+    <div class="arrow">
+      <div class="ln r"><span>提示词</span></div>
+      <div class="ln l"><span>流式回复</span></div>
+    </div>
+    <div class="box">
+      <h3>模型转发</h3>
+      <p>OpenAI 兼容、Anthropic、Mock 三种连接。一边收一边往前端推，模型的思考内容单独拆出来。</p>
+    </div>
+    <div class="arrow">
+      <div class="ln r"><span>请求</span></div>
+      <div class="ln l"><span>一个字一个字</span></div>
+    </div>
+    <div class="box ext">
+      <h3>大模型 API</h3>
+      <p>DeepSeek、Claude、OpenAI、OpenRouter、中转站，或者本地 Ollama</p>
+    </div>
+
+    <!-- 演出 -->
+    <div class="rowlab">演 出</div>
+    <div class="box">
+      <h3>一句一句演</h3>
+      <p>回复边到边切成句子，像 galgame 一样点一下下一句。读每句前面的标签换表情、背景、曲子：<br><code>&lt;sprite:微笑&gt;</code> <code>&lt;bg:客厅夜&gt;</code> <code>&lt;bgm:日常&gt;</code></p>
+    </div>
+    <div class="arrow">
+      <div class="ln r"><span>这一句</span></div>
+      <div class="ln l"><span>谁说的、什么表情</span></div>
+    </div>
+    <div class="box">
+      <h3>Jev 标注 <span class="opt">可选</span> · 表情兜底</h3>
+      <p>标签可以交给 Jev 判断：谁在说话、什么表情、要不要换场景。AI 写的表情名对不上立绘时，本地小模型 bge-small-zh（CPU 就能跑）挑最像的那张。</p>
+    </div>
+    <div class="arrow one">
+      <div class="ln r dash"><span>每句约 0.2 秒</span></div>
+    </div>
+    <div class="box ext">
+      <h3>Jev <span class="opt">TypeSafe，可选</span></h3>
+      <p>专门做判断的小模型</p>
+    </div>
+
+    <!-- 配音 -->
+    <div class="rowlab">配 音</div>
+    <div class="box">
+      <h3>念台词</h3>
+      <p>每句台词连同表情一起去要语音，可以日语配音、中文字幕。读到一半随时可以插话。</p>
+    </div>
+    <div class="arrow">
+      <div class="ln r"><span>台词 + 表情</span></div>
+      <div class="ln l"><span>音频</span></div>
+    </div>
+    <div class="box">
+      <h3>语音合成</h3>
+      <p>按表情挑这个声音对应情绪的参考音频，交给 GPT-SoVITS（也支持 IndexTTS）。合成过的句子存进缓存，重播不再花时间。</p>
+    </div>
+    <div class="arrow">
+      <div class="ln r"><span>文本 + 参考音频</span></div>
+      <div class="ln l"><span>wav</span></div>
+    </div>
+    <div class="box ext">
+      <h3>GPT-SoVITS</h3>
+      <p>一台有 NVIDIA 显卡的电脑，可以就是这台，也可以是另一台</p>
+    </div>
+
+    <!-- 插图 -->
+    <div class="rowlab">插 图</div>
+    <div class="box">
+      <h3>AI 生图</h3>
+      <p>点画笔给这一幕画一张，或者让 AI 自己判断什么时候配图。喜欢的收藏进这张卡的 CG。</p>
+    </div>
+    <div class="arrow">
+      <div class="ln r"><span>这一幕</span></div>
+      <div class="ln l"><span>图</span></div>
+    </div>
+    <div class="box">
+      <h3>生图导演</h3>
+      <p>先请一个便宜的聊天模型把剧情写成画面：谁在场、穿什么、什么构图，再交给画师。每条回复后记一笔状态，下一张图接得上。</p>
+    </div>
+    <div class="arrow">
+      <div class="ln r"><span>画面描述</span></div>
+      <div class="ln l"><span>图</span></div>
+    </div>
+    <div class="box ext">
+      <h3>NovelAI <span class="opt">可选</span></h3>
+      <p>需要 NovelAI 订阅</p>
+    </div>
+
+    <!-- 存 -->
+    <div class="rowlab">存 着</div>
+    <div class="box">
+      <h3>菜单和调试台</h3>
+      <p>存档、历史、相册、素材、设置；调试台里改预设、看完整提示词。导入酒馆卡，或者把角色打包成 <code>.animavn</code> 带走。</p>
+    </div>
+    <div class="arrow">
+      <div class="ln r"><span>读 / 写</span></div>
+    </div>
+    <div class="box">
+      <h3>数据</h3>
+      <p>卡、预设、人设、存档放在 SQLite；立绘、背景、曲子、CG 按内容存成文件。都在 <code>AnimaBackend/data/</code>，升级前自动备份。</p>
+    </div>
+    <div></div>
+    <div class="box ext none">
+      <p>不上传，只存在你自己的电脑上</p>
+    </div>
+  </div>
+
+  <footer>
+    <span><b>一条回复的路线</b>　你说一句 → 浏览器组好提示词 → 后端转给模型 → 回复一句一句到 → 换表情、背景、曲子 → 去要语音、念出来</span>
+    <span>AnimaVN</span>
+  </footer>
+</div>
+</body>
+</html>

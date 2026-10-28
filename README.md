@@ -46,16 +46,16 @@ AnimaVN 是一个跑在浏览器里的 AI 视觉小说。你拿一张角色卡�
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/images/vn-dialogue.webp" alt="对话画面"><br><sub>对话画面：DeepSeek娘在介绍 AnimaVN，上面一行是日语配音的原文</sub></td>
-    <td width="50%"><img src="docs/images/character-select.webp" alt="角色选择"><br><sub>选角色：按标签筛选，右上角「导入」直接吃酒馆卡</sub></td>
+    <td width="50%"><img src="docs/images/vn-dialogue.webp" alt="对话画面"><br><sub>对话画面：小字是日语配音的原文，大字是中文字幕，底下随时可以插话</sub></td>
+    <td width="50%"><img src="docs/images/character-select.webp" alt="角色选择"><br><sub>选角色：右边列着她的立绘、场景、声音、预设，右上角「导入」直接吃酒馆卡</sub></td>
   </tr>
   <tr>
-    <td><img src="docs/images/backlog.webp" alt="历史"><br><sub>历史：每句都能重播语音、切换「重来」出的版本</sub></td>
+    <td><img src="docs/images/backlog.webp" alt="历史"><br><sub>历史：日语原文和中文一起看，每句都能重播语音、重新生成</sub></td>
     <td><img src="docs/images/saves.webp" alt="存档"><br><sub>存档：每段对话一格，缩略图是结尾那一幕</sub></td>
   </tr>
   <tr>
-    <td><img src="docs/images/console.webp" alt="调试台"><br><sub>调试台：左边预设块、中间带标签的原文、右边角色卡，和酒馆一个思路</sub></td>
-    <td><img src="docs/images/worldbook.webp" alt="世界书"><br><sub>卡内世界书：每条右边写着下次会不会触发、为什么</sub></td>
+    <td><img src="docs/images/card-editor.webp" alt="卡编辑器"><br><sub>局内菜单 · 角色：卡编辑器搬进了游戏，描述、世界书、开场白都在这里改</sub></td>
+    <td><img src="docs/images/plugins.webp" alt="插件"><br><sub>局内菜单 · 插件：立绘、语音、背景、BGM、CG、AI 生图一页一个，带实机预览</sub></td>
   </tr>
 </table>
 
@@ -65,24 +65,25 @@ DeepSeek娘之外，导入你自己的卡就能玩。下面是作者本机导入
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/images/chars-wikira.webp" alt="Wikira"><br><sub>Wikira：作者的原创角色，日语配音，右上角是语音延迟</sub></td>
-    <td width="50%"><img src="docs/images/chars-keqing.webp" alt="刻晴"><br><sub>刻晴（原神）：璃月的夜景和 BGM 跟着剧情换</sub></td>
+    <td width="50%"><img src="docs/images/chars-wikira.webp" alt="Wikira"><br><sub>Wikira：作者的原创角色，日语配音、中文字幕</sub></td>
+    <td width="50%"><img src="docs/images/chars-keqing.webp" alt="刻晴"><br><sub>刻晴（原神）：背景和 BGM 跟着剧情换</sub></td>
   </tr>
   <tr>
-    <td><img src="docs/images/chars-alice.webp" alt="天童爱丽丝"><br><sub>天童爱丽丝（蔚蓝档案）：对话框上方是模型的思考用时，点开能看内容</sub></td>
-    <td><img src="docs/images/chars-aemeath.webp" alt="爱弥斯"><br><sub>爱弥斯（鸣潮）：长台词自动换行，日语原文和中文字幕一起显示</sub></td>
+    <td><img src="docs/images/chars-alice.webp" alt="天童爱丽丝"><br><sub>天童爱丽丝（蔚蓝档案）：旁白也可以日中双语</sub></td>
+    <td><img src="docs/images/chars-aemeath.webp" alt="爱弥斯"><br><sub>爱弥斯（鸣潮）：旁白没有名字，和台词一眼分得开</sub></td>
   </tr>
 </table>
 
 <details>
-<summary><b>更多截图</b>（提示词检查器、语音设置、设置、刚装好的样子、手机）</summary>
+<summary><b>更多截图</b>（设置、预设、相册、调试台、刚装好的样子、手机）</summary>
 
 <br>
 
 | | |
 |---|---|
-| ![完整提示词](docs/images/prompt-inspector.webp) 完整提示词：发给模型的每一条消息、来源、token 数 | ![设置](docs/images/settings.webp) 设置：文字速度、字幕、自动播放、透明度、字号 |
-| ![语音插件](docs/images/voice-plugin.webp) 旧版的语音设置页：现在主声音在卡编辑器，试音在素材管理，语音服务在插件 → 语音服务 | ![声音档案](docs/images/voice-profile.webp) 声音：权重路径 + 每种情绪一段参考音频（旧版画面，现在在素材管理 · 声音里改） |
+| ![设置](docs/images/settings.webp) 设置：右边实机预览，改了马上看到 | ![预设](docs/images/preset.webp) 局内菜单 · 预设：拖动排序、开关、改内容，底下是上下文预算 |
+| ![相册](docs/images/album.webp) 相册：AI 画的插图按存档分组，点一张能跳回那句台词 | ![调试台](docs/images/console.webp) 调试台：左边预设块、中间带标签的原文、右边角色卡，和酒馆一个思路 |
+| ![世界书](docs/images/worldbook.webp) 卡内世界书：每条右边写着下次会不会触发、为什么 | ![完整提示词](docs/images/prompt-inspector.webp) 完整提示词：发给模型的每一条消息、来源、token 数 |
 | ![新装后的选角色页](docs/images/first-run.webp) 刚装好时的选角色页：只有自带的 DeepSeek娘 | <img src="docs/images/mobile-vn.webp" width="49%"> <img src="docs/images/mobile-select.webp" width="49%"><br>手机竖屏 |
 
 </details>
@@ -100,6 +101,7 @@ DeepSeek娘之外，导入你自己的卡就能玩。下面是作者本机导入
 - [AI 生图（BETA）](#-ai-生图beta)
 - [手机上玩](#-手机上玩)
 - [部署到服务器（Docker）](#-部署到服务器docker)
+- [架构](#-架构)
 - [项目结构](#-项目结构)
 - [常见问题](#-常见问题)
 - [致谢与授权](#-致谢与授权)
@@ -120,12 +122,14 @@ DeepSeek娘之外，导入你自己的卡就能玩。下面是作者本机导入
 | 场景包 | 一组背景 + BGM。AI 写 `<bg:客厅夜>`、`<bgm:日常>` 切换，背景可以带默认曲子 |
 | CG | 事件插图，像背景一样切换，可以带差分 |
 | AI 生图（BETA） | 点一下画笔，给这一幕画一张插图；也能让 AI 自己判断什么时候配图。现在接的是 NovelAI |
-| 日语配音 + 中文字幕 | 主声音是日语就自动打开：AI 一行日语、一行中文交替写，念日语、显示中文（也可以日中双语都显示） |
+| 日语配音 + 中文字幕 | 音色是日语就自动打开：AI 一行日语、一行中文交替写，念日语、显示中文（也可以日中双语都显示） |
 | 别替玩家说话 | 默认叫 AI 别替你写台词和动作。立绘交给 Jev 时，Jev 还会认出哪句是你说的：显示成你的名字，不念、不换立绘 |
 | 存档 / 分支 | 每段对话就是一个存档，实时保存。在任意一句「在这里存档」= 从这里分叉 |
-| 历史 | 回看、重播语音、切换「重来」出的几个版本、看带标签的原文 |
-| 设置 | 文字速度、自动播放间隔和倍速、对话框透明度、字号、字体、对话框皮肤、主题色、BGM 在说话时压低 |
-| 标题画面 | 选好角色后标题画面换成她的立绘和上次那一幕，几种封面样式可选 |
+| 历史 | 回看、重播语音、切换「重来」出的几个版本，看和改模型写的原文 |
+| 局内菜单 | Esc 打开，分三组：角色（卡编辑器）· 预设 · 插件 ｜ 历史 · 存档 · 相册 ｜ 设置 · 模型 · 素材 · 开发者。都在游戏里改，不用切回调试台 |
+| 相册 | AI 画的插图按存档分组，收藏的进这张卡的 CG，点一张能跳回那句台词 |
+| 设置 | 文字速度、自动播放间隔和倍速、对话框样式和位置、字号、字体、主题（白 / 黑 / 玻璃）、BGM 在说话时压低，右边实机预览 |
+| 标题画面 | 选好角色后封面换成她的立绘和上次那一幕，纸面、明亮两种封面 |
 
 ### 提示词调试台
 
@@ -182,7 +186,7 @@ DeepSeek娘之外，导入你自己的卡就能玩。下面是作者本机导入
 - 预设：调试台左栏的 **导入预设**。勾上「绑定到当前角色卡」，以后选这张卡自动切到这个预设
 - 聊天记录：调试台左下角 **对话历史** → 导入 jsonl（可以多选）
 
-立绘、场景、语音这些是 AnimaVN 自己加的，酒馆卡里没有。导入卡以后在卡编辑器的「素材」页给它挂上（见下面[第 5 步](#5-给导入的卡配立绘和场景)），不挂也能玩，只是画面不动。
+立绘、场景、语音这些是 AnimaVN 自己加的，酒馆卡里没有。导入卡以后在卡编辑器的「素材」页给它换上（见下面[第 5 步](#5-给导入的卡配立绘和场景)），不配也能玩，只是画面不动。
 
 ---
 
@@ -319,13 +323,15 @@ cd frontend; npm install; cd ..
 
 ### 5. 给导入的卡配立绘和场景
 
-在游戏里按 **Esc** 打开菜单 → **角色** → 点 **素材**，打开这张卡的卡编辑器：
+在游戏里按 **Esc** 打开菜单 → **插件** → **立绘**，点右下角的 **卡编辑器 · 她的立绘**，打开这张卡的卡编辑器：
 
-- **立绘**：点 **上传图片新建一套**，一次选好几张图，**文件名就是表情名**（`微笑.png`、`害羞.png`……）。一张卡可以挂好几套（比如不同衣服），游戏里随时换
-- **背景 / BGM**：点 **上传图片新建一套** / **上传曲子新建一套**，文件名就是背景名 / 曲名。横图 16:9 效果最好
-- 库里已经有的：点 **从素材库选**。菜单里的 **素材** 能看到库里所有的立绘、声音、背景、BGM、CG
+- **立绘**：点上面的 **上传新建**，一次选好几张图，**文件名就是表情名**（`微笑.png`、`害羞.png`……）
+- **背景 / BGM / CG**：左边点那一行，同样 **上传新建**，文件名就是背景名 / 曲名。横图 16:9 效果最好
+- 库里已经有的：在上面的下拉框里选。菜单里的 **素材** 能看到库里所有的立绘、声音、背景、BGM、CG，选中一套点 **给她用** 也行
 - 也可以直接把图片、音乐文件拖进窗口导入
-- 不用改预设：挂好以后，AnimaVN 会自动告诉 AI 这张卡有哪些表情、场景可以用
+- 不用改预设：换上以后，AnimaVN 会自动告诉 AI 这张卡有哪些表情、场景可以用
+
+<img src="docs/images/card-studio.webp" alt="卡编辑器的素材页" width="720">
 
 手上没素材？菜单 → **插件** → **立绘**，点 **载入示例 Sylvie**，先用自带的示例立绘（MIT 授权）看看效果；背景和 BGM 在 **插件** → **背景** 点 **载入示例 · 校园**（四个场景、四首曲子，出处见 `frontend/public/vn/CREDITS.txt`）。
 
@@ -343,7 +349,7 @@ cd frontend; npm install; cd ..
 
 角色的台词由 [GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS) 来念，要一台有 NVIDIA 显卡的电脑，可以就是你玩的这台。每句的语气跟着立绘表情走，可以日语配音、中文字幕。
 
-大致是：启动 GPT-SoVITS → 在 插件 → 语音服务 里连上它 → 在 素材 → 声音 里导入角色的声音 → 设成这张卡的主声音。一步步的做法见 **[接入语音](docs/plugins/voice.md)**。
+大致是：启动 GPT-SoVITS → 在 插件 → 语音服务 里连上它 → 在 素材 → 声音 里导入角色的声音 → 设成这张卡的音色。一步步的做法见 **[接入语音](docs/plugins/voice.md)**。
 
 作者用 RTX 5090，每句 0.6 到 1.2 秒。
 
@@ -378,6 +384,14 @@ docker compose up -d --build
 ```
 
 nginx 提供页面并反代 `/api`，整站一道密码，数据存在 Docker 卷里。语音服务不在 compose 里，要单独在显卡机器上跑。详细步骤、升级和已知限制见 [`deploy/README.md`](deploy/README.md)。
+
+---
+
+## 🧭 架构
+
+<img src="docs/images/architecture.webp" alt="AnimaVN 架构图：浏览器、后端、外面的服务三栏，按写剧情、演出、配音、插图、存着五行连起来" width="100%">
+
+一句话：**浏览器负责组提示词和演出，后端负责转发、存数据、合成语音，模型、语音、生图都接外面的服务。** 只填一个模型 API 就能玩；语音、生图、Jev 想加再加。
 
 ---
 
@@ -447,8 +461,8 @@ OpenAI 兼容的地址大多要以 `/v1` 结尾。另外检查电脑上有没有
 <details>
 <summary><b>立绘一直不变</b></summary>
 
-1. 这张卡挂了立绘吗？打开 **插件**，「立绘」前面的圆点是空心的就是没挂，照[第 5 步](#5-给导入的卡配立绘和场景)挂上
-2. **插件** 左边「立绘」那一行最右边的开关是不是关了？
+1. 这张卡有立绘吗？打开 **插件**，左边「立绘」后面的圆点是空心的就是还没有，照[第 5 步](#5-给导入的卡配立绘和场景)配上
+2. **插件** → **立绘**，标题旁边的开关是不是关了？
 3. 在调试台看 AI 的原文，台词前有没有 `<sprite:…>`。没有的话，看预设左栏的「立绘指令」旁边是不是写着「这次不发」，点问号看原因。有些模型不听话，换个模型，或者在 **插件** → **立绘** 最上面把「AI 写」换成「Jev 标」
 
 </details>
