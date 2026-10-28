@@ -22,5 +22,5 @@ AnimaBackend\data 这个文件夹。换电脑、重下整合包时，把它整�
 - 双击后 Windows 说「无法验证发布者」或「已保护你的电脑」：点「更多信息」→「仍要运行」。
 - 别放在 C:\Program Files 这类要管理员权限的文件夹里，放桌面或 D 盘都行。
 - 黑窗口一闪就没了、或者报错：把窗口截图发给作者，或者到 GitHub 提 issue：
-  https://github.com/JayziLi/AnimaVN-public/issues
-- 语音、生图怎么接：https://github.com/JayziLi/AnimaVN-public 里的说明。
+  https://github.com/JayziLi/AnimaVN/issues
+- 语音、生图怎么接：https://github.com/JayziLi/AnimaVN 里的说明。

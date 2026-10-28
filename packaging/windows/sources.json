@@ -8,8 +8,8 @@
     },
     {
       "name": "GitHub",
-      "base": "https://github.com/JayziLi/AnimaVN-public/releases/latest/download/",
-      "page": "https://github.com/JayziLi/AnimaVN-public/releases/latest"
+      "base": "https://github.com/JayziLi/AnimaVN/releases/latest/download/",
+      "page": "https://github.com/JayziLi/AnimaVN/releases/latest"
     }
   ]
 }

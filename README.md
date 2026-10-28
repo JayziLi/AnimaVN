@@ -19,7 +19,7 @@ SillyTavern 的角色卡、世界书、预设直接导入，不用改。
 
 [在线试玩](https://animavn.com) ·
 [**国内下载（魔搭）**](https://www.modelscope.cn/models/JayziLi/AnimaVN/files) ·
-[海外下载](https://github.com/JayziLi/AnimaVN-public/releases/latest) ·
+[海外下载](https://github.com/JayziLi/AnimaVN/releases/latest) ·
 [快速开始](#-快速开始) ·
 [酒馆兼容](#-酒馆角色卡直接用) ·
 [语音](#-语音配音部署gpt-sovits) ·
@@ -194,7 +194,7 @@ DeepSeek娘之外，导入你自己的卡就能玩。下面是作者本机导入
 
 ### Windows：下载整合包（推荐，什么都不用装）
 
-1. 下载整合包 `AnimaVN-日期-windows.zip`（约 160 MB）：国内从 [**魔搭**](https://www.modelscope.cn/models/JayziLi/AnimaVN/files) 下，速度快；海外从 [**GitHub 发布页**](https://github.com/JayziLi/AnimaVN-public/releases/latest) 下
+1. 下载整合包 `AnimaVN-日期-windows.zip`（约 160 MB）：国内从 [**魔搭**](https://www.modelscope.cn/models/JayziLi/AnimaVN/files) 下，速度快；海外从 [**GitHub 发布页**](https://github.com/JayziLi/AnimaVN/releases/latest) 下
 2. 解压到桌面或 D 盘都行（别放 `C:\Program Files`）
 3. 双击 **`AnimaVN.bat`**。第一次要解压、准备，大概一两分钟，好了会自动打开浏览器
 
@@ -222,7 +222,7 @@ Windows 提示「无法验证发布者」或「已保护你的电脑」时，点
 装了 Git 的话：
 
 ```powershell
-git clone https://github.com/JayziLi/AnimaVN-public.git AnimaVN
+git clone https://github.com/JayziLi/AnimaVN.git
 cd AnimaVN
 ```
 
@@ -263,7 +263,7 @@ http://localhost:5180/debug.html
 ### macOS / Linux
 
 ```bash
-git clone https://github.com/JayziLi/AnimaVN-public.git AnimaVN
+git clone https://github.com/JayziLi/AnimaVN.git
 cd AnimaVN/AnimaBackend
 python3 -m venv .venv
 .venv/bin/pip install -e .
