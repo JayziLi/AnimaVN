@@ -6,9 +6,9 @@
  *          立绘舞台的上沿 --vn-sprite-top 照游戏:横屏 7%、竖屏 11%
  *   特效   playKey 变了放一次:动作(MOTION_FRAMES)、漫符(SpriteBubble + bubbleStyle)、音效(playFxSound);
  *          有 CG 盖着立绘时不放(和游戏里 fxStep 的规则一样)
- *   CG     cover = 导入的 CG(裁满,焦点);above / screen = 生成的插图整张显示(对话框上面那块 / 铺满),
- *          垫一层模糊放大的同一张(照 vn.css 的 .vn-cg、.vn-cg.whole、.vn-cg-backdrop);有 CG 时立绘层透明
- *   对话框 照画布第四版的样子(半透明、名字、台词),按舞台宽度缩放
+ *   CG     cover = 导入的 CG(裁满,焦点);screen = 生成的插图等比裁满;above = 对话框上方整张显示并垫模糊背景。
+ *          有 CG 时立绘层透明。
+ *   对话区 照游戏的对话区 A(vnLine.css):没有框,底部淡压暗 + 细线,名字(带声波)在线上方、台词在线下;字按 1440 宽的真实比例折成 cqw
  *
  * 可以改的东西(editable):
  *   sprite  画虚线框和四角把手:拖动 = 改偏移、拖四角 = 缩放(换算见 stageGeometry.ts,和插件页的位置预览一样)
@@ -35,6 +35,7 @@ import type { SpriteEffect, SpriteLayout } from '../../lib/api';
 import { FX_BUBBLES, FX_MOTIONS, FX_SOUNDS, MOTION_FRAMES, normalizeEffect, playFxSound } from '../../plugins/spriteFx';
 import { bubbleStyle, spriteStyle, type FaceBox, type SpriteStage } from '../../plugins/spriteLayout';
 import { SpriteBubble } from '../../vn/SpriteBubble';
+import { GameIcon } from '../../vn/ui/GameIcon';
 import { loadVNSettings } from '../../vn/vnSettings';
 import { Icon } from '../icons';
 import { studioSoundName } from '../terms';
@@ -75,8 +76,9 @@ export interface StagePreviewProps {
   sprite?: StagePreviewSprite | null;
   /** cover = 导入的 CG;above = 生成的插图放在对话框上面那块;screen = 生成的插图铺满屏幕 */
   cg?: { src: string; focus: number; mode: StageCgMode } | null;
-  /** 对话框;narration = 旁白(名字那行淡一点) */
-  line?: { speaker: string; text: string; narration?: boolean } | null;
+  /** 对话区;narration = 旁白(和游戏一样没有名字,线左端那段短白线也收掉) */
+  /** ja:中文上面那行日语原文(游戏里「日中双语」字幕的样子;外语页预览用) */
+  line?: { speaker: string; text: string; narration?: boolean; ja?: string } | null;
   editable?: 'sprite' | 'focus' | null;
   onLayout?: (next: SpriteLayout, commit: boolean) => void;
   onFocus?: (next: number, commit: boolean) => void;
@@ -84,6 +86,8 @@ export interface StagePreviewProps {
   overlays?: ReactNode;
   /** 右上角那一排(背景下拉、开关) */
   badges?: ReactNode;
+  /** 左上角小牌子的字;不给 = 「实机预览」(插件页写成「实机预览 · 客厅 · 微笑」) */
+  label?: ReactNode;
   className?: string;
 }
 
@@ -135,6 +139,12 @@ const ratioOf = (e: SyntheticEvent<HTMLImageElement>) => {
   return img.naturalWidth > 0 && img.naturalHeight > 0 ? img.naturalWidth / img.naturalHeight : null;
 };
 
+/** 屏幕上的大小 / 它自己的大小:外面有整层缩放(局内菜单在电脑上按窗口等比缩放)时不是 1 */
+function scaleOf(el: HTMLElement): number {
+  const w = el.offsetWidth;
+  return w ? el.getBoundingClientRect().width / w || 1 : 1;
+}
+
 export function StagePreview({
   aspect = 'wide',
   background,
@@ -146,6 +156,7 @@ export function StagePreview({
   onFocus,
   overlays,
   badges,
+  label,
   className,
 }: StagePreviewProps) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -168,7 +179,16 @@ export function StagePreview({
     const r = root.getBoundingClientRect();
     const b = box.getBoundingClientRect();
     const l = lineRef.current?.getBoundingClientRect();
-    const next: Geo = { w: r.width, h: r.height, boxTop: b.top - r.top, boxH: b.height, lineTop: l ? l.top - r.top : r.height };
+    // 量出来的是屏幕上的大小;舞台可能在整层缩放的菜单里(电脑上局内菜单按窗口等比缩放),
+    // 选中框这些是画在舞台里面的 —— 一律换回舞台自己的坐标(拖动的位移在 onMove 里同样换算)
+    const f = scaleOf(root);
+    const next: Geo = {
+      w: r.width / f,
+      h: r.height / f,
+      boxTop: (b.top - r.top) / f,
+      boxH: b.height / f,
+      lineTop: l ? (l.top - r.top) / f : r.height / f,
+    };
     setGeo((g) =>
       g && g.w === next.w && g.h === next.h && g.boxTop === next.boxTop && g.boxH === next.boxH && g.lineTop === next.lineTop
         ? g
@@ -268,9 +288,10 @@ export function StagePreview({
     const root = rootRef.current;
     if (!editSprite || !onLayout || !geo || !root) return;
     const r = root.getBoundingClientRect();
+    const f = scaleOf(root);
     const a = zoomAnchor(editSprite.face, editSprite.layout, editSprite.stage, geo.w, geo.boxH);
-    const ax = r.left + a.x;
-    const ay = r.top + geo.boxTop + a.y;
+    const ax = r.left + a.x * f;
+    const ay = r.top + (geo.boxTop + a.y) * f;
     startDrag(e, {
       kind: 'zoom',
       ax,
@@ -284,14 +305,15 @@ export function StagePreview({
   const onMove = (e: PointerEvent<HTMLElement>) => {
     const d = drag.current;
     if (!d || !geo) return;
+    const f = rootRef.current ? scaleOf(rootRef.current) : 1;
     if (d.kind === 'move') {
-      d.last = layoutFromDrag(d.start, e.clientX - d.x, e.clientY - d.y, geo.boxH);
+      d.last = layoutFromDrag(d.start, (e.clientX - d.x) / f, (e.clientY - d.y) / f, geo.boxH);
       onLayout?.(d.last, false);
     } else if (d.kind === 'zoom') {
       d.last = zoomFromCorner(d.start, d.dist, Math.hypot(e.clientX - d.ax, e.clientY - d.ay));
       onLayout?.(d.last, false);
     } else {
-      d.last = focusFromDrag(d.start, e.clientX - d.x, geo.w, focusRatio ?? geo.w / geo.h, geo.w / geo.h);
+      d.last = focusFromDrag(d.start, (e.clientX - d.x) / f, geo.w, focusRatio ?? geo.w / geo.h, geo.w / geo.h);
       onFocus?.(d.last, false);
     }
   };
@@ -415,11 +437,22 @@ export function StagePreview({
 
       {cg && <CgLayer cg={cg} onRatio={keepRatio(cg.src)} ratio={ratios[cg.src]} />}
 
+      {/* 对话区 A(和游戏一样):不用框,底部一层淡压暗 + 一条细线;名字在线上方(旁白没有名字),台词在线下 */}
       {line && (
-        <div ref={lineRef} className="st-stage-line">
-          <div className={`st-stage-speaker${line.narration ? ' narration' : ''}`}>{line.speaker}</div>
-          <div className="st-stage-text">{line.text}</div>
-        </div>
+        <>
+          <div className="st-stage-shade" aria-hidden="true" />
+          <div ref={lineRef} className={`st-stage-line${line.narration ? ' narration' : ''}`}>
+            {!line.narration && (
+              <div className="st-stage-speaker">
+                <GameIcon name="voice-wave" size={22} className="st-stage-wave" />
+                <span className="st-stage-name">{line.speaker}</span>
+              </div>
+            )}
+            <div className="st-stage-rule" aria-hidden="true" />
+            {line.ja && <div className="st-stage-ja">{line.ja}</div>}
+            <div className="st-stage-text">{line.text}</div>
+          </div>
+        </>
       )}
 
       {band && geo && (
@@ -485,8 +518,11 @@ export function StagePreview({
       )}
 
       <div className="st-stage-pill live">
-        <Icon name="eye" size={14} />
-        <span>实机预览</span>
+        {/* 设计稿:预览左上的牌子一律暗玻璃「✦ 实机预览」(组件库 .av-stage-tag) */}
+        <svg className="av-star" viewBox="-10 -10 20 20" aria-hidden="true">
+          <path d="M0-10C1.1-2.6 2.6-1.1 10 0 2.6 1.1 1.1 2.6 0 10-1.1 2.6-2.6 1.1-10 0-2.6-1.1-1.1-2.6 0-10Z" />
+        </svg>
+        <span>{label ?? '实机预览'}</span>
       </div>
       {badges && <div className="st-stage-badges">{badges}</div>}
       {overlays && <div className="st-stage-overlays">{overlays}</div>}
@@ -494,7 +530,7 @@ export function StagePreview({
   );
 }
 
-/** CG 层(照视觉小说的 CgImage):导入的 CG 裁满(竖长的上下来回移),生成的插图整张显示、底下垫模糊的同一张 */
+/** CG 层和游戏同样处理:screen 等比裁满,above 保留整张并垫模糊背景。 */
 function CgLayer({
   cg,
   ratio,
@@ -507,7 +543,7 @@ function CgLayer({
   if (cg.mode !== 'cover') {
     return (
       <>
-        <img className="st-stage-cg backdrop" src={cg.src} alt="" draggable={false} />
+        {cg.mode === 'above' && <img className="st-stage-cg backdrop" src={cg.src} alt="" draggable={false} />}
         <img
           className={`st-stage-cg whole${cg.mode === 'above' ? ' above' : ''}`}
           src={cg.src}

@@ -1,41 +1,24 @@
 /**
- * 菜单里的「设置」页。视觉小说自己的偏好存 vnSettings;回车键和调试台聊天框共用,
- * 改的是 chatSettings;BGM 和语音的音量直接交给各自的播放器;
- * 语音开关、等不等语音是语音插件的配置(全局一份,和调试台插件抽屉里的是同一个)。
- * 换声音、试音在菜单的插件页(语音),这里只放个入口;调参数在素材管理的「声音」页签。
+ * 菜单里的「设置」页(界面统一 第 4 段,设计稿 pages/whole.js 的设置页):顶上一排页签(文字 / 声音 / 操作 / 显示 / 外观,
+ * 「进阶」后面是数据和卡带加的分页),下面是设置行;每一行的定义在 settings/model.ts,画法在 settings/SettingRow.tsx。
+ *
+ * 值分散在几处:视觉小说自己的偏好存 vnSettings;回车键和调试台聊天框共用,改的是 chatSettings;
+ * BGM 和语音的音量直接交给各自的播放器;语音开关、等不等语音是语音插件的配置(全局一份,和调试台插件抽屉里的是同一个)。
+ * 换音色、试音在菜单的插件页(语音),这里只放个入口;调参数在素材管理的「声音」页签。
+ *
+ * 关掉再打开停在上次的页签和滚动位置(这次页面打开期间记在模块里,刷新就忘)。
  */
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { debugApi, type MigrationStatus, type RecordsSummary, type SceneAsset, type StorageStatus } from '../lib/api';
-import { ENTER_KEY_MODES, type EnterKeyMode } from '../lib/chatSettings';
+import type { EnterKeyMode } from '../lib/chatSettings';
+import { useCoarsePointer } from '../lib/useIsMobile';
 import type { JaHideControls } from '../plugins/jaHide';
-import {
-  MAX_WAIT_MAX,
-  MAX_WAIT_MIN,
-  normalizeVoiceConfig,
-  type VoicePluginConfig,
-} from '../plugins/voice';
-import { playTypeSound, TYPE_SOUNDS } from './typeSound';
+import type { VoicePluginConfig } from '../plugins/voice';
 import { bgmPlayer, useBgm } from './bgm';
 import { useVoice, voicePlayer } from './voice';
-import {
-  AUTO_MAX,
-  AUTO_MIN,
-  AUTO_SPEEDS,
-  DUCK_LEVELS,
-  OPACITY_MIN,
-  SCALE_MAX,
-  SCALE_MIN,
-  TEXT_SPEEDS,
-  TITLE_STYLES,
-  BOX_SKINS,
-  TEXT_FONTS,
-  TEXT_FONT_STACKS,
-  TYPE_SOUND_OFF,
-  type VNSettings,
-} from './vnSettings';
-import { VN_ACCENTS } from './accent';
-import { VnSwitch } from './VnSwitch';
+import { playTypeSound } from './typeSound';
+import { TYPE_SOUND_OFF, type VNSettings } from './vnSettings';
 import {
   describeBackup,
   describeCheck,
@@ -51,12 +34,30 @@ import {
 import type { TimelineEngine } from '../core/engine';
 import { setTimelineEngine, useTimelineEngine } from './useTimelineEngine';
 import type { MarksUploadReport } from '../plugins/cartridges';
-
-const ACCENT_NOTE = {
-  mono: '按钮、名牌、滑块用灰白,不抢立绘和背景的颜色',
-  character: '从这张卡的立绘里取主色,和封面同一个颜色;换角色跟着变',
-  pink: '原来的粉色',
-} as const;
+import { PaperButton } from './ui/PaperButton';
+import { Kbd } from './ui/Kbd';
+import { Range } from './ui/Range';
+import { Seg } from './ui/Seg';
+import { Switch } from './ui/Switch';
+import { popThemeClass } from './ui/logic';
+import type { BannerScene } from './settings/banner';
+import { LivePreview, type LivePreviewData } from './settings/LivePreview';
+import { usePhone } from './settings/usePhone';
+import { SettingError, SettingGroupHead, SettingRow } from './settings/SettingRow';
+import {
+  applyPatch,
+  buildTabs,
+  isResettable,
+  mergePatches,
+  resettableRows,
+  tabOfRow,
+  type Patch,
+  type Row,
+  type SettingsState,
+  type Sinks,
+  type Tab,
+} from './settings/model';
+import './vnSettingsPage.css';
 
 export type SettingsTab = 'text' | 'sound' | 'control' | 'display' | 'look' | 'data';
 
@@ -68,15 +69,6 @@ export interface ExtraSettingsTab {
   render: () => ReactNode;
 }
 
-const TABS: { key: SettingsTab; name: string }[] = [
-  { key: 'text', name: '文字' },
-  { key: 'sound', name: '声音' },
-  { key: 'control', name: '操作' },
-  { key: 'display', name: '显示' },
-  { key: 'look', name: '外观' },
-  { key: 'data', name: '数据' },
-];
-
 interface Props {
   settings: VNSettings;
   onChange: (next: VNSettings) => void;
@@ -86,12 +78,12 @@ interface Props {
   onChangeVoiceConfig: (next: VoicePluginConfig) => void;
   /** 这张卡念台词用的声音;没绑是 null,还没选角色是 undefined */
   voiceCastName: string | null | undefined;
-  /** 去插件页的语音:换主声音、试音 */
+  /** 去插件页的语音:换音色、试音 */
   onOpenVoice: () => void;
   /** 字幕:外语插件的「显示日语」(全局一份,和调试台插件里的是同一个开关) */
   showJa: boolean;
   onChangeShowJa: (showJa: boolean) => void;
-  /** 隐藏前文日语:外语块不发以后(比如主声音换成了中文),前面回复里的日语对玩家和模型都藏起来 */
+  /** 隐藏前文日语:外语块不发以后(比如音色换成了中文),前面回复里的日语对玩家和模型都藏起来 */
   jaHide: JaHideControls;
   /** 打开时停在哪一栏(右上角语音面板点「完整设置」进来是「声音」;卡带的分页是它的 key) */
   initialTab?: SettingsTab | string;
@@ -105,58 +97,18 @@ interface Props {
   } | null;
   /** 把这个浏览器地址上的形态记号存进存档(形态卡带提供,素材架构第 0 期);没装就不显示这一行 */
   onUploadMarks?: () => Promise<MarksUploadReport>;
+  /** 页头的场景横幅:场景包里另一张背景(settings/banner.ts 挑);没有就不放 */
+  banner?: BannerScene | null;
+  /** 右边的实机预览(U16):这一幕的背景、她、几句台词;不给就不放 */
+  preview?: LivePreviewData | null;
 }
 
-function Row({
-  label,
-  value,
-  beta,
-  children,
-}: {
-  label: string;
-  value?: string;
-  /** 还在试的功能:名字后面挂个 BETA */
-  beta?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <div className={`vn-set${value === undefined ? ' wide' : ''}`}>
-      <span className="vn-set-label">
-        {label}
-        {beta && <span className="vn-beta">BETA</span>}
-      </span>
-      {children}
-      {value !== undefined && <span className="vn-set-value">{value}</span>}
-    </div>
-  );
-}
+// ───────── 记住上次停在哪 ─────────
 
-export function Seg<T extends string | number | boolean>({
-  options,
-  value,
-  onPick,
-}: {
-  options: { value: T; name: string; disabled?: boolean }[];
-  value: T;
-  onPick: (v: T) => void;
-}) {
-  return (
-    <div className="vn-seg" role="radiogroup">
-      {options.map((o) => (
-        <button
-          key={String(o.value)}
-          role="radio"
-          aria-checked={o.value === value}
-          className={o.value === value ? 'on' : ''}
-          disabled={o.disabled}
-          onClick={() => onPick(o.value)}
-        >
-          {o.name}
-        </button>
-      ))}
-    </div>
-  );
-}
+/** 关掉再打开停在上次的页签和滚动位置 */
+const memory: { tab: string | null; scroll: Record<string, number> } = { tab: null, scroll: {} };
+
+// ───────── 页面自己画的几行 ─────────
 
 const ENGINES: { value: TimelineEngine; name: string }[] = [
   { value: 'legacy', name: '旧算法' },
@@ -187,17 +139,26 @@ function EngineRow() {
       .finally(() => setSaving(false));
   };
   return (
-    <Row label="表情认法">
-      <div className="vn-set-stack">
-        <Seg
-          options={ENGINES.map((o) => ({ ...o, disabled: saving || engine === null }))}
-          value={engine ?? 'legacy'}
-          onPick={pick}
-        />
-        <span className="vn-set-note">{error ?? describeRecords(summary)}</span>
-        <span className="vn-set-note">{ENGINE_NOTE}</span>
-      </div>
-    </Row>
+    <SettingRow
+      id="engine"
+      name="表情认法"
+      dup="表情认法"
+      note={
+        <>
+          {error ?? describeRecords(summary)}
+          <br />
+          {ENGINE_NOTE}
+        </>
+      }
+    >
+      <Seg
+        className="av-seg st-seg"
+        label="表情认法"
+        options={ENGINES.map((o) => ({ ...o, disabled: saving || engine === null }))}
+        value={engine ?? 'legacy'}
+        onPick={pick}
+      />
+    </SettingRow>
   );
 }
 
@@ -246,24 +207,21 @@ function StorageRow({ onBackedUp }: { onBackedUp: () => void }) {
       .finally(() => setTick((t) => t + 1));
   };
   return (
-    <Row label="素材文件">
-      <div className="vn-set-stack">
-        <span>{describeStorage(status)}</span>
-        <div className="vn-set-buttons">
-          {(Object.keys(JOB_LABELS) as StorageJob[]).map((k) => (
-            <button key={k} className="vn-pill" disabled={job.busy !== null || status === 'error'} onClick={() => run(k)}>
-              {JOB_LABELS[k][job.busy === k ? 1 : 0]}
-            </button>
-          ))}
-        </div>
-        <span className="vn-set-note">{job.text ?? STORAGE_NOTE}</span>
+    <SettingRow id="storage" name="素材文件" note={job.text ?? STORAGE_NOTE}>
+      <span className="st-info">{describeStorage(status)}</span>
+      <div className="st-btns">
+        {(Object.keys(JOB_LABELS) as StorageJob[]).map((k) => (
+          <PaperButton key={k} sm disabled={job.busy !== null || status === 'error'} onClick={() => run(k)}>
+            {JOB_LABELS[k][job.busy === k ? 1 : 0]}
+          </PaperButton>
+        ))}
       </div>
-    </Row>
+    </SettingRow>
   );
 }
 
 /** 「数据」一栏:数据库升级到哪了、上次整库备份、文件仓库(第 3 期)、形态记号存进存档(素材架构第 0 期)、表情认法(第 1b 期) */
-function DataTab({ onUploadMarks }: { onUploadMarks?: () => Promise<MarksUploadReport> }) {
+function DataRows({ onUploadMarks }: { onUploadMarks?: () => Promise<MarksUploadReport> }) {
   const [status, setStatus] = useState<MigrationStatus | 'error' | null>(null);
   const [upload, setUpload] = useState<{ busy: boolean; text: string | null }>({ busy: false, text: null });
   const [reload, setReload] = useState(0);
@@ -291,31 +249,135 @@ function DataTab({ onUploadMarks }: { onUploadMarks?: () => Promise<MarksUploadR
       );
   };
   return (
-    <div className="vn-set-list">
-      <Row label="数据库">
-        <div className="vn-set-stack">
-          <span>{status === 'error' ? '读不到:后端还是旧版,重启后端以后再看' : s ? describeDb(s) : '读取中…'}</span>
-          {s && <span className="vn-set-note">程序版本 {s.app_version}</span>}
-        </div>
-      </Row>
-      <Row label="上次备份">
-        <span className="vn-set-note">{s ? describeBackup(s.last_backup) : '—'}</span>
-      </Row>
+    <>
+      <SettingRow id="db" name="数据库" note={s ? `程序版本 ${s.app_version}` : undefined}>
+        <span className="st-info">
+          {status === 'error' ? '读不到:后端还是旧版,重启后端以后再看' : s ? describeDb(s) : '读取中…'}
+        </span>
+      </SettingRow>
+      <SettingRow id="backup" name="上次备份">
+        <span className="st-info">{s ? describeBackup(s.last_backup) : '—'}</span>
+      </SettingRow>
       <StorageRow onBackedUp={() => setReload((n) => n + 1)} />
       {onUploadMarks && (
-        <Row label="形态记号">
-          <div className="vn-set-stack">
-            <button className="vn-pill" disabled={upload.busy} onClick={doUpload}>
-              {upload.busy ? '正在存…' : '存进存档'}
-            </button>
-            <span className="vn-set-note">{upload.text ?? UPLOAD_NOTE}</span>
-          </div>
-        </Row>
+        <SettingRow id="marks" name="形态记号" note={upload.text ?? UPLOAD_NOTE}>
+          <PaperButton sm disabled={upload.busy} onClick={doUpload}>
+            {upload.busy ? '正在存…' : '存进存档'}
+          </PaperButton>
+        </SettingRow>
       )}
       <EngineRow />
-    </div>
+    </>
   );
 }
+
+// ───────── 一行的控件 ─────────
+
+function Control({ row }: { row: Exclude<Row, { kind: 'node' } | { kind: 'err' }> }) {
+  switch (row.kind) {
+    case 'seg':
+      return (
+        <>
+          <Seg className="av-seg st-seg" label={row.name} options={row.options} value={row.value} onPick={row.onPick} />
+          {row.sample && (
+            <div className="st-fontpv" style={{ fontFamily: row.sample }}>
+              「我心中的一等星,今天也依然是前辈。」
+            </div>
+          )}
+        </>
+      );
+    case 'range':
+      return (
+        <Range
+          label={row.name}
+          min={row.min}
+          max={row.max}
+          step={row.step}
+          value={row.value}
+          onChange={row.onChange}
+          onRelease={row.onRelease}
+        />
+      );
+    case 'switch':
+      return <Switch label={row.name} checked={row.value} onChange={row.onChange} />;
+    case 'select':
+      return row.empty ? null : (
+        <select
+          className="av-select st-select"
+          aria-label={row.name}
+          value={row.value}
+          onChange={(e) => row.onChange(e.target.value)}
+        >
+          <option value="">默认:排第一的({row.options[0]?.name})</option>
+          {row.options.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.name}
+            </option>
+          ))}
+        </select>
+      );
+    case 'keys':
+      return (
+        <div className="st-keys">
+          <span>
+            <Kbd>空格</Kbd> / <Kbd>回车</Kbd> 下一句
+          </span>
+          <span>
+            按住 <Kbd>Ctrl</Kbd> 跳过
+          </span>
+          <span>
+            <Kbd>A</Kbd> 自动播放
+          </span>
+          <span>
+            <Kbd>Esc</Kbd> 菜单
+          </span>
+          <span>
+            <Kbd>滚轮↑</Kbd> 历史
+          </span>
+          <span>
+            <Kbd>右键</Kbd> 隐藏界面
+          </span>
+        </div>
+      );
+  }
+}
+
+function RowView({
+  row,
+  onReset,
+  onJump,
+}: {
+  row: Row;
+  onReset: (row: Row) => void;
+  onJump: (to: string) => void;
+}) {
+  if (row.kind === 'node') return <>{row.node}</>;
+  if (row.kind === 'err') return <SettingError text={row.text} />;
+  const reset = isResettable(row) ? row.reset : undefined;
+  const value = row.kind === 'range' ? row.text : undefined;
+  const note = row.kind === 'select' && row.empty ? row.empty : row.note;
+  const to = row.jump?.to;
+  return (
+    <SettingRow
+      id={row.id}
+      name={row.name}
+      beta={row.beta}
+      tip={row.tip}
+      dup={row.dup}
+      note={note}
+      jump={row.jump && to ? { text: row.jump.text, onJump: () => onJump(to) } : undefined}
+      value={value}
+      changed={reset?.changed}
+      resetText={reset?.text}
+      onReset={reset ? () => onReset(row) : undefined}
+      open={row.open}
+    >
+      <Control row={row} />
+    </SettingRow>
+  );
+}
+
+// ───────── 页 ─────────
 
 export function VNSettingsPage({
   settings,
@@ -333,464 +395,247 @@ export function VNSettingsPage({
   titleMusic,
   onUploadMarks,
   extraTabs = [],
+  banner = null,
+  preview = null,
 }: Props) {
-  const [tab, setTab] = useState<SettingsTab | string>(initialTab ?? 'text');
-  const extra = extraTabs.find((t) => t.key === tab);
   const bgm = useBgm();
+  const coarse = useCoarsePointer();
   const voice = useVoice();
-  const set = <K extends keyof VNSettings>(k: K, v: VNSettings[K]) => onChange({ ...settings, [k]: v });
-  const setVoice = <K extends keyof VoicePluginConfig>(k: K, v: VoicePluginConfig[K]) =>
-    onChangeVoiceConfig(normalizeVoiceConfig({ ...voiceConfig, [k]: v }));
+  // 手机竖屏:整屏纸面,预览收成页签下面一条,「这页恢复默认」放页尾(电脑在页头)
+  const phone = usePhone();
+
+  const state: SettingsState = {
+    vn: settings,
+    enterKey,
+    voiceConfig,
+    showJa,
+    bgm: { volume: bgm.volume, muted: bgm.muted, error: bgm.error },
+    voice: { volume: voice.volume, muted: voice.muted, lastError: voice.lastError },
+    titleMusic: titleMusic
+      ? { bgms: titleMusic.bgms.map((b) => ({ id: b.id, label: b.label })), value: titleMusic.value }
+      : null,
+    voiceCastName,
+    jaHidden: jaHide.hidden,
+    touch: coarse,
+  };
+  const sinks: Sinks = {
+    setVN: onChange,
+    setVoiceConfig: onChangeVoiceConfig,
+    setEnterKey: onChangeEnterKey,
+    setShowJa: onChangeShowJa,
+    setBgmVolume: (v) => bgmPlayer.setVolume(v),
+    setBgmMuted: (m) => bgmPlayer.setMuted(m),
+    setVoiceVolume: (v) => voicePlayer.setVolume(v),
+    setVoiceMuted: (m) => voicePlayer.setMuted(m),
+    setTitleMusic: (id) => titleMusic?.onChange(id),
+  };
+  const apply = (p: Patch) => {
+    applyPatch(p, state, sinks);
+    // 跳字音:选一个就先放一声
+    const picked = p.vn?.typeSound;
+    if (picked !== undefined && picked !== TYPE_SOUND_OFF) playTypeSound(picked, settings.typeSoundVolume);
+  };
+
+  const jaHideRow = (
+    <SettingRow
+      id="jaHide"
+      name="前文日语"
+      dup="外语"
+      note={
+        <>
+          {jaHide.hidden > 0 ? `当前对话已藏 ${jaHide.hidden} 条回复的日语 · ` : ''}
+          外语块不发以后用(比如音色换成了中文):前面回复里的日语不再显示,也不发给模型(免得它接着写日语);历史页「显示原文」还能看到
+        </>
+      }
+    >
+      <PaperButton sm onClick={jaHide.hide}>
+        隐藏前文日语
+      </PaperButton>
+      {jaHide.hidden > 0 && (
+        <PaperButton sm onClick={jaHide.show}>
+          恢复
+        </PaperButton>
+      )}
+    </SettingRow>
+  );
+  const tabs: Tab[] = buildTabs(state, apply, {
+    jaHide: jaHideRow,
+    data: <DataRows onUploadMarks={onUploadMarks} />,
+  });
+  // 跳字音量松手时放一声,试听
+  for (const t of tabs)
+    for (const g of t.groups)
+      for (const r of g.rows)
+        if (r.id === 'typeSoundVolume' && r.kind === 'range') {
+          r.onRelease = () => playTypeSound(settings.typeSound, settings.typeSoundVolume);
+        }
+
+  const extra = extraTabs.map((t) => ({ ...t, id: t.key, en: '', adv: true as const }));
+  const allIds = [...tabs.map((t) => t.id), ...extra.map((t) => t.id)];
+  const [tab, setTabState] = useState<string>(() => {
+    const want = initialTab ?? memory.tab ?? 'text';
+    return allIds.includes(want) ? want : 'text';
+  });
+  const setTab = (id: string) => {
+    memory.tab = id;
+    setTabState(id);
+  };
+  useEffect(() => {
+    memory.tab = tab;
+  }, [tab]);
+
+  const current = tabs.find((t) => t.id === tab);
+  const currentExtra = extra.find((t) => t.id === tab);
+
+  // 滚动位置:换页时恢复这一页上次的位置;滚动时记下
+  const scroller = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (scroller.current) scroller.current.scrollTop = memory.scroll[tab] ?? 0;
+  }, [tab]);
+
+  // 手机上页签是一排横滑的:选中的那个滑进可见范围(右边留出淡出那截)。不用 scrollIntoView(会带着整页滚),只动页签条自己的 scrollLeft
+  const tabsRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!phone) return;
+    const id = requestAnimationFrame(() => {
+      const nav = tabsRef.current;
+      const on = nav?.querySelector<HTMLElement>('button.on');
+      if (!nav || !on) return;
+      if (on.offsetLeft < nav.scrollLeft + 20) nav.scrollTo({ left: on.offsetLeft - 20, behavior: 'smooth' });
+      else if (on.offsetLeft + on.offsetWidth > nav.scrollLeft + nav.clientWidth - 52)
+        nav.scrollTo({ left: on.offsetLeft + on.offsetWidth - nav.clientWidth + 52, behavior: 'smooth' });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [tab, phone]);
+
+  const reset = (row: Row) => {
+    if (isResettable(row)) apply(row.reset.patch);
+  };
+  const pageResettable = current ? resettableRows(current) : [];
+  const pageChanged = pageResettable.filter((r) => r.reset.changed);
+  const resetPage = () => {
+    if (pageChanged.length === 0) return;
+    apply(mergePatches(pageChanged.map((r) => r.reset.patch)));
+  };
+
+  // 「去调文字速度」这种跳转:切到那一行所在的页签,滚到正中,闪一下
+  const [flash, setFlash] = useState<{ id: string; n: number } | null>(null);
+  const tabOf = (id: string) => tabOfRow(tabs, id);
+  const jump = useCallback(
+    (to: string) => {
+      const t = tabOf(to);
+      if (!t) return;
+      setTab(t);
+      setFlash((f) => ({ id: to, n: (f?.n ?? 0) + 1 }));
+    },
+    // tabOf 只读 tabs 的行 id,结构不变,不用每次渲染都换一个 jump
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+  useEffect(() => {
+    if (!flash) return;
+    const box = scroller.current;
+    const el = box?.querySelector<HTMLElement>(`[data-row="${flash.id}"]`);
+    if (!box || !el) return;
+    const r = el.getBoundingClientRect();
+    const b = box.getBoundingClientRect();
+    box.scrollTop += r.top - b.top - box.clientHeight / 2 + el.offsetHeight / 2;
+    el.classList.remove('flash');
+    void el.offsetWidth;
+    el.classList.add('flash');
+  }, [flash]);
+
+  const themeClass = useMemo(() => popThemeClass(settings.theme), [settings.theme]);
+  const playerTabs = tabs.filter((t) => !t.adv);
+  const advTabs = [...tabs.filter((t) => t.adv), ...extra];
+  const tabButton = (t: { id: string; name: string; en?: string; beta?: boolean; adv?: boolean }) => (
+    <button
+      key={t.id}
+      type="button"
+      role="tab"
+      aria-selected={tab === t.id}
+      className={`${tab === t.id ? 'on' : ''}${t.adv ? ' adv' : ''}`}
+      onClick={() => setTab(t.id)}
+    >
+      <span className="zh">{t.name}</span>
+      {/* 手机上页签带斜体英文(设计稿 phone.html 的设置页签),电脑上不带 */}
+      {t.en && <span className="en">{t.en}</span>}
+      {t.beta && <span className="av-chip beta">BETA</span>}
+    </button>
+  );
 
   return (
-    <div className="vn-settings">
-      <div className="vn-tabs" role="tablist">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            role="tab"
-            aria-selected={tab === t.key}
-            className={`vn-tab${tab === t.key ? ' active' : ''}`}
-            onClick={() => setTab(t.key)}
-          >
-            {t.name}
-          </button>
-        ))}
-        {extraTabs.map((t) => (
-          <button
-            key={t.key}
-            role="tab"
-            aria-selected={tab === t.key}
-            className={`vn-tab${tab === t.key ? ' active' : ''}`}
-            onClick={() => setTab(t.key)}
-          >
-            {t.name}
-            {t.beta && <span className="vn-beta">BETA</span>}
-          </button>
-        ))}
-      </div>
-
-      {extra?.render()}
-
-      {tab === 'text' && (
-        <div className="vn-set-list">
-          <Row label="文字速度">
-            <Seg options={TEXT_SPEEDS} value={settings.textSpeed} onPick={(v) => set('textSpeed', v)} />
-          </Row>
-          <Row label="字幕">
-            <div className="vn-set-stack">
-              <Seg
-                options={[
-                  { value: true, name: '日中双语' },
-                  { value: false, name: '只显示中文' },
-                ]}
-                value={showJa}
-                onPick={onChangeShowJa}
-              />
-              <span className="vn-set-note">
-                日语配音的卡在中文上面带一行日语原文;只显示中文就把它藏起来(历史页也是) · 和调试台外语插件里的开关是同一个
-              </span>
-            </div>
-          </Row>
-          <Row label="前文日语">
-            <div className="vn-set-stack">
-              <div className="vn-set-buttons">
-                <button className="vn-pill" onClick={jaHide.hide}>
-                  隐藏前文日语
-                </button>
-                {jaHide.hidden > 0 && (
-                  <button className="vn-pill" onClick={jaHide.show}>
-                    恢复
-                  </button>
-                )}
-              </div>
-              <span className="vn-set-note">
-                {jaHide.hidden > 0 ? `当前对话已藏 ${jaHide.hidden} 条回复的日语 · ` : ''}
-                外语块不发以后用(比如主声音换成了中文):前面回复里的日语不再显示,也不发给模型(免得它接着写日语);历史页「显示原文」还能看到
-              </span>
-            </div>
-          </Row>
-          <Row label="自动播放间隔" value={`${(settings.autoDelay / 1000).toFixed(1)} 秒`}>
-            <input
-              type="range"
-              min={AUTO_MIN}
-              max={AUTO_MAX}
-              step={100}
-              value={settings.autoDelay}
-              aria-label="自动播放间隔"
-              onChange={(e) => set('autoDelay', Number(e.target.value))}
-            />
-          </Row>
-          <Row label="自动播放倍速">
-            <div className="vn-set-stack">
-              <Seg options={AUTO_SPEEDS} value={settings.autoSpeed} onPick={(v) => set('autoSpeed', v)} />
-              <span className="vn-set-note">
-                {settings.autoSpeed === 1
-                  ? '按上面的间隔和文字速度播'
-                  : `自动播放时停顿缩到 ${(settings.autoDelay / settings.autoSpeed / 1000).toFixed(1)} 秒,打字也快 ${settings.autoSpeed} 倍`}
-                {' · 语音照常速念;开着「等语音念完」时还是念完才翻 · 自动播放时快捷栏点倍数也能换'}
-              </span>
-            </div>
-          </Row>
-          <Row label="文本框透明度" value={`${Math.round(settings.boxOpacity * 100)}%`}>
-            <input
-              type="range"
-              min={OPACITY_MIN * 100}
-              max={100}
-              value={Math.round(settings.boxOpacity * 100)}
-              aria-label="文本框不透明度"
-              onChange={(e) => set('boxOpacity', Number(e.target.value) / 100)}
-            />
-          </Row>
-          <Row label="对白字号" value={`${Math.round(settings.textScale * 100)}%`}>
-            <input
-              type="range"
-              min={SCALE_MIN * 100}
-              max={SCALE_MAX * 100}
-              step={5}
-              value={Math.round(settings.textScale * 100)}
-              aria-label="对白字号"
-              onChange={(e) => set('textScale', Number(e.target.value) / 100)}
-            />
-          </Row>
+    <div className={`vn-sp ${themeClass}${banner ? ' has-banner' : ''}`}>
+      <div className="vn-sp-main">
+      {banner && (
+        <div className="vn-sp-banner" aria-hidden="true">
+          <img key={banner.src} src={banner.src} alt="" draggable={false} />
         </div>
       )}
-
-      {tab === 'sound' && (
-        <div className="vn-set-list">
-          <div className="vn-set-group">音乐</div>
-          <Row label="BGM 音量" value={bgm.muted ? '静音' : `${Math.round(bgm.volume * 100)}%`}>
-            <input
-              type="range"
-              min={0}
-              max={100}
-              value={Math.round(bgm.volume * 100)}
-              aria-label="BGM 音量"
-              onChange={(e) => {
-                bgmPlayer.setVolume(Number(e.target.value) / 100);
-                if (bgm.muted) bgmPlayer.setMuted(false);
-              }}
-            />
-          </Row>
-          <Row label="BGM 静音">
-            <VnSwitch label="BGM 静音" checked={bgm.muted} onChange={(v) => bgmPlayer.setMuted(v)} />
-          </Row>
-          <Row label="念台词时">
-            <div className="vn-set-stack">
-              <Seg options={DUCK_LEVELS} value={settings.duckLevel} onPick={(v) => set('duckLevel', v)} />
-              <span className="vn-set-note">角色说话时把音乐压到多低,念完自己淡回来</span>
-            </div>
-          </Row>
-          {bgm.error && <p className="vn-set-error">{bgm.error}</p>}
-
-          <div className="vn-set-group">音效</div>
-          <Row label="立绘特效">
-            <div className="vn-set-stack">
-              <VnSwitch label="立绘特效" checked={settings.spriteFx} onChange={(v) => set('spriteFx', v)} />
-              <span className="vn-set-note">
-                换表情时跳一下、头顶冒气泡、响一声 · 每张立绘放什么在卡编辑器的立绘里设 · 往回翻和跳过时不放
-              </span>
-            </div>
-          </Row>
-          {settings.spriteFx && (
-            <Row label="特效音量" value={`${Math.round(settings.spriteFxVolume * 100)}%`}>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                value={Math.round(settings.spriteFxVolume * 100)}
-                aria-label="特效音量"
-                onChange={(e) => set('spriteFxVolume', Number(e.target.value) / 100)}
-              />
-            </Row>
+      <header className="vn-sp-head">
+        <div className="vn-sp-title">
+          <span className="av-title-zh">设置</span>
+          <span className="av-title-en">Config</span>
+        </div>
+        <div className="vn-sp-head-r">
+          {!phone && pageResettable.length > 0 && (
+            <PaperButton kind="ghost" sm disabled={pageChanged.length === 0} onClick={resetPage}>
+              这页恢复默认
+            </PaperButton>
           )}
-          <Row label="跳字音">
-            <div className="vn-set-stack">
-              <Seg
-                options={[
-                  { value: TYPE_SOUND_OFF, name: '关' },
-                  ...TYPE_SOUNDS.map((t) => ({ value: t.id, name: t.name, disabled: settings.textSpeed === 0 })),
-                ]}
-                value={settings.typeSound}
-                onPick={(v) => {
-                  set('typeSound', v);
-                  if (v !== TYPE_SOUND_OFF) playTypeSound(v, settings.typeSoundVolume);
-                }}
-              />
-              <span className="vn-set-note">
-                {settings.textSpeed === 0
-                  ? '文字速度是「瞬间」时整句直接出,没有跳字,先在「文字」里调个速度'
-                  : '旁白逐字出来时每隔一个字响一声;角色台词不响,留给配音'}
-              </span>
-            </div>
-          </Row>
-          {settings.typeSound !== TYPE_SOUND_OFF && settings.textSpeed > 0 && (
-            <Row label="跳字音量" value={`${Math.round(settings.typeSoundVolume * 100)}%`}>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                value={Math.round(settings.typeSoundVolume * 100)}
-                aria-label="跳字音量"
-                onChange={(e) => set('typeSoundVolume', Number(e.target.value) / 100)}
-                onPointerUp={() => playTypeSound(settings.typeSound, settings.typeSoundVolume)}
-              />
-            </Row>
-          )}
+        </div>
+      </header>
 
-          <div className="vn-set-group">
-            语音
-            {voiceCastName !== undefined && (
-              <span className="vn-set-note">
-                {voiceCastName ? `这张卡用「${voiceCastName}」的声音` : '这张卡还没绑声音'}
-              </span>
-            )}
-            <button className="vn-pill" onClick={onOpenVoice}>
-              换声音 · 试音
-            </button>
+      <nav ref={tabsRef} className="vn-sp-tabs" role="tablist" aria-label="设置页签">
+        {playerTabs.map(tabButton)}
+        <span className="vn-sp-sep">进阶</span>
+        {advTabs.map(tabButton)}
+      </nav>
+
+      {phone && preview && <LivePreview strip data={preview} settings={settings} />}
+
+      <div className={`vn-sp-content${preview && !phone ? ' has-preview' : ''}`}>
+
+      <div
+        key={tab}
+        ref={scroller}
+        className="vn-sp-page"
+        role="tabpanel"
+        onScroll={(e) => {
+          memory.scroll[tab] = e.currentTarget.scrollTop;
+        }}
+      >
+        {currentExtra ? (
+          <div className="st-group">{currentExtra.render()}</div>
+        ) : (
+          current?.groups.map((g, gi) => (
+            <div key={g.id ?? gi} className="st-group" data-group={g.id}>
+              {g.title && (
+                <SettingGroupHead title={g.title} en={g.en} note={g.note}>
+                  {g.action && (
+                    <PaperButton sm onClick={onOpenVoice}>
+                      {g.action.text}
+                    </PaperButton>
+                  )}
+                </SettingGroupHead>
+              )}
+              {g.rows.map((r) => (
+                <RowView key={r.id} row={r} onReset={reset} onJump={jump} />
+              ))}
+            </div>
+          ))
+        )}
+        {phone && pageResettable.length > 0 && (
+          <div className="vn-sp-foot">
+            <PaperButton kind="ghost" sm disabled={pageChanged.length === 0} onClick={resetPage}>
+              这页恢复默认
+            </PaperButton>
           </div>
-          <Row label="语音">
-            <div className="vn-set-stack">
-              <VnSwitch label="语音" checked={voiceConfig.enabled} onChange={(v) => setVoice('enabled', v)} />
-              <span className="vn-set-note">
-                关掉就不再请求语音服务 · 所有角色通用,和调试台插件里的开关是同一个
-              </span>
-            </div>
-          </Row>
-          {voiceConfig.enabled && (
-            <>
-              <Row label="语音音量" value={voice.muted ? '静音' : `${Math.round(voice.volume * 100)}%`}>
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  value={Math.round(voice.volume * 100)}
-                  aria-label="语音音量"
-                  onChange={(e) => {
-                    voicePlayer.setVolume(Number(e.target.value) / 100);
-                    if (voice.muted) voicePlayer.setMuted(false);
-                  }}
-                />
-              </Row>
-              <Row label="语音静音">
-                <VnSwitch label="语音静音" checked={voice.muted} onChange={(v) => voicePlayer.setMuted(v)} />
-              </Row>
-              <Row label="文字和语音">
-                <div className="vn-set-stack">
-                  <Seg
-                    options={[
-                      { value: false, name: '先出文字' },
-                      { value: true, name: '等语音' },
-                    ]}
-                    value={voiceConfig.waitForVoice}
-                    onPick={(v) => setVoice('waitForVoice', v)}
-                  />
-                  <span className="vn-set-note">
-                    {voiceConfig.waitForVoice
-                      ? '语音好了文字和声音一起出;等太久就先出文字'
-                      : '文字直接出,语音还在生成时字后面转个圈,好了自己念'}
-                  </span>
-                </div>
-              </Row>
-              {voiceConfig.waitForVoice && (
-                <Row label="最多等" value={`${voiceConfig.maxWaitSec} 秒`}>
-                  <input
-                    type="range"
-                    min={MAX_WAIT_MIN}
-                    max={MAX_WAIT_MAX}
-                    step={1}
-                    value={voiceConfig.maxWaitSec}
-                    aria-label="等语音最多等几秒"
-                    onChange={(e) => setVoice('maxWaitSec', Number(e.target.value))}
-                  />
-                </Row>
-              )}
-              <Row label="语音情绪">
-                <div className="vn-set-stack">
-                  <Seg
-                    options={[
-                      { value: false, name: '跟着表情' },
-                      { value: true, name: '不变' },
-                    ]}
-                    value={voiceConfig.fixedEmotion}
-                    onPick={(v) => setVoice('fixedEmotion', v)}
-                  />
-                  <span className="vn-set-note">
-                    {voiceConfig.fixedEmotion
-                      ? '每句都用默认情绪念(声音情绪表里排第一的那行)'
-                      : '这句立绘是什么表情,就用对应的情绪念'}
-                  </span>
-                </div>
-              </Row>
-              <Row label="翻页时">
-                <Seg
-                  options={[
-                    { value: true, name: '停止语音' },
-                    { value: false, name: '念完为止' },
-                  ]}
-                  value={settings.voiceInterrupt}
-                  onPick={(v) => set('voiceInterrupt', v)}
-                />
-              </Row>
-              <Row label="自动播放">
-                <Seg
-                  options={[
-                    { value: true, name: '等语音念完再翻' },
-                    { value: false, name: '不等语音' },
-                  ]}
-                  value={settings.autoWaitVoice}
-                  onPick={(v) => set('autoWaitVoice', v)}
-                />
-              </Row>
-              {voice.lastError && (
-                <p className="vn-set-error">语音最近一次失败:{voice.lastError}</p>
-              )}
-            </>
-          )}
-        </div>
-      )}
-
-      {tab === 'control' && (
-        <div className="vn-set-list">
-          <Row label="回车键">
-            <div className="vn-set-stack">
-              <Seg
-                options={ENTER_KEY_MODES.map((m) => ({ value: m.value, name: m.name }))}
-                value={enterKey}
-                onPick={onChangeEnterKey}
-              />
-              <span className="vn-set-note">
-                {ENTER_KEY_MODES.find((m) => m.value === enterKey)?.note} · 和调试台聊天框共用
-              </span>
-            </div>
-          </Row>
-          <Row label="快捷键">
-            <div className="vn-keys">
-              <span><kbd>空格</kbd> / <kbd>回车</kbd> 下一句</span>
-              <span>按住 <kbd>Ctrl</kbd> 跳过</span>
-              <span><kbd>A</kbd> 自动播放</span>
-              <span><kbd>Esc</kbd> 菜单</span>
-              <span><kbd>滚轮↑</kbd> 历史</span>
-              <span><kbd>右键</kbd> 隐藏界面</span>
-            </div>
-          </Row>
-        </div>
-      )}
-
-      {tab === 'display' && (
-        <div className="vn-set-list">
-          <Row label="思考过程">
-            <div className="vn-set-stack">
-              <VnSwitch label="思考过程" checked={settings.showThinking} onChange={(v) => set('showThinking', v)} />
-              <span className="vn-set-note">
-                {settings.showThinking
-                  ? '回复第一句上留「已思考 N 秒」,点开能看模型想了什么'
-                  : '对话框和历史页都不显示思考内容;模型照常思考,想让它不思考在「模型」页把思考深浅设成关'}
-              </span>
-            </div>
-          </Row>
-          <Row label="模型标签">
-            <VnSwitch label="模型标签" checked={settings.showModel} onChange={(v) => set('showModel', v)} />
-          </Row>
-          <Row label="语音标签">
-            <div className="vn-set-stack">
-              <VnSwitch label="语音标签" checked={settings.showVoice} onChange={(v) => set('showVoice', v)} />
-              <span className="vn-set-note">
-                卡绑了声音时右上角显示语音连没连上,点开能快速开关语音、调音量;关掉之后语音断了照样会提示
-              </span>
-            </div>
-          </Row>
-          <Row label="标题画面" beta>
-            <Seg
-              options={[
-                { value: true, name: '进来先看' },
-                { value: false, name: '直接继续' },
-              ]}
-              value={settings.titleScreen}
-              onPick={(v) => set('titleScreen', v)}
-            />
-          </Row>
-        </div>
-      )}
-      {tab === 'look' && (
-        <div className="vn-set-list">
-          <Row label="封面">
-            <div className="vn-set-stack">
-              <Seg options={TITLE_STYLES} value={settings.titleStyle} onPick={(v) => set('titleStyle', v)} />
-              <span className="vn-set-note">
-                {
-                  {
-                    paper: '左边一张斜切的纸放 logo 和菜单,右边是她和上次的场景;「角色」进选角色',
-                    bright: '整张明亮的场景,左边一层白纱放 logo 和菜单;「角色」进选角色',
-                    poster: '之前的海报版:斜切纸面排版,左边的头像点一下换角色',
-                    cinema: '之前的电影版:场景轮流淡入的片头,最后回到上次的地方',
-                  }[settings.titleStyle]
-                }
-                {' · 菜单「返回标题」看效果'}
-              </span>
-            </div>
-          </Row>
-          <Row label="封面音乐" beta>
-            <div className="vn-set-stack">
-              {titleMusic && titleMusic.bgms.length > 0 ? (
-                <>
-                  <select
-                    className="vn-set-select"
-                    aria-label="封面音乐"
-                    // 设的那首删了或禁用了,下拉显示回默认(游戏里也是放排第一的)
-                    value={titleMusic.bgms.some((b) => b.id === titleMusic.value) ? (titleMusic.value ?? '') : ''}
-                    onChange={(e) => titleMusic.onChange(e.target.value || null)}
-                  >
-                    <option value="">默认:排第一的({titleMusic.bgms[0].label})</option>
-                    {titleMusic.bgms.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.label}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="vn-set-note">
-                    标题画面放这首,点「继续」换回场景的音乐 · 记在这张卡的场景包上,绑同一个包的角色共用
-                  </span>
-                </>
-              ) : (
-                <span className="vn-set-note">
-                  {titleMusic ? '这张卡的场景包里还没有 BGM,封面不放音乐' : '先选一个角色'}
-                </span>
-              )}
-            </div>
-          </Row>
-          <Row label="主题色">
-            <div className="vn-set-stack">
-              <Seg options={VN_ACCENTS} value={settings.accent} onPick={(v) => set('accent', v)} />
-              <span className="vn-set-note">{ACCENT_NOTE[settings.accent]}</span>
-            </div>
-          </Row>
-          <Row label="对话框">
-            <div className="vn-set-stack">
-              <Seg options={BOX_SKINS} value={settings.boxSkin} onPick={(v) => set('boxSkin', v)} />
-              <span className="vn-set-note">
-                {
-                  {
-                    'glass-dark': '深色半透明玻璃:名字压在框上沿,输入和快捷按钮在框里最下面一行,轮到你说话时正中弹出输入条',
-                    'glass-light': '浅色半透明玻璃:和黑玻璃一样的排法,亮的场景里更清爽',
-                    classic: '原来的对话框:输入框在对话框下面单独一条',
-                  }[settings.boxSkin]
-                }
-              </span>
-            </div>
-          </Row>
-          <Row label="对话框文字">
-            <div className="vn-set-stack">
-              <Seg options={TEXT_FONTS} value={settings.textFont} onPick={(v) => set('textFont', v)} />
-              <span className="vn-set-font-preview" style={{ fontFamily: TEXT_FONT_STACKS[settings.textFont] }}>
-                「我心中的一等星,今天也依然是前辈。」
-              </span>
-            </div>
-          </Row>
-        </div>
-      )}
-      {tab === 'data' && <DataTab onUploadMarks={onUploadMarks} />}
+        )}
+      </div>
+      {!phone && preview && <LivePreview data={preview} settings={settings} />}
+      </div>
+      </div>
     </div>
   );
 }
-

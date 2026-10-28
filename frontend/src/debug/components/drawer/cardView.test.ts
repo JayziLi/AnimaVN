@@ -152,7 +152,7 @@ describe('headTags:页头的小标签', () => {
     expect(headTags('voice', keqing, [conn()])).toEqual(['刻晴(中文)', '用 5090 · GPT-SoVITS']);
     expect(headTags('voice', keqing, [conn({ name: 'GPT-SoVITS' })])).toEqual(['刻晴(中文)', '用 GPT-SoVITS']);
     expect(headTags('voice', keqing, [])).toEqual(['刻晴(中文)']);
-    expect(headTags('voice', cardFacts(bare()), [conn()])).toEqual(['没设主声音']);
+    expect(headTags('voice', cardFacts(bare()), [conn()])).toEqual(['没设音色']);
   });
 
   it('背景 / BGM / CG 页:「包名 · N 张 / N 首」', () => {
@@ -166,7 +166,7 @@ describe('headTags:页头的小标签', () => {
     expect(headTags('lang', keqing, [])).toEqual(['刻晴(中文)的声音不是日语']);
     const ja = cardFacts(bare({ voices: { main: 'v2', extras: [] }, profiles: [voice('v2', '刻晴(日语)', 'ja')] }));
     expect(headTags('lang', ja, [])).toEqual(['刻晴(日语)的声音是日语']);
-    expect(headTags('lang', cardFacts(bare()), [])).toEqual(['没设主声音']);
+    expect(headTags('lang', cardFacts(bare()), [])).toEqual(['没设音色']);
   });
 
   it('别的页没有小标签', () => {

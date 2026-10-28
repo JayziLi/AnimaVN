@@ -767,3 +767,69 @@
     padding-left: 66px;
   }
 }
+
+/* ── 游戏里的拖放(设计稿 kit/transfer.css 的 .tf-dzone / .tf-tlab):纸、细虚线,不发光、不用胶囊 ── */
+.imp-drop.ingame {
+  font-family: var(--av-sans);
+}
+.imp-gdrop,
+.imp-gdrop-dim {
+  position: absolute;
+  inset: 0;
+}
+.imp-gdrop-dim {
+  background: rgba(10, 10, 20, 0.18);
+}
+/* 选角色的格子淡到四成(接收区盖在它们上面) */
+body:has(.imp-drop.ingame .imp-gdrop) .vn-pick .pk-tile {
+  opacity: 0.4;
+}
+.imp-gdrop-zone {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  border-radius: var(--av-r-panel);
+  border: 1.5px dashed var(--av-ctl);
+  background: color-mix(in srgb, var(--av-paper) 90%, transparent);
+  color: var(--av-ink);
+  animation: imp-fade 0.18s ease both;
+}
+.imp-gdrop-zone.is-glass {
+  background: color-mix(in srgb, var(--av-solid, rgb(24, 26, 38)) 90%, transparent);
+}
+.imp-gdrop-zone > svg {
+  color: var(--av-ctl);
+}
+.imp-gdrop-zone b {
+  font: 700 24px/1.2 var(--av-serif);
+  letter-spacing: 0.24em;
+}
+/* 没有选角色那块面板时:画面正中一张纸卡 */
+.imp-gdrop-zone.card {
+  left: 50%;
+  top: 50%;
+  width: min(440px, calc(100% - 32px));
+  height: 220px;
+  transform: translate(-50%, -50%);
+  box-shadow: var(--av-shadow-float);
+}
+/* 落点上:四周压暗一点、白细框;旁边一张墨底白字的小方签「松手:给刻晴加素材」 */
+.imp-drop.ingame .imp-drop-spot {
+  border: 1.5px solid #fff;
+  border-radius: 6px;
+  box-shadow: 0 0 0 200vmax rgba(10, 10, 20, 0.3);
+}
+.imp-drop.ingame .imp-drop-tag {
+  height: 30px;
+  gap: 6px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 5px;
+  background: var(--av-ink);
+  color: var(--av-paper);
+  font: 500 12.5px/1.3 var(--av-sans);
+  box-shadow: var(--av-shadow-card, 0 2px 8px rgba(30, 24, 48, 0.2));
+}

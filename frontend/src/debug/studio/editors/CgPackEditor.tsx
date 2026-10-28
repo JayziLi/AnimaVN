@@ -16,7 +16,7 @@ import { labelFromFile, uniqueLabel } from '../../lib/assetNames';
 import { cgForms } from '../../plugins/forms';
 import { cgsOf } from '../../plugins/scene';
 import { Icon } from '../icons';
-import { StagePreview } from '../preview/StagePreview';
+import { Stage } from '../../vn/ui/Stage';
 import type { Notify, PackSync } from '../types';
 import { ConfirmDialog, Inspector, PromptDialog } from '../ui';
 import {
@@ -58,7 +58,7 @@ type Dialog =
 
 export interface CgPackEditorProps {
   packId: string;
-  /** 主区顶上那一行(卡编辑器:类型小牌子 + 包页签 + ⋯;素材管理:包名、用量、绑定) */
+  /** 主区顶上那一行(卡编辑器:类型小牌子 + 包下拉框 + ⋯;素材管理:包名、用量、在用的卡) */
   header: ReactNode;
   /** 绑着这个包的卡有几张:两张以上,删构图前弹确认框写出来 */
   cardCount?: number;
@@ -402,7 +402,7 @@ export function CgPackEditor({
     <>
       <main className="st-main">
         {header}
-        <StagePreview
+        <Stage
           background={null}
           cg={shown && src ? { src, focus: shown.cg.focus_x, mode: 'cover' } : null}
           line={shown ? { speaker: '旁白', text: cgNarration(shown.cg), narration: true } : null}

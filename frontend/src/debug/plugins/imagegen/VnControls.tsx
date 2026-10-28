@@ -1,7 +1,8 @@
 /**
  * 视觉小说里生图的几样东西:
  * - 发送右边的画笔(IgButton):点一下直接画这一句,右键 / 长按开「画这一幕」的设置,正在画时角上一个小点;
- * - 舞台上那一层(IgStage):左上角「画画中」的小标签、这句有图时的操作(换一张 / 收起 / 收藏 / 提示词)、
+ * - 舞台上那一层(IgStage):右下角细条上方一条同样的细条 —— 正在画时写进度(构思画面 › Drawing · 几秒 | 等待 N),
+ *   这句有图时放操作(标题 · 换一张 / 收藏 / 收起 / 这张图),只用图标、悬停有说明;
  *   「画这一幕」小面板(对话框正上方靠右:尺寸、想看什么、先看提示词)、提示词详情。
  * 点这些东西不能让对话往下走:外层都拦掉点击。
  */
@@ -138,36 +139,141 @@ function useSeconds(since: number | null): number {
   return since === null ? 0 : Math.max(0, (now - since) / 1000);
 }
 
+/** 状态的下一步(写在当前这步后面、淡一点):第一次先记住她的样子,然后构思画面,然后画 */
+const NEXT_STEP: Record<string, string> = { 记住她的样子: '构思画面', 构思画面: 'Drawing' };
+
+/** 插图那条细条上的线条图标(和四角细条同一套:24 格、1.5 线宽、圆头) */
+function BarIcon({ name, filled }: { name: 'reroll' | 'star' | 'stow' | 'info' | 'picture'; filled?: boolean }) {
+  return (
+    <svg
+      className="av-ic"
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill={filled ? 'currentColor' : 'none'}
+      stroke="currentColor"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {name === 'reroll' && (
+        <>
+          <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
+          <path d="M15.6 10.2a3.8 3.8 0 1 0 .3 3.2" />
+          <path d="M15.9 7.8v2.6h-2.6" />
+        </>
+      )}
+      {name === 'star' && <path d="M12 4.2l2.3 4.7 5.2.8-3.75 3.65.9 5.15L12 16.07 7.35 18.5l.9-5.15L4.5 9.7l5.2-.8z" />}
+      {name === 'stow' && (
+        <>
+          <rect x="3.5" y="4.5" width="17" height="11" rx="2" />
+          <path d="M9 12.5l3 2.5 3-2.5M12 8v7" />
+          <path d="M5.5 19.5h13" />
+        </>
+      )}
+      {name === 'picture' && (
+        <>
+          <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
+          <path d="M3.5 16l4.6-4.6 3.4 3.4 2.6-2.6 6.4 6.3" />
+          <circle cx="15.5" cy="9" r="1.5" />
+        </>
+      )}
+      {name === 'info' && (
+        <>
+          <circle cx="12" cy="12" r="8.5" />
+          <path d="M12 11v5.5" />
+          <path d="M12 7.6v.2" />
+        </>
+      )}
+    </svg>
+  );
+}
+
+/** 正在画:一条和四角一样的细条,写现在这步(白)› 下一步(淡)· 几秒 | 等待 N */
 function Status({ store }: { store: ImageGenStore }) {
   const first = store.jobs[0] ?? null;
   const secs = useSeconds(first?.started ?? null);
   if (!first) return null;
+  const next = NEXT_STEP[first.label];
   return (
-    <span className="vn-chip ig-status" title="AI 生图 BETA">
-      <span className="ig-dot" aria-hidden="true" />
-      {first.label} · {secs.toFixed(0)} 秒{store.jobs.length > 1 && ` · 还有 ${store.jobs.length - 1} 个排着`}
-    </span>
+    <div className="vn-strip ig-bar ig-status" role="status" title="AI 生图">
+      <span className="ig-step">
+        <span className="ig-dot" aria-hidden="true" />
+        <b>{first.label}</b>
+        {next && (
+          <>
+            <svg className="ig-next" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M9 6l6 6-6 6" />
+            </svg>
+            <span className="ig-later">{next}</span>
+          </>
+        )}
+        <span className="ig-secs">{secs.toFixed(0)} 秒</span>
+      </span>
+      {store.jobs.length > 1 && <span className="ig-queue">等待 {store.jobs.length - 1}</span>}
+    </div>
   );
 }
 
-function Tools({ store, ctx, mark, onInfo }: { store: ImageGenStore; ctx: VnIllustrationContext; mark: VnImageMark; onInfo: () => void }) {
+const TRIGGER_NAME: Record<GeneratedImage['trigger'], string> = { manual: '手动', auto: '自动', reroll: '换一张' };
+
+/** 这张插图的操作:标题 · 换一张 · 收藏 · 收起 · 这张图(说明和提示词),照四角细条的样子,只放图标 */
+function Tools({
+  store,
+  ctx,
+  mark,
+  onInfo,
+  open,
+  toggle,
+}: {
+  store: ImageGenStore;
+  ctx: VnIllustrationContext;
+  mark: VnImageMark | null;
+  onInfo: () => void;
+  /** 收着时只有最后那颗小按钮 */
+  open: boolean;
+  toggle: React.ReactNode;
+}) {
   const entry = ctx.entry;
-  if (!entry) return null;
+  if (!open || !entry || !mark) {
+    return (
+      <nav className="vn-strip ig-bar ig-tools" aria-label="这张插图" onClick={stop}>
+        {toggle}
+      </nav>
+    );
+  }
+  const img = store.album?.find((x) => x.id === mark.id) ?? null;
+  const kept = Boolean(img?.kept_asset_id);
   return (
-    <div className="ig-tools" onClick={stop}>
-      <button className="vn-pill" onClick={() => void store.reroll(entry, mark)} title="同一幅画面换一张">
-        换一张
+    <nav className="vn-strip ig-bar ig-tools is-open" aria-label="这张插图" onClick={stop}>
+      {img?.title && (
+        <span className="ig-cap">
+          <b>{img.title}</b>
+          <small>{TRIGGER_NAME[img.trigger]}</small>
+        </span>
+      )}
+      <button type="button" onClick={() => void store.reroll(entry, mark)} aria-label="换一张" data-tip={"换一张\n同一幅画面再画一张,画好了换上;这张留在相册里"}>
+        <BarIcon name="reroll" />
       </button>
-      <button className="vn-pill" onClick={() => store.hide(entry, mark)} title="这张不要了(相册里还有)">
-        收起
+      <button
+        type="button"
+        className={kept ? 'on' : undefined}
+        onClick={() => !kept && void store.keep(mark.id)}
+        aria-label={kept ? '已收藏' : '收藏'}
+        aria-pressed={kept}
+        data-tip={kept ? '已收藏\n在这张卡的「AI 生图」CG 包里' : '收藏\n放进这张卡的「AI 生图」CG 包,以后 AI 能直接选它'}
+      >
+        <BarIcon name="star" filled={kept} />
       </button>
-      <button className="vn-pill" onClick={() => void store.keep(mark.id)} title="放进这张卡的「AI 生图」CG 包,以后 AI / Jev 能直接选">
-        收藏
+      <button type="button" onClick={() => store.hide(entry, mark)} aria-label="收起这张图" data-tip={"收起\n这张先不看,相册里还有"}>
+        <BarIcon name="stow" />
       </button>
-      <button className="vn-pill" onClick={onInfo}>
-        提示词
+      <button type="button" onClick={onInfo} aria-label="这张图的说明和提示词" data-tip={"这张图\n标题、说明和提示词"}>
+        <BarIcon name="info" />
       </button>
-    </div>
+      {toggle}
+    </nav>
   );
 }
 
@@ -227,7 +333,7 @@ function DrawPanel({ store, ctx }: { store: ImageGenStore; ctx: VnIllustrationCo
     });
 
   return (
-    <div className={`ig-panel${at ? ' ig-pop' : ''}`} style={at} role="dialog" aria-label="画这一幕" onClick={stop}>
+    <div className={`ig-panel${at ? ' ig-pop' : ''}${ctx.paperClass ? ` ${ctx.paperClass}` : ''}`} style={at} role="dialog" aria-label="画这一幕" onClick={stop}>
       <div className="ig-head">
         <span className="ig-title">
           画这一幕 <span className="ig-beta">BETA</span>
@@ -372,14 +478,14 @@ function DrawPanel({ store, ctx }: { store: ImageGenStore; ctx: VnIllustrationCo
   );
 }
 
-function Info({ id, store, onClose }: { id: string; store: ImageGenStore; onClose: () => void }) {
+function Info({ id, store, onClose, paperClass }: { id: string; store: ImageGenStore; onClose: () => void; paperClass?: string }) {
   const [img, setImg] = useState<GeneratedImage | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     imagegenApi.image(id).then(setImg, (e: unknown) => setError(errText(e)));
   }, [id]);
   return (
-    <div className="ig-panel ig-info" role="dialog" aria-label="这张图的提示词" onClick={stop}>
+    <div className={`ig-panel ig-info${paperClass ? ` ${paperClass}` : ''}`} role="dialog" aria-label="这张图的说明和提示词" onClick={stop}>
       <div className="ig-head">
         <span className="ig-title">这张图</span>
         <button className="vn-pill ig-x" onClick={onClose}>
@@ -425,14 +531,56 @@ function Info({ id, store, onClose }: { id: string; store: ImageGenStore; onClos
 export function IgStage({ store, ctx }: { store: ImageGenStore; ctx: VnIllustrationContext }) {
   const [info, setInfo] = useState<string | null>(null);
   const mark = ctx.entry ? store.shownAt(ctx.entry, ctx.line) : null;
+  // 平时只有一颗小按钮(插图 / 正在画时带个小点);鼠标指上去、或点一下才展开那一条
+  const [pinned, setPinned] = useState(false);
+  const [hover, setHover] = useState(false);
+  const leaveTimer = useRef<number | null>(null);
+  const busy = store.jobs.length > 0;
+  const markId = mark?.id ?? null;
+  // 换到别的图(翻到下一句)就收起来
+  useEffect(() => setPinned(false), [markId]);
+  useEffect(() => () => {
+    if (leaveTimer.current !== null) window.clearTimeout(leaveTimer.current);
+  }, []);
+  const show = (mark || busy) && !store.panelOpen && !info;
+  if (!show) {
+    return (
+      <>
+        {store.panelOpen && <DrawPanel store={store} ctx={ctx} />}
+        {info && !store.panelOpen && <Info id={info} store={store} paperClass={ctx.paperClass} onClose={() => setInfo(null)} />}
+      </>
+    );
+  }
+  const open = pinned || hover;
+  const label = mark ? '这张插图' : 'AI 生图进度';
+  const toggle = (
+    <button
+      type="button"
+      className={`ig-toggle${busy ? ' busy' : ''}${open ? ' on' : ''}`}
+      onClick={() => setPinned((v) => !v)}
+      aria-expanded={open}
+      aria-label={open ? `收起${label}的按钮` : label}
+      title={open ? '收起' : mark ? '这张插图:换一张、收藏、收起、看说明' : '正在画'}
+    >
+      <BarIcon name="picture" />
+    </button>
+  );
   return (
-    <>
-      <div className="ig-corner" onClick={stop}>
-        <Status store={store} />
-        {mark && !store.panelOpen && !info && <Tools store={store} ctx={ctx} mark={mark} onInfo={() => setInfo(mark.id)} />}
-      </div>
-      {store.panelOpen && <DrawPanel store={store} ctx={ctx} />}
-      {info && !store.panelOpen && <Info id={info} store={store} onClose={() => setInfo(null)} />}
-    </>
+    <div
+      className={`ig-corner${open ? ' is-open' : ''}`}
+      onClick={stop}
+      onPointerEnter={(e) => {
+        if (e.pointerType !== 'mouse') return;
+        if (leaveTimer.current !== null) window.clearTimeout(leaveTimer.current);
+        setHover(true);
+      }}
+      onPointerLeave={(e) => {
+        if (e.pointerType !== 'mouse') return;
+        leaveTimer.current = window.setTimeout(() => setHover(false), 220);
+      }}
+    >
+      {open && <Status store={store} />}
+      <Tools store={store} ctx={ctx} mark={mark} open={open} toggle={toggle} onInfo={() => mark && setInfo(mark.id)} />
+    </div>
   );
 }

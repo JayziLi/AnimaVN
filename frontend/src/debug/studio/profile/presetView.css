@@ -5,6 +5,20 @@
    调试台左栏不受影响。选择器都多带一层:要压过 debug.css / profile.css 里同名的规则(加载顺序不保证)。
    选中行的边框 #5a5a5a、关着的开关圆点 #bdbdbd 是图里的原值。 */
 
+/* 外层:主区 + 右栏一行,下面横着一条上下文预算(budget 不给就没有这一条,.pv-cols 自己撑满) */
+.pv-wrap {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.pv-cols {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
 /* ── 主区 ── */
 
 .st-main.pf-main.pv-main {
@@ -280,6 +294,10 @@
    列表自己留一段滚动(最多 65vh):拖块时手指停在边上要能接着滚,整页滚接不上 */
 
 @media (max-width: 899px) {
+  /* 外层本来靠 .st-body 换成竖排撑开;现在多了一层 .pv-cols,它自己也要跟着变竖排 */
+  .pv-cols {
+    flex-direction: column;
+  }
   .st-main.pf-main.pv-main {
     overflow: visible;
     padding: 12px;

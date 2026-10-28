@@ -10,7 +10,6 @@
  */
 
 import {
-  Fragment,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -21,19 +20,25 @@ import {
   type FormEvent,
   type ReactNode,
 } from 'react';
+import { flushSync } from 'react-dom';
+import './theme.css';
 import './vn.css';
 import './vnSkins.css';
+import './vnLine.css';
+import './vnEmbedPaper.css';
 import { newBeatCache, parseBeats, type Beat } from '../core/beats';
 import { buildTimeline, stateAt, type TimelineCtx } from '../core/timeline';
 import {
   cardFaceUrl,
   sceneImageUrl,
   spriteImageUrl,
+  spriteThumbUrl,
   type PackSprite,
   type SceneAsset,
   type SpeakRequest,
   type SpriteEffect,
   type SpriteLayout,
+  type VoiceProfile,
 } from '../lib/api';
 import { currentInfo, currentText, type ChatEntry } from '../lib/chatEntry';
 import { enterHint, enterShouldSend, type EnterKeyMode } from '../lib/chatSettings';
@@ -44,19 +49,15 @@ import {
   emotionCandidates,
   emotionListRef,
   isNpcHit,
-  RECORD_SOURCE_NAME,
   type EmotionContext,
-  type TagMatch,
 } from '../plugins/emotionMatch';
 import { SYNC_MAX_WAIT_MS, jevKindsOf, jevMayTag, NO_KINDS, voiceWaitsForJev } from '../plugins/jev';
-import { entryView } from '../plugins/jevNotes';
 import { jaHiddenOf, type JaHideControls } from '../plugins/jaHide';
 import { parseBilingual } from '../plugins/lang';
 import { manualEmotions, manualOf } from '../plugins/manualMarks';
 import { cgFrameFromPairs, missingCell, voiceRowFromPairs } from '../plugins/pairings';
-import { kindName } from '../plugins/registry';
 import { bubbleStyle, facesByCanvas, spriteStyle, type SpriteStage } from '../plugins/spriteLayout';
-import { fxStep, MOTION_FRAMES, normalizeEffect, playFxSound, preloadSfx, soundFile } from '../plugins/spriteFx';
+import { fxStep, fxSwapsInstantly, MOTION_FRAMES, normalizeEffect, playFxSound, preloadSfx, soundFile } from '../plugins/spriteFx';
 import { SpriteBubble } from './SpriteBubble';
 import { playTypeSound, preloadTypeSound } from './typeSound';
 import {
@@ -64,17 +65,12 @@ import {
   bgmsOf,
   cgsOf,
   cgVariantsOf,
-  isCgOff,
   titleBgmOf,
   type SceneState,
 } from '../plugins/scene';
 import {
-  EMO_MODE_TEXT,
   planVoiceLines,
-  spriteHitsUpTo,
   voiceForSpeaker,
-  voiceKey,
-  voiceSkipReason,
   type VoiceCast,
   type VoicePluginConfig,
 } from '../plugins/voice';
@@ -82,24 +78,41 @@ import { audioBus } from './audioBus';
 import { bgmPlayer } from './bgm';
 import { AnimaLogo } from './AnimaLogo';
 import { Feather } from './Feather';
-import type { ParsedReply, TagKind, VNLine } from './script';
+import type { ParsedReply, TagHit, TagKind, VNLine } from './script';
 import { vnTagKinds } from './tags';
 import { useEmotionMatches } from './useEmotionMatches';
 import { fillMissingCell, usePairings } from './usePairings';
 import { useTimelineEngine } from './useTimelineEngine';
 import { useWordRecords } from './useWordRecords';
 import { useVoiceLine } from './useVoiceLine';
-import type { ClipState } from './voice';
 import { VoiceButtons } from './VoiceButtons';
 import { LineInspector } from './LineInspector';
 import type { PluginFocus, PluginSection } from '../components/PluginsDrawer';
 import { VNMenu, type MenuPage } from './VNMenu';
+import type { LivePreviewData } from './settings/LivePreview';
 import { VNSettingsPage, type SettingsTab } from './VNSettingsPage';
 import { VoiceQuick } from './VoiceQuick';
-import { useVNAccent } from './accent';
+import { ConsoleView } from './ConsoleView';
+import { voicePlayer } from './voice';
+import { GameIcon } from './ui/GameIcon';
+import { Switch } from './ui/Switch';
+import { echoHoldMs, playerSaid } from './echo';
+import { PopWindow } from './ui/PopWindow';
+import type { HistoryData } from './history/logic';
+import { ModelWindowBody, type ModelQuick } from './ModelWindow';
+import { accentCssVars, useVNAccent } from './accent';
+import { useSceneGlass } from './ui/useSceneGlass';
+import { FrostLayer } from './ui/FrostLayer';
+import { useFrost } from './ui/useFrost';
+import { menuCrumb } from './menuLabel';
+import { popThemeClass } from './ui/logic';
+import { isNightLabel, pickBannerScene } from './settings/banner';
 import { FALLBACK_BACKGROUND } from './fallbacks';
+import { skipChipLabel } from './skipChip';
+import { typedParts } from './typedParts';
+import { BG_FADE_MS, SPRITE_FADE_MS, useStackedLayers, useStackedLayersCtl, type StackLayer } from './stackedLayers';
 import { imageRatio, isSettled, loadImage, useAssetGate, useSettledView, type GateItem } from './assetGate';
-import { spriteForMood, titleSpriteStyle, type TitleMood } from './titleArt';
+import { spriteForMood, type TitleMood } from './titleArt';
 import type { FormsState, VnIllustrationContext, VnIllustrations } from '../plugins/cartridges';
 import { DEFAULT_SWITCHES, type PluginSwitches } from '../plugins/switches';
 import { formButton } from '../plugins/forms';
@@ -107,6 +120,12 @@ import { StateToggle } from './StateToggle';
 import { VNLoading } from './VNLoading';
 import { VNTitle, type TitleCard, type TitleScene } from './VNTitle';
 import { VNPick } from './VNPick';
+import { LineMenu } from './LineMenu';
+import { ModelError } from './ModelError';
+import { holdsUserLine, userSaid, type GenFail } from './genFail';
+import { MOTION, useFadeLayer, useReducedMotion } from './ui/motion';
+import { toastPlace } from './ui/notice';
+import { ToastStack, type ToastItem } from './ui/PaperToast';
 import {
   AUTO_SPEEDS,
   loadVNSettings,
@@ -116,27 +135,8 @@ import {
   type VNSettings,
 } from './vnSettings';
 
-/** 玻璃皮肤的发送 / 停止:和对话框底行一样的小图标,不要大按钮 */
-function SendIcon() {
-  return (
-    <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
-      <path
-        d="M2.5 9.2 17 2.6c.5-.2 1 .3.8.8L11.2 17.9c-.2.5-.9.5-1.1 0L8.2 12.4a.6.6 0 0 0-.3-.3L2.5 10.3c-.5-.2-.5-.9 0-1.1Z"
-        fill="currentColor"
-      />
-    </svg>
-  );
-}
-function StopIcon() {
-  return (
-    <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true">
-      <rect x="4" y="4" width="12" height="12" rx="2.5" fill="currentColor" />
-    </svg>
-  );
-}
-
-/** 封面一露出来就看得到的表情(待机、纸上那张脸):进封面前必须下好 */
-const TITLE_FIRST: TitleMood[] = ['idle', 'ghost'];
+/** 封面一露出来就看得到的表情(待机):进封面前必须下好 */
+const TITLE_FIRST: TitleMood[] = ['idle'];
 /** 悬停菜单、点一下才换的表情:排在「尽量等」的最前面,封面上没下好时先留着旧表情 */
 const TITLE_LATER: TitleMood[] = ['continue', 'new', 'load', 'config', 'exit', 'poke'];
 /** 进之前必须下好往后几句要用的表情和背景(用户:「封面和前几个对话的素材要准备好」) */
@@ -146,22 +146,30 @@ const ILLUS_TAB = 'illus';
 /** 对话框上的检查器浮在对话框上方;上面的地方不够时至少留这么高(像素),压住对话框上沿 */
 const INSPECT_MIN_ROOM = 240;
 
+const NO_TOASTS: ToastItem[] = [];
+const NOOP = () => {};
+
 /** 调试台拼好传进来的那几页 */
 export type HostPage = Exclude<MenuPage, 'config' | 'dev'>;
 
 export interface PageContext {
   close: () => void;
-  /** 跳到某条回复的第一句,并关掉菜单 */
-  jumpTo: (entryId: string) => void;
+  /** 读档 / 开新的故事:关掉菜单,如果还在封面(从「读档」进来的)一并把封面收掉,进游戏 */
+  enterGame: () => void;
+  /** 跳到某条回复的第 line 句(不给是第一句),并关掉菜单 */
+  jumpTo: (entryId: string, line?: number) => void;
   /** 「在当前位置存档」存到哪条消息为止 */
   currentMessageId: string | null;
+  /** 现在这一句所在的场景(存档回执「已存档 · 夜路 · 33 条」的地名和小图);没有背景时都是 null */
+  sceneNow: { label: string | null; thumb: string | null };
+  /** 存档页从封面「读档」进来的:只能挑一个读,没有「在这里存档」(没有当前对话可存) */
+  loadOnly: boolean;
   /** 历史页的「显示原文」 */
   raw: boolean;
-  /**
-   * 历史页里一条 AI 回复的正文:按画面上的句子一句一句列,要念的句子带重播 / 重新生成。
-   * 用户消息、还没切出句子的回复给 null(照原样显示)
-   */
-  lineView: (entry: ChatEntry) => ReactNode | null;
+  /** 游戏里右键 / 长按「改原文」打开的历史小窗口:一打开就在改这条回复(别的时候不给) */
+  editFirst?: string | null;
+  /** editFirst 那条保存完了:关窗口回游戏 */
+  editDone?: () => void;
   /** 换到插件页的某个插件(预设里点了插件块、设置里点了「换声音」) */
   openPlugin: (section: PluginSection) => void;
   /** 插件页该停在哪个插件;从导航直接点进来时是 null */
@@ -170,8 +178,28 @@ export interface PageContext {
   openConfig: () => void;
   /** 换到菜单的「素材」页(插件页里的「素材管理 · 立绘包」这类链接;停在哪个页签由外面先定好) */
   openAssets: () => void;
+  /** 换到菜单的「预设」页(角色页目录里「预设」那一行) */
+  openPreset: () => void;
   /** 设置里的「思考过程」:关了历史页也不显示 */
   showThinking: boolean;
+  /** 历史页(vn/history)的数据:每条回复的句子、现在停在哪句、字幕 */
+  log: HistoryData;
+  /**
+   * 这一页有没保存的改动时登记一个「离开前先问」(返回 false = 留下);关菜单、Esc、换页、返回标题都先问它。
+   * 页面卸载或改动保存了就登记 null。现在模型页在用
+   */
+  setLeaveGuard: (guard: (() => Promise<boolean>) | null) => void;
+}
+
+/**
+ * 跨存档跳转(相册里画在另一个存档里的图「跳到这里」):DebugApp 读完那个档、条目换好以后才给,
+ * VNScreen 把光标放到 entryId 那条回复的第 line 句。nonce 每次请求都换,同一个只消费一次
+ */
+export interface PendingJump {
+  chatId: string;
+  entryId: string;
+  line: number;
+  nonce: number;
 }
 
 interface Props {
@@ -189,6 +217,8 @@ interface Props {
   tagTemplate: string;
   /** 这张卡绑的场景包里的素材(背景 + BGM + CG);没绑时为空 */
   sceneAssets: SceneAsset[];
+  /** 场景包的名字(等待页右下「正在载入 · 名字 · 场景包」用);没绑场景包是 null */
+  scenePackName: string | null;
   /** 场景包设的封面音乐;null = 放排第一的 */
   titleBgmId: string | null;
   /** 设置页里改封面音乐:存在场景包上 */
@@ -199,6 +229,10 @@ interface Props {
   /** 语音插件的配置,以及这张卡用哪些声音 */
   voiceConfig: VoicePluginConfig;
   voiceCast: VoiceCast;
+  /** 语音面板「音色」那张短列表:全部声音(不给 = 只显示现在用的) */
+  voiceProfiles?: readonly VoiceProfile[];
+  /** 语音面板里点了一个声音:换成这张卡的主声音(下一句起用它) */
+  onPickVoice?: (id: string) => void;
   /** 拆句拼接开着(卡带的 useSplice):合成请求带 sfx */
   sfxEnabled: boolean;
   /** 设置页里改语音开关 / 等不等语音:改的是插件配置,和调试台插件抽屉同一份 */
@@ -223,14 +257,18 @@ interface Props {
   chatName: string;
   /** 当前对话最后一次改动的时间 —— 标题画面上的「上次 · 3 小时前」 */
   chatUpdatedAt: string | null;
-  /** 卡片的标签(第一个当作品名),标题画面用 —— 同名、同作品的卡靠它们认 */
-  cardTags: string[];
   /** 正在读对话 —— 盖一层加载画面 */
   loading: boolean;
+  /** 读完另一个存档后要落到的那一句(PendingJump);没有是 null */
+  pendingJump?: PendingJump | null;
   /** 这张卡的立绘、场景列表都拿到了(切卡后要等一会儿)—— 素材等待页据此知道要等哪些图 */
   assetsReady?: boolean;
-  /** 右上角的模型标签 */
+  /** 有没有「相册」(生图卡带装了才有;内容由 renderPage('album') 给) */
+  hasAlbum?: boolean;
+  /** 左上「模型」旁边的模型名 */
   modelLabel: string;
+  /** 左上「模型」开的小窗口里用的:连接、模型、思考、流式(调试台给);不给 = 点「模型」直接开菜单的模型页 */
+  modelQuick?: ModelQuick;
   onSend: (text: string) => void;
   /**
    * 插话。entryId + keep:把这条回复截到 keep 为止(完整版留成另一个分支)再发;
@@ -252,6 +290,11 @@ interface Props {
   onWantAvatar: (cardId: string) => void;
   /** 选角色界面的「导入」:打开调试台的角色卡文件框 */
   onImportCard?: () => void;
+  /** 选角色名字右边的「导出」:导出她的角色包(.animavn) */
+  onExportCard?: (cardId: string) => void;
+  /** 游戏里刚导进来的那张卡:选角色里排第一、选中、带「刚导入」小签;离开选角色时 onFreshSeen 让上面清掉 */
+  freshCardId?: string | null;
+  onFreshSeen?: () => void;
   currentCardId: string | null;
   onPickCard: (id: string, fresh: boolean) => void;
   /**
@@ -263,6 +306,11 @@ interface Props {
   illustrations?: VnIllustrations | null;
   /** 插件开关(plugins/switches.ts,插件页右上角):关掉的立绘 / 背景 / 音乐 / CG / AI 出图不显示、不干活 */
   switches?: PluginSwitches;
+  /** 调试台 notify 来的提示(游戏开着时由这里画成纸卡) */
+  toasts?: ToastItem[];
+  onRemoveToast?: (id: number) => void;
+  /** 这次生成失败了(还没重试 / 重新发):对话区停在你说的那句,台词上方放一张报错纸卡 */
+  genFail?: GenFail | null;
 }
 
 interface Cursor {
@@ -286,7 +334,7 @@ interface CgView {
   group: string | null;
   /** 竖屏时对准横图的哪儿 */
   focus: number;
-  /** 整张都看得到(生成的插图):不裁,空出来的地方垫一层模糊放大的同一张。10-12 用户:手机上横图默认超出画面 */
+  /** 生成插图的显示分支:above 保留整图;铺满屏幕时等比裁切填满 */
   whole?: boolean;
   /** 整张放在对话框上面那一块里(--vn-window-h 是对话框量出来的高) */
   above?: boolean;
@@ -312,12 +360,9 @@ interface SpriteFxCue {
   effect: SpriteEffect;
 }
 
-const reduceMotion =
-  typeof window !== 'undefined' &&
-  window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-
 /** 逐字显示。key 变了(换了一句)从头打;text 变长(流式还在写)接着打。interval 为 0 整句直接出 */
 function useTypewriter(key: string, text: string, interval: number) {
+  const reduceMotion = useReducedMotion();
   const instant = reduceMotion || interval <= 0;
   const [state, setState] = useState({ key, n: 0, skipped: instant });
   const current = state.key === key;
@@ -338,7 +383,7 @@ function useTypewriter(key: string, text: string, interval: number) {
   }, [key, current, n, skipped, text.length, interval, instant]);
 
   return {
-    shown: skipped ? text : text.slice(0, n),
+    ...typedParts(text, n, skipped),
     done: skipped || n >= text.length,
     skip: () => setState({ key, n: text.length, skipped: true }),
   };
@@ -401,13 +446,17 @@ function useLoadingVeil(loading: boolean): boolean {
   return shown;
 }
 
-/** 立绘层:新图淡入、旧图淡出,切表情时不会闪一下空白背景 */
+const sameSprite = (a: SpriteView, b: SpriteView) => a === b;
+const sameBg = (a: BgView, b: BgView) => a.focus === b.focus;
+
+/** 立绘层:新表情叠在旧表情上 .2s 淡入(useStackedLayers),旧的一直不透明,不会闪空白、也不会重影 */
 function SpriteLayer({
   view: next,
   charName,
   fx,
   fxVolume,
   covered,
+  instant,
 }: {
   view: SpriteView;
   charName: string;
@@ -415,54 +464,46 @@ function SpriteLayer({
   fxVolume: number;
   /** 这一句有 CG 显示、把立绘盖住了(立绘层透明):切换特效的动作、气泡、音效都不放 */
   covered: boolean;
+  /** 跳过中:表情直接换,不淡 */
+  instant: boolean;
 }) {
   // 新表情整张下载完了才换上,没好之前留着旧的 —— 不会看到只画了一半的图
   const view = useSettledView(next);
-  const [layers, setLayers] = useState<{ cur: SpriteView; prev: SpriteView | null }>({
-    cur: view,
-    prev: null,
-  });
-
-  useEffect(() => {
-    if (view.key !== layers.cur.key) setLayers({ cur: view, prev: layers.cur });
-    // 同一张图只是挪了位置(插件页里在调):原地更新,不走淡入淡出
-    else if (view !== layers.cur) setLayers((l) => ({ ...l, cur: view }));
-  }, [view, layers.cur]);
-
-  // 淡出结束后把旧图摘掉。单独一个 effect:和上面写在一起的话,setLayers 引起的
-  // 重跑会先执行清理函数,把这个计时器清掉,旧图就永远留在那儿了
-  useEffect(() => {
-    if (!layers.prev) return;
-    const t = window.setTimeout(() => setLayers((l) => ({ ...l, prev: null })), 320);
-    return () => window.clearTimeout(t);
-  }, [layers.prev]);
+  const reduceMotion = useReducedMotion();
+  const played = useRef(0);
+  const { layers, settle } = useStackedLayersCtl(view, instant, SPRITE_FADE_MS, sameSprite, true);
+  const cur = layers[layers.length - 1].view;
 
   // 切换特效:等要的那张图换上来再放 —— 动作、气泡和音效一起出。
   // 这句有 CG 盖着立绘时看不见,这次就不放(也不留到 CG 收起再补),规则见 spriteFx.ts 的 fxStep
   const [playing, setPlaying] = useState<(SpriteFxCue & { bubbleAt?: CSSProperties }) | null>(null);
-  const played = useRef(0);
   const fxRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const step = fxStep(fx, played.current, layers.cur.key, covered);
+    const step = fxStep(fx, played.current, cur.key, covered);
     if (!fx || step === 'wait') return;
+    // 带动作 / 气泡的这次:新表情马上整张换上(底下的旧图摘掉、不再淡入)再放 ——
+    // 不然动作开始时旧图还在底下、新图半透明,看着像上一张没走、下一张的动画就来了
+    if (fxSwapsInstantly(fx, played.current, cur.key, covered, reduceMotion)) settle();
     played.current = fx.id;
     if (step === 'skip') return;
-    setPlaying({ ...fx, bubbleAt: layers.cur.bubble });
+    setPlaying({ ...fx, bubbleAt: cur.bubble });
     playFxSound(fx.effect.sound, fxVolume);
     // 动作用 Web Animations 直接播:连着两次同一个动作也会重来,图也不用重新挂一遍
     const motion = fx.effect.motion ? MOTION_FRAMES[fx.effect.motion] : undefined;
     if (motion && !reduceMotion) fxRef.current?.animate(motion.frames, motion.timing);
-  }, [fx, layers.cur, fxVolume, covered]);
+  }, [fx, cur, fxVolume, covered, reduceMotion, settle]);
   useEffect(() => {
     if (!playing) return;
     const t = window.setTimeout(() => setPlaying(null), 1500);
     return () => window.clearTimeout(t);
   }, [playing]);
 
-  const render = (v: SpriteView, cls: string) =>
-    v.src ? (
+  const render = (l: StackLayer<SpriteView>) => {
+    const v = l.view;
+    const cls = l.enter ? 'entering' : '';
+    return v.src ? (
       <img
-        key={v.key}
+        key={l.id}
         className={`vn-sprite ${cls}`}
         src={v.src}
         alt={`${charName} · ${v.label}`}
@@ -470,18 +511,18 @@ function SpriteLayer({
         style={v.style}
       />
     ) : (
-      <div key={v.key} className={`vn-sprite vn-sprite-ph ${cls}`}>
+      <div key={l.id} className={`vn-sprite vn-sprite-ph ${cls}`}>
         <span className="vn-sprite-ph-name">{charName || '角色'}</span>
         <span className="vn-sprite-ph-label">{v.label}</span>
       </div>
     );
+  };
 
   return (
     <div className="vn-sprite-stage" aria-hidden="true">
-      {layers.prev && render(layers.prev, 'leaving')}
-      {/* 动作套在外面一层:图自己的 transform 管定位,不能被动画盖掉 */}
+      {/* 动作套在外面一层:图自己的 transform 管定位,不能被动画盖掉。新旧几张都在这层里,做动作时一起动 */}
       <div ref={fxRef} className="vn-sprite-fx">
-        {render(layers.cur, 'entering')}
+        {layers.map(render)}
         {playing?.effect.bubble && (
           <SpriteBubble key={playing.id} kind={playing.effect.bubble} style={playing.bubbleAt} />
         )}
@@ -490,77 +531,144 @@ function SpriteLayer({
   );
 }
 
-/** 背景层:旧图先淡出、新图稍后淡入,中间透出一点黑,像换场景的转场 */
-function BackgroundLayer({ view: next }: { view: BgView }) {
+/** 背景层:新背景叠在旧背景上 .5s 淡入(useStackedLayers),中间不露黑底 */
+function BackgroundLayer({ view: next, instant }: { view: BgView; instant: boolean }) {
   // 同 SpriteLayer:新背景好了才开始转场
   const view = useSettledView(next);
-  const [layers, setLayers] = useState<{ cur: BgView; prev: BgView | null }>({
-    cur: view,
-    prev: null,
-  });
-
-  useEffect(() => {
-    if (view.key !== layers.cur.key) setLayers({ cur: view, prev: layers.cur });
-    // 同一张图只是改了焦点:原地更新,不走转场
-    else if (view.focus !== layers.cur.focus) setLayers((l) => ({ ...l, cur: view }));
-  }, [view, layers.cur]);
-
-  // 理由同 SpriteLayer:摘旧图的计时器单独一个 effect
-  useEffect(() => {
-    if (!layers.prev) return;
-    const t = window.setTimeout(() => setLayers((l) => ({ ...l, prev: null })), 900);
-    return () => window.clearTimeout(t);
-  }, [layers.prev]);
-
-  const render = (v: BgView, cls: string) => (
-    <img
-      key={v.key}
-      className={`vn-bg ${cls}`}
-      src={v.src}
-      alt=""
-      draggable={false}
-      style={{ objectPosition: `${v.focus}% 50%` }}
-    />
-  );
-
+  const layers = useStackedLayers(view, instant, BG_FADE_MS, sameBg, false);
   return (
     <>
-      {layers.prev && render(layers.prev, 'leaving')}
-      {render(layers.cur, layers.prev ? 'entering' : '')}
+      {layers.map((l) => (
+        <img
+          key={l.id}
+          className={`vn-bg${l.enter ? ' entering' : ''}`}
+          src={l.view.src}
+          alt=""
+          draggable={false}
+          style={{ objectPosition: `${l.view.focus}% 50%` }}
+        />
+      ))}
     </>
   );
 }
 
-/** CG 层:盖在背景和立绘上面。同一张 CG 换差分(表情)快速交叉淡入,出现、收起、换 CG 慢一点 */
-function CgLayer({ view: next }: { view: CgView }) {
+/** CG 出现、收起、换成别的 CG 的淡入 / 淡出;同一张换差分新图叠上去的淡入(和 vn.css 的 .vn-cg-item / .vn-cg-set 一样) */
+const CG_FADE_MS = 500;
+const CG_DIFF_MS = 200;
+
+interface CgItem {
+  id: number;
+  view: CgView;
+  /** 正在淡入:slow = 出现 / 换成别的 CG,diff = 同一张换差分;null = 不淡(淡完了、一开始就在、跳过时直接换上来) */
+  enter: 'slow' | 'diff' | null;
+  at: number;
+  /** 这张 CG(构图)出现的时刻:竖长的从顶上开始移,换差分时新图接着同一个位置移 */
+  panFrom: number;
+}
+
+/** 一「场」CG:从出现到收起。里面换图都叠在这一场里;收起时整场一起淡出,淡完摘掉 */
+interface CgSet {
+  id: number;
+  items: CgItem[];
+  leaving: boolean;
+  at: number;
+}
+
+const cgEnterMs = (it: CgItem) => (it.enter === 'diff' ? CG_DIFF_MS : CG_FADE_MS);
+
+/**
+ * CG 层:盖在背景和立绘上面,立绘留在底下不单独淡(CG 自带黑底,盖满了就看不见她)。
+ * 照 useStackedLayers 的做法:新图叠在旧图上淡入(出现 / 换成别的 CG .5s,换差分 .2s),旧图一直不透明,
+ * 淡完再摘 —— 换差分时不会两张带黑底的半透明图叠在一起发暗。收起时整场 .5s 淡出,和出现一样长。
+ * instant(跳过 / 按住 Ctrl)= 直接换、直接收,不淡也不叠
+ */
+function CgLayer({ view: next, instant }: { view: CgView; instant: boolean }) {
   // 同 SpriteLayer:新图下载完了才换
   const view = useSettledView(next);
-  // panFrom:这张 CG(构图)出现的时刻。竖长的从顶上开始移,换差分时接着移
-  const [layers, setLayers] = useState<{ cur: CgView; prev: CgView | null; slow: boolean; panFrom: number }>(
-    () => ({ cur: view, prev: null, slow: false, panFrom: Date.now() }),
+  const seq = useRef(0);
+  const [sets, setSets] = useState<CgSet[]>(() =>
+    view.src
+      ? [{ id: 0, leaving: false, at: 0, items: [{ id: 0, view, enter: null, at: 0, panFrom: Date.now() }] }]
+      : [],
   );
 
   useEffect(() => {
-    if (view.key !== layers.cur.key) {
-      const other = view.group !== layers.cur.group;
-      setLayers({ cur: view, prev: layers.cur, slow: other, panFrom: other ? Date.now() : layers.panFrom });
-    } else if (view.focus !== layers.cur.focus) setLayers((l) => ({ ...l, cur: view }));
-  }, [view, layers.cur, layers.panFrom]);
+    setSets((ss) => {
+      const last = ss[ss.length - 1];
+      const cur = last && !last.leaving ? last : null;
+      const top = cur ? cur.items[cur.items.length - 1] : null;
+      const at = performance.now();
+      if (!view.src) {
+        if (!cur) return ss;
+        // 收起:这一场整个淡出;跳过时直接摘
+        return instant ? ss.slice(0, -1) : [...ss.slice(0, -1), { ...cur, leaving: true, at }];
+      }
+      if (cur && top && top.view.key === view.key) {
+        // 同一张图只是挪了焦点:原地更新,不走淡入
+        if (top.view === view) return ss;
+        return [...ss.slice(0, -1), { ...cur, items: cur.items.map((x) => (x === top ? { ...x, view } : x)) }];
+      }
+      const diff = top !== null && view.group === top.view.group;
+      const item: CgItem = {
+        id: ++seq.current,
+        view,
+        enter: instant ? null : diff ? 'diff' : 'slow',
+        at,
+        panFrom: top && diff ? top.panFrom : Date.now(),
+      };
+      // 新的一场:还在淡出的上一场留在底下接着淡(跳过时直接摘)
+      if (!cur) return [...(instant ? [] : ss), { id: ++seq.current, items: [item], leaving: false, at }];
+      return [...ss.slice(0, -1), { ...cur, items: instant ? [item] : [...cur.items, item] }];
+    });
+  }, [view, instant]);
 
-  // 理由同 SpriteLayer:摘旧图的计时器单独一个 effect
+  // 淡完了收拾(理由同 useStackedLayers,单独一个 effect):最上面那张淡完 → 摘掉它底下的、自己也摘掉 entering;
+  // 收起的那场淡完 → 整场摘掉
   useEffect(() => {
-    if (!layers.prev) return;
-    const t = window.setTimeout(() => setLayers((l) => ({ ...l, prev: null })), layers.slow ? 750 : 320);
+    const now = performance.now();
+    let wait = Infinity;
+    for (const s of sets) {
+      const top = s.items[s.items.length - 1];
+      if (s.leaving) wait = Math.min(wait, s.at + CG_FADE_MS - now);
+      else if (top.enter) wait = Math.min(wait, top.at + cgEnterMs(top) - now);
+      else if (s.items.length > 1) wait = 0;
+    }
+    if (wait === Infinity) return;
+    const t = window.setTimeout(
+      () => {
+        const at = performance.now();
+        setSets((ss) => {
+          let changed = false;
+          const out: CgSet[] = [];
+          for (const s of ss) {
+            const top = s.items[s.items.length - 1];
+            if (s.leaving) {
+              if (at - s.at >= CG_FADE_MS) changed = true;
+              else out.push(s);
+            } else if ((!top.enter || at - top.at >= cgEnterMs(top)) && (top.enter || s.items.length > 1)) {
+              changed = true;
+              out.push({ ...s, items: [{ ...top, enter: null }] });
+            } else out.push(s);
+          }
+          return changed ? out : ss;
+        });
+      },
+      Math.max(0, wait) + 40,
+    );
     return () => window.clearTimeout(t);
-  }, [layers.prev, layers.slow]);
-
-  const render = (v: CgView, cls: string) =>
-    v.src ? <CgImage key={v.key} view={v} cls={cls} panFrom={layers.panFrom} /> : null;
+  }, [sets]);
 
   return (
-    <div className={`vn-cg-stage${layers.slow ? ' slow' : ''}`} aria-hidden="true">
-      {layers.prev && render(layers.prev, 'leaving')}
-      {render(layers.cur, layers.prev ? 'entering' : '')}
+    <div className="vn-cg-stage" aria-hidden="true">
+      {sets.map((s) => (
+        <div key={s.id} className={`vn-cg-set${s.leaving ? ' leaving' : ''}`}>
+          {s.items.map((it) => (
+            <div key={it.id} className={`vn-cg-item${it.enter ? ` entering ${it.enter}` : ''}`}>
+              {it.view.src && <CgImage view={it.view} panFrom={it.panFrom} />}
+            </div>
+          ))}
+        </div>
+      ))}
     </div>
   );
 }
@@ -572,15 +680,15 @@ const CG_PAN_MS = 20000;
  * CG 层里的一张图。竖长的(高比宽大,原作里要卷动着看的全身图)上下来回慢慢移:
  * 从这张 CG 出现的时刻(panFrom)算起,所以一出现是从顶上开始;换差分时新图接着同一个位置移
  */
-function CgImage({ view, cls, panFrom }: { view: CgView; cls: string; panFrom: number }) {
+function CgImage({ view, panFrom }: { view: CgView; panFrom: number }) {
   const tall = view.src !== null && (imageRatio(view.src) ?? 0) > 1;
-  // 挂上时定一次:之后 panFrom 变了(换成别的 CG)这张也快摘了,不用跟着改
+  // 挂上时定一次:panFrom 只在换成别的 CG 时变,那时这张会换成新的一张,不用跟着改
   const [delay] = useState(() => `${-((Date.now() - panFrom) % (CG_PAN_MS * 2))}ms`);
   if (view.whole) {
     return (
       <>
-        <img className={`vn-cg vn-cg-backdrop ${cls}`} src={view.src ?? undefined} alt="" draggable={false} />
-        <img className={`vn-cg whole${view.above ? ' above' : ''} ${cls}`} src={view.src ?? undefined} alt="" draggable={false} />
+        {view.above && <img className="vn-cg vn-cg-backdrop" src={view.src ?? undefined} alt="" draggable={false} />}
+        <img className={`vn-cg whole${view.above ? ' above' : ''}`} src={view.src ?? undefined} alt="" draggable={false} />
       </>
     );
   }
@@ -589,7 +697,7 @@ function CgImage({ view, cls, panFrom }: { view: CgView; cls: string; panFrom: n
     : { objectPosition: `${view.focus}% 50%` };
   return (
     <img
-      className={`vn-cg ${cls}${tall ? ' tall' : ''}`}
+      className={`vn-cg${tall ? ' tall' : ''}`}
       src={view.src ?? undefined}
       alt=""
       draggable={false}
@@ -600,20 +708,9 @@ function CgImage({ view, cls, panFrom }: { view: CgView; cls: string; panFrom: n
 
 const seconds = (ms: number) => `${(ms / 1000).toFixed(1)} 秒`;
 
-/** 选项上不要台词外层的引号 */
-const unquote = (s: string) => s.replace(/^\s*[「『“"]/, '').replace(/[」』”"]\s*$/, '');
 
-/**
- * 当时玩家发的话弹成选项时的样子:「——」开头的行是写给模型的提示(——场景切换为逛街),
- * 不放进去;整行是一句带引号的台词就去掉引号;空行收掉。剩下是空的就不弹
- */
-const playerSaid = (raw: string) =>
-  raw
-    .split('\n')
-    .map((l) => l.trim())
-    .filter((l) => l && !l.startsWith('——'))
-    .map((l) => (/^[「『“”"].*[」』“”"]$/.test(l) ? l.slice(1, -1) : l))
-    .join('\n');
+/** 手机上先藏起来的四个工具页(10-26 定:手机版没设计,电脑版落地后再补,见 TODO.md) */
+const PHONE_HIDDEN_PAGES: readonly MenuPage[] = ['plugin', 'assets', 'model', 'dev'];
 
 export function VNScreen({
   entries,
@@ -626,6 +723,7 @@ export function VNScreen({
   spriteLayout,
   tagTemplate,
   sceneAssets,
+  scenePackName,
   titleBgmId,
   onChangeTitleBgm,
   bgTemplate,
@@ -634,6 +732,8 @@ export function VNScreen({
   voiceConfig,
   sfxEnabled,
   voiceCast,
+  voiceProfiles,
+  onPickVoice,
   onChangeVoiceConfig,
   showJa,
   onChangeShowJa,
@@ -647,10 +747,12 @@ export function VNScreen({
   chatKey,
   chatName,
   chatUpdatedAt,
-  cardTags,
   loading,
+  pendingJump = null,
   assetsReady = true,
   modelLabel,
+  modelQuick,
+  hasAlbum = false,
   onSend,
   onInterject,
   onBranch,
@@ -661,11 +763,17 @@ export function VNScreen({
   cards,
   onWantAvatar,
   onImportCard,
+  onExportCard,
+  freshCardId = null,
+  onFreshSeen,
   currentCardId,
   onPickCard,
   onSetManual,
   illustrations: illustrationsInstalled = null,
   switches = DEFAULT_SWITCHES,
+  toasts = NO_TOASTS,
+  onRemoveToast = NOOP,
+  genFail = null,
 }: Props) {
   // AI 出图关了:不画、不显示、画笔收起;设置里那一页照旧在(插件页能再打开)
   const illustrations = switches.illustrations ? illustrationsInstalled : null;
@@ -710,6 +818,16 @@ export function VNScreen({
   if (cursorChat !== chatKey) {
     setCursorChat(chatKey);
     setCursor(startOfLatest());
+  }
+
+  // 跨存档跳转:DebugApp 读完那个档才给,这时 chatKey、entries 已经是那个存档的(上面换对话的重置要是也在这次
+  // 渲染里,它先放到最新一句,这里再盖过去)。每个 nonce 只看一次:对话对上就跳,对不上(又切走了)只作废、不跳。
+  // 挂载时已经在的算旧的 —— 关掉游戏再打开不重跳
+  const [jumpSeen, setJumpSeen] = useState(pendingJump?.nonce ?? null);
+  if (pendingJump && pendingJump.nonce !== jumpSeen) {
+    setJumpSeen(pendingJump.nonce);
+    const b = pendingJump.chatId === chatKey ? beats.find((x) => x.entry.id === pendingJump.entryId && x.parsed) : undefined;
+    if (b) setCursor({ id: b.entry.id, swipe: b.entry.swipeIndex, line: pendingJump.line });
   }
 
   // 光标这次挪动是不是「往下读」(点下一句、自动播放、新回复跳过来)。立绘切换特效只在往下读时放,
@@ -758,6 +876,10 @@ export function VNScreen({
   const onLatest = beatIndex === lastAssistantIndex && beatIndex >= 0;
 
   const typeKey = beat ? `${beat.entry.id}:${beat.entry.swipeIndex}:${line}` : 'none';
+
+  // 生成失败、你说的那句还是最后一条:对话区停在你说的那句,点画面不往下翻(重试 / 换模型 / 再说一句才继续)
+  const heldEntry = entries[entries.length - 1];
+  const failedHold = holdsUserLine(genFail !== null, heldEntry?.role);
 
   // 玩家的台词(<我>,Jev 认出来的或旧回复里的)照常打进对话框,名牌写玩家的名字、不念、不换立绘;
   // 第 2 步起不再先弹成选项(设计稿 12.1「10-16 第 2 步」)
@@ -826,16 +948,6 @@ export function VNScreen({
   );
 
   const faces = useMemo(() => facesByCanvas(sprites), [sprites]);
-  // 加载页左边站的她:默认表情,按脸摆在左半边
-  const loadingSprite = useMemo(() => {
-    const s = spriteForMood(sprites, 'idle') ?? sprites[0] ?? null;
-    const src = s ? spriteImageUrl(s) : null;
-    if (!s || !src) return null;
-    return {
-      src,
-      style: titleSpriteStyle(faces.get(s.id) ?? null, s.face_scan?.height ?? null, { faceSize: 0.2, faceTop: 0.12, cx: 0.32 }, 0),
-    };
-  }, [sprites, faces]);
   const beatId = beat?.entry.id ?? null;
   // 时间线(core/timeline.ts):每条回复每一句的画面,从第一条回复一路累计;每条回复按内容缓存,流式时只重算正在写的那条
   const timeline = useMemo(() => buildTimeline(beats, tctx), [beats, tctx]);
@@ -903,8 +1015,8 @@ export function VNScreen({
     () => (switches.cg && cgKey && cgUrl ? { key: cgKey, src: cgUrl, group: cgGroup, focus: cgFocus } : NO_CG),
     [switches.cg, cgKey, cgUrl, cgGroup, cgFocus],
   );
-  // 这一句有 CG:CG 层盖住立绘(vn.css 的 .cg-on 把立绘层调透明),立绘切换特效也跟着不放
-  // 生成的插图(卡带):这句有就盖在 CG 层上显示它,立绘照样淡出
+  // 这一句有 CG:CG 层盖住立绘(CG 自带黑底,立绘留在底下不单独淡),立绘切换特效也跟着不放
+  // 生成的插图(卡带):这句有就盖在 CG 层上显示它,和 CG 一样盖住立绘
   const illusView = beat && illustrations ? illustrations.viewAt(beat.entry, line) : null;
   const illusKey = illusView ? `illus:${illusView.key}` : null;
   const illusSrc = illusView?.src ?? null;
@@ -934,6 +1046,34 @@ export function VNScreen({
     windowObserver.current.observe(el);
     windowObserver.current.observe(root);
   }, []);
+  // 电脑上对话区和输入那行照设计稿整块等比缩放:设计稿是 1440×810 一张画,按窗口 min(宽/1440, 高/810) 放大缩小,
+  // 字、框、离底距离一起变;这里把倍数写到 .vn-root 的 --ga-k(vnLine.css .ga-stage、四角细条用它)
+  const stageObserver = useRef<ResizeObserver | null>(null);
+  const measureStage = useCallback((el: HTMLDivElement | null) => {
+    stageObserver.current?.disconnect();
+    stageObserver.current = null;
+    const root = el?.closest<HTMLElement>('.vn-root');
+    if (!el || !root) return;
+    const measure = () => {
+      const w = root.clientWidth;
+      const h = root.clientHeight;
+      if (!w || !h) return;
+      root.style.setProperty('--ga-k', String(Math.min(w / 1440, h / 810)));
+    };
+    measure();
+    stageObserver.current = new ResizeObserver(measure);
+    stageObserver.current.observe(root);
+  }, []);
+  // 对话区 A 那块(.ga-say):量高度同上;经典玻璃框里垫的模糊背景按它对齐(只糊背景,不糊立绘)
+  const sayBox = useRef<HTMLDivElement | null>(null);
+  const sayRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      sayBox.current = el;
+      measureWindow(el);
+    },
+    [measureWindow],
+  );
+  const frost = useFrost(sayBox, `${settings.dlgStyle}:${settings.boxSkin}:${settings.dialogueOffset}:${settings.dialogueHeight}`);
   // 给插图卡带的「现在在哪」:光标这条回复、这一句、这里的背景
   const illusCtx: VnIllustrationContext = {
     entry: beat?.entry ?? null,
@@ -945,6 +1085,7 @@ export function VNScreen({
       setSettingsTab(ILLUS_TAB);
       openMenu('config');
     },
+    paperClass: settings.dlgStyle === 'line' || settings.boxSkin !== 'classic' ? `av-pcard ${popThemeClass(settings.theme)}` : undefined,
   };
   // 插图卡带的自动出图:最新一条回复在这次打开以后写完、Jev 也判完时告诉它一次(读档、换对话不算)
   const latestBeat = lastAssistantIndex >= 0 ? beats[lastAssistantIndex] : null;
@@ -964,25 +1105,7 @@ export function VNScreen({
 
   // ---- 标题画面:最后一句、上次停下的地方、场景包里的背景 ----
 
-  // 最新一条回复里她说的最后一句;她没开口就用别人说的最后一句
-  const lastLine = useMemo(() => {
-    const said = (lastAssistantIndex >= 0 ? beats[lastAssistantIndex].parsed?.lines : null) ?? [];
-    const pick = (ok: (l: VNLine) => boolean) => {
-      for (let i = said.length - 1; i >= 0; i--) if (!said[i].player && said[i].text.trim() && ok(said[i])) return said[i];
-      return null;
-    };
-    const l = pick((x) => x.speaker === charName) ?? pick((x) => Boolean(x.speaker));
-    return l ? unquote(l.text.trim()) : null;
-  }, [beats, lastAssistantIndex, charName]);
   const titleHome: TitleScene = { key: bgView.key, src: bgView.src, focus: bgView.focus, label: scene.bg?.label ?? '' };
-  const titleScenes: TitleScene[] = useMemo(
-    () =>
-      backgroundsOf(sceneAssets).flatMap((a) => {
-        const src = sceneImageUrl(a);
-        return src ? [{ key: `${a.id}:${a.file_version}`, src, focus: a.focus_x, label: a.label }] : [];
-      }),
-    [sceneAssets],
-  );
 
   // ---- 音乐 ----
 
@@ -990,6 +1113,14 @@ export function VNScreen({
   const [title, setTitle] = useState(settings.titleScreen);
   // 选角色界面(纸面 / 明亮封面的「角色」进来)
   const [picking, setPicking] = useState(false);
+  // 离开选角色:刚导入的那张不再排第一、不再带小签(整合版 whole.js 的 freshImport 同样在离开选角色时清掉)
+  const freshSeen = useRef(onFreshSeen);
+  freshSeen.current = onFreshSeen;
+  const wasPicking = useRef(false);
+  useEffect(() => {
+    if (wasPicking.current && !picking) freshSeen.current?.();
+    wasPicking.current = picking;
+  }, [picking]);
   const titleBgm = useMemo(() => titleBgmOf(sceneAssets, titleBgmId), [sceneAssets, titleBgmId]);
 
   // ---- 素材等待页:封面和接下来几句要用的图到齐才露画面,其余的最多等 4 秒(assetGate.ts) ----
@@ -1091,32 +1222,62 @@ export function VNScreen({
   // ---- 界面状态 ----
 
   const [menu, setMenu] = useState<MenuPage | null>(null);
-  // 菜单上次停在哪一页,Esc 再打开时回到那儿
-  const [lastPage, setLastPage] = useState<MenuPage>('log');
+  // 从游戏画面直接开的小窗口(右上「历史」、左上「模型」、滚轮往上);菜单里的历史还是大面板
+  const [win, setWin] = useState<'log' | 'model' | null>(null);
+  const winLayer = useFadeLayer(win !== null, MOTION.popOut);
+  const lastWin = useRef(win);
+  if (win) lastWin.current = win;
+  // 历史小窗口里 Esc 先问内容(在改原文就先退出编辑,不关窗口):历史页挂上来的钩子
+  const logEsc = useRef<(() => boolean) | null>(null);
+  // 右键 / 长按「改原文」开的历史窗口:那条回复一打开就在改,保存完关窗口回游戏(设计稿 whole.js 的 editFromGame)
+  const [editFirst, setEditFirst] = useState<string | null>(null);
+  useEffect(() => {
+    if (win !== 'log') setEditFirst(null);
+  }, [win]);
+  // 从封面点「读档 / 设置」打开的:盖在封面上,只有这两页,没有「返回标题」(关掉就是封面)
+  const [menuFrom, setMenuFrom] = useState<'game' | 'cover'>('game');
+  // 菜单关的时候先淡出(0.18s)再卸:淡出时还画着最后停的那一页(和它是从哪儿开的)
+  const menuLayer = useFadeLayer(menu !== null, MOTION.popOut);
+  const lastMenu = useRef<MenuPage>('card');
+  const lastMenuFrom = useRef<'game' | 'cover'>('game');
+  if (menu) {
+    lastMenu.current = menu;
+    lastMenuFrom.current = menuFrom;
+  }
+  const shownMenu = menu ?? lastMenu.current;
+  const shownMenuFrom = menu ? menuFrom : lastMenuFrom.current;
   // 设置页这次打开停在哪一栏(语音面板点「完整语音设置」= 声音);菜单关了就忘掉
   const [settingsTab, setSettingsTab] = useState<SettingsTab | string | undefined>(undefined);
   useEffect(() => {
     if (!menu) setSettingsTab(undefined);
   }, [menu]);
   const [rawLog, setRawLog] = useState(false);
-  // 历史页:鼠标移上去(手机上点一下)的那句露出「回到这里」「详情」;展开了详情的那句
-  const [pickedLine, setPickedLine] = useState<string | null>(null);
-  const [detailKey, setDetailKey] = useState<string | null>(null);
   const [pluginFocus, setPluginFocus] = useState<PluginFocus | null>(null);
   const [uiHidden, setUiHidden] = useState(false);
   // 对话框上右键 / 长按打开的句检查器:记着是在哪一句打开的(光标一动就收起);bottom 是浮层底边离画面底部多远(贴在对话框上方)
   const [inspect, setInspect] = useState<{ key: string; bottom: number } | null>(null);
+  // 对着台词右键 / 长按先出的小菜单:记着光标在画面里的位置、是哪一句(光标一动就收起)、选「详情」时检查器放多高
+  const [ctxMenu, setCtxMenu] = useState<{ key: string; x: number; y: number; w: number; h: number; bottom: number } | null>(null);
   const [draft, setDraft] = useState('');
   const [auto, setAuto] = useState(false);
   // 玻璃皮肤:读到最后一句先只亮右下角的小方块,玩家再点一下才弹出正中的输入条(记下是在哪一句点的)
   const [turnAt, setTurnAt] = useState<string | null>(null);
   // 输入条左边的 ×:收起来不挡画面(还能在对话框最下面那行打字;再点一下对话框又弹出来)
   const [turnClosed, setTurnClosed] = useState<string | null>(null);
+  // 细线 / 玻璃(设计稿 .ga-input):平时最下面是一行带下划线的淡字,点它(或轮到你)整条输入浮上来;
+  // 收起 / 发出去以后回到那行字。barIdle = 点开了但没写字、也不是轮到你:点画面先收起,不翻句
+  const [barOpen, setBarOpen] = useState(false);
+  const barIdle = useRef(false);
+  // Esc 先收起思考 / 退出输入框(键盘那个 effect 不随每次渲染重挂,渲染时把这一刻的做法放进来)
+  const escBarRef = useRef<(target: EventTarget | null) => boolean>(() => false);
   const [skip, setSkip] = useState(false);
   const [ctrlHeld, setCtrlHeld] = useState(false);
   const skipping = skip || ctrlHeld;
   const veil = useLoadingVeil(loading);
   const accent = useVNAccent(settings.accent, sprites);
+  // 主题「玻璃」:提示条、报错卡这些纸卡按这一幕的背景取色(--gl-*,写在 .vn-root 上)
+  const paperTheme = settings.theme;
+  const glassStyle = useSceneGlass(paperTheme === 'glass', bgView.src);
 
   // ---- 语音:说话人对得上声音的台词才念,情绪跟着这句生效的立绘表情 ----
 
@@ -1278,13 +1439,15 @@ export function VNScreen({
 
   // ---- 历史页:每条回复按画面上的句子列出来,要念的句子带重播 / 重新生成 ----
 
-  const logOpen = menu === 'log';
+  // 菜单里的历史页和游戏上的历史小窗口都要这份句子
+  const logOpen = menu === 'log' || win === 'log';
   const backlog = useMemo(() => {
     const out = new Map<
       string,
       {
         lines: VNLine[];
         plans: (SpeakRequest | null)[];
+        hits: TagHit[];
         streaming: boolean;
         /** 在对话(beats)里是第几条:检查器按它查时间线 */
         index: number;
@@ -1315,7 +1478,7 @@ export function VNScreen({
             manual: manualEmotions(manualOf(b.entry), sprites),
           })
         : [];
-      out.set(b.entry.id, { lines: p.lines, plans, streaming, index: i });
+      out.set(b.entry.id, { lines: p.lines, plans, hits: p.hits, streaming, index: i });
     });
     return out;
   }, [logOpen, beats, timeline, emotionCtx, voiceCast, voiceConfig.enabled, voiceConfig.fixedEmotion, inForm, sfxEnabled, pickRow, waitRows, sprites]);
@@ -1366,74 +1529,39 @@ export function VNScreen({
     );
   };
 
-  const lineView = (entry: ChatEntry): ReactNode | null => {
-    const b = backlog.get(entry.id);
-    if (!b || b.lines.length === 0) return null;
-    const here = beat?.entry.id === entry.id;
-    return (
-      <div className="vn-log-lines">
-        {b.lines.map((ln, i) => {
-          const plan = b.plans[i] ?? null;
-          const key = `${entry.id}:${i}`;
-          const open = detailKey === key;
-          const picked = pickedLine === key;
-          // 鼠标移上去露出操作;没有悬停的手机上点一下这句露出来,再点收起
-          const pick = () => setPickedLine(picked ? null : key);
-          return (
-            <Fragment key={i}>
-              <div
-                className={`vn-log-line${ln.speaker ? '' : ' narration'}${ln.player ? ' player' : ''}${here && i === line ? ' current' : ''}${picked ? ' picked' : ''}${open ? ' open' : ''}`}
-                tabIndex={0}
-                onClick={pick}
-                onKeyDown={(e) => {
-                  if (e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return;
-                  e.preventDefault();
-                  pick();
-                }}
-              >
-                <span className="vn-log-text">
-                  {showJa && !jaHiddenOf(entry) && ln.ja && <span className="vn-log-ja">{ln.ja}</span>}
-                  {ln.speaker && <span className="vn-log-speaker">{ln.speaker}</span>}
-                  {ln.text}
-                </span>
-                {plan && <VoiceButtons req={plan} />}
-                {/* 操作浮在这句右上角,不挤正文 */}
-                <span className="vn-log-acts" onClick={(e) => e.stopPropagation()}>
-                  <button type="button" onClick={() => jumpTo(entry.id, i)} title="从这一句接着看(重玩)">
-                    回到这里
-                  </button>
-                  <button
-                    type="button"
-                    className={open ? 'on' : ''}
-                    aria-expanded={open}
-                    onClick={() => setDetailKey(open ? null : key)}
-                    title="这句为什么这样:表情怎么认的、背景、CG、语音怎么挑的;能只改这一句的表情"
-                  >
-                    详情
-                  </button>
-                </span>
-              </div>
-              {open && inspectorFor(b.index, i, plan, { streaming: b.streaming, onJump: () => jumpTo(entry.id, i) })}
-            </Fragment>
-          );
-        })}
-      </div>
-    );
-  };
 
-  const openMenu = (page?: MenuPage) => {
-    const p = page ?? lastPage;
-    setMenu(p);
-    setLastPage(p);
+  const openMenu = (page?: MenuPage, from: 'game' | 'cover' = 'game') => {
+    // 每次打开都停在「角色」(10-26 用户定的,不记上次那页);从封面来的两个入口自己指定页
+    setMenu(page ?? 'card');
+    setMenuFrom(from);
+    setWin(null);
     setAuto(false);
     setSkip(false);
     setInspect(null);
+    setCtxMenu(null);
   };
-  const closeMenu = () => setMenu(null);
+  // 菜单里这一页登记的「离开前先问」(PageContext.setLeaveGuard);问过同意了就清掉
+  const leaveGuard = useRef<(() => Promise<boolean>) | null>(null);
+  const leavePage = (then: () => void) => {
+    const guard = leaveGuard.current;
+    if (!guard) return then();
+    void guard().then((ok) => {
+      if (!ok) return;
+      leaveGuard.current = null;
+      then();
+    });
+  };
+  const setLeaveGuard = useCallback((guard: (() => Promise<boolean>) | null) => {
+    leaveGuard.current = guard;
+  }, []);
+  const closeMenu = () => leavePage(() => setMenu(null));
+  // 键盘那个 effect 里用(它不随每次渲染重挂)
+  const closeMenuRef = useRef(closeMenu);
+  closeMenuRef.current = closeMenu;
   const openPlugin = (section: PluginSection) => {
     setPluginFocus({ section, nonce: Date.now() });
     setMenu('plugin');
-    setLastPage('plugin');
+    setMenuFrom('game');
   };
   // 「换声音 · 试音」:菜单插件页的语音(顶上就是主声音下拉框;10-18 一度改去素材页,那里换不了主声音,10-19 改回来)
   const openVoice = () => openPlugin('voice');
@@ -1443,6 +1571,7 @@ export function VNScreen({
       setUiHidden(false);
       return;
     }
+    if (failedHold) return;
     if (!beat || !current) return;
     // 当时玩家发的话:点哪里都算选中,接着弹下一句,或者去下一条回复
     if (userChoice !== null && userStep) {
@@ -1476,10 +1605,21 @@ export function VNScreen({
   };
   const advanceRef = useRef(advance);
   advanceRef.current = advance;
+  // 自动播放那颗键(右上细条、A 键共用),定义在下面外观那段
+  const cycleAutoRef = useRef<() => void>(() => {});
 
-  const busyOverlay = title || menu !== null;
+  // 菜单关上后还留 .18s 淡出(menuLayer 在上面):这段时间里底下的游戏也不接点击和键盘
+  const busyOverlay = title || menu !== null || menuLayer.mounted || winLayer.mounted;
   // 对话框上的检查器开着(在眼下这一句上打开的;光标挪走了就不算)
   const inspecting = inspect !== null && inspect.key === typeKey && current !== null;
+  const ctxOpen = ctxMenu !== null && ctxMenu.key === typeKey && current !== null;
+  // 小菜单、检查器关上时先淡出再卸:淡出时还画着最后那一份
+  const ctxLayer = useFadeLayer(ctxOpen, MOTION.popOut);
+  const inspLayer = useFadeLayer(inspecting, MOTION.popOut);
+  const lastCtx = useRef(ctxMenu);
+  if (ctxMenu) lastCtx.current = ctxMenu;
+  const lastInsp = useRef(inspect);
+  if (inspect) lastInsp.current = inspect;
 
   // 自动播放:一句打完停一会儿翻下一句;流式时等下一句写完再翻。
   // 设置里开着「等语音」时,这句的语音还在合成或正在念就先不翻(合成失败了照常翻)。
@@ -1527,26 +1667,36 @@ export function VNScreen({
       // 按住 Ctrl 又按了别的键 = 组合键(Ctrl+C 之类),不是按住快进
       if (e.ctrlKey) setCtrlHeld(false);
       if (e.key === 'Escape') {
-        if (title || e.isComposing) return;
+        if (e.isComposing) return;
+        if (ctxOpen) {
+          setCtxMenu(null);
+          return;
+        }
         if (inspecting) {
           setInspect(null);
           return;
         }
         if (menu) {
-          // 菜单里的输入框:Esc 先只是退出输入框,再按一次才关菜单
+          // 菜单里的输入框:Esc 先只是退出输入框,再按一次才关菜单(菜单盖在封面上时,关了就回封面)
           if (isTextField(e.target)) (e.target as HTMLElement).blur();
-          else setMenu(null);
-        } else if (veiled) return;
+          else closeMenuRef.current();
+          return;
+        }
+        // 封面上没开菜单:已经是最外层,Esc 不做事(一层一层退,层数退完了)
+        if (title) return;
+        if (veiled) return;
         else if (uiHidden) setUiHidden(false);
+        else if (escBarRef.current(e.target)) return;
         else if (!isTextField(e.target)) {
-          setMenu(lastPage);
+          setMenu('card');
+          setMenuFrom('game');
           setAuto(false);
           setSkip(false);
         }
         return;
       }
       // 检查器开着:看的是这一句,不翻页(点外面或 Esc 关掉再接着读)
-      if (isField(e.target) || busyOverlay || veiled || inspecting) return;
+      if (isField(e.target) || busyOverlay || veiled || inspecting || ctxOpen) return;
       // 带修饰键的是浏览器 / 系统快捷键(Alt+→ 前进、Ctrl+A 全选),不归游戏管
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.key === ' ' || e.key === 'Enter' || e.key === 'ArrowRight' || e.key === 'PageDown') {
@@ -1554,7 +1704,7 @@ export function VNScreen({
         audioBus.unlock();
         advanceRef.current();
       } else if ((e.key === 'a' || e.key === 'A') && !e.repeat) {
-        setAuto((a) => !a);
+        cycleAutoRef.current();
       }
     };
     const onKeyUp = (e: KeyboardEvent) => {
@@ -1569,14 +1719,14 @@ export function VNScreen({
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('blur', onBlur);
     };
-  }, [busyOverlay, veiled, title, menu, uiHidden, lastPage, inspecting]);
+  }, [busyOverlay, veiled, title, menu, uiHidden, inspecting, ctxOpen]);
 
   // 滚轮往上 = 看历史;右键 = 隐藏界面(galgame 玩家的习惯);对话框上右键是这句的检查器(onBoxContextMenu)
   const onWheel = (e: React.WheelEvent) => {
     if (busyOverlay || veiled || e.deltaY > -8) return;
     // 思考过程、输入框自己能滚:还没滚到顶就是在滚它们,不是要看历史
     if (scrollsUp(e.target, e.currentTarget)) return;
-    openMenu('log');
+    setWin('log');
   };
   const onContextMenu = (e: React.MouseEvent) => {
     // 输入框里右键 / 长按是要粘贴、选字,不是隐藏界面
@@ -1587,27 +1737,113 @@ export function VNScreen({
   // 对话框上右键 / 长按:打开这一句的检查器,浮在对话框上方,不翻下一句;还没有句子时照旧隐藏界面
   const onBoxContextMenu = (e: React.MouseEvent<HTMLElement>) => {
     if (isField(e.target)) return;
-    if (!beat || !current) {
+    if (!beat || !current || failedHold) {
       onContextMenu(e);
       return;
     }
     e.preventDefault();
-    const box = e.currentTarget.getBoundingClientRect();
-    const root = e.currentTarget.closest('.vn-root')?.getBoundingClientRect();
+    openLineMenu(e.currentTarget, e.clientX, e.clientY);
+  };
+  // 手机长按台词也出小菜单:iOS Safari 长按不发 contextmenu,自己数 0.5s;手指挪开 10px 就不算。
+  // 长按出了菜单,松手那一下的 click 不再翻下一句
+  const press = useRef<{ t: number; x: number; y: number; el: HTMLElement } | null>(null);
+  const pressFired = useRef(false);
+  const cancelPress = () => {
+    if (press.current) window.clearTimeout(press.current.t);
+    press.current = null;
+  };
+  const onBoxPointerDown = (e: React.PointerEvent<HTMLElement>) => {
+    pressFired.current = false;
+    if (e.pointerType !== 'touch' || isField(e.target) || !beat || !current || failedHold) return;
+    const el = e.currentTarget;
+    const { clientX: x, clientY: y } = e;
+    cancelPress();
+    press.current = {
+      x,
+      y,
+      el,
+      t: window.setTimeout(() => {
+        press.current = null;
+        pressFired.current = true;
+        openLineMenu(el, x, y);
+      }, 500),
+    };
+  };
+  const onBoxPointerMove = (e: React.PointerEvent<HTMLElement>) => {
+    const p = press.current;
+    if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 10) cancelPress();
+  };
+  const onBoxClick = () => {
+    if (pressFired.current) {
+      pressFired.current = false;
+      return;
+    }
+    tapScreen();
+  };
+  // 点画面:点开了输入但没写字(也不是轮到你)先收起,不翻句;不然翻下一句
+  const tapScreen = () => {
+    if (barIdle.current) {
+      setBarOpen(false);
+      return;
+    }
+    advance();
+  };
+  const openLineMenu = (el: HTMLElement, clientX: number, clientY: number) => {
+    const box = el.getBoundingClientRect();
+    const root = el.closest('.vn-root')?.getBoundingClientRect();
     const bottom = root ? root.bottom - box.top + 8 : 0;
     // 对话框占了大半屏(手机横屏)时,上面至少留 INSPECT_MIN_ROOM 给检查器,压住对话框上沿也行
-    setInspect({ key: typeKey, bottom: Math.round(Math.max(8, Math.min(bottom, (root?.height ?? 0) - INSPECT_MIN_ROOM))) });
+    setCtxMenu({
+      key: typeKey,
+      x: Math.round(clientX - (root?.left ?? 0)),
+      y: Math.round(clientY - (root?.top ?? 0)),
+      w: Math.round(root?.width ?? 0),
+      h: Math.round(root?.height ?? 0),
+      bottom: Math.round(Math.max(8, Math.min(bottom, (root?.height ?? 0) - INSPECT_MIN_ROOM))),
+    });
     setAuto(false);
     setSkip(false);
   };
   const closeInspect = () => setInspect(null);
+  const closeCtx = () => setCtxMenu(null);
+  const copyLine = () => {
+    // 复制的是这一句的字(不带名字)
+    if (current) void navigator.clipboard?.writeText(current.text).catch(() => undefined);
+    setCtxMenu(null);
+  };
+  const openInspect = () => {
+    if (ctxMenu) setInspect({ key: ctxMenu.key, bottom: ctxMenu.bottom });
+    setCtxMenu(null);
+  };
+  // 「改原文」:你自己说的那句没有;还在写 / 在等回复时也没有(写完才能改)
+  const canEditLine = Boolean(beat && current && !current.player && !beat.entry.streaming && !sending);
+  const editLine = () => {
+    setCtxMenu(null);
+    if (!beat || !canEditLine) return;
+    setEditFirst(beat.entry.id);
+    setWin('log');
+  };
 
   // ---- 输入:一直在,随时插话 ----
+
+  // 发出去的那句浮一下(echo):字少停 1.8s,字多停久一点,最多 3.2s;「——」开头的提示行不显示
+  const [echo, setEcho] = useState<{ text: string; at: number } | null>(null);
+  const echoLayer = useFadeLayer(echo !== null, MOTION.popOut);
+  const lastEcho = useRef(echo);
+  if (echo) lastEcho.current = echo;
+  useEffect(() => {
+    if (!echo) return;
+    const t = window.setTimeout(() => setEcho(null), echoHoldMs(echo.text));
+    return () => window.clearTimeout(t);
+  }, [echo]);
 
   const send = () => {
     const text = draft.trim();
     if (!text || !canSend) return;
     setDraft('');
+    setBarOpen(false);
+    const said = playerSaid(text);
+    setEcho(said ? { text: said, at: Date.now() } : null);
     audioBus.unlock();
     // 自动留着:开着自动发出去,新回复写出来就接着一句句往下翻;跳过要停,不然一路跳过新回复
     setSkip(false);
@@ -1659,7 +1895,8 @@ export function VNScreen({
     const el = inputRef.current;
     if (!el) return;
     el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight + 2, 132)}px`;
+    // 加上框线的厚度(老样子的输入框有 1px 边;对话区 A 的输入没有边,一行正好 40)
+    el.style.height = `${Math.min(el.scrollHeight + el.offsetHeight - el.clientHeight, 132)}px`;
   }, [draft]);
 
   /**
@@ -1686,20 +1923,28 @@ export function VNScreen({
   const [thinkOpenKey, setThinkOpenKey] = useState<string | null>(null);
   const thinkOpen = thinkOpenKey === thinkKey && settings.showThinking;
   // 回复出来以后,第一句上留一个「已思考 N 秒」的小条,点开还能看
-  const showThinkChip = !waiting && line === 0 && Boolean(reasoning) && settings.showThinking;
+  const showThinkChip = !failedHold && !waiting && line === 0 && Boolean(reasoning) && settings.showThinking;
 
   // ---- 渲染 ----
 
   const shown: VNLine | null = current;
   let speaker: string | null = shown?.speaker ?? null;
   let body: ReactNode;
-  if (waiting) {
+  if (failedHold && heldEntry) {
+    speaker = userName;
+    body = userSaid(currentText(heldEntry));
+  } else if (waiting) {
     speaker = charName;
     body = null;
   } else if (current) {
     body = (
       <>
         {typer.shown}
+        {typer.rest && (
+          <span className="vn-type-rest" aria-hidden="true">
+            {typer.rest}
+          </span>
+        )}
         {jevGated && (
           <span className="vn-voice-wait" title="等 Jev 判表情…(点一下先出文字)">
             ……
@@ -1725,99 +1970,190 @@ export function VNScreen({
     );
   }
   const showNextMark =
-    Boolean(current) && typedDone && userChoice === null && ((hasNext && lineComplete) || canContinue);
-  const atEnd = Boolean(current) && typedDone && !hasNext && !streaming && !canContinue;
+    !failedHold && Boolean(current) && typedDone && userChoice === null && ((hasNext && lineComplete) || canContinue);
+  const atEnd = !failedHold && Boolean(current) && typedDone && !hasNext && !streaming && !canContinue;
   const lastEntry = entries[entries.length - 1];
   const currentMessageId = onLatest ? (lastEntry?.id ?? null) : (beat?.entry.id ?? null);
 
-  const hostPage = (page: HostPage) =>
-    renderPage(page, {
+  // 菜单面板的页头场景横幅(10-24):存档 / 读档 = 她现在待的场景,设置 = 场景包里另一张(和设置里的实机预览错开);别的页不放
+  const menuBanner = useMemo(() => {
+    if (shownMenu !== 'save' && shownMenu !== 'config') return null;
+    const bgs = backgroundsOf(sceneAssets);
+    if (shownMenu === 'save') {
+      const cur = scene.bg ?? bgs[0] ?? null;
+      return cur ? sceneImageUrl(cur) : null;
+    }
+    // 设置:场景包里另一张,昼夜和现在这张一样(settings/banner.ts 挑)
+    const scenes = bgs.flatMap((a) => {
+      const src = sceneImageUrl(a);
+      return src ? [{ label: a.label, src, focus: a.focus_x }] : [];
+    });
+    return pickBannerScene(scenes, scene.bg?.label ?? null)?.src ?? null;
+  }, [shownMenu, sceneAssets, scene.bg]);
+
+  const pageCtx: PageContext = {
+      setLeaveGuard,
       close: closeMenu,
+      enterGame: () => {
+        setMenu(null);
+        setTitle(false);
+      },
       jumpTo,
       currentMessageId,
+      sceneNow: { label: scene.bg?.label || null, thumb: bgUrl },
+      loadOnly: shownMenuFrom === 'cover',
       raw: rawLog,
-      lineView,
       openPlugin,
       pluginFocus,
       openConfig: () => openMenu('config'),
       openAssets: () => openMenu('assets'),
+      openPreset: () => openMenu('preset'),
       showThinking: settings.showThinking,
-    });
+      log: {
+        of: (entry) => {
+          const b = backlog.get(entry.id);
+          return b ? { lines: b.lines, plans: b.plans, hits: b.hits, streaming: b.streaming } : null;
+        },
+        at: beat ? { entryId: beat.entry.id, line } : null,
+        showJa,
+        jaHidden: jaHiddenOf,
+        esc: logEsc,
+        // 历史里她每一句的头像:那句时间线上的表情差分,按脸裁(设计稿 AV.menuHistory 的 faceCrop)
+        face: (entryId, at) => {
+          const b = backlog.get(entryId);
+          const tl = b ? timeline.entries[b.index] : null;
+          if (!tl) return null;
+          const label = (tl.lines[at] ?? tl.empty).shownLabel;
+          const s = sprites.find((x) => x.label === label) ?? sprites[0];
+          const src = s ? spriteThumbUrl(s, 160) : null;
+          if (!s || !src) return null;
+          const fs = s.face_scan;
+          return { src, face: faces.get(s.id) ?? null, aspect: fs?.width && fs.height ? fs.width / fs.height : 0.5 };
+        },
+      },
+  };
+  const hostPage = (page: HostPage) => renderPage(page, pageCtx);
+
+  // 设置页右边的实机预览:这一幕的背景、她、这条回复里的几句(还没有对话时用一句占位)
+  const settingsPreview: LivePreviewData | null =
+    shownMenu === 'config'
+      ? {
+          bg: bgView.src,
+          bgFocus: bgView.focus,
+          sprite: switches.sprite ? spriteView.src : null,
+          spriteStyle: spriteView.style,
+          lines: (lines.length > 0 ? lines : [{ speaker: charName || null, text: '「……」' }]).slice(0, 6).map((l) => ({
+            who: l.player ? userName : l.speaker,
+            text: l.text,
+            ja: jaVisible ? l.ja : null,
+          })),
+          accentStyle: accentCssVars(accent),
+        }
+      : null;
 
   const stop = (e: React.SyntheticEvent) => e.stopPropagation();
+  const toastAt = toastPlace(menu !== null || picking || inspecting);
 
-  // ---- 外观:对话框皮肤(设置 → 外观)----
-  const glass = settings.boxSkin !== 'classic';
+  // ---- 外观:对话框(设置 → 外观)----
+  // 细线 = 对话区 A(第 5 段,10-24 定):不用框,底部一层压暗 + 一条细线,名字在线上、台词在线下;
+  // 经典 = 玻璃框 + 名牌(boxSkin 那套)。输入条、四角按钮两种一样,所以细线也走玻璃那套行为(轮到你弹输入条)
+  const dlgLine = settings.dlgStyle === 'line';
+  const glass = dlgLine || settings.boxSkin !== 'classic';
+  // 点名字重听这一句:她这句有语音时(你说话、报错停在你那句时没有);经典玻璃框点名牌也一样(设计稿 .dlg-classic)
+  const canReplay = glass && voice.request !== null && !failedHold && !shown?.player;
+  // 这一幕是白天还是夜里(场景名带「夜」「星空」):细线白天压暗深一点、日语小字亮一点(设计稿 .ga.is-day)
+  const night = isNightLabel(scene.bg?.label ?? '');
   // 轮到你说话:她说完了(最新一条回复读到底、不在生成)、或者还没有对话;玻璃皮肤下正中弹输入条
   const myTurn =
     glass &&
     canSend &&
     !sending &&
+    !failedHold &&
     !menu &&
     !title &&
     userChoice === null &&
     turnClosed !== typeKey &&
     ((atEnd && (turnAt === typeKey || auto)) || (!current && entries.length === 0));
-  // 回看历史、停在当时玩家说的话上:下面也放一条输入条,鼓励从这里接着说(会分出新的故事线)
-  const pastInput = glass && userChoice !== null && canSend && !sending && !menu && !title;
-  const quickButtons = (
-    <>
-      <button onClick={() => openMenu('log')}>历史</button>
-      <button className="wide-only" onClick={() => openMenu('save')}>存档</button>
-      <button className={auto ? 'on' : ''} onClick={() => setAuto((a) => !a)} aria-pressed={auto}>
-        自动
-      </button>
-      {auto && (
-        <button
-          className="vn-auto-speed on"
-          onClick={() => changeSettings({ ...settings, autoSpeed: nextAutoSpeed(settings.autoSpeed) })}
-          title="自动播放倍速:点一下换挡"
-        >
-          {AUTO_SPEEDS.find((a) => a.value === settings.autoSpeed)?.name}
-        </button>
-      )}
-      <button className={skip ? 'on' : ''} onClick={() => setSkip((s) => !s)} aria-pressed={skip}>
-        跳过
-      </button>
-      <button
-        onClick={onRegenerate}
-        disabled={sending || entries.length === 0 || !canSend}
-        title="重新生成最后一条回复"
-      >
-        重来
-      </button>
-      <button onClick={() => setUiHidden(true)} title="隐藏界面,只看立绘和背景(右键也行)">
-        隐藏
-      </button>
-      <button className="wide-only" onClick={() => openMenu('config')}>设置</button>
-      <button onClick={() => openMenu()}>菜单</button>
-    </>
-  );
+  // 回看历史(停在旧的一句或当时玩家说的话上):最下面那行字、输入框的提示换成「会分出一条新的故事线」
+  const pastHere = canSend && !onLatest && beat !== null;
+  // 最下面那条输入浮上来没有(设计稿 .ga.bar-on):轮到你、或者点了那行淡字
+  const barOn = glass && canSend && (myTurn || barOpen);
+  barIdle.current = glass && barOpen && !myTurn && !draft.trim();
+  // 轮到你:光标直接放进输入框(手机上不弹软键盘,等玩家自己点)
+  useEffect(() => {
+    if (!myTurn || softKeyboard) return;
+    const t = window.setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 60);
+    return () => window.clearTimeout(t);
+  }, [myTurn, softKeyboard]);
+  const ghostRef = useRef<HTMLButtonElement>(null);
+  // 点那行淡字:整条浮上来、光标放进去。同一下点击里就聚焦(iOS 要在点击里聚焦才弹键盘),所以先同步画出来
+  const openBar = () => {
+    flushSync(() => setBarOpen(true));
+    inputRef.current?.focus({ preventScroll: true });
+  };
+  // 左边的 ×:收起来回到那行淡字(轮到你时记下这一句收过,不再自己弹出来)
+  const closeBar = () => {
+    setBarOpen(false);
+    if (myTurn) setTurnClosed(typeKey);
+    window.setTimeout(() => ghostRef.current?.focus({ preventScroll: true }), 60);
+  };
+  escBarRef.current = (target) => {
+    if (thinkOpen) {
+      setThinkOpenKey(null);
+      return true;
+    }
+    if (!glass || !barOn || target !== inputRef.current) return false;
+    inputRef.current?.blur();
+    if (!myTurn && !draft.trim()) setBarOpen(false);
+    return true;
+  };
+  // 经典(老样子的框)「生成中」小签关上时也留 .18s 淡出
+  const genLayer = useFadeLayer(sending, MOTION.popOut);
+  // 自动播放:按一下 关 → ×1 → ×1.5 → ×2 → ×3 → 关(A 键一样);倍速记在设置里
+  const cycleAuto = () => {
+    if (!auto) {
+      if (settings.autoSpeed !== AUTO_SPEEDS[0].value) changeSettings({ ...settings, autoSpeed: AUTO_SPEEDS[0].value });
+      setAuto(true);
+    } else if (settings.autoSpeed === AUTO_SPEEDS[AUTO_SPEEDS.length - 1].value) {
+      setAuto(false);
+    } else {
+      changeSettings({ ...settings, autoSpeed: nextAutoSpeed(settings.autoSpeed) });
+    }
+  };
+  cycleAutoRef.current = cycleAuto;
+  const speedName = AUTO_SPEEDS.find((a) => a.value === settings.autoSpeed)?.name ?? '';
   // 插图卡带的小按钮:玻璃皮肤放在发送右边,经典皮肤放在快捷按钮一排的最前面
   const illusButton = illustrations ? (
     <div className="vn-illus-btn" onClick={stop}>
       {illustrations.button(illusCtx)}
     </div>
   ) : null;
+  // 最下面那行淡字(设计稿 PH_TALK / PH_GEN / PH_PAST)和浮上来的输入框里的提示(PH_TURN / PH_PAST)
+  const ghostText = !canSend
+    ? notReadyHint
+    : sending
+      ? '随时插话…'
+      : pastHere
+        ? '在这里开口,会从这里分出一条新的故事线…'
+        : '说点什么 · 随时可以插话';
   const inputForm = (
-      <form className="vn-input" onSubmit={submit}>
+      <form className={glass ? 'ga-form' : 'vn-input'} onSubmit={submit}>
         <textarea
           ref={inputRef}
-          // 轮到你时输入条弹到正中:直接把光标放进去(手机上不弹软键盘)
-          autoFocus={glass && myTurn && !softKeyboard}
           rows={1}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
+          aria-label="你要说的话"
           placeholder={
             canSend
-              ? glass && myTurn
-                ? '说点什么'
+              ? glass
+                ? pastHere
+                  ? '在这里开口,会从这里分出一条新的故事线…'
+                  : '说点什么'
                 : !onLatest && beat
-                ? '在这里开口,会从这里分出一条新的故事线…'
-                : sending
-                  ? '随时插话…'
-                  : glass
-                    ? '说点什么 · 随时可以插话'
+                  ? '在这里开口,会从这里分出一条新的故事线…'
+                  : sending
+                    ? '随时插话…'
                     : `以 ${userName} 的身份说点什么…${hint ? `(${hint})` : ''}`
               : notReadyHint
           }
@@ -1852,29 +2188,44 @@ export function VNScreen({
           }}
         />
         {sending && !draft.trim() ? (
-          <button type="button" className="vn-send stop" onClick={onStop} title="停止" aria-label="停止">
-            {glass ? <StopIcon /> : '停止'}
+          <button type="button" className={glass ? 'ga-send stop' : 'vn-send stop'} onClick={onStop} title="停止" aria-label="停止">
+            {glass ? <GameIcon name="stop" size={20} /> : '停止'}
           </button>
         ) : (
-          <button type="submit" className="vn-send" disabled={!canSend || !draft.trim()} title="发送" aria-label="发送">
-            {glass ? <SendIcon /> : '发送'}
+          <button
+            type="submit"
+            className={glass ? 'ga-send' : 'vn-send'}
+            disabled={!canSend || !draft.trim()}
+            title={glass ? '发送(回车)' : '发送'}
+            aria-label="发送"
+          >
+            {glass ? <GameIcon name="send" size={20} /> : '发送'}
           </button>
         )}
       </form>
   );
+  // 对话区 A / 经典玻璃框挂在根上的状态(设计稿 .gm.ga 上的那些 class:旁白、你说话、能重听、在念、正在写、输入浮上来、思考展开、语音关了)
+  const narr = glass && !speaker && !waiting && !genFail;
+  const youLine = Boolean(shown?.player) || failedHold;
+  const gaClass = glass
+    ? ` ga ${night ? 'is-night' : 'is-day'}${dlgLine ? '' : ' dlg-classic'}${narr ? ' narr' : ''}${youLine ? ' you' : ''}${canReplay ? ' can-replay' : ''}${canReplay && voice.speaking ? ' speaking' : ''}${waiting ? ' gen' : ''}${barOn ? ' bar-on' : ''}${thinkOpen ? ' think-on' : ''}${voiceConfig.enabled ? '' : ' voice-off'}`
+    : '';
 
   return (
     <div
-      className={`vn-root${uiHidden ? ' ui-hidden' : ''}${menu ? ' menu-open' : ''}${myTurn ? ' my-turn' : ''}`}
-      data-skin={settings.boxSkin}
+      className={`vn-root${gaClass}${uiHidden ? ' ui-hidden' : ''}${menu ? ' menu-open' : ''}${myTurn ? ' my-turn' : ''}${cgOn ? ' cg-on' : ''}${voice.paused ? ' voice-err' : ''}`}
+      // 细线照黑玻璃的字色走(白字 + 阴影),框和名牌由 vnLine.css 收掉
+      data-skin={dlgLine ? 'glass-dark' : settings.boxSkin}
+      data-dlg={dlgLine ? 'line' : 'classic'}
       data-font={settings.textFont}
       style={
         {
           '--vn-box-alpha': settings.boxOpacity,
           '--vn-text-scale': settings.textScale,
-          '--vn-accent': accent.accent,
-          '--vn-accent-ink': accent.ink,
-          '--vn-accent-rgb': accent.rgb,
+          '--vn-dialogue-offset': `${settings.dialogueOffset}px`,
+          '--vn-dialogue-height': `${settings.dialogueHeight}px`,
+          ...accentCssVars(accent),
+          ...glassStyle,
         } as React.CSSProperties
       }
       // 浏览器要用户点过才让网页出声;界面里任何一次点击都顺手解锁一下
@@ -1883,12 +2234,12 @@ export function VNScreen({
       <div
         className={`vn-stage${cgOn ? ' cg-on' : ''}`}
         inert={covered}
-        onClick={advance}
+        onClick={tapScreen}
         onWheel={onWheel}
         onContextMenu={onContextMenu}
       >
         {/* 背景 / 立绘在开关里关了:不画(背景留黑) */}
-        {switches.bg && <BackgroundLayer view={bgView} />}
+        {switches.bg && <BackgroundLayer view={bgView} instant={skipping} />}
         {switches.sprite && (
           <SpriteLayer
             view={spriteView}
@@ -1896,53 +2247,55 @@ export function VNScreen({
             fx={spriteFx}
             fxVolume={settings.spriteFxVolume}
             covered={cgOn}
+            instant={skipping}
           />
         )}
-        <CgLayer view={shownCg} />
+        <CgLayer view={shownCg} instant={skipping} />
       </div>
+      {/* 细线对话区:底部很淡的压暗,只为字看得清;出 CG 时从更低处开始(vnLine.css .ga-shade) */}
+      {dlgLine && <div className="ga-shade" aria-hidden="true" />}
+
+      {/* 发出去的那句:不进对话框,在画面中间偏上(galgame 出选项的位置)浮一下再自己淡出,点一下提前收 */}
+      {echoLayer.mounted && lastEcho.current && (
+        <p
+          className={`ga-echo${echoLayer.leaving ? ' leaving' : ''}`}
+          role="status"
+          aria-live="polite"
+          inert={covered}
+          onClick={(e) => {
+            e.stopPropagation();
+            setEcho(null);
+          }}
+        >
+          {lastEcho.current.text}
+        </p>
+      )}
 
       {/* 翻回历史往下看:当时玩家发的话弹成选项,点哪里都接着往下 */}
       {userChoice !== null && (
-        <div className={`vn-choice-layer${pastInput ? ' with-input' : ''}`} inert={covered}>
+        <div className="vn-choice-layer" inert={covered}>
           <button className="vn-choice past" onClick={advance}>
             <span className="vn-choice-cap">{glass ? '历史回复' : '当时的回复'}</span>
             <span className="vn-choice-text">{userChoice}</span>
           </button>
-          {pastInput && (
-            <div className="vn-turn-bar vn-past-bar" onClick={stop}>
-              {inputForm}
-            </div>
-          )}
         </div>
       )}
 
-      {((settings.showModel && modelLabel) || voice.paused || showVoiceChip || lens) && (
+      {/* 右上那排细条左边:跳过中的小签、形态切换(语音、模型挪进了四角的按钮) */}
+      {(lens || skipping) && (
         <div className="vn-topbar" inert={covered}>
-          {showVoiceChip && (
-            <VoiceQuick
-              cast={voiceCast}
-              config={voiceConfig}
-              onChangeConfig={onChangeVoiceConfig}
-              paused={voice.paused}
-              synthesizing={voice.synthesizing}
-              onRetry={voice.retry}
-              onOpenSettings={() => {
-                openMenu('config');
-                setSettingsTab('sound');
+          {/* 跳过中:背景和立绘直接换(不淡),这里挂一枚小签,点一下就停 */}
+          {skipping && (
+            <button
+              className="vn-chip vn-state vn-skip-chip"
+              onClick={() => {
+                setSkip(false);
+                setCtrlHeld(false);
               }}
-              onOpenVoice={openVoice}
-            />
-          )}
-          {/* 语音标签关着时,断了还是要提示 */}
-          {voice.paused && !showVoiceChip && (
-            <button className="vn-chip warn" onClick={voice.retry} title={voice.lastError ?? ''}>
-              语音断了 · 每 15 秒自动重连,点这里马上试
+              title={ctrlHeld ? '松开 Ctrl 就停' : '点一下停'}
+            >
+              {skipChipLabel(ctrlHeld)}
             </button>
-          )}
-          {settings.showModel && modelLabel && (
-            <span className="vn-chip" title="当前模型 —— 菜单「模型」里换">
-              {modelLabel}
-            </span>
           )}
           {lens && forms?.stateNames && forms.stateNames.length >= 2 ? (
             <StateToggle
@@ -1967,122 +2320,355 @@ export function VNScreen({
         </div>
       )}
 
+      {/* 四角的按钮(第 5 段,10-23 晚 / 10-24 定;细线、经典两种一样):半透明深色细条,线条图标。
+          右上 自动 · 跳过 · ≡,下面单独一格历史;左上「模型」;右下 画笔 · 语音 · 重来 · 隐藏。存档在菜单里 */}
+      <div className="vn-corners" inert={covered}>
+        <div className="vn-strip vn-strip-model">
+          <button onClick={() => (modelQuick ? setWin('model') : openMenu('model'))} aria-label="模型" title={modelLabel ? `模型:${modelLabel}` : '模型'}>
+            <GameIcon name="model" size={24} />
+            {settings.showModel && modelLabel && <span className="vn-model-name">{modelLabel}</span>}
+          </button>
+        </div>
+        <nav className="vn-strip vn-strip-top" aria-label="播放和菜单">
+          <button
+            className={`vn-auto${auto ? ' on' : ''}`}
+            onClick={cycleAuto}
+            aria-pressed={auto}
+            aria-label={auto ? `自动播放 ${speedName}` : '自动播放'}
+            title="自动播放:按一下 关 → ×1 → ×1.5 → ×2 → ×3 → 关(快捷键 A)"
+          >
+            {auto && <span className="sp">{speedName}</span>}
+            <GameIcon name="auto" size={24} />
+          </button>
+          <button className={skip ? 'on' : ''} onClick={() => setSkip((v) => !v)} aria-pressed={skip} aria-label="跳过" title="跳过(按住 Ctrl 也行)">
+            <GameIcon name="skip" size={24} />
+          </button>
+          <button onClick={() => openMenu()} aria-label="菜单" title="菜单:角色、存档、设置……">
+            <GameIcon name="menu" size={24} />
+          </button>
+        </nav>
+        <div className="vn-strip vn-strip-hist">
+          <button onClick={() => setWin('log')} aria-label="历史" title="历史(滚轮往上也行)">
+            <GameIcon name="history" size={24} />
+          </button>
+        </div>
+        <div className="vn-strip vn-strip-tools" role="group" aria-label="快捷">
+          {illusButton}
+          {(showVoiceChip || (voice.paused && currentCardId !== null)) && (
+            <VoiceQuick
+              variant="icon"
+              speaking={voice.speaking}
+              cast={voiceCast}
+              config={voiceConfig}
+              onChangeConfig={onChangeVoiceConfig}
+              paused={voice.paused}
+              synthesizing={voice.synthesizing}
+              onRetry={voice.retry}
+              onOpenSettings={() => {
+                openMenu('config');
+                setSettingsTab('sound');
+              }}
+              onOpenVoice={openVoice}
+              theme={paperTheme}
+              request={failedHold ? null : voice.request}
+              onLineAction={voice.release}
+              profiles={voiceProfiles}
+              onPickVoice={onPickVoice}
+              modelLabel={modelLabel}
+            />
+          )}
+          <button
+            onClick={sending ? onStop : onRegenerate}
+            disabled={!sending && (entries.length === 0 || !canSend)}
+            aria-label={sending ? '停止生成' : '重来'}
+            title={sending ? '停止生成' : '重来:重新生成最后一条回复'}
+          >
+            <GameIcon name={sending ? 'stop' : 'retry'} size={22} />
+          </button>
+          <button onClick={() => setUiHidden(true)} aria-label="隐藏界面" title="隐藏界面,只看立绘和背景(右键也行)">
+            <GameIcon name="hide" size={22} />
+          </button>
+        </div>
+      </div>
+
       {illustrations && (
         <div className="vn-illus" inert={covered}>
           {illustrations.stage(illusCtx)}
         </div>
       )}
 
-      <div className="vn-window" ref={measureWindow} onWheel={onWheel} inert={covered}>
-        <div className="vn-box" onClick={advance} onContextMenu={onBoxContextMenu}>
-          {speaker && <div className={`vn-name${shown?.player ? ' player' : ''}`}>{speaker}</div>}
-          {sending &&
-            (glass ? (
-              <>
-                <span className="vn-flow" aria-hidden="true" />
-                <span className="vn-gen" title="正在生成">
-                  正在写
-                  <span className="vn-dots" aria-hidden="true">
-                    <i />
-                    <i />
-                    <i />
+      {glass ? (
+        <>
+          {/* 对话区 A(设计稿 kit/scene.js mountA 的 .ga-say):名字(声波 + 宋体,悬停「重听」)和「已思考」一行,
+              一条细线(左端 56px 白线往右渐隐),线下日语小字 + 中文台词(▼ / ■ 跟在句尾),正在写时这一行换成「正在写 ··· 停止」。
+              经典(.dlg-classic)是同一份:玻璃框 + 名牌,框里只糊背景。外面那层 .ga-zone 只管位置:上沿钉在画面 68.4%,
+              字多了放不下才往上让(不压到最下面那行输入) */}
+          <div className="ga-stage" ref={measureStage} data-frost-scale="">
+          <div className="ga-zone" inert={covered}>
+            <div
+              className="ga-say"
+              ref={sayRef}
+              onWheel={onWheel}
+              onClick={onBoxClick}
+              onContextMenu={onBoxContextMenu}
+              onPointerDown={onBoxPointerDown}
+              onPointerMove={onBoxPointerMove}
+              onPointerUp={cancelPress}
+              onPointerCancel={cancelPress}
+            >
+              {!dlgLine && <FrostLayer src={shownCg.src ?? bgView.src ?? undefined} style={frost} />}
+              {genFail && (
+                <ModelError
+                  fail={genFail}
+                  said={userSaid(heldEntry ? currentText(heldEntry) : '')}
+                  sentBefore={Math.max(0, entries.length - 1)}
+                  theme={paperTheme}
+                  frostSrc={bgView.src}
+                  onOpenModels={() => openMenu('model')}
+                />
+              )}
+              {(waiting || showThinkChip) && (
+                <div className="ga-thinkbody" onClick={stop} aria-hidden={!thinkOpen}>
+                  <p>{reasoning}</p>
+                </div>
+              )}
+              <div className="ga-head">
+                {/* 声波名字:名字是一个按钮 = 声波 + 名字 + 悬停时才出来的「重听」;不能重听时只是字(点了照常翻句) */}
+                <button
+                  type="button"
+                  className="ga-name"
+                  tabIndex={canReplay ? 0 : -1}
+                  aria-disabled={!canReplay}
+                  aria-label={canReplay ? `重听这一句(${speaker})` : undefined}
+                  onClick={
+                    canReplay
+                      ? (e) => {
+                          e.stopPropagation();
+                          voice.release();
+                          voicePlayer.replay(voice.request!);
+                        }
+                      : undefined
+                  }
+                >
+                  <GameIcon name="voice-wave" size={22} className="ga-wave" />
+                  <span className="nm">{speaker ?? charName}</span>
+                  <span className="hint" aria-hidden="true">
+                    重听
                   </span>
-                </span>
-              </>
-            ) : (
-              <span className="vn-gen" title="正在生成">
+                </button>
+                {(waiting || showThinkChip) && (
+                  <button
+                    type="button"
+                    className="ga-think"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setThinkOpenKey(thinkOpen ? null : thinkKey);
+                    }}
+                    disabled={!reasoning || !settings.showThinking}
+                    aria-expanded={thinkOpen}
+                  >
+                    <GameIcon name="think" size={15} />
+                    <span className="lb">
+                      {waiting
+                        ? `${reasoning && settings.showThinking ? '正在思考' : '正在组织语言…'} ${seconds(elapsed)}`
+                        : info?.reasoningMs
+                          ? `已思考 ${seconds(info.reasoningMs)}`
+                          : // 正文已经在写、秒数要等生成完才有:先写「已思考」,别跳成「思考过程」
+                            streaming
+                            ? '已思考'
+                            : '思考过程'}
+                    </span>
+                    {reasoning && settings.showThinking && <span className="more">{thinkOpen ? '收起' : '展开'}</span>}
+                  </button>
+                )}
+              </div>
+              <div className="ga-rule" aria-hidden="true" />
+              <div className="ga-body">
+                {/* 外语插件:这句的日语小字在上,中文照常打字在下;带「」时括号挂在左边外面 */}
+                {jaVisible && shown?.ja && !waiting && !failedHold && (
+                  <p className={`ga-ja${shown.ja.startsWith('「') ? ' say' : ''}`}>{shown.ja}</p>
+                )}
+                {body !== null && (
+                  <p className={`ga-zh${!failedHold && shown?.text.startsWith('「') ? ' say' : ''}`}>
+                    {body}
+                    {showNextMark && (
+                      <span className="ga-mark next" aria-hidden="true">
+                        ▼
+                      </span>
+                    )}
+                    {atEnd && (
+                      <span className="ga-mark end" aria-hidden="true">
+                        ■
+                      </span>
+                    )}
+                  </p>
+                )}
+                {/* 正在写:线下面一行「正在写 ···」+ 停止,替换台词那一行 */}
+                {waiting && (
+                  <div className="ga-gen">
+                    <span className="t">正在写</span>
+                    <span className="dots" aria-hidden="true">
+                      <i />
+                      <i />
+                      <i />
+                    </span>
+                    <button
+                      type="button"
+                      className="ga-stop"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onStop();
+                      }}
+                    >
+                      <GameIcon name="stop" size={15} />
+                      <span>停止</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* 输入(设计稿 .ga-input):平时画面正中、离底 22px 一行带下划线的淡字;点它 / 轮到你时整条
+              (× 收起 + 输入框 + 发送)从 6px 下方淡入浮上来,两头淡出的细线点进去变亮;收起 / 发出去后回到那行字 */}
+          <div className="ga-input" inert={covered}>
+            <button
+              ref={ghostRef}
+              type="button"
+              className="ga-ghost"
+              tabIndex={barOn ? -1 : 0}
+              disabled={!canSend}
+              onClick={(e) => {
+                e.stopPropagation();
+                openBar();
+              }}
+            >
+              {ghostText}
+            </button>
+            <div className={`ga-bar${draft.trim() ? ' has' : ''}`} inert={!barOn} onClick={stop}>
+              <button type="button" className="ga-x" onClick={closeBar} title="收起(点下面那行字还能再打开)" aria-label="收起输入框">
+                <GameIcon name="close" size={18} />
+              </button>
+              {inputForm}
+            </div>
+          </div>
+          </div>
+        </>
+      ) : (
+        <div className="vn-window" ref={measureWindow} onWheel={onWheel} inert={covered}>
+          <div
+            className="vn-box"
+            onClick={onBoxClick}
+            onContextMenu={onBoxContextMenu}
+            onPointerDown={onBoxPointerDown}
+            onPointerMove={onBoxPointerMove}
+            onPointerUp={cancelPress}
+            onPointerCancel={cancelPress}
+          >
+            {genFail && (
+              <ModelError
+                fail={genFail}
+                said={userSaid(heldEntry ? currentText(heldEntry) : '')}
+                sentBefore={Math.max(0, entries.length - 1)}
+                theme={paperTheme}
+                frostSrc={bgView.src}
+                onOpenModels={() => openMenu('model')}
+              />
+            )}
+            {speaker && (
+              <div className={`vn-name${shown?.player || failedHold ? ' player' : ''}`}>
+                <span className="vn-name-nm">{speaker}</span>
+              </div>
+            )}
+            {genLayer.mounted && (
+              <span className={`vn-gen${genLayer.leaving ? ' leaving' : ''}`} title="正在生成">
                 <Feather size={14} className="breathe" />
                 生成中
               </span>
-            ))}
+            )}
 
-          {(waiting || showThinkChip) && (
-            <div className={`vn-think${waiting ? ' live' : ''}${thinkOpen ? ' open' : ''}`} onClick={stop}>
-              <button
-                className="vn-think-head"
-                onClick={() => setThinkOpenKey(thinkOpen ? null : thinkKey)}
-                disabled={!reasoning || !settings.showThinking}
-                aria-expanded={thinkOpen}
-              >
-                <Feather size={16} className={waiting ? 'breathe' : ''} />
-                <span className="vn-think-label">
-                  {waiting
-                    ? reasoning && settings.showThinking
-                      ? '正在思考'
-                      : '正在组织语言…'
-                    : info?.reasoningMs
-                      ? `已思考 ${seconds(info.reasoningMs)}`
-                      : // 正文已经在写、秒数要等生成完才有:先写「已思考」,别跳成「思考过程」
-                        streaming
-                        ? '已思考'
-                        : '思考过程'}
-                </span>
-                {waiting && <span className="vn-think-secs">{seconds(elapsed)}</span>}
-                {waiting && reasoning && !thinkOpen && settings.showThinking && (
-                  <span className="vn-think-peek">…{reasoning.slice(-24)}</span>
-                )}
-                {reasoning && settings.showThinking && (
-                  <span className="vn-think-more">{thinkOpen ? '收起' : '展开'}</span>
-                )}
-              </button>
-              {thinkOpen && <div className="vn-think-body">{reasoning}</div>}
-            </div>
-          )}
-
-          {/* 外语插件:这句的日语小字在上,中文照常打字在下 */}
-          {jaVisible && shown?.ja && !waiting && <div className="vn-ja">{shown.ja}</div>}
-          {body !== null && <div className={`vn-text${speaker ? '' : ' narration'}`}>{body}</div>}
-          {showNextMark && <span className="vn-next" aria-hidden="true">▼</span>}
-          {atEnd && <span className="vn-end" aria-hidden="true">■</span>}
-
-          {glass ? (
-            <>
-              {voice.request && (
-                <div className="vn-voice-row" onClick={stop}>
-                  <VoiceButtons req={voice.request} onAction={voice.release} />
-                </div>
-              )}
-              <div className={`vn-row${illusButton ? ' has-illus' : ''}`} onClick={stop}>
-                {myTurn || pastInput ? <span className="vn-row-hint">说点什么 · 随时可以插话</span> : inputForm}
-                {illusButton}
-                <span className="vn-row-sep" aria-hidden="true" />
-                <div className="vn-quick">{quickButtons}</div>
+            {(waiting || showThinkChip) && (
+              <div className={`vn-think${waiting ? ' live' : ''}${thinkOpen ? ' open' : ''}`} onClick={stop}>
+                <button
+                  className="vn-think-head"
+                  onClick={() => setThinkOpenKey(thinkOpen ? null : thinkKey)}
+                  disabled={!reasoning || !settings.showThinking}
+                  aria-expanded={thinkOpen}
+                >
+                  <Feather size={16} className={waiting ? 'breathe' : ''} />
+                  <span className="vn-think-label">
+                    {waiting
+                      ? reasoning && settings.showThinking
+                        ? '正在思考'
+                        : '正在组织语言…'
+                      : info?.reasoningMs
+                        ? `已思考 ${seconds(info.reasoningMs)}`
+                        : streaming
+                          ? '已思考'
+                          : '思考过程'}
+                  </span>
+                  {waiting && <span className="vn-think-secs">{seconds(elapsed)}</span>}
+                  {waiting && reasoning && !thinkOpen && settings.showThinking && (
+                    <span className="vn-think-peek">…{reasoning.slice(-24)}</span>
+                  )}
+                  {reasoning && settings.showThinking && (
+                    <span className="vn-think-more">{thinkOpen ? '收起' : '展开'}</span>
+                  )}
+                </button>
+                {thinkOpen && <div className="vn-think-body">{reasoning}</div>}
               </div>
-            </>
-          ) : (
-            <div className="vn-quick" onClick={stop}>
-            {voice.request && <VoiceButtons req={voice.request} onAction={voice.release} className="lead" />}
-              {illusButton}
-              {quickButtons}
-            </div>
-          )}
-        </div>
-        {!glass && inputForm}
-      </div>
+            )}
 
-      {glass && myTurn && (
-        <div className="vn-turn-layer" inert={covered}>
-          <div className="vn-turn-bar" onClick={stop}>
-            <button
-              type="button"
-              className="vn-turn-close"
-              onClick={() => setTurnClosed(typeKey)}
-              title="收起(还能在对话框下面打字)"
-              aria-label="收起输入条"
-            >
-              <svg viewBox="0 0 20 20" aria-hidden="true">
-                <path d="M5.5 5.5l9 9M14.5 5.5l-9 9" />
-              </svg>
-            </button>
-            {inputForm}
+            {/* 外语插件:这句的日语小字在上,中文照常打字在下 */}
+            {jaVisible && shown?.ja && !waiting && !failedHold && <div className="vn-ja">{shown.ja}</div>}
+            {body !== null && <div className={`vn-text${speaker ? '' : ' narration'}`}>{body}</div>}
+            {showNextMark && <span className="vn-next" aria-hidden="true">▼</span>}
+            {atEnd && <span className="vn-end" aria-hidden="true">■</span>}
+
+            {voice.request && !failedHold && (
+              <div className="vn-quick" onClick={stop}>
+                <VoiceButtons req={voice.request} onAction={voice.release} className="lead" />
+              </div>
+            )}
           </div>
+          {inputForm}
         </div>
       )}
 
-      {/* 对话框上右键 / 长按打开的句检查器:整层接住点击,点外面只是关掉、不翻下一句 */}
-      {inspecting && inspect && (
+      {/* 对话框上右键 / 长按:先出小菜单(复制这句 / 这句的详情);整层接住点击,点外面只是关掉、不翻下一句 */}
+      {ctxLayer.mounted && lastCtx.current && (
         <div
-          className="vn-insp-layer"
+          className={`vn-ctx-layer${ctxLayer.leaving ? ' leaving' : ''}`}
+          inert={covered}
+          onClick={() => {
+            // 长按出的菜单:松手那一下的 click 落在这一层上,不算「点外面」
+            if (pressFired.current) {
+              pressFired.current = false;
+              return;
+            }
+            closeCtx();
+          }}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            closeCtx();
+          }}
+        >
+          <LineMenu
+            at={{ x: lastCtx.current.x, y: lastCtx.current.y }}
+            bounds={{ w: lastCtx.current.w, h: lastCtx.current.h }}
+            theme={paperTheme}
+            leaving={ctxLayer.leaving}
+            onEdit={canEditLine ? editLine : undefined}
+            onCopy={copyLine}
+            onInfo={openInspect}
+          />
+        </div>
+      )}
+
+      {/* 「这句的详情」:句检查器,纸卡;整层接住点击,点外面只是关掉、不翻下一句 */}
+      {inspLayer.mounted && lastInsp.current && (
+        <div
+          className={`vn-insp-layer${inspLayer.leaving ? ' leaving' : ''}`}
           inert={covered}
           onClick={closeInspect}
           onContextMenu={(e) => {
@@ -2091,10 +2677,10 @@ export function VNScreen({
           }}
         >
           <div
-            className="vn-insp"
+            className={`vn-insp av-pcard ${popThemeClass(paperTheme)} ${inspLayer.leaving ? 'av-pop-out' : 'av-pop-in'}`}
             role="dialog"
             aria-label="这一句的详情"
-            style={{ '--vn-insp-bottom': `${inspect.bottom}px` } as CSSProperties}
+            style={{ '--vn-insp-bottom': `${lastInsp.current.bottom}px` } as CSSProperties}
             onClick={stop}
             onContextMenu={stop}
           >
@@ -2103,38 +2689,105 @@ export function VNScreen({
         </div>
       )}
 
-      {menu && (
+      {/* 游戏上的小窗口:历史(和菜单的历史页同一份内容)、模型 */}
+      {winLayer.mounted && lastWin.current === 'log' && (
+        <PopWindow
+          title="历史"
+          en="Backlog"
+          // 标题后面一行小字:她现在的场景 · 日子(设计稿 AV.historyWindow 的「夜路 · 10-18」)
+          where={menuCrumb('', chatName, scene.bg?.label).split(' · ').slice(1).join(' · ') || undefined}
+          width={900}
+          height={640}
+          className="vn-pw-hist"
+          theme={paperTheme}
+          leaving={winLayer.leaving}
+          onClose={() => setWin(null)}
+          onEsc={() => logEsc.current?.() ?? false}
+          right={
+            <span className="vn-raw-toggle">
+              <Switch sm label="显示原文" checked={rawLog} onChange={setRawLog} />
+              显示原文
+              <span className="vn-page-note">标签、宏原样露出来</span>
+            </span>
+          }
+        >
+          {renderPage('log', {
+            ...pageCtx,
+            editFirst,
+            editDone: () => setWin(null),
+            close: () => setWin(null),
+            jumpTo: (id: string, at?: number) => {
+              jumpTo(id, at);
+              setWin(null);
+            },
+          })}
+        </PopWindow>
+      )}
+      {winLayer.mounted && lastWin.current === 'model' && modelQuick && (
+        <PopWindow
+          title="模型"
+          en="Model"
+          where={`${modelQuick.connections.find((c) => c.active)?.name ?? ''} · ${modelQuick.model || '未设模型'}`}
+          width={600}
+          theme={paperTheme}
+          leaving={winLayer.leaving}
+          onClose={() => setWin(null)}
+        >
+          <ModelWindowBody
+            q={modelQuick}
+            onMore={() => {
+              setWin(null);
+              openMenu('model');
+            }}
+          />
+        </PopWindow>
+      )}
+
+      {menuLayer.mounted && (
         <VNMenu
-          page={menu}
-          onPage={(p) => {
-            setMenu(p);
-            setSettingsTab(undefined);
-            setLastPage(p);
-            // 从导航点进插件页:停在默认的第一个插件,不再跳回上次指定的那个
-            setPluginFocus(null);
-          }}
+          page={shownMenu}
+          from={shownMenuFrom}
+          theme={paperTheme}
+          hidden={[...(hasAlbum ? [] : (['album'] as const)), ...(narrow ? PHONE_HIDDEN_PAGES : [])]}
+          leaving={menuLayer.leaving}
+          onPage={(p) =>
+            p !== menu &&
+            leavePage(() => {
+              setMenu(p);
+              setSettingsTab(undefined);
+              // 从导航点进插件页:停在默认的第一个插件,不再跳回上次指定的那个
+              setPluginFocus(null);
+            })
+          }
           charName={charName}
           chatName={chatName}
+          sceneName={scene.bg?.label ?? null}
+          faceSrc={currentCardId ? cardFaceUrl(currentCardId, 96, packId) : null}
+          bgSrc={bgView.src}
+          bannerSrc={menuBanner}
           headExtra={
-            menu === 'log' ? (
-              <label className="vn-switch">
-                <input type="checkbox" checked={rawLog} onChange={(e) => setRawLog(e.target.checked)} />
+            shownMenu === 'log' ? (
+              <span className="vn-raw-toggle">
+                <Switch sm label="显示原文" checked={rawLog} onChange={setRawLog} />
                 显示原文
                 <span className="vn-page-note">标签、宏原样露出来</span>
-              </label>
+              </span>
             ) : null
           }
           onClose={closeMenu}
-          onTitle={() => {
-            setMenu(null);
-            setTitleCold(false);
-            setTitle(true);
-          }}
+          onTitle={() =>
+            leavePage(() => {
+              setMenu(null);
+              setTitleCold(false);
+              setTitle(true);
+            })
+          }
         >
-          {menu === 'config' ? (
+          {shownMenu === 'config' ? (
             <VNSettingsPage
               settings={settings}
               onChange={changeSettings}
+              preview={settingsPreview}
               enterKey={enterKey}
               onChangeEnterKey={onChangeEnterKey}
               voiceConfig={voiceConfig}
@@ -2150,10 +2803,10 @@ export function VNScreen({
               extraTabs={
                 illustrationsInstalled
                   ? [
+                      // 10-25 转正式版:设置页「进阶」里的这一页不再标 BETA(插件抽屉里那页的 BETA 是另一回事,ui-plugins 那边改)
                       {
                         key: ILLUS_TAB,
                         name: illustrationsInstalled.settingsName,
-                        beta: true,
                         render: illustrationsInstalled.settings,
                       },
                     ]
@@ -2166,39 +2819,35 @@ export function VNScreen({
               }
               onUploadMarks={forms?.uploadMarks}
             />
-          ) : menu === 'dev' ? (
-            <div className="vn-dev">
-              <div className="vn-page-bar">
-                <span className="vn-page-note">当前这条回复的原文和标签;提示词检查器在完整调试台里</span>
-                <div className="vn-page-actions">
-                  <button className="vn-pill accent" onClick={onExit}>
-                    回到调试台
-                  </button>
-                </div>
-              </div>
-              <ConsoleView
-                beat={beat}
-                beatNumber={beats.slice(0, beatIndex + 1).filter((b) => b.parsed).length}
-                sprites={sprites}
-                emotion={emotionCtx}
-                tagKinds={tagKinds}
-                sceneAssets={sceneAssets}
-                scene={scene}
-                voice={{
-                  enabled: voiceConfig.enabled,
-                  fixedEmotion: voiceConfig.fixedEmotion,
-                  cast: voiceCast,
-                  plans: voicePlans,
-                  clips: voice.clips,
-                  paused: voice.paused,
-                  lastError: voice.lastError,
-                  charName,
-                  streaming,
-                }}
-              />
-            </div>
+          ) : shownMenu === 'dev' ? (
+            <ConsoleView
+              beat={beat}
+              beatNumber={beats.slice(0, beatIndex + 1).filter((b) => b.parsed).length}
+              beatIndex={beatIndex}
+              line={line}
+              timeline={timeline}
+              sprites={sprites}
+              spriteStage={spriteStage}
+              spriteLayout={spriteLayout}
+              emotion={emotionCtx}
+              tagKinds={tagKinds}
+              sceneAssets={sceneAssets}
+              scene={scene}
+              voice={{
+                enabled: voiceConfig.enabled,
+                fixedEmotion: voiceConfig.fixedEmotion,
+                cast: voiceCast,
+                plans: voicePlans,
+                clips: voice.clips,
+                paused: voice.paused,
+                lastError: voice.lastError,
+                charName,
+                streaming,
+              }}
+              onExit={onExit}
+            />
           ) : (
-            hostPage(menu)
+            hostPage(shownMenu)
           )}
         </VNMenu>
       )}
@@ -2209,34 +2858,24 @@ export function VNScreen({
           cold={titleCold}
           cardId={currentCardId}
           charName={charName}
-          tags={cardTags}
           lastPlayed={chatUpdatedAt}
-          lastLine={lastLine}
+          lastMood={shownLabel}
           sprites={sprites}
           faces={faces}
-          spriteStage={spriteStage}
-          spriteLayout={spriteLayout}
           home={titleHome}
-          scenes={titleScenes}
           cards={cards}
-          onWantAvatar={onWantAvatar}
           onContinue={() => setTitle(false)}
           onNewStory={() => {
             if (!currentCardId) return;
             setTitle(false);
             onPickCard(currentCardId, true);
           }}
-          onSwitchCard={(id) => onPickCard(id, false)}
-          onLoad={() => {
-            setTitle(false);
-            openMenu('save');
-          }}
-          onSettings={() => {
-            setTitle(false);
-            openMenu('config');
-          }}
+          onLoad={() => openMenu('save', 'cover')}
+          onSettings={() => openMenu('config', 'cover')}
           onExit={onExit}
           onPick={() => setPicking(true)}
+          // 菜单盖在封面上时(from=cover):封面别卸,只是被盖住 —— 不接点击
+          covered={menuLayer.mounted && shownMenuFrom === 'cover'}
         />
       )}
 
@@ -2244,7 +2883,6 @@ export function VNScreen({
         <VNPick
           cards={cards}
           currentCardId={currentCardId}
-          lastLine={lastLine}
           lastPlayed={chatUpdatedAt}
           onBack={() => setPicking(false)}
           onContinue={(id) => {
@@ -2252,12 +2890,21 @@ export function VNScreen({
             setTitle(false);
             if (id !== currentCardId) onPickCard(id, false);
           }}
-          onNewStory={(id) => {
+          onImport={onImportCard}
+          onExport={onExportCard}
+          freshId={freshCardId}
+          // 名字下面那行「上次 · 客厅 · …」:当前这位现在停在的场景
+          currentScene={titleHome.label}
+          // 右边每条素材的「更多」:换成她(不是当前这位的话)再开菜单停在管这一样的页
+          onMore={(kind, id) => {
             setPicking(false);
             setTitle(false);
-            onPickCard(id, true);
+            if (id !== currentCardId) onPickCard(id, false);
+            if (kind === 'sprite') openPlugin('sprite');
+            else if (kind === 'scene') openPlugin('bg');
+            else if (kind === 'voice') openPlugin('voice');
+            else openMenu(kind === 'preset' ? 'preset' : 'card');
           }}
-          onImport={onImportCard}
           onWantAvatar={onWantAvatar}
         />
       )}
@@ -2269,21 +2916,26 @@ export function VNScreen({
           <VNLoading
             key={currentCardId ?? ''}
             charName={charName}
-            faceSrc={currentCardId ? cardFaceUrl(currentCardId, 256, packId) : null}
-            avatar={cards.find((c) => c.id === currentCardId)?.avatar ?? null}
-            onFaceMissing={() => {
-              if (currentCardId) onWantAvatar(currentCardId);
-            }}
+            scenePackName={scenePackName}
             backdrop={isSettled(bgView.src) ? bgView.src : null}
-            sprite={loadingSprite}
-            place={scene.bg?.label ?? ''}
-            line={lastLine}
-            progress={gate.progress}
+            // 图还没下完也先给地址:等待页拿它的平均色先铺上
+            backdropSrc={bgView.src}
             fraction={gate.fraction}
             slow={gate.slow}
             onSkip={gate.skip}
           />
         )}
+
+      {/* 提示条(纸卡,现在一律白纸):右上那排按钮和历史那一格下面;菜单 / 选角色 / 句检查器开着时挪到底下正中 */}
+      {toasts.length > 0 && (
+        <ToastStack
+          toasts={toasts}
+          onRemove={onRemoveToast}
+          theme={paperTheme}
+          pos={toastAt.pos}
+          offset={toastAt.offset}
+        />
+      )}
 
       {/* 标题画面开着时不盖黑场:在封面上点头像换人,由封面自己的转场遮 */}
       {veil && !title && (
@@ -2297,280 +2949,4 @@ export function VNScreen({
       )}
     </div>
   );
-}
-
-const BGM_FROM: Record<NonNullable<SceneState['bgmFrom']>, string> = {
-  initial: '开场默认',
-  scene: '场景默认曲',
-  tag: 'AI 标签',
-};
-
-/** 控制台里一个立绘标签的匹配结果 */
-function describeMatch(m: TagMatch, sprites: readonly PackSprite[]): { ok: boolean; text: string } {
-  const noImage = (label: string) => {
-    const s = sprites.find((x) => x.label === label);
-    return s && !s.has_image ? '(还没传图)' : '';
-  };
-  const where = sprites.length === 0 ? '内置表情 ' : '';
-  switch (m.state) {
-    case 'exact':
-      return { ok: true, text: `✓ ${where}${m.label}${noImage(m.label)}` };
-    case 'record':
-      return { ok: true, text: `✓ ${where}${m.label}(认词记录 · ${RECORD_SOURCE_NAME[m.source]})${noImage(m.label)}` };
-    case 'model':
-      return { ok: true, text: `≈ ${where}${m.label}(模型 ${m.score.toFixed(2)})${noImage(m.label)}` };
-    case 'pending':
-      return { ok: true, text: '… 识别中' };
-    case 'failed':
-      return {
-        ok: false,
-        text: `✗ ${m.reason},${sprites.length === 0 ? '占位框写原词' : '保持上一张'}`,
-      };
-  }
-}
-
-/** 开发者页:模型这条回复的完整原文,以及每个标签落在哪一句、对上了哪个素材 */
-function ConsoleView({
-  beat,
-  beatNumber,
-  sprites,
-  emotion,
-  tagKinds,
-  sceneAssets,
-  scene,
-  voice,
-}: {
-  beat: Beat | null;
-  beatNumber: number;
-  sprites: PackSprite[];
-  /** 立绘标签的匹配(精确 / 模型) */
-  emotion: EmotionContext;
-  tagKinds: TagKind[];
-  sceneAssets: SceneAsset[];
-  scene: SceneState;
-  voice: {
-    enabled: boolean;
-    /** 情绪不变:不等模型认表情 */
-    fixedEmotion: boolean;
-    cast: VoiceCast;
-    plans: readonly (SpeakRequest | null)[];
-    clips: ReadonlyMap<string, ClipState>;
-    paused: boolean;
-    lastError: string | null;
-    charName: string;
-    streaming: boolean;
-  };
-}) {
-  const raw = beat?.raw ?? '';
-  const hits = beat?.parsed?.hits ?? [];
-  const lines = beat?.parsed?.lines ?? [];
-
-  /** 标签 → 匹配结果 */
-  const resolve = useMemo(
-    () =>
-      (kind: string, label: string): { ok: boolean; text: string } => {
-        if (kind === 'sprite') return describeMatch(emotion.resolve(label), sprites);
-        if (kind === 'player') return { ok: true, text: '✓ 玩家台词,不念' };
-        if (kind === 'cg' && isCgOff(label)) return { ok: true, text: '✓ 收起 CG' };
-        const pool = kind === 'bg' ? backgroundsOf(sceneAssets) : kind === 'cg' ? cgsOf(sceneAssets) : bgmsOf(sceneAssets);
-        const a = resolveByLabel(label, pool);
-        if (a) return { ok: true, text: `✓ ${a.label}${a.has_file ? '' : '(还没传文件)'}` };
-        if (sceneAssets.length === 0) return { ok: false, text: '✗ 这张卡没有绑定场景包' };
-        return { ok: false, text: `✗ 场景包里没有这个${kindName(kind)},保持不变` };
-      },
-    [sprites, sceneAssets, emotion],
-  );
-
-  // 原文里把几类标签都高亮出来
-  const highlighted = useMemo(() => {
-    if (!raw) return [raw];
-    const found: { at: number; text: string; ok: boolean; kind: string }[] = [];
-    for (const k of tagKinds) {
-      if (!k.pattern) continue;
-      for (const m of raw.matchAll(new RegExp(k.pattern.source, 'g'))) {
-        found.push({ at: m.index ?? 0, text: m[0], ok: resolve(k.kind, m[1]).ok, kind: k.kind });
-      }
-    }
-    found.sort((a, b) => a.at - b.at);
-    const out: ReactNode[] = [];
-    let last = 0;
-    for (const f of found) {
-      if (f.at < last) continue;
-      out.push(raw.slice(last, f.at));
-      out.push(
-        <mark key={f.at} className={`${f.ok ? 'ok' : 'miss'} k-${f.kind}`}>
-          {f.text}
-        </mark>,
-      );
-      last = f.at + f.text.length;
-    }
-    out.push(raw.slice(last));
-    return out;
-  }, [raw, tagKinds, resolve]);
-
-  const broken = tagKinds.filter((k) => !k.pattern).map((k) => kindName(k.kind));
-  const jev = beat ? currentInfo(beat.entry)?.jev : undefined;
-  const jevDropped = beat && jev ? entryView(beat.entry, tagKinds).dropped : 0;
-  const jevPending = beat?.entry.jevPending;
-
-  return (
-    <div className="vn-console">
-      <div className="vn-console-section">
-        <div className="vn-console-title">
-          此刻
-          <span className="vn-console-sub">
-            {beat
-              ? `第 ${beatNumber} 条回复 · 分支 ${beat.entry.swipeIndex + 1}/${beat.entry.swipes.length} · ${lines.length} 句`
-              : '还没有回复'}
-          </span>
-        </div>
-        <p className="vn-console-note now">
-          场景:{scene.bg ? `「${scene.bg.label}」` : '默认背景(这张卡没绑场景包,或者包里没有背景)'}
-          {' · '}
-          音乐:{scene.bgm ? `「${scene.bgm.label}」(${BGM_FROM[scene.bgmFrom ?? 'tag']})` : '无'}
-          {' · '}
-          CG:{scene.cg ? `「${scene.cg.label}」` : '无'}
-        </p>
-      </div>
-      <div className="vn-console-section">
-        <div className="vn-console-title">
-          标签
-          {broken.length > 0 && (
-            <span className="vn-console-warn">{broken.join('、')}的模板不合法,这几类不识别</span>
-          )}
-        </div>
-        {jev && (
-          <p className={`vn-console-note${jev.failed ? ' miss' : ''}`}>
-            这条的{(jev.kinds ?? []).map((k) => kindName(k)).join('、')}标签是 Jev 标的:判了 {jev.lines} 句、{jev.requests} 次请求、最慢 {(jev.maxMs / 1000).toFixed(2)} 秒、
-            {/* 只数 token 不算钱:走中转的价格各不一样 */}
-            {jev.tokens.toLocaleString()} token
-            {jevPending !== undefined ? ` · 第 ${jevPending + 1} 句起还在判` : ''}
-            {jev.failed ? ` · ${jev.failed} 句没判成(照没标处理):${jev.error ?? ''}` : ''}
-            {jevDropped ? ` · 原文改过,${jevDropped} 句的标注对不上已去掉` : ''}
-            {jev.notes ? ' · 标签另存,模型原文在调试台聊天区点「看原文」' : ''}
-          </p>
-        )}
-        {hits.length === 0 ? (
-          <p className="vn-console-note">
-            这条回复里没有标签。去插件面板检查:当前预设里有没有「立绘指令 / 场景指令 / 音乐指令 · 插件」这几个块,块有没有开启。
-          </p>
-        ) : (
-          <div className="vn-console-scroll">
-            <table className="vn-console-table">
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>类别</th>
-                  <th>标签原文</th>
-                  <th>生效于</th>
-                  <th>匹配结果</th>
-                </tr>
-              </thead>
-              <tbody>
-                {hits.map((h, i) => {
-                  const r =
-                    h.kind === 'sprite' && isNpcHit(h, emotion.charName)
-                      ? { ok: true, text: `— 「${h.speaker}」的台词,不切立绘` }
-                      : resolve(h.kind, h.label);
-                  return (
-                    <tr key={i}>
-                      <td>{i + 1}</td>
-                      <td>{kindName(h.kind)}</td>
-                      <td>
-                        <code>{h.raw}</code>
-                      </td>
-                      <td>{h.lineIndex === -1 ? '回复末尾(延续到下一条)' : `第 ${h.lineIndex + 1} 句`}</td>
-                      <td className={r.ok ? 'ok' : 'miss'}>{r.text}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-      <div className="vn-console-section">
-        <div className="vn-console-title">
-          语音
-          <span className="vn-console-sub">
-            {!voice.enabled
-              ? '插件里关着'
-              : !voice.cast.main && voice.cast.extras.length === 0
-                ? '这张卡没绑声音(调试台 → 插件 → 语音)'
-                : voice.paused
-                  ? `连续失败,暂停中(每 15 秒自动重连):${voice.lastError ?? ''}`
-                  : `主声音「${voice.cast.main?.name ?? '无'}」${voice.fixedEmotion ? ' · 情绪不变' : ''}`}
-          </span>
-        </div>
-        {lines.length > 0 && (
-          <div className="vn-console-scroll">
-            <table className="vn-console-table">
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>说话人 → 声音</th>
-                  <th>情绪(要的 → 实际)</th>
-                  <th>方式</th>
-                  <th>状态</th>
-                </tr>
-              </thead>
-              <tbody>
-                {lines.map((ln, i) => {
-                  const plan = voice.plans[i] ?? null;
-                  const profile = ln.player ? null : voiceForSpeaker(ln.speaker, voice.charName, voice.cast);
-                  const st = plan ? voice.clips.get(voiceKey(plan)) : undefined;
-                  const why = voiceSkipReason(ln, profile, {
-                    streamingLast: voice.streaming && i === lines.length - 1,
-                    pendingTag:
-                      !voice.fixedEmotion &&
-                      spriteHitsUpTo(hits, i, voice.charName).some(
-                        (h) => emotion.resolve(h.label).state === 'pending',
-                      ),
-                    jevPending: jevPending !== undefined && i >= jevPending,
-                    jev: beat ? jevKindsOf(beat.entry).includes('sprite') : false,
-                  });
-                  const actual =
-                    st?.state === 'ready' && st.emotion !== (plan?.emotion ?? '') ? ` → ${st.emotion}` : '';
-                  return (
-                    <tr key={i}>
-                      <td>{i + 1}</td>
-                      <td>
-                        {ln.untagged ? '(没写立绘标签)' : (ln.speaker ?? '旁白')}
-                        {profile ? ` → ${profile.name}` : ''}
-                      </td>
-                      <td>{plan ? `${plan.emotion ?? '(默认)'}${actual}` : '—'}</td>
-                      <td>{st?.state === 'ready' ? EMO_MODE_TEXT[st.mode] : '—'}</td>
-                      <td className={st?.state === 'error' ? 'miss' : st?.state === 'ready' ? 'ok' : ''}>
-                        {plan ? clipText(st) : why}
-                        {/* 实际送去合成的字(日语声音念的是日语) */}
-                        {plan && <div className="vn-console-sub">{plan.text}</div>}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-      <div className="vn-console-section">
-        <div className="vn-console-title">模型完整输出</div>
-        <pre className="vn-console-raw">{raw ? highlighted : '(空)'}</pre>
-      </div>
-    </div>
-  );
-}
-
-function clipText(st: ClipState | undefined): string {
-  if (!st) return '还没请求';
-  switch (st.state) {
-    case 'queued':
-      return '排队中';
-    case 'loading':
-      return '合成中…';
-    case 'ready':
-      return `✓ ${st.cache === 'hit' ? '缓存命中' : '新合成'} · ${(st.ms / 1000).toFixed(1)} 秒`;
-    case 'error':
-      return `✗ ${st.message}`;
-  }
 }

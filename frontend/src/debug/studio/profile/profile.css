@@ -295,6 +295,189 @@
   font-size: 11.5px;
   color: var(--text-faint);
 }
+/* 最上面一块基本信息(设计稿 .sd-id):头像 96 | 卡名 + 版本行 | 创作者 / 版本;下面标签、创作者注释 */
+.pf-hero {
+  flex: none;
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr) minmax(0, 300px);
+  column-gap: 20px;
+  row-gap: 12px;
+  align-items: center;
+  padding: 4px 0 16px;
+  border-bottom: 1px solid var(--border);
+  scroll-margin-top: 14px;
+}
+.pf-hero-avatar {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+}
+.pf-hero-avatar:disabled {
+  cursor: default;
+}
+.pf-hero-img {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--bg-hover);
+  color: var(--text-faint);
+  font-size: 34px;
+  font-weight: 700;
+  box-shadow:
+    0 0 0 2px #fff,
+    0 3px 12px rgba(30, 24, 48, 0.22);
+}
+.pf-hero-avatar i {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--bg);
+  box-shadow: 0 1px 4px rgba(30, 24, 48, 0.2);
+  color: var(--text-dim);
+}
+.pf-hero-main {
+  min-width: 0;
+}
+.pf-hero-name {
+  width: 100%;
+  margin-left: -4px;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: 700 30px/1.15 var(--av-serif, serif);
+  letter-spacing: 0.26em;
+  outline: none;
+}
+.pf-hero-name:focus {
+  background: var(--bg-hover);
+}
+.pf-hero-spec {
+  margin-top: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-faint);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+.pf-hero-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.pf-hero-meta label {
+  min-width: 0;
+}
+.pf-hero-meta label span {
+  display: block;
+  margin-bottom: 4px;
+  font: 600 11.5px/1 var(--av-serif, serif);
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+}
+.pf-hero-meta .st-input {
+  width: 100%;
+}
+.pf-hero-tags,
+.pf-hero-notes {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+.pf-hero-tags {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  column-gap: 20px;
+  align-items: center;
+}
+.pf-hero-cap {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+  font: 600 12px/1.3 var(--av-serif, serif);
+  letter-spacing: 0.12em;
+  color: var(--text-faint);
+}
+.pf-hero-tags .pf-hero-cap {
+  margin-bottom: 0;
+}
+.pf-hero-cap small {
+  font: 11.5px/1 var(--sans);
+  letter-spacing: 0.02em;
+}
+/* 标题后面的斜体英文(「主提示词覆盖 System Prompt」)、页头的英文和合计 */
+.pf-sec-title em,
+.pf-title-en {
+  margin-left: 7px;
+  font-style: italic;
+  font-weight: 500;
+  font-size: 12.5px;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+}
+.pf-title-en {
+  margin-left: 0;
+}
+.pf-title-tok {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+/* 空字段收成一行:标题 · 说明 …… 空 · 填写 */
+.pf-sec.empty {
+  padding: 9px 14px;
+  background: transparent;
+}
+.pf-sec.empty .pf-sec-head {
+  margin-bottom: 0;
+}
+.pf-sec.empty .pf-sec-title {
+  color: var(--text-dim);
+  font-weight: 600;
+}
+.pf-warn-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--st-amber);
+  font-size: 12px;
+}
+.pf-fill {
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.pf-fill:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
 .pf-sec-note {
   margin: -2px 0 8px;
   color: var(--text-faint);
@@ -772,5 +955,26 @@
   }
   .pf-wrap code {
     max-width: 100%;
+  }
+}
+
+@media (max-width: 899px) {
+  .pf-hero {
+    grid-template-columns: 64px minmax(0, 1fr);
+  }
+  .pf-hero-avatar,
+  .pf-hero-img {
+    width: 64px;
+    height: 64px;
+  }
+  .pf-hero-name {
+    font-size: 22px;
+  }
+  .pf-hero-meta {
+    grid-column: 1 / -1;
+  }
+  .pf-hero-tags {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 6px;
   }
 }

@@ -1,0 +1,1682 @@
+/* ══════════ 局内菜单「角色」「预设」两页的纸面(设计稿 docs/design/unify/kit/cardedit.css,整合版 whole.js 的 PAGE.card / PAGE.preset) ══════════
+   两页用的还是卡编辑器的那几个组件(ProfileTab 的 menu 摆法、PresetView 的 menu 摆法),数据、写口和卡编辑器、调试台是同一份;
+   这里只在菜单里换皮,选择器都带 .vn-menu .vn-card-embed / .vn-preset-embed,卡编辑器(全屏,studioPaper.css)和调试台不受影响。
+   数值照抄 cardedit.css:角色三栏 180 | 字段 | 296,预设 顶上一行 | 块列表 + 改这一块 | 预算条。
+   规矩:纸和墨、细线;选中 = 白纸浮起 + 左边一道墨色细线,不跟角色色;开关、焦点框用角色色(--av-ctl);不胶囊、不发光。
+   手机(< 900px,设计稿 phone.js 的 cardPage / PAGE.preset):角色页没有目录,右栏收成最上面一行「资料 · 绑定」;
+   预设页只放块列表,点一块从下面升起「改这一块」。 */
+
+:is(.vn-card-embed, .vn-preset-embed) {
+  /* 淡灰字 66%(10-24 定的),按墨色混,夜纸 / 玻璃上也跟着字色走 */
+  --av-dim: color-mix(in srgb, var(--av-ink) 66%, transparent);
+}
+/* 游戏那层是深色的(原生勾选框、下拉、滚动条都按深色画);白纸 / 玻璃上换回浅色,夜纸上留深色 */
+.vn-menu:not(.av-night) :is(.vn-card-embed, .vn-preset-embed) {
+  color-scheme: light;
+}
+
+/* ---------- 菜单里共用的几样:按钮、输入框、下拉、「?」 ---------- */
+.vn-menu :is(.vn-card-embed, .vn-preset-embed) .st-btn {
+  height: 32px;
+  gap: 6px;
+  padding: 0 14px;
+  border: 1px solid var(--av-hair);
+  border-radius: var(--av-r-btn);
+  background: var(--av-paper);
+  color: var(--av-ink);
+  font: 500 13px/1 var(--av-sans);
+  letter-spacing: 0.06em;
+  box-shadow: none;
+}
+.vn-menu :is(.vn-card-embed, .vn-preset-embed) .st-btn:hover:not(:disabled) {
+  border-color: var(--av-faint);
+  background: var(--av-paper);
+}
+.vn-menu :is(.vn-card-embed, .vn-preset-embed) .st-btn.small {
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+.vn-menu :is(.vn-card-embed, .vn-preset-embed) .st-btn:disabled {
+  color: var(--av-dim);
+  border-color: var(--av-hair-2);
+  opacity: 1;
+}
+.vn-menu :is(.vn-card-embed, .vn-preset-embed) .st-btn-primary:not(:disabled) {
+  background: var(--av-ink);
+  border-color: var(--av-ink);
+  color: var(--av-paper);
+  font-family: var(--av-serif);
+  font-weight: 600;
+  letter-spacing: 0.16em;
+}
+.vn-menu :is(.vn-card-embed, .vn-preset-embed) .st-btn-danger {
+  color: var(--av-bad-ink);
+}
+.vn-menu :is(.vn-card-embed, .vn-preset-embed) .st-btn-danger-solid {
+  background: var(--av-bad);
+  border-color: var(--av-bad);
+  color: #fff;
+}
+.vn-menu :is(.vn-card-embed, .vn-preset-embed) :is(.st-input, .text-input) {
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--av-hair);
+  border-radius: var(--av-r-btn);
+  background: var(--av-paper);
+  color: var(--av-ink);
+  font: 13px/30px var(--av-sans);
+}
+.vn-menu :is(.vn-card-embed, .vn-preset-embed) :is(.st-input, .text-input):focus {
+  border-color: var(--av-ctl);
+  outline: none;
+}
+.vn-menu :is(.vn-card-embed, .vn-preset-embed) .st-help {
+  width: 15px;
+  height: 15px;
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--av-faint);
+  color: var(--av-dim);
+  font: 600 12px/1 var(--av-latin);
+}
+
+/* ══════════ 角色:目录 | 字段 | 她的资料 + 绑定 ══════════ */
+.vn-menu .vn-card-embed > .st-body {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr) 296px;
+  border-top: 1px solid var(--av-hair);
+}
+
+/* ---- 左栏:目录 ---- */
+.vn-menu .vn-card-embed .pf-toc {
+  width: auto;
+  padding: 12px 12px 12px 0;
+  border-right: 0;
+  background: transparent;
+  overflow: visible;
+}
+.vn-menu .vn-card-embed .pf-nav {
+  margin-right: -6px;
+  padding: 0 6px 0 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--av-faint) transparent;
+}
+.vn-menu .vn-card-embed .pf-group {
+  margin: 12px 0 4px 8px;
+  padding: 0;
+  font: 600 12px/1 var(--av-serif);
+  letter-spacing: 0.14em;
+  color: var(--av-dim);
+}
+.vn-menu .vn-card-embed .pf-group:first-child {
+  margin-top: 2px;
+}
+.vn-menu .vn-card-embed .pf-row {
+  padding: 0 8px 0 10px;
+  border-radius: var(--av-r-btn);
+  font: 13px/1 var(--av-sans);
+  color: var(--av-ink-2);
+  transition: background 0.16s, color 0.16s, box-shadow 0.16s;
+}
+.vn-menu .vn-card-embed .pf-row:hover {
+  background: var(--av-hair-2);
+  color: var(--av-ink-2);
+}
+.vn-menu .vn-card-embed .pf-row[aria-current='true'] {
+  background: var(--av-paper);
+  color: var(--av-ink);
+  font-weight: 400;
+  box-shadow: 0 1px 3px rgba(30, 24, 48, 0.1), 0 0 0 1px var(--av-hair-2);
+}
+.vn-menu.av-night .vn-card-embed .pf-row[aria-current='true'] {
+  background: var(--av-paper-3);
+}
+.vn-menu .vn-card-embed .pf-row[aria-current='true']::before {
+  left: 0;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--av-sel, var(--av-ink));
+}
+.vn-menu .vn-card-embed .pf-row:focus-visible {
+  outline: 2px solid var(--av-ctl);
+  outline-offset: -2px;
+}
+.vn-menu .vn-card-embed .pf-row-badge {
+  font: 500 12px/1 var(--av-latin);
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+  color: var(--av-ink-2);
+}
+/* 「空」是中文,换回无衬线、淡一档 */
+.vn-menu .vn-card-embed .pf-row-badge.nil {
+  font-family: var(--av-sans);
+  letter-spacing: 0;
+  color: var(--av-dim);
+}
+.vn-menu .vn-card-embed .pf-row-badge.warn {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  background: var(--av-warn-ink);
+  color: #fff;
+  font: 700 12px/1 var(--av-sans);
+}
+/* 预设那一行(组里最后一行):名字可以折两行,后面一个 › */
+.vn-menu .vn-card-embed .pf-nav > .pf-row:last-child {
+  height: auto;
+  min-height: 34px;
+  padding-top: 7px;
+  padding-bottom: 7px;
+}
+.vn-menu .vn-card-embed .pf-nav > .pf-row:last-child .pf-row-label {
+  white-space: normal;
+  line-height: 1.35;
+}
+.vn-menu .vn-card-embed .pf-nav > .pf-row:last-child::after {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin: 0 3px 0 1px;
+  border: solid var(--av-dim);
+  border-width: 1.5px 1.5px 0 0;
+  transform: rotate(45deg);
+}
+.vn-menu .vn-card-embed .pf-toc-foot {
+  margin-top: 8px;
+  padding: 10px 8px 0 10px;
+  border-top: 1px solid var(--av-hair);
+  background: transparent;
+  font: 600 12px/1 var(--av-serif);
+  letter-spacing: 0.12em;
+  color: var(--av-dim);
+}
+.vn-menu .vn-card-embed .pf-toc-sum {
+  align-items: baseline;
+}
+.vn-menu .vn-card-embed .pf-toc-tok {
+  font: 600 14px/1 var(--av-latin);
+  letter-spacing: 0.04em;
+  color: var(--av-ink);
+}
+.vn-menu .vn-card-embed .pf-toc-warn {
+  margin-top: 0;
+  padding-top: 6px;
+  font: 12px/1.5 var(--av-sans);
+  letter-spacing: 0;
+  color: var(--av-warn-ink);
+}
+
+/* ---- 中间:一节一张纸 ---- */
+.vn-menu .vn-card-embed .st-main.pf-main {
+  gap: 0;
+  padding: 0 0 24px;
+  border-left: 0;
+  background: transparent;
+  scroll-padding-top: 8px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--av-faint) transparent;
+}
+.vn-menu .vn-card-embed .pf-sec {
+  margin-bottom: 10px;
+  padding: 10px 14px 12px;
+  border: 0;
+  border-radius: var(--av-r-panel);
+  background: color-mix(in srgb, var(--av-paper) 72%, transparent);
+  box-shadow: inset 0 0 0 1px var(--av-hair);
+  scroll-margin-top: 2px;
+  transition: box-shadow 0.2s, background 0.2s;
+}
+.vn-menu .vn-card-embed .pf-sec.active {
+  background: var(--av-paper);
+  box-shadow: inset 0 0 0 1px var(--av-faint), 0 1px 4px rgba(30, 24, 48, 0.06);
+}
+.vn-menu.av-night .vn-card-embed .pf-sec {
+  background: color-mix(in srgb, var(--av-paper-2) 70%, transparent);
+}
+.vn-menu.av-night .vn-card-embed .pf-sec.active {
+  background: var(--av-paper-2);
+}
+.vn-menu .vn-card-embed .pf-sec-head {
+  flex-wrap: nowrap;
+  gap: 8px;
+  min-height: 30px;
+  margin-bottom: 6px;
+}
+.vn-menu .vn-card-embed .pf-sec-title {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  font: 600 14.5px/1 var(--av-serif);
+  letter-spacing: 0.12em;
+  color: var(--av-ink);
+  white-space: nowrap;
+}
+.vn-menu .vn-card-embed .pf-sec-title em {
+  margin: 0;
+  font: italic 500 13px/1 var(--av-latin);
+  letter-spacing: 0.06em;
+  color: var(--av-dim);
+}
+.vn-menu .vn-card-embed .pf-badge {
+  height: 22px;
+  padding: 0 7px;
+  border-radius: var(--av-r-tag);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--av-hair);
+  font: 12px/1 var(--av-mono);
+  color: var(--av-dim);
+}
+.vn-menu .vn-card-embed .pf-sec-tok {
+  font: 500 13px/1 var(--av-latin);
+  letter-spacing: 0.02em;
+  color: var(--av-dim);
+  white-space: nowrap;
+}
+.vn-menu .vn-card-embed .pf-warn {
+  align-items: center;
+  gap: 6px;
+  margin: -2px 0 8px;
+  font: 12px/1.5 var(--av-sans);
+  color: var(--av-warn-ink);
+}
+.vn-menu .vn-card-embed .pf-warn > .st-icon {
+  margin-top: 0;
+}
+.vn-menu .vn-card-embed :is(.pf-textarea, .st-textarea) {
+  min-height: 34px;
+  padding: 8px 11px;
+  border: 1px solid var(--av-hair);
+  border-radius: var(--av-r-btn);
+  background: var(--av-paper);
+  color: var(--av-ink);
+  font: 13px/1.75 var(--av-sans);
+  letter-spacing: 0.01em;
+  resize: none;
+  scrollbar-width: thin;
+  scrollbar-color: var(--av-faint) transparent;
+}
+.vn-menu .vn-card-embed :is(.pf-textarea, .st-textarea):focus {
+  border-color: var(--av-ctl);
+}
+.vn-menu .vn-card-embed :is(.pf-textarea, .st-textarea)::placeholder {
+  color: var(--av-dim);
+}
+.vn-menu .vn-card-embed .pf-sec-foot {
+  gap: 10px;
+  margin-top: 8px;
+  min-height: 26px;
+}
+.vn-menu .vn-card-embed .pf-sec-foot .st-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: 500 12.5px/1 var(--av-sans);
+  color: var(--av-ink-2);
+  text-decoration: underline;
+  text-decoration-color: var(--av-hair);
+  text-underline-offset: 4px;
+}
+.vn-menu .vn-card-embed .pf-sec-foot .st-link:hover {
+  color: var(--av-ink);
+  text-decoration-color: currentColor;
+}
+.vn-menu .vn-card-embed .pf-wrap {
+  white-space: nowrap;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--av-dim);
+}
+.vn-menu .vn-card-embed .pf-wrap code {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--av-paper-2);
+  font: 12px/1.4 var(--av-mono);
+  color: var(--av-ink-2);
+}
+.vn-menu .vn-card-embed .pf-preview {
+  margin-top: 6px;
+  border: 0;
+  border-radius: var(--av-r-btn);
+  background: var(--av-paper-2);
+}
+.vn-menu .vn-card-embed .pf-preview-role {
+  padding: 8px 10px 0;
+  border: 0;
+  background: transparent;
+  font: 600 12px/1 var(--av-mono);
+  color: var(--av-dim);
+}
+.vn-menu .vn-card-embed .pf-preview-body {
+  padding: 4px 10px 8px;
+  font: 12.5px/1.7 var(--av-sans);
+  color: var(--av-ink-2);
+}
+.vn-menu .vn-card-embed .pf-sec-note {
+  font-size: 12px;
+  color: var(--av-dim);
+}
+.vn-menu .vn-card-embed .pf-pager-at {
+  font: 500 13px/1 var(--av-latin);
+  color: var(--av-ink-2);
+}
+/* 「以下内容不会进入提示词」:两边虚线 */
+.vn-menu .vn-card-embed .pf-divider {
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 12px;
+  padding: 0;
+  border: 0;
+  font: 600 12.5px/1 var(--av-serif);
+  letter-spacing: 0.14em;
+  color: var(--av-dim);
+}
+.vn-menu .vn-card-embed .pf-divider::before,
+.vn-menu .vn-card-embed .pf-divider::after {
+  content: '';
+  flex: 1;
+  border-top: 1px dashed var(--av-faint);
+}
+.vn-menu .vn-card-embed .pf-divider b {
+  color: inherit;
+  font-weight: 600;
+  letter-spacing: inherit;
+}
+.vn-menu .vn-card-embed .pf-divider span {
+  display: none;
+}
+/* 标签 / 元数据(菜单里排在最后一节) */
+.pf-meta-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 14px;
+}
+.pf-meta-grid label {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.pf-meta-grid label > span,
+.pf-meta-cap {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font: 600 12px/1.2 var(--av-serif);
+  letter-spacing: 0.1em;
+  color: var(--av-ink-2);
+}
+.pf-meta-grid em,
+.pf-meta-cap em {
+  font: italic 500 12px/1 var(--av-latin);
+  letter-spacing: 0.04em;
+  color: var(--av-dim);
+}
+.pf-meta-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+.vn-menu .vn-card-embed .pf-meta-tags .st-tag {
+  height: 24px;
+  border-radius: var(--av-r-tag);
+  background: var(--av-paper-2);
+  box-shadow: inset 0 0 0 1px var(--av-hair-2);
+  color: var(--av-ink-2);
+}
+
+/* ---- 右栏:她的资料 + 绑定 ---- */
+.pf-her {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 14px 0 12px 18px;
+  border-left: 1px solid var(--av-hair);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--av-faint) transparent;
+}
+.pf-her-head {
+  display: none;
+}
+.pf-her-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.pf-her-id {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.pf-her-ava {
+  position: relative;
+  flex: none;
+  width: 60px;
+  height: 60px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--av-paper-2);
+  box-shadow: 0 0 0 1px var(--av-hair), 0 2px 6px rgba(30, 24, 48, 0.12);
+  cursor: pointer;
+}
+.pf-her-ava:focus-visible {
+  outline: 2px solid var(--av-ctl);
+  outline-offset: 2px;
+}
+.pf-her-img,
+.pf-her-hava {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+:is(.pf-her-img, .pf-her-hava).blank {
+  display: grid;
+  place-items: center;
+  font: 700 22px/1 var(--av-serif);
+  color: var(--av-dim);
+}
+.pf-her-idt {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.pf-her-name {
+  width: 100%;
+  height: 32px;
+  margin-left: -6px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--av-ink);
+  font: 700 20px/1 var(--av-serif);
+  letter-spacing: 0.16em;
+  outline: none;
+  transition: border-color 0.16s, background 0.16s;
+}
+.pf-her-name:hover {
+  border-color: var(--av-hair);
+}
+.pf-her-name:focus {
+  border-color: var(--av-ctl);
+  background: var(--av-paper);
+}
+.pf-her-spec {
+  font: 12px/1.3 var(--av-sans);
+  color: var(--av-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pf-her-intro {
+  flex: none;
+  margin: 12px 0 0;
+  font: 12.5px/1.75 var(--av-sans);
+  color: var(--av-ink-2);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.pf-her-stats {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+  margin-top: 8px;
+  font: 12.5px/1.6 var(--av-sans);
+  color: var(--av-dim);
+}
+.pf-her-stats b {
+  font: 500 14px/1 var(--av-latin);
+  color: var(--av-ink);
+}
+.pf-her-hs {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 0 5px;
+}
+.pf-her-hh {
+  font: 600 13px/1 var(--av-serif);
+  letter-spacing: 0.14em;
+  color: var(--av-ink);
+}
+.pf-her-dim {
+  font-size: 12px;
+  color: var(--av-dim);
+}
+.pf-her-faces {
+  flex: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 34px);
+  gap: 3px 4px;
+}
+.pf-her-face {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+}
+.pf-her-face .st-face.pf-her-fimg {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+}
+.pf-her-binds {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 -6px;
+}
+.pf-her-bind {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 42px;
+  padding: 4px 8px 4px 6px;
+  border-radius: var(--av-r-btn);
+  color: var(--av-dim);
+  cursor: pointer;
+  transition: background 0.16s;
+}
+.pf-her-bind:hover,
+.pf-her-bind:focus-within {
+  background: var(--av-hair-2);
+}
+.pf-her-bind.disabled {
+  cursor: progress;
+}
+.pf-her-bind > select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: inherit;
+  font-size: 13px;
+}
+.pf-her-bind > select option {
+  background: var(--av-paper);
+  color: var(--av-ink);
+}
+.pf-her-bico {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 7px;
+  background: var(--av-paper-2);
+  box-shadow: inset 0 0 0 1px var(--av-hair-2);
+  color: var(--av-ink-2);
+}
+.pf-her-btx {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.pf-her-btx small {
+  font: 12px/1.6 var(--av-sans);
+  color: var(--av-dim);
+}
+.pf-her-btx b {
+  font: 500 13px/1.35 var(--av-sans);
+  color: var(--av-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pf-her-sp {
+  flex: 1;
+  min-height: 14px;
+}
+.pf-her-foot {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--av-hair);
+}
+.vn-menu .pf-her-foot :is(.st-btn.small, .exp-trigger) {
+  height: 26px;
+  gap: 5px;
+  padding: 0 8px;
+  border: 1px solid var(--av-hair);
+  border-radius: var(--av-r-btn);
+  background: var(--av-paper);
+  color: var(--av-ink);
+  font: 500 12px/1 var(--av-sans);
+  letter-spacing: 0.06em;
+}
+.vn-menu .pf-her-foot .st-btn-danger.small {
+  color: var(--av-bad-ink);
+}
+.vn-menu .pf-her-foot .st-btn-danger-solid.small {
+  background: var(--av-bad);
+  border-color: var(--av-bad);
+  color: #fff;
+}
+/* 「导出」点开是三选一,按钮本身不带下拉箭头(设计稿 .ce-sfoot 的导出) */
+.vn-menu .pf-her-foot .exp-trigger > svg:last-child {
+  display: none;
+}
+
+/* 窄一点的面板:三栏收紧,字段标题上的标记位小签先藏起来(设计稿 @container (max-width: 1060px)) */
+@media (max-width: 1180px) and (min-width: 900px) {
+  .vn-menu .vn-card-embed > .st-body {
+    grid-template-columns: 158px minmax(0, 1fr) 240px;
+  }
+  .vn-menu .vn-card-embed .pf-sec-head .pf-badge {
+    display: none;
+  }
+  .pf-her {
+    padding-left: 12px;
+  }
+}
+
+/* ══════════ 预设:顶上一行 | 块列表 + 改这一块 | 上下文预算 ══════════ */
+.vn-menu .vn-preset-embed .pv-wrap.pv-menu {
+  padding-top: 12px;
+  border-top: 1px solid var(--av-hair);
+}
+.vn-menu .vn-preset-embed .pv-bar-menu {
+  flex: none;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  margin-bottom: 12px;
+}
+.vn-menu .vn-preset-embed .pv-menu .pv-note {
+  margin: -4px 0 10px;
+  font-size: 12px;
+  color: var(--av-dim);
+}
+/* 下拉:白纸、细边,右边一个小箭头 */
+.vn-menu .vn-preset-embed .st-select {
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--av-hair);
+  border-radius: var(--av-r-btn);
+  background: var(--av-paper);
+  color: var(--av-ink);
+  font: 13px/1 var(--av-sans);
+}
+.vn-menu .vn-preset-embed .st-select > .st-icon {
+  color: var(--av-ink-2);
+}
+.vn-menu .vn-preset-embed .st-select.pv-preset {
+  flex: none;
+  width: 300px;
+  height: 34px;
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.vn-menu .vn-preset-embed .st-select.pv-preset .pv-unsaved {
+  color: var(--av-warn-ink);
+  font-size: 12px;
+}
+.vn-menu .vn-preset-embed .st-select.pv-group {
+  flex: none;
+  width: 214px;
+}
+.vn-menu .vn-preset-embed .st-select .st-select-value {
+  flex: 1;
+}
+.vn-menu .vn-preset-embed .st-btn.pv-tall {
+  height: 32px;
+  font-size: 13px;
+}
+.vn-menu .vn-preset-embed .pv-bar-menu .st-btn-primary:not(:disabled) {
+  min-width: 52px;
+}
+.vn-menu .vn-preset-embed .pv-bar-menu .st-btn.pv-tall:first-of-type {
+  min-width: 52px;
+}
+/* 「⋯」:和按钮一样的细边方块 */
+.vn-menu .vn-preset-embed .pv-bar-menu .st-iconbtn {
+  width: 34px;
+  height: 32px;
+  border: 1px solid var(--av-hair);
+  border-radius: var(--av-r-btn);
+  background: var(--av-paper);
+  color: var(--av-ink-2);
+}
+.vn-menu .vn-preset-embed .pv-bind {
+  gap: 7px;
+  min-height: 32px;
+  font: 12.5px/1.6 var(--av-sans);
+  color: var(--av-ink-2);
+}
+.vn-menu .vn-preset-embed .pv-bind input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--av-ctl);
+}
+.vn-menu .vn-preset-embed .pv-row-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font: 600 12px/1 var(--av-serif);
+  letter-spacing: 0.12em;
+  color: var(--av-ink-2);
+}
+
+/* 块列表 | 改这一块:列表吃剩下的,右边 48%(最少 400) */
+.vn-menu .vn-preset-embed .pv-menu .pv-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(400px, 48%);
+  gap: 16px;
+}
+.vn-menu .vn-preset-embed .pv-menu .st-main.pf-main.pv-main {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  overflow: hidden;
+}
+.vn-menu .vn-preset-embed .pp-list {
+  border: 0;
+  border-radius: var(--av-r-panel);
+  background: color-mix(in srgb, var(--av-paper) 70%, transparent);
+  box-shadow: inset 0 0 0 1px var(--av-hair);
+}
+.vn-menu.av-night .vn-preset-embed .pp-list {
+  background: color-mix(in srgb, var(--av-paper-2) 60%, transparent);
+}
+.vn-menu .vn-preset-embed .pp-list .block-header {
+  height: 34px;
+  padding: 0 14px 0 40px;
+  border-bottom: 1px solid var(--av-hair);
+  font: 600 12px/1 var(--av-serif);
+  letter-spacing: 0.1em;
+  color: var(--av-dim);
+}
+.vn-menu .vn-preset-embed .pp-list :is(.block-header-count, .block-header-sum) {
+  margin-left: 4px;
+  font: 500 13px/1 var(--av-latin);
+  color: var(--av-ink-2);
+}
+.vn-menu .vn-preset-embed .pp-list .panel-body {
+  padding: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--av-faint) transparent;
+}
+.vn-menu .vn-preset-embed .pp-list .block-row {
+  border: 0;
+  border-radius: 6px;
+}
+.vn-menu .vn-preset-embed .pp-list .block-row .block-head {
+  height: 34px;
+  min-height: 34px;
+  gap: 6px;
+  padding: 0 10px 0 2px;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  transition: background 0.16s, box-shadow 0.16s;
+}
+.vn-menu .vn-preset-embed .pp-list .block-row .block-head:hover {
+  background: var(--av-hair-2);
+}
+.vn-menu .vn-preset-embed .pp-list .block-row.selected .block-head {
+  background: var(--av-paper);
+  box-shadow: 0 1px 3px rgba(30, 24, 48, 0.1), 0 0 0 1px var(--av-hair-2), inset 2px 0 0 var(--av-sel, var(--av-ink));
+}
+.vn-menu.av-night .vn-preset-embed .pp-list .block-row.selected .block-head {
+  background: var(--av-paper-3);
+}
+/* 插件块在设计稿里不另垫底、不加竖线,靠「插件」小签认 */
+.vn-menu .vn-preset-embed .pp-list .block-row.plugin:not(.selected) .block-head {
+  background: transparent;
+  box-shadow: none;
+}
+.vn-menu .vn-preset-embed .pp-list .block-row.plugin:not(.selected) .block-head:hover {
+  background: var(--av-hair-2);
+}
+.vn-menu .vn-preset-embed .pp-list .block-row.auto .block-head {
+  background: repeating-linear-gradient(135deg, transparent 0 6px, var(--av-hair-2) 6px 7px);
+  box-shadow: none;
+}
+.vn-menu .vn-preset-embed .pp-list .block-row .block-grip {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 32px;
+  font-size: 13px;
+  color: var(--av-faint);
+  cursor: grab;
+}
+.vn-menu .vn-preset-embed .pp-list .block-row .block-grip:hover {
+  color: var(--av-ink-2);
+}
+.vn-menu .vn-preset-embed .pp-list .block-name {
+  font: 500 13px/32px var(--av-sans);
+  color: var(--av-ink);
+}
+.vn-menu .vn-preset-embed .pp-list .block-row.off .block-name,
+.vn-menu .vn-preset-embed .pp-list .block-row.off .block-tokens,
+.vn-menu .vn-preset-embed .pp-list .block-row.skip .block-name {
+  color: var(--av-dim);
+}
+.vn-menu .vn-preset-embed .pp-list .block-row.off .block-badge {
+  opacity: 1;
+}
+/* 角色小签:细边方块、等宽字;user / assistant 深一档;MARKER 用角色色的深色那格;插件 = 淡角色色底 */
+.vn-menu .vn-preset-embed :is(.pp-list .block-head, .bes-head) .block-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--av-hair);
+  font: 600 12px/1 var(--av-mono);
+  letter-spacing: 0;
+  color: var(--av-dim);
+  opacity: 1;
+}
+.vn-menu .vn-preset-embed :is(.pp-list .block-head, .bes-head) .block-badge:is(.badge-user, .badge-assistant) {
+  color: var(--av-ink);
+  box-shadow: inset 0 0 0 1px var(--av-faint);
+}
+.vn-menu .vn-preset-embed :is(.pp-list .block-head, .bes-head) .block-badge.badge-marker {
+  color: var(--av-acc-deep);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--av-acc-deep) 45%, transparent);
+}
+.vn-menu.av-night .vn-preset-embed :is(.pp-list .block-head, .bes-head) .block-badge.badge-marker {
+  color: var(--av-acc);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--av-acc) 45%, transparent);
+}
+.vn-menu .vn-preset-embed :is(.pp-list .block-head, .bes-head) .block-badge:is(.badge-plugin, .badge-auto) {
+  font-family: var(--av-sans);
+  background: var(--av-acc-soft);
+  color: var(--av-acc-deep);
+  box-shadow: none;
+}
+.vn-menu.av-night .vn-preset-embed :is(.pp-list .block-head, .bes-head) .block-badge:is(.badge-plugin, .badge-auto) {
+  background: color-mix(in srgb, var(--av-acc) 20%, transparent);
+  color: var(--av-acc);
+}
+.vn-menu .vn-preset-embed .pp-list .block-head .block-badge.badge-depth {
+  font-family: var(--av-mono);
+  box-shadow: inset 0 0 0 1px var(--av-faint);
+  color: var(--av-ink-2);
+}
+.vn-menu .vn-preset-embed .pp-list .block-head .block-badge.badge-override {
+  font-family: var(--av-sans);
+  font-weight: 500;
+  background: color-mix(in srgb, var(--av-warn) 16%, transparent);
+  color: var(--av-warn-ink);
+  box-shadow: none;
+}
+.vn-menu .vn-preset-embed .pp-list .block-head .block-state {
+  height: 20px;
+  padding: 0 3px 0 6px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--av-hair);
+  font: 500 12px/1 var(--av-sans);
+  color: var(--av-dim);
+}
+.vn-menu .vn-preset-embed .pp-list .block-head .block-state.auto {
+  box-shadow: inset 0 0 0 1px var(--av-faint);
+  border: 0;
+}
+/* ✎:28 见方,平时藏着,指到这一行 / 选中才出来 */
+.vn-menu .vn-preset-embed .pp-list .block-head .icon-btn.tiny {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--av-dim);
+  opacity: 0;
+  transition: opacity 0.16s, background 0.16s;
+}
+.vn-menu .vn-preset-embed .pp-list .block-row:is(:hover, .selected) .icon-btn.tiny,
+.vn-menu .vn-preset-embed .pp-list .block-head .icon-btn.tiny:focus-visible {
+  opacity: 1;
+}
+.vn-menu .vn-preset-embed .pp-list .block-head .icon-btn.tiny:hover {
+  background: var(--av-hair-2);
+  color: var(--av-ink);
+}
+.vn-menu .vn-preset-embed .pp-list .block-row .btn.small {
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--av-hair);
+  border-radius: var(--av-r-btn);
+  background: var(--av-paper);
+  color: var(--av-ink);
+  font-size: 12px;
+}
+/* 行尾开关:设计稿的小号 .av-switch(34 × 19,圆角方框,开着是角色色) */
+.vn-menu .vn-preset-embed .pp-list .block-head .block-toggle {
+  flex: none;
+  width: 34px;
+  height: 19px;
+  margin: 0 1px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--av-paper-3);
+  box-shadow: inset 0 0 0 1px var(--av-hair);
+}
+.vn-menu .vn-preset-embed .pp-list .block-head .block-toggle .knob {
+  top: 3px;
+  left: 3px;
+  width: 13px;
+  height: 13px;
+  border-radius: 4px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(20, 20, 40, 0.25);
+  transition: transform 0.16s var(--av-ease);
+}
+.vn-menu .vn-preset-embed .pp-list .block-head .block-toggle.on {
+  background: var(--av-ctl);
+  box-shadow: none;
+}
+.vn-menu .vn-preset-embed .pp-list .block-head .block-toggle.on .knob {
+  background: #fff;
+  transform: translateX(15px);
+}
+.vn-menu .vn-preset-embed .pp-list .block-head .block-toggle:disabled {
+  opacity: 0.45;
+  border: 0;
+}
+.vn-menu .vn-preset-embed .pp-list .block-head .block-toggle:focus-visible {
+  outline: 2px solid var(--av-acc);
+  outline-offset: 2px;
+}
+.vn-menu .vn-preset-embed .pp-list .block-tokens {
+  flex: none;
+  width: 40px;
+  font: 500 12px/1 var(--av-latin);
+  text-align: right;
+  color: var(--av-dim);
+}
+
+/* ---- 右边:改这一块 ---- */
+.vn-menu .vn-preset-embed .pv-menu .pv-side {
+  width: auto;
+  padding-left: 16px;
+  border-left: 1px solid var(--av-hair);
+  background: transparent;
+}
+.vn-menu .vn-preset-embed .pv-sheet-close {
+  display: none;
+}
+.vn-menu .vn-preset-embed .bes {
+  background: transparent;
+}
+.vn-menu .vn-preset-embed .bes-head {
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 0 8px;
+  border-bottom: 1px solid var(--av-hair);
+}
+.vn-menu .vn-preset-embed .bes-title {
+  font: 600 15px/1.2 var(--av-serif);
+  letter-spacing: 0.08em;
+  color: var(--av-ink);
+}
+.vn-menu .vn-preset-embed .bes-tok {
+  font: 500 12.5px/1 var(--av-latin);
+  color: var(--av-dim);
+}
+.vn-menu .vn-preset-embed .bes-body {
+  gap: 10px;
+  padding: 12px 2px 4px 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--av-faint) transparent;
+}
+.vn-menu .vn-preset-embed .bes .bm-props {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px 14px;
+}
+.vn-menu .vn-preset-embed .bes .bm-field {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.vn-menu .vn-preset-embed .bes .bm-name {
+  flex: 1 1 180px;
+}
+.vn-menu .vn-preset-embed .bes .bm-field:has(.bm-depth-row),
+.vn-menu .vn-preset-embed .bes .bm-field:has(.bm-check) {
+  flex-basis: 100%;
+}
+.vn-menu .vn-preset-embed .bes .bm-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font: 600 12px/1.2 var(--av-serif);
+  letter-spacing: 0.1em;
+  color: var(--av-ink-2);
+}
+.vn-menu .vn-preset-embed .bes .bm-field .text-input:not(.bm-num) {
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: var(--av-r-btn);
+  font-size: 13px;
+}
+.vn-menu .vn-preset-embed .bes .bm-num {
+  width: 64px;
+  text-align: center;
+}
+/* 分段(角色 / 位置 / 原文·预览):浅槽 + 选中那格白底浮起(.av-seg) */
+.vn-menu .vn-preset-embed :is(.bes .bm-roles, .bes-seg) {
+  display: inline-flex;
+  flex: none;
+  gap: 2px;
+  padding: 3px;
+  border: 0;
+  border-radius: var(--av-r-btn);
+  background: var(--av-paper-2);
+  box-shadow: inset 0 0 0 1px var(--av-hair-2);
+}
+.vn-menu .vn-preset-embed .bes .bm-depth-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.vn-menu .vn-preset-embed .bes .bm-depth-row .bm-roles {
+  flex: none;
+}
+.vn-menu .vn-preset-embed :is(.bes .bm-roles .bm-role, .bes-seg button) {
+  flex: none;
+  min-width: 52px;
+  height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  font: 500 13px/28px var(--av-sans);
+  letter-spacing: 0.04em;
+  color: var(--av-dim);
+  white-space: nowrap;
+  transition: background 0.16s, color 0.16s, box-shadow 0.16s;
+}
+.vn-menu .vn-preset-embed :is(.bes .bm-roles .bm-role, .bes-seg button):hover:not(.on) {
+  color: var(--av-ink);
+}
+.vn-menu .vn-preset-embed :is(.bes .bm-roles .bm-role, .bes-seg button).on {
+  background: var(--av-paper);
+  color: var(--av-ink);
+  box-shadow: 0 1px 3px rgba(30, 24, 48, 0.12), 0 0 0 1px var(--av-hair-2);
+}
+.vn-menu.av-night .vn-preset-embed :is(.bes .bm-roles .bm-role, .bes-seg button).on {
+  background: var(--av-paper-3);
+}
+.vn-menu .vn-preset-embed .bes .bm-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  font-size: 12.5px;
+  color: var(--av-ink-2);
+}
+.vn-menu .vn-preset-embed .bes .bm-check input {
+  accent-color: var(--av-ctl);
+}
+.vn-menu .vn-preset-embed .bes :is(.bm-hint, .bes-note) {
+  font-family: var(--av-sans);
+  font-size: 12px;
+  color: var(--av-dim);
+}
+.vn-menu .vn-preset-embed .bes :is(.bm-note, .bm-marker-note) {
+  padding: 8px 11px;
+  border: 0;
+  border-radius: var(--av-r-btn);
+  background: var(--av-paper-2);
+  font: 12.5px/1.65 var(--av-sans);
+  color: var(--av-ink-2);
+}
+.vn-menu .vn-preset-embed .bes-content {
+  min-height: 220px;
+  gap: 8px;
+}
+.vn-menu .vn-preset-embed .bes-content .bm-pane-head {
+  justify-content: flex-end;
+}
+.vn-menu .vn-preset-embed .bes-content .bm-pane :is(.ct-input, .bm-textarea, .bm-preview) {
+  min-height: 160px;
+  padding: 9px 12px;
+  border: 1px solid var(--av-hair);
+  border-radius: var(--av-r-btn);
+  background: var(--av-paper);
+  color: var(--av-ink);
+  font: 13px/1.7 var(--av-sans);
+}
+.vn-menu .vn-preset-embed .bes-content .bm-pane .bm-preview {
+  background: var(--av-paper-2);
+  color: var(--av-ink-2);
+}
+.vn-menu .vn-preset-embed .bes-foot {
+  min-height: 40px;
+  padding: 8px 0 0;
+  border-top: 1px solid var(--av-hair);
+}
+.vn-menu .vn-preset-embed .bes-id {
+  max-width: 160px;
+  font: 13px/1 var(--av-mono);
+  color: var(--av-dim);
+}
+.vn-menu .vn-preset-embed .bes-foot .btn.small {
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--av-hair);
+  border-radius: var(--av-r-btn);
+  background: var(--av-paper);
+  color: var(--av-bad-ink);
+  font: 500 12px/1 var(--av-sans);
+  letter-spacing: 0.06em;
+}
+.vn-menu .vn-preset-embed .bes-foot .btn.small.armed {
+  background: var(--av-bad);
+  border-color: var(--av-bad);
+  color: #fff;
+}
+/* 插件块:先说一句,旁边「去插件页」(10-25 晚用户定的原话) */
+.vn-menu .vn-preset-embed .bes-plugin-note {
+  padding: 8px 11px;
+  border-radius: var(--av-r-btn);
+  background: var(--av-paper-2);
+  font: 12.5px/1.65 var(--av-sans);
+  color: var(--av-ink-2);
+}
+.vn-menu .vn-preset-embed .bes-empty {
+  align-items: center;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--av-dim);
+}
+
+/* ---- 底下:上下文预算(BudgetBar 排成设计稿那一条:标题 · 输入 · 三段图例 …… 合计 · 截断 · 更多,下面是轨道) ---- */
+.vn-menu .vn-preset-embed .budget-bar {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 8px;
+  margin-top: 12px;
+  padding: 9px 14px 8px;
+  border: 0;
+  border-radius: var(--av-r-bar);
+  background: var(--av-paper-2);
+  box-shadow: inset 0 0 0 1px var(--av-hair);
+}
+.vn-menu .vn-preset-embed .budget-bar :is(.budget-head, .budget-legend, .budget-legend-rows, .budget-sums) {
+  display: contents;
+}
+.vn-menu .vn-preset-embed .budget-label {
+  order: 1;
+  font: 700 13px/1 var(--av-serif);
+  letter-spacing: 0.16em;
+  color: var(--av-ink);
+  text-transform: none;
+}
+.vn-menu .vn-preset-embed .budget-input {
+  order: 2;
+  width: 92px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--av-hair);
+  border-radius: var(--av-r-btn);
+  background: var(--av-paper);
+  color: var(--av-ink);
+  font: 13px/30px var(--av-sans);
+  text-align: right;
+  margin-left: 0;
+}
+.vn-menu .vn-preset-embed .budget-input:focus {
+  border-color: var(--av-ctl);
+  outline: none;
+}
+.vn-menu .vn-preset-embed .budget-legend-row {
+  order: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
+  font: 12px/1.6 var(--av-sans);
+  color: var(--av-ink-2);
+  white-space: nowrap;
+}
+.vn-menu .vn-preset-embed .budget-legend-row:first-child {
+  margin-left: 10px;
+}
+.vn-menu .vn-preset-embed .budget-legend-tokens {
+  min-width: 0;
+  text-align: left;
+  font: 500 12.5px/1 var(--av-latin);
+  color: var(--av-ink-2);
+}
+.vn-menu .vn-preset-embed .budget-swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+}
+.vn-menu .vn-preset-embed :is(.budget-swatch, .budget-seg).preset {
+  background: var(--av-ctl);
+}
+.vn-menu .vn-preset-embed :is(.budget-swatch, .budget-seg).card {
+  background: color-mix(in srgb, var(--av-warn) 70%, #fbfaf8);
+}
+.vn-menu .vn-preset-embed :is(.budget-swatch, .budget-seg).history {
+  background: var(--av-faint);
+}
+.vn-menu .vn-preset-embed .budget-sum {
+  order: 5;
+  margin-left: auto;
+  font: 600 13px/1 var(--av-latin);
+  color: var(--av-ink);
+}
+.vn-menu .vn-preset-embed .budget-sum.danger {
+  color: var(--av-bad-ink);
+}
+.vn-menu .vn-preset-embed .budget-dropped {
+  order: 6;
+  font: 12px/1.6 var(--av-sans);
+  color: var(--av-dim);
+}
+.vn-menu .vn-preset-embed .budget-more {
+  order: 7;
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: var(--av-r-btn);
+  background: transparent;
+  font: 500 13px/1 var(--av-sans);
+  letter-spacing: 0.06em;
+  color: var(--av-dim);
+}
+.vn-menu .vn-preset-embed .budget-more:hover {
+  background: var(--av-hair-2);
+  color: var(--av-ink);
+}
+.vn-menu .vn-preset-embed .budget-track {
+  order: 8;
+  flex: 1 0 100%;
+  position: relative;
+  height: 26px;
+  margin: 6px 0 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.vn-menu .vn-preset-embed .budget-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 4px;
+  bottom: auto;
+  height: 8px;
+  display: flex;
+  border: 0;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--av-hair-2);
+}
+.vn-menu .vn-preset-embed .budget-seg {
+  height: 100%;
+  transition: width 0.3s var(--av-ease);
+}
+.vn-menu .vn-preset-embed .budget-tick {
+  top: 1px;
+  bottom: auto;
+  width: 2px;
+  height: 14px;
+  margin-left: -1px;
+  transform: none;
+  border-radius: 1px;
+  background: var(--av-ink);
+}
+.vn-menu .vn-preset-embed .budget-handle {
+  top: 0;
+  width: 14px;
+  height: 14px;
+  margin: 1px 0 0 -7px;
+  border: 0;
+  border-radius: 3px;
+  transform: rotate(45deg);
+  background: var(--av-paper);
+  box-shadow: 0 0 0 1.5px var(--av-ink), 0 1px 4px rgba(20, 20, 40, 0.25);
+}
+.vn-menu .vn-preset-embed .budget-slider {
+  top: -6px;
+  bottom: auto;
+  height: 28px;
+}
+.vn-menu .vn-preset-embed :is(.budget-scale-min, .budget-scale-max) {
+  top: 13px;
+  margin-top: 0;
+  font: 500 13px/1 var(--av-latin);
+  color: var(--av-dim);
+}
+.vn-menu .vn-preset-embed .budget-bar.off .budget-fill {
+  opacity: 0.7;
+}
+.vn-menu .vn-preset-embed .budget-notice {
+  order: 9;
+  flex: 1 0 100%;
+  font-size: 12px;
+  color: var(--av-bad-ink);
+}
+.vn-menu .vn-preset-embed .budget-detail {
+  order: 10;
+  flex: 1 0 100%;
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px dotted var(--av-faint);
+  font-size: 12px;
+  color: var(--av-ink-2);
+}
+.vn-menu .vn-preset-embed .budget-detail :is(.budget-detail-tokens, .budget-range-value) {
+  font-family: var(--av-latin);
+  color: var(--av-ink);
+}
+
+/* ══════════ 手机(和卡编辑器同一档 < 900px):一栏 ══════════ */
+@media (max-width: 899px) {
+  /* 角色:没有目录;右栏收成最上面一行「资料 · 绑定」,下面是字段;整块一起滚 */
+  .vn-menu .vn-card-embed {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .vn-menu .vn-card-embed > .st-body {
+    display: flex;
+    flex-direction: column;
+    border-top: 0;
+  }
+  .vn-menu .vn-card-embed .pf-toc {
+    display: none;
+  }
+  .vn-menu .vn-card-embed .st-main.pf-main {
+    overflow: visible;
+    padding: 10px 0 18px;
+  }
+  .vn-menu .vn-card-embed .pf-sec-head {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+  .vn-menu .vn-card-embed .pf-sec {
+    scroll-margin-top: 8px;
+  }
+  .pf-meta-grid {
+    grid-template-columns: 1fr;
+  }
+  .pf-her {
+    order: -1;
+    flex: none;
+    margin-top: 10px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--av-r-bar);
+    background: var(--av-paper);
+    box-shadow: inset 0 0 0 1px var(--av-hair);
+    overflow: visible;
+  }
+  .vn-menu.av-night .pf-her {
+    background: var(--av-paper-2);
+  }
+  .pf-her-head {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 2px 12px;
+    width: 100%;
+    min-height: 60px;
+    padding: 8px 14px 8px 10px;
+    border: 0;
+    background: none;
+    color: var(--av-ink);
+    text-align: left;
+    cursor: pointer;
+  }
+  .pf-her-hava {
+    grid-row: 1 / span 2;
+    width: 40px;
+    height: 40px;
+    box-shadow: 0 0 0 1px var(--av-hair);
+  }
+  .pf-her-ht {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+    font: 700 17px/1.3 var(--av-serif);
+    letter-spacing: 0.14em;
+  }
+  .pf-her-ht em {
+    font: 500 12px/1 var(--av-sans);
+    font-style: normal;
+    letter-spacing: 0.04em;
+    color: var(--av-ink-2);
+    white-space: nowrap;
+  }
+  .pf-her-hsum {
+    grid-column: 2;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: 12px;
+    color: var(--av-ink-2);
+  }
+  .pf-her-htg {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+    font-size: 12.5px;
+    color: var(--av-ink-2);
+  }
+  .pf-her.open .pf-her-hsum {
+    display: none;
+  }
+  .pf-her-body {
+    display: none;
+    padding: 12px 14px 14px;
+    border-top: 1px solid var(--av-hair);
+  }
+  .pf-her.open .pf-her-body {
+    display: block;
+    animation: av-fade 0.18s var(--av-ease) backwards;
+  }
+  .pf-her-intro {
+    -webkit-line-clamp: 6;
+  }
+  .pf-her-faces {
+    grid-template-columns: repeat(auto-fill, 40px);
+    gap: 4px;
+  }
+  .pf-her-face {
+    width: 40px;
+    height: 40px;
+  }
+  .pf-her-face .st-face.pf-her-fimg {
+    width: 36px;
+    height: 36px;
+  }
+  .pf-her-bind {
+    min-height: 48px;
+  }
+  .pf-her-sp {
+    display: none;
+  }
+  .pf-her-foot {
+    margin-top: 14px;
+  }
+  .pf-her-foot .st-flex {
+    display: none;
+  }
+  .vn-menu .pf-her-foot :is(.st-btn.small, .exp-trigger) {
+    height: 36px;
+    padding: 0 12px;
+  }
+
+  /* 预设:一栏只放块列表(整页滚);点一块从下面升起「改这一块」 */
+  .vn-menu .vn-preset-embed {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .vn-menu .vn-preset-embed .pv-wrap.pv-menu {
+    flex: none;
+    margin-top: 8px;
+    padding: 0 0 18px;
+    border-top: 0;
+  }
+  .vn-menu .vn-preset-embed .pv-bar-menu {
+    gap: 8px;
+  }
+  .vn-menu .vn-preset-embed .pv-bar-menu > .st-flex {
+    display: none;
+  }
+  .vn-menu .vn-preset-embed .st-select.pv-preset {
+    flex: 1 1 100%;
+    width: auto;
+    height: 40px;
+  }
+  .vn-menu .vn-preset-embed .pv-bar-menu :is(.st-btn, .st-iconbtn) {
+    height: 40px;
+    min-width: 40px;
+  }
+  .vn-menu .vn-preset-embed .pv-bind {
+    flex: 1 1 100%;
+    min-height: 40px;
+  }
+  .vn-menu .vn-preset-embed .pv-group-field {
+    display: flex;
+    flex: 1 1 100%;
+    align-items: center;
+    gap: 8px;
+  }
+  .vn-menu .vn-preset-embed .st-select.pv-group {
+    flex: 1;
+    width: auto;
+    min-width: 0;
+    height: 40px;
+  }
+  .vn-menu .vn-preset-embed .pv-menu .pv-cols {
+    display: block;
+  }
+  .vn-menu .vn-preset-embed .pv-menu .st-main.pf-main.pv-main {
+    overflow: visible;
+  }
+  .vn-menu .vn-preset-embed .pp-list .panel-body {
+    max-height: none;
+    overflow: visible;
+  }
+  .vn-menu .vn-preset-embed .pp-list .block-header {
+    padding-left: 42px;
+  }
+  .vn-menu .vn-preset-embed .pp-list .block-row .block-head {
+    height: 46px;
+    gap: 3px;
+  }
+  .vn-menu .vn-preset-embed .pp-list .block-row .block-grip {
+    width: 40px;
+    height: 40px;
+  }
+  .vn-menu .vn-preset-embed .pp-list .block-head .icon-btn.tiny {
+    width: 40px;
+    height: 40px;
+    opacity: 1;
+  }
+  .vn-menu .vn-preset-embed .pp-list .block-head .block-toggle {
+    margin: 0 5px;
+  }
+  .vn-menu .vn-preset-embed .pp-list .block-tokens {
+    width: 30px;
+  }
+  .vn-menu .vn-preset-embed .budget-legend-row:first-child {
+    margin-left: 0;
+  }
+  .vn-menu .vn-preset-embed .budget-label {
+    flex: 1 0 auto;
+  }
+  .vn-menu .vn-preset-embed .budget-legend-row {
+    order: 4;
+    margin: 6px 12px 0 0;
+  }
+  /* 「改这一块」:没选时藏着;选了从下面升起,盖住下半屏,× 收起 */
+  .vn-menu .vn-preset-embed .pv-menu .pv-side {
+    display: none;
+  }
+  .vn-menu .vn-preset-embed .pv-menu .pv-side.is-picked {
+    position: fixed;
+    z-index: 30;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    max-height: 82%;
+    height: 82%;
+    padding: 14px 18px 22px;
+    border: 0;
+    border-radius: 14px 14px 0 0;
+    background: var(--av-paper);
+    box-shadow: 0 -10px 40px rgba(20, 20, 40, 0.28), 0 0 0 1px var(--av-hair);
+    animation: av-fade 0.18s var(--av-ease) backwards;
+  }
+  .vn-menu.av-night .vn-preset-embed .pv-menu .pv-side.is-picked {
+    background: var(--av-paper-2);
+  }
+  .vn-menu .vn-preset-embed .pv-side.is-picked .pv-sheet-close {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    z-index: 1;
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    border: 0;
+    border-radius: var(--av-r-btn);
+    background: transparent;
+    color: var(--av-ink-2);
+  }
+  .vn-menu .vn-preset-embed .pv-side.is-picked .bes-head {
+    padding-right: 44px;
+  }
+  .vn-menu .vn-preset-embed .pv-side.is-picked .bes-body {
+    overflow-y: auto;
+  }
+  .vn-menu .vn-preset-embed .pv-side.is-picked .bes .bm-field .text-input:not(.bm-num) {
+    height: 40px;
+    font-size: 16px;
+  }
+}

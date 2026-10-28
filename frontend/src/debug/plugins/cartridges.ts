@@ -157,6 +157,8 @@ export interface CartridgePanelProps {
   card: { id: string; name: string } | null;
   /** 正在看的那张卡的主声音;没有是 null */
   mainVoice: VoiceProfile | null;
+  /** 画在游戏菜单里的插件页(纸面皮)里;调试台、卡编辑器里是 false */
+  game?: boolean;
 }
 
 /** 插件页里卡带的那一页 */
@@ -191,7 +193,7 @@ export interface IllustrationView {
   src: string;
   /** 横向焦点(0–100),竖屏时裁哪里 */
   focus: number;
-  /** above = 放在对话框上面那一块里(整张、居中,不被对话框挡住);不给 = 铺满屏幕(整张,空处垫模糊) */
+  /** above = 对话框上方完整居中显示;screen 或不给 = 等比填满屏幕,比例不同时裁切边缘 */
   place?: 'screen' | 'above';
 }
 
@@ -209,6 +211,8 @@ export interface VnIllustrationContext {
   streaming: boolean;
   /** 打开游戏菜单的「设置」,停在卡带那一页 */
   openSettings: () => void;
+  /** 弹出的小面板用的纸卡皮(跟设置里的主题:白纸 / 深色纸 / 玻璃);不给就用卡带自己的深色玻璃 */
+  paperClass?: string;
 }
 
 /** 插图卡带给视觉小说的几样;没装卡带时整个是 null */
@@ -226,6 +230,40 @@ export interface VnIllustrations {
   onReplyDone: (entry: ChatEntry, lines: readonly VNLine[], place: VnIllustrationContext['place']) => void;
   /** 卡编辑器素材页的「AI 生成」那一栏;不给就没有这一栏 */
   studio?: StudioIllustrations;
+  /** 局内菜单的「相册」页(按存档分组的画过的图);不给就没有这一项 */
+  album?: MenuAlbumIllustrations;
+}
+
+/** 局内菜单「相册」页拿到的东西(DebugApp 给) */
+export interface MenuAlbumContext {
+  cardId: string;
+  cardName: string;
+  /** 这张卡绑的 AI 生成 CG 包里的构图和差分(同 StudioIllustrationContext.kept);还没读到是 null */
+  kept: readonly SceneAsset[] | null;
+  /** 这张卡的存档(对话),相册按它分组、用它的名字 */
+  saves: readonly { id: string; name: string }[];
+  /** 正在玩的存档 */
+  currentChatId: string | null;
+  /** 当前对话里第 entryId 条回复现在显示的是第几个分支;这条回复不在当前对话里是 null */
+  swipeOf: (entryId: string) => number | null;
+  /** 回到当前对话 entryId 那条回复的第 line 句(从 0 数)并关掉菜单(PageContext.jumpTo) */
+  jumpTo: (entryId: string, line: number) => void;
+  /** 读另一个存档并关掉菜单(存档页的「读档」),停在那个存档最新一句 */
+  loadSave: (chatId: string) => void;
+  /**
+   * 读另一个存档并关掉菜单,读好了落到某一句(相册里画在别的存档里的图「跳到这里」)。
+   * 读完内核拿刚读到的对话问 land:返回那一句就跳过去;返回 note 就停在最新一句,用 note 出一张提示。
+   * 读失败(内核自己提示)、读的中途又读了别的档,都不跳、也不问 land
+   */
+  jumpToSave: (chatId: string, land: (swipeOf: (entryId: string) => number | null) => SaveLanding) => void;
+}
+
+/** 跨存档跳转读完档以后落在哪:entryId 那条回复的第 line 句(从 0 数),或者停在最新一句并提示 note */
+export type SaveLanding = { entryId: string; line: number } | { note: string };
+
+/** 局内菜单的「相册」页(生图卡带给):整个页面的内容,页头、返回键、换页是内核的 */
+export interface MenuAlbumIllustrations {
+  render: (ctx: MenuAlbumContext) => ReactNode;
 }
 
 /** 卡编辑器「AI 生成」那一栏拿到的东西(DebugApp 给) */

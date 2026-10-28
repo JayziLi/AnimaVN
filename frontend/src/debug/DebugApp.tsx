@@ -9,6 +9,7 @@ import { ExportBundleDialog } from './components/export/ExportBundleDialog';
 import { CardStudio } from './studio/CardStudio';
 import { DropLayer } from './importer/DropLayer';
 import { ImportConfirm } from './importer/ImportConfirm';
+import { ImportDoneCard } from './importer/ImportDone';
 import { ImportProgress } from './importer/ImportProgress';
 import { libraryRouteAfterImport, noticeOf, slotAfterImport } from './importer/importModel';
 import { useImporter, type ImportDone } from './importer/useImporter';
@@ -19,6 +20,8 @@ import { SpriteSlot } from './studio/slots/SpriteSlot';
 import type { ImportNotice, PackSync, SlotKey, StudioRoute } from './studio/types';
 import { SlotPending } from './studio/ui';
 import { ProfileTab } from './studio/profile/ProfileTab';
+// 菜单「角色」「预设」两页的纸面(只在 .vn-menu 里生效)
+import './vn/vnMenuCard.css';
 import { PresetView } from './studio/profile/PresetView';
 import { VoiceSlot } from './studio/slots/VoiceSlot';
 import { CgSlot } from './studio/slots/CgSlot';
@@ -55,16 +58,19 @@ import { Frozen } from './components/Frozen';
 import { PromptInspector } from './components/PromptInspector';
 import { assemble, type AssemblyResult, type BudgetReport, type ChatTurn } from './lib/assembler';
 import {
+  cardFaceUrl,
   debugApi,
   type ChatPayload,
   type ChatSummary,
   type ClassifyKind,
   type DebugPersona,
+  type ImportCreated,
   type ImportUndoPreview,
   type JevDefaults,
   type JevKeyStatus,
   type StoredCard,
   type StoredPreset,
+  type ThinkingLevel,
 } from './lib/api';
 import {
   addTruncatedSwipe,
@@ -217,8 +223,15 @@ import {
 import { bgmPlayer } from './vn/bgm';
 import { forgetPickDetail } from './vn/pickDetail';
 import { VNSaves } from './vn/VNSaves';
-import { VNScreen } from './vn/VNScreen';
-import { stripTags, vnTagKinds } from './vn/tags';
+import type { ModelQuick } from './vn/ModelWindow';
+import { VNScreen, type PendingJump } from './vn/VNScreen';
+import { ConfirmHost } from './vn/ui/ConfirmHost';
+import { usePaperTheme } from './vn/usePaperTheme';
+import { ConfirmProvider, createConfirmer, type ConfirmRequest } from './vn/ui/confirm';
+import { noticeToToast, routeNotice, saveReceipt } from './vn/ui/notice';
+import { useToaster } from './vn/ui/useToaster';
+import { vnTagKinds } from './vn/tags';
+import { VNHistory } from './vn/history/VNHistory';
 import { newBeatCache, parseBeats } from './core/beats';
 import { buildTimeline, emotionAtStart, type TimelineCtx } from './core/timeline';
 import { emotionCandidates, emotionListRef } from './plugins/emotionMatch';
@@ -506,6 +519,14 @@ export default function DebugApp() {
   const [studioPlugin, setStudioPlugin] = useState<PluginFocus | null>(null);
   // 素材管理页(全屏页,library/):开在哪个页签、选中哪个包;null = 没开。关了再开回到上次的地方
   const [library, setLibrary] = useState<LibraryRoute | null>(null);
+  // 游戏里导完了:「导入完成」纸卡(importer/ImportDone)和选角色里刚导进来的那张(排第一、选中、带「刚导入」)
+  const [importDone, setImportDone] = useState<{
+    cardId: string;
+    cardName: string;
+    notice: ImportNotice;
+    created?: ImportCreated;
+  } | null>(null);
+  const [freshCard, setFreshCard] = useState<string | null>(null);
   const lastLibrary = useRef<LibraryRoute>({ tab: 'sprite', id: null });
   // 游戏菜单的「素材」页(同一个 AssetLibrary 嵌在菜单里):开在哪个页签、选中哪个包,和全屏那份各记各的
   const [menuLibrary, setMenuLibrary] = useState<LibraryRoute>({ tab: 'sprite', id: null });
@@ -559,11 +580,50 @@ export default function DebugApp() {
   const cardSaveTimer = useRef<number | undefined>(undefined);
   const savedFlagTimer = useRef<number | undefined>(undefined);
 
-  const notify = useCallback((kind: 'ok' | 'error', message: string) => {
-    window.clearTimeout(toastTimer.current);
-    setToast({ kind, message });
-    toastTimer.current = window.setTimeout(() => setToast(null), 4000);
-  }, []);
+  // 游戏开着时提示由游戏画成纸卡(VNScreen 里的 ToastStack),关着照旧画调试台自己的条
+  const toaster = useToaster();
+  const vnOpenRef = useRef(vnOpen);
+  vnOpenRef.current = vnOpen;
+  const pushToast = toaster.push;
+  const notify = useCallback(
+    (kind: 'ok' | 'error', message: string, extra?: { thumb?: string | null }) => {
+      if (routeNotice(vnOpenRef.current) === 'game') {
+        const t = noticeToToast(kind, message);
+        // 成功的回执可以带一张小图(存档:这一幕的场景)
+        pushToast(extra?.thumb ? { ...t, thumb: extra.thumb } : t);
+        return;
+      }
+      window.clearTimeout(toastTimer.current);
+      setToast({ kind, message });
+      toastTimer.current = window.setTimeout(() => setToast(null), 4000);
+    },
+    [pushToast],
+  );
+  // 游戏关了:没收完的纸卡不留到下次打开
+  const clearToasts = toaster.clear;
+  useEffect(() => {
+    if (!vnOpen) clearToasts();
+  }, [vnOpen, clearToasts]);
+
+  // 确认框:游戏开着是纸卡(ConfirmHost 画在最外层的固定层里,从游戏、卡编辑器、块编辑弹窗弹出来都盖得住),
+  // 没开照旧 window.confirm。各处 `await confirm({...})`,拿到 true 才往下做
+  const [confirmReq, setConfirmReq] = useState<ConfirmRequest | null>(null);
+  // 纸跟设置 · 外观 · 主题(白 / 黑 / 玻璃)
+  const paperTheme = usePaperTheme();
+  const [confirmer] = useState(() =>
+    createConfirmer({
+      gameOpen: () => vnOpenRef.current,
+      system: (message) => window.confirm(message),
+      show: setConfirmReq,
+    }),
+  );
+  // 问到一半游戏关了:当作「留着」
+  useEffect(() => {
+    if (!vnOpen) confirmer.settle('keep');
+  }, [vnOpen, confirmer]);
+  const confirm = confirmer.ask;
+  // 确认框等着的时候,别的地方可能已经换了对象(换卡、换预设):问完先看看还是不是那一个
+  const live = useRef({ cardId: null as string | null, presetId: null as string | null });
 
   // 下面几个插件的全局配置都走 usePluginConfig:开机读一次,改的时候先改内存、停手半秒再写库。
   // 出错要弹提示,所以放在 notify 后面
@@ -1099,9 +1159,13 @@ export default function DebugApp() {
     [selectPreset, applyBoundPreset, notify, rememberLastChat],
   );
 
-  /** 另开一张新对话,旧的留在下拉里 —— 「清空对话」在持久化之后就是这个语义 */
+  /**
+   * 另开一张新对话,旧的留在下拉里 —— 「清空对话」在持久化之后就是这个语义。
+   * greetingAt:菜单「角色」页、卡编辑器资料页的「从这条开始新故事」——开场白本来就是全部开场合成一条消息的
+   * swipe(makeGreetingEntry),不给就还是停在第 0 条(主开场白),不影响别的调用方
+   */
   const newChat = useCallback(
-    async (context?: { cardId: string; card: TavernCard }) => {
+    async (context?: { cardId: string; card: TavernCard }, greetingAt?: number) => {
       // context 让 selectCard 在状态还没提交时也能带着新卡直接开聊
       const c = context?.card ?? card;
       const cid = context?.cardId ?? cardId;
@@ -1134,7 +1198,9 @@ export default function DebugApp() {
       // 张卡打开的就是一片空白。两个写的目标都是 created.id / cid,跟「现在在看
       // 哪张卡」无关,晚到也不会串到别人身上。
       const greeting = makeGreetingEntry(c);
-      const seeded = greeting ? [greeting] : [];
+      const seeded = greeting
+        ? [greetingAt ? { ...greeting, swipeIndex: Math.min(Math.max(greetingAt, 0), greeting.swipes.length - 1) } : greeting]
+        : [];
       // persist effect 在「换对话」边沿只认账不回写,所以开场白得当场写
       seeded.forEach((entry, i) => {
         void debugApi.putChatMessage(created.id, toStored(entry, i)).catch((e: unknown) =>
@@ -1254,14 +1320,15 @@ export default function DebugApp() {
    * 新分出来的那个对话就是存档,以后从存档页读回来
    */
   const saveBranch = useCallback(
-    async (messageId: string | null) => {
+    async (messageId: string | null, scene?: { label: string | null; thumb: string | null }) => {
       if (!chatId || !messageId || sending || chatOp) return;
       setChatOp('branch');
       try {
         const created = await debugApi.branchChat(chatId, messageId);
         setChats(await debugApi.listChats(cardId));
         refreshTree(cardId);
-        notify('ok', `已存档:「${created.name}」`);
+        // 回执照设计稿:「已存档 · 夜路 · 33 条」,左边一张这一幕的小图(没有背景就只写条数)
+        notify('ok', saveReceipt(scene?.label ?? null, created.message_count), { thumb: scene?.thumb });
       } catch (e) {
         notify('error', `存档失败: ${e instanceof Error ? e.message : String(e)}`);
       } finally {
@@ -1544,7 +1611,13 @@ export default function DebugApp() {
   /** 卡面板的删除:先问一句 */
   const deleteCard = async () => {
     if (!cardId || !card) return;
-    if (!window.confirm(`确定删除角色卡「${card.name || '(无名)'}」? 这个操作不可撤销。`)) return;
+    const ok = await confirm({
+      title: '删掉这张角色卡?',
+      body: `「${card.name || '(无名)'}」删了找不回来`,
+      message: `确定删除角色卡「${card.name || '(无名)'}」? 这个操作不可撤销。`,
+    });
+    // 问的时候换了卡:删的是问的那张,但界面上已经不在它上面了,别悄悄删
+    if (!ok || live.current.cardId !== cardId) return;
     await removeCard();
   };
 
@@ -1796,7 +1869,18 @@ export default function DebugApp() {
    */
   const newPreset = async () => {
     // 建完会选中新预设 —— 等于切走,未保存的改动会丢,和下拉的守卫保持一致
-    if (presetDirty && !window.confirm('当前预设有未保存的改动,新建会切走并丢弃。继续?')) return;
+    if (
+      presetDirty &&
+      !(await confirm({
+        title: '放弃没保存的改动?',
+        body: '新建会切到新预设,这张预设改过的地方不保留',
+        en: 'Unsaved',
+        del: '放弃改动',
+        keep: '留着',
+        message: '当前预设有未保存的改动,新建会切走并丢弃。继续?',
+      }))
+    )
+      return;
     const name = window.prompt('新建预设,取个名字:', '未命名预设');
     if (name === null) return;
     if (!name.trim()) {
@@ -1857,7 +1941,12 @@ export default function DebugApp() {
 
   const deletePreset = async () => {
     if (!presetId || !preset) return;
-    if (!window.confirm(`确定删除预设「${preset.name}」? 这个操作不可撤销。`)) return;
+    const ok = await confirm({
+      title: '删掉这个预设?',
+      body: `「${preset.name}」删了找不回来`,
+      message: `确定删除预设「${preset.name}」? 这个操作不可撤销。`,
+    });
+    if (!ok || live.current.presetId !== presetId) return;
     setPresetBusy(true);
     try {
       await debugApi.deletePreset(presetId);
@@ -2143,6 +2232,38 @@ export default function DebugApp() {
   };
   // 流式与否是端点的属性,存在连接上;拿不到连接时默认试流式
   const useStreaming = activeConnection?.stream ?? true;
+
+  /** 改当前连接的一样设置(游戏左上「模型」小窗口的思考、流式):先乐观写本地,再存 */
+  const patchActiveConnection = (patch: { thinking?: ThinkingLevel | null; stream?: boolean }) => {
+    if (!connectionId) return;
+    setConnections((prev) => prev.map((c) => (c.id === connectionId ? { ...c, ...patch } : c)));
+    debugApi
+      .updateConnection(connectionId, patch)
+      .catch((e: unknown) => notify('error', `保存失败: ${e instanceof Error ? e.message : String(e)}`))
+      .finally(refreshConnections);
+  };
+  const API_TYPE_LABEL: Record<string, string> = { openai_compatible: 'OpenAI 兼容', anthropic: 'Anthropic', mock: 'Mock' };
+  const modelQuick: ModelQuick = {
+    connections: connections.map((c) => ({
+      id: c.id,
+      name: c.name,
+      type: API_TYPE_LABEL[c.api_type] ?? c.api_type,
+      model: c.model ?? '',
+      active: c.id === connectionId,
+    })),
+    models: cachedModels,
+    model: activeModel,
+    thinking: activeConnection?.thinking ?? null,
+    mock: activeConnection?.api_type === 'mock',
+    stream: useStreaming,
+    refreshing: modelsRefreshing,
+    refreshedAt: activeConnection?.cached_models_at ?? null,
+    onConnection: selectConnection,
+    onModel: pickModel,
+    onRefresh: () => void refreshModelList(),
+    onThinking: (thinking) => patchActiveConnection({ thinking }),
+    onStream: (stream) => patchActiveConnection({ stream }),
+  };
 
   /**
    * 滑动判定要读的状态。
@@ -2589,7 +2710,9 @@ export default function DebugApp() {
       content: m.content,
       ...(m.name ? { name: m.name } : {}),
     }));
-    const model = activeConnection?.model || undefined;
+    // 报错纸卡上「换模型」刚改的模型:连接的新值还没渲染进来,这一次直接用它
+    const model = modelOverride.current || activeConnection?.model || undefined;
+    modelOverride.current = null;
     const startedAt = performance.now();
     const patch = (fn: (e: ChatEntry) => ChatEntry) =>
       setEntries((prev) => prev.map((e) => (e.id === targetId ? fn(e) : e)));
@@ -2695,7 +2818,8 @@ export default function DebugApp() {
       if (!aborted) {
         const message = e instanceof Error ? e.message : String(e);
         setError(message);
-        notify('error', message);
+        // 游戏开着时报错画在游戏里(台词上方的纸卡,有重试 / 换模型),不再另弹提示条
+        if (routeNotice(vnOpenRef.current) === 'console') notify('error', message);
       }
       patch((entry) => ({ ...entry, streaming: false }));
       if (!body.trim()) rollback();
@@ -2883,6 +3007,15 @@ export default function DebugApp() {
    * 之间循环」(不调 API),而这颗按钮要的是真生成。新对话里最后一条正好是
    * 开场白,于是「新对话直接重新生成第一条」自然成立。
    */
+  const modelOverride = useRef<string | null>(null);
+  /** 报错纸卡上的「换模型」:改当前连接的模型(和菜单「模型」页、顶栏下拉是同一个值),马上重新生成 */
+  const retryWithModel = (model: string) => {
+    if (latest.current.sending) return;
+    pickModel(model);
+    modelOverride.current = model;
+    regenerateLast();
+  };
+
   const regenerateLast = () => {
     const now = latest.current;
     if (now.sending) return;
@@ -2980,10 +3113,22 @@ export default function DebugApp() {
   } as React.CSSProperties;
 
   /** 从库里挑一个预设换上。有没保存的改动时先问一句 —— 调试台左栏和视觉小说里共用 */
-  const choosePreset = (id: string) => {
+  const choosePreset = async (id: string) => {
     const row = savedPresets.find((p) => p.id === id);
     if (!row) return;
-    if (presetDirty && !window.confirm('当前预设有未保存的改动,切换会丢弃。继续?')) return;
+    if (presetDirty) {
+      const from = presetId;
+      const ok = await confirm({
+        title: '放弃没保存的改动?',
+        body: '切换预设,这张预设改过的地方不保留',
+        en: 'Unsaved',
+        del: '放弃改动',
+        keep: '留着',
+        message: '当前预设有未保存的改动,切换会丢弃。继续?',
+      });
+      // 问的时候已经换了预设(别处切走了):不再重复切
+      if (!ok || live.current.presetId !== from) return;
+    }
     selectPreset(row);
   };
 
@@ -2993,11 +3138,12 @@ export default function DebugApp() {
     onClose: () => void,
     /**
      * 只在游戏菜单里有:「游戏设置 · 音量」那个链接;「素材管理 · 立绘包」这类链接改成换到菜单的「素材」页
-     * (不给就打开全屏的素材管理页)
+     * (不给就打开全屏的素材管理页)。game:游戏菜单里那份换纸面三栏的皮(调试台、卡编辑器里的先不改)
      */
-    extra?: { gameSettings?: () => void; library?: (tab: LibraryKind) => void },
+    extra?: { gameSettings?: () => void; library?: (tab: LibraryKind) => void; game?: boolean },
   ) => (
     <PluginsDrawer
+      game={extra?.game}
       presetName={preset?.name ?? null}
       presetDirty={presetDirty}
       presetBusy={presetBusy}
@@ -3238,6 +3384,11 @@ export default function DebugApp() {
 
   // 立绘栏的预览背景从这张卡的背景里挑(只看没停用的,和游戏里一样)
   const studioBackgrounds = useMemo(() => backgroundsOf(cardSceneAssets), [cardSceneAssets]);
+  // 卡编辑器「声音」栏试听台左边的小舞台:当前服装的差分 + 立绘摆法 + 这张卡的背景
+  const voiceBenchStage = useMemo(
+    () => ({ sprites: cardSprites, layout: spriteLayout.layout, stage: spriteLayout.stage, backgrounds: studioBackgrounds }),
+    [cardSprites, spriteLayout.layout, spriteLayout.stage, studioBackgrounds],
+  );
   // 左栏的 CG 行只数导入的包,要看包的来源(导入 / AI 生成):CG 包列表平时只有插件页的 CG 页才读,打开卡编辑器时读一遍
   const studioOpen = studio !== null;
   useEffect(() => {
@@ -3249,6 +3400,11 @@ export default function DebugApp() {
   }, [studioOpen]);
   // 「AI 生成」那一栏(生图卡带经扩展点给,cartridges.ts 的 StudioIllustrations);没装就没有这一栏
   const aiStudio = illustrations.vn?.studio ?? null;
+  // 局内菜单的「相册」页(同一个卡带给);没装就没有
+  const menuAlbum = illustrations.vn?.album ?? null;
+  // 相册跳到另一个存档的某一句:读完那个档才写这里,VNScreen 按 nonce 消费一次(见 jumpToSave)
+  const [pendingJump, setPendingJump] = useState<PendingJump | null>(null);
+  const jumpNonce = useRef(0);
   // 那一栏的「已收藏」:这张卡绑的 AI 生成 CG 包(generated)里的构图和差分。绑定没读完、
   // 或者绑着的包还不在包列表里(刚收藏新建的,列表还没刷新)时看不出哪个是 AI 生成的,给 null
   const { ready: sceneReady, cgPacks, cgPackIds, assets: sceneAssets } = scenePlugin;
@@ -3304,6 +3460,25 @@ export default function DebugApp() {
     const list = await debugApi.listCards().catch(() => null);
     if (list) setSavedCards(list);
     const row = result.card_id ? list?.find((c) => c.id === result.card_id) : undefined;
+    // 游戏开着(封面、选角色、局内菜单;卡编辑器和全屏素材管理页没盖在上面):不开卡编辑器,
+    // 照设计稿 kit/transfer.js 整合版那样 —— 新卡放进选角色、选中,弹「导入完成」纸卡(她的卡面 + 导进来的几样 + 确定)
+    if (row && vnOpenRef.current && !studio && !library) {
+      const updated = plan.groups.some(
+        (g) => g.type === 'card' && g.duplicate_of?.id === row.id && body.decisions?.[g.key] === 'update',
+      );
+      if (row.id === cardId) {
+        // 挂到了当前这张卡上(或更新了它):重读它的立绘包、场景包、CG 包绑定 / 字段
+        if (updated) void selectCard(row);
+        else {
+          void t.spritePacks.reload();
+          void t.scenePlugin.reloadCard();
+        }
+      }
+      setMobileMenu(false);
+      setFreshCard(row.id);
+      setImportDone({ cardId: row.id, cardName: row.name, notice: noticeOf(result), created: result.created });
+      return;
+    }
     if (!row) {
       // 没有卡可开(导进来的只有包,没拖到卡上):打开素材管理页,选中第一个新建的包,顶上一行提示。
       // 新建的场景包要看有没有背景(只有曲子的开 BGM 页);卡编辑器开着就关掉,不然素材管理页在它底下看不见
@@ -3335,6 +3510,24 @@ export default function DebugApp() {
     spritePackName: (id) => spritePacks.packs.find((p) => p.id === id)?.name ?? null,
     onApplied: finishImport,
   });
+
+  /** 「导入完成」纸卡里认领一个没认出来的文件:换上新的提示,包列表刷新 */
+  const classifyInDone = async (path: string, kind: ClassifyKind) => {
+    const jobId = importDone?.notice.jobId;
+    if (!jobId) return;
+    const result = await importer.classify(jobId, path, kind);
+    if (!result) return;
+    setImportDone((d) => (d ? { ...d, notice: noticeOf(result) } : d));
+    const t = syncTargets.current;
+    void t.spritePacks.refreshPacks();
+    void t.scenePlugin.refreshPacks();
+    void t.scenePlugin.refreshCgPacks();
+    if (importDone?.cardId === cardId) {
+      void t.spritePacks.reload();
+      void t.scenePlugin.reloadCard();
+    }
+    if (result.card_id) forgetPickDetail(result.card_id);
+  };
 
   /** 提示条里认领一个没认出来的文件:换上新的提示,这张卡的包可能多了、变了 */
   const classifyUnknown = async (path: string, kind: ClassifyKind) => {
@@ -3373,6 +3566,8 @@ export default function DebugApp() {
       onRoute={onRoute}
       embedded={embedded}
       onClose={embedded ? undefined : () => setLibrary(null)}
+      // 「给她用」只在菜单「素材」页上有(10-26);调试台的素材管理页还是通用的「绑定到角色卡…」
+      activeCard={embedded && card && cardId ? { id: cardId, name: cardName } : null}
       cards={libraryCards}
       stage={spriteLayout.stage}
       sync={packSync}
@@ -3398,7 +3593,7 @@ export default function DebugApp() {
    * 资料页:左栏目录 + 角色卡的全部字段 + 右栏(绑定、Token 分布、上下文预算、删卡);目录点「玩家人设」换成人设页。
    * 原来的资料编辑抽屉拆掉了,卡面板的「编辑资料」和滑块图标、视觉小说菜单的「角色」页都开这里
    */
-  const renderStudioProfile = () =>
+  const renderStudioProfile = (menu?: { onOpenPreset: () => void }) =>
     card && cardId ? (
       <ProfileTab
         card={card}
@@ -3440,8 +3635,26 @@ export default function DebugApp() {
           notify,
         }}
         renderPreset={renderStudioPreset}
+        onStartGreeting={(i) => startGreeting(i)}
+        // 菜单「角色」页:右栏是她的资料(头像、简介、表情差分)+ 绑定,目录「预设」去菜单的预设页
+        menu={
+          menu && {
+            faceSrc: cardFaceUrl(cardId, 120, spritePacks.packId ?? undefined),
+            sprites: activeSprites,
+            onOpenPreset: menu.onOpenPreset,
+          }
+        }
       />
     ) : null;
+  /**
+   * 「从这条开始新故事」:新建一张对话,直接停在选中那条开场白上(卡编辑器的资料页、菜单「角色」页都走这个)。
+   * 卡编辑器开着就关掉、视觉小说没开就开起来 —— 和存档页「新的故事」一样不用问,原来在玩的那条还留在下拉里
+   */
+  const startGreeting = (index: number) => {
+    setStudio(null);
+    if (!vnOpen) toggleVn(true);
+    void newChat(undefined, index);
+  };
   /** 素材页的一栏(主区 + 右栏)。第 1 段的各个任务逐个换成真的编辑器,还没做的先占位 */
   const renderStudioSlot = (slot: SlotKey) => {
     if (slot === 'sprite' && card) {
@@ -3483,6 +3696,7 @@ export default function DebugApp() {
           cardName={cardName}
           spriteLabels={cardSprites.map((s) => s.label)}
           notify={notify}
+          stage={voiceBenchStage}
         />
       );
     }
@@ -3514,10 +3728,21 @@ export default function DebugApp() {
     preset,
     order,
     activeGroupIndex: groupIndex,
-    onPickGroup: (i) => {
+    onPickGroup: async (i) => {
       // 块的开关是按顺序组记的,换组就清掉 —— 有改过的先问一句,别悄悄没了
       const n = Object.keys(overrides).length;
-      if (n > 0 && !window.confirm(`换顺序组会清掉刚才改的 ${n} 个块的开关,继续?`)) return;
+      if (
+        n > 0 &&
+        !(await confirm({
+          title: '换顺序组?',
+          body: `刚才改的 ${n} 个块的开关会清掉`,
+          en: 'Unsaved',
+          del: '清掉并换组',
+          keep: '留着',
+          message: `换顺序组会清掉刚才改的 ${n} 个块的开关,继续?`,
+        }))
+      )
+        return;
       setGroupIndex(i);
       setOverrides({});
     },
@@ -3575,8 +3800,14 @@ export default function DebugApp() {
    * 资料页 · 预设:同一套状态摆成整页,右栏编辑选中的块。
    * 调试台的插件抽屉被卡编辑器盖着,点插件块时抽屉开在这一页上面
    */
-  const renderStudioPreset = () => (
-    <PresetView {...presetBase} pluginOf={pluginOfBlock} renderPlugin={renderPluginsDrawer} />
+  const renderStudioPreset = (menu?: { onOpenPlugin: (identifier: string) => void }) => (
+    <PresetView
+      {...presetBase}
+      menu={menu}
+      pluginOf={pluginOfBlock}
+      renderPlugin={renderPluginsDrawer}
+      budget={{ report: preview.budget, value: tokenBudget, onChange: changeBudget, range: rangeScale, onRange: changeRange }}
+    />
   );
 
   // 给 VN 的角色列表:每次渲染都 map 出一个新数组的话,流式生成时每来一个字选角页和等待页
@@ -3594,9 +3825,12 @@ export default function DebugApp() {
     [listedCards, cardAvatars],
   );
 
+  live.current = { cardId, presetId };
+
   return (
     // vn-open:视觉小说盖在最上面时,从它里面打开的弹窗(块编辑、高级定义、看提示词)得压过它
     // studio-open:卡编辑器开着时,从它里面打开的旧抽屉、弹窗也得压过它
+    <ConfirmProvider value={confirm}>
     <div className={`console${vnOpen ? ' vn-open' : ''}${studio ? ' studio-open' : ''}`}>
       {toast && <div className={`toast ${toast.kind}`}>{toast.message}</div>}
 
@@ -4058,6 +4292,7 @@ export default function DebugApp() {
           spriteLayout={spriteLayout.layout}
           tagTemplate={spriteEffective.tagTemplate}
           sceneAssets={activeSceneAssets}
+          scenePackName={scenePlugin.packs.find((p) => p.id === scenePlugin.packId)?.name ?? null}
           titleBgmId={scenePlugin.titleBgmId}
           onChangeTitleBgm={(id) => void scenePlugin.setTitleBgm(id)}
           bgTemplate={scenePlugin.effective.bg.tagTemplate}
@@ -4065,6 +4300,11 @@ export default function DebugApp() {
           cgTemplate={scenePlugin.effective.cg.tagTemplate}
           voiceConfig={voicePlugin.config}
           voiceCast={voicePlugin.cast}
+          voiceProfiles={voicePlugin.profiles}
+          // 游戏里语音面板「音色」就地换:主声音换成它(和抽屉里换音色一样写库),这张卡挂着的配角声音照旧
+          onPickVoice={(id) =>
+            void voicePlugin.bind({ main: id, extras: voicePlugin.binding.extras.filter((x) => x !== id) })
+          }
           sfxEnabled={splice.on}
           onChangeVoiceConfig={voicePlugin.changeConfig}
           showJa={langConfig.showJa}
@@ -4084,10 +4324,12 @@ export default function DebugApp() {
             return c ? chatLabel(c) : '';
           })()}
           chatUpdatedAt={chats.find((x) => x.id === chatId)?.updated_at ?? null}
-          cardTags={card?.tags?.map((t) => t.trim()).filter(Boolean) ?? []}
           loading={chatLoading}
+          pendingJump={pendingJump}
           assetsReady={spritePacks.ready && scenePlugin.ready && states.ready}
           modelLabel={activeModel}
+          modelQuick={modelQuick}
+          hasAlbum={Boolean(menuAlbum)}
           onSend={(text) => void send(text)}
           onInterject={(text, entryId, keep) => void interject(text, entryId, keep)}
           onBranch={(text, entryId, keep) => void branchFromHistory(text, entryId, keep)}
@@ -4097,6 +4339,9 @@ export default function DebugApp() {
           cards={vnCards}
           onWantAvatar={(id) => wantAvatars([id])}
           onImportCard={() => importer.pick()}
+          onExportCard={(id) => setExportBundleFor({ id, name: listedCards.find((c) => c.id === id)?.name ?? '' })}
+          freshCardId={freshCard}
+          onFreshSeen={() => setFreshCard(null)}
           currentCardId={cardId}
           onPickCard={(id, fresh) => {
             const row = savedCards.find((c) => c.id === id);
@@ -4106,50 +4351,74 @@ export default function DebugApp() {
           onSetManual={(id, line, pick) => patchEntry(id, (e) => setManual(e, line, pick))}
           illustrations={illustrations.vn}
           switches={switches}
+          toasts={toaster.toasts}
+          onRemoveToast={toaster.remove}
+          genFail={
+            error
+              ? {
+                  message: error,
+                  connection: activeConnection?.name ?? '',
+                  model: activeModel,
+                  models: cachedModels,
+                  onRetry: regenerateLast,
+                  onPickModel: retryWithModel,
+                }
+              : null
+          }
           renderPage={(page, ctx) => {
-            if (page === 'log') {
-              return (
-                <div className="vn-embed vn-log-embed">
-                  <ChatPanel
-                    variant="backlog"
-                    // 默认只给人看正文:标签摘掉、宏展开;「显示原文」= 库里存的原样(模型写的,不含 Jev 另存的标注)
-                    displayText={ctx.raw ? (raw) => raw : (_raw, shown) => stripTags(shown, vnKinds)}
-                    tagKinds={vnKinds}
-                    // 看正文时按画面上的句子列,要念的句子带重播 / 重新生成;看原文时照原样
-                    renderBody={ctx.raw ? undefined : ctx.lineView}
-                    hideReasoning={!ctx.showThinking}
-                    onJump={ctx.jumpTo}
-                    entries={entries}
-                    settings={chatSettings}
-                    macros={displayMacros}
-                    chatKey={chatId}
-                    charName={card?.name ?? ''}
-                    userName={userName}
-                    userAvatar={avatarOf(activePersona)}
-                    charAvatar={avatarUrl}
-                    sending={sending}
-                    error={error}
-                    preview={preview}
-                    ready={ready}
-                    loading={chatLoading}
-                    version={version}
-                    activeConnection={activeConnection}
-                    cardCount={listedCards.length}
-                    onPickCharacter={() => {}}
-                    onOpenConnections={() => {}}
-                    onSend={(text) => void send(text)}
-                    onInspect={setInspecting}
-                    onInspectSwipe={inspectSwipe}
-                    tainted={tainted}
-                    onStop={() => abortRef.current?.abort()}
-                    onEdit={editMessage}
-                    onDelete={deleteAt}
-                    onSwipe={swipe}
-                    onBranch={branchHere}
-                    onReset={() => void newChat()}
-                    onRegenerate={regenerateLast}
-                  />
+            if (page === 'album') {
+              // 相册是生图卡带画过的图(内核只给外壳);没装卡带时菜单里没有这一项
+              return menuAlbum && cardId ? (
+                <div className="vn-album-embed">
+                  {menuAlbum.render({
+                    cardId,
+                    cardName: card?.name ?? '',
+                    kept: studioKept,
+                    saves: chats.map((c) => ({ id: c.id, name: chatLabel(c) })),
+                    currentChatId: chatId,
+                    swipeOf: (entryId) => entries.find((e) => e.id === entryId)?.swipeIndex ?? null,
+                    jumpTo: ctx.jumpTo,
+                    loadSave: (id) => {
+                      ctx.enterGame();
+                      void loadChat(id);
+                    },
+                    // 读完再定位:loadChat 返回时条目、chatId 都已经换好;返回 null 是读失败(它自己提示过)
+                    // 或中途又读了别的档(那次接班),都不跳。落不落得上由卡带拿刚读到的条目判断
+                    jumpToSave: (id, land) => {
+                      ctx.enterGame();
+                      // loadChat 一进去就 ++chatSeq;回来时不是这个数说明之后又有人换过对话(读档 / 新故事),也不跳
+                      const seq = chatSeq.current + 1;
+                      void loadChat(id).then((got) => {
+                        if (!got || seq !== chatSeq.current) return;
+                        const at = land((entryId) => got.find((e) => e.id === entryId)?.swipeIndex ?? null);
+                        if ('note' in at) notify('error', at.note);
+                        else setPendingJump({ chatId: id, entryId: at.entryId, line: at.line, nonce: ++jumpNonce.current });
+                      });
+                    },
+                  })}
                 </div>
+              ) : null;
+            }
+            if (page === 'log') {
+              // 历史 = 一句一行的纸面列表(vn/history);「显示原文」时改原文走 editMessage,保存后从第一处改过的那句开始播
+              return (
+                <VNHistory
+                  entries={entries}
+                  chatKey={chatId}
+                  loading={chatLoading}
+                  raw={ctx.raw}
+                  data={ctx.log}
+                  tagKinds={vnKinds}
+                  macros={displayMacros}
+                  charName={card?.name ?? ''}
+                  userName={userName}
+                  charAvatar={avatarUrl}
+                  sending={sending}
+                  onJump={ctx.jumpTo}
+                  onEdit={editMessage}
+                  editFirst={ctx.editFirst}
+                  onEditDone={ctx.editDone}
+                />
               );
             }
             if (page === 'save') {
@@ -4170,13 +4439,14 @@ export default function DebugApp() {
                   macros={displayMacros}
                   busy={chatOp !== null || chatLoading}
                   canSave={Boolean(chatId) && !sending && entries.length > 0}
-                  onSaveHere={() => void saveBranch(ctx.currentMessageId)}
+                  loadOnly={ctx.loadOnly}
+                  onSaveHere={() => void saveBranch(ctx.currentMessageId, ctx.sceneNow)}
                   onLoad={(id) => {
-                    ctx.close();
+                    ctx.enterGame();
                     void loadChat(id);
                   }}
                   onNewStory={() => {
-                    ctx.close();
+                    ctx.enterGame();
                     void newChat();
                   }}
                   onRename={renameChat}
@@ -4185,36 +4455,11 @@ export default function DebugApp() {
               );
             }
             if (page === 'card') {
+              // 「角色」= 和卡编辑器「资料」页签同一份组件(ProfileTab):一边改另一边跟着变;
+              // 右栏绑定只剩人设、预设(ProfileSide 本来就没有素材绑定,10-25 定的)
               return (
                 <div className="vn-embed vn-card-embed">
-                  <CardPanel
-                    card={card}
-                    avatarUrl={avatarUrl}
-                    collapsed={false}
-                    saved={listedCards}
-                    selectedId={cardId}
-                    view={cardView}
-                    avatars={cardAvatars}
-                    onNeedAvatars={wantAvatars}
-                    saveState={cardSaveState}
-                    busy={cardBusy}
-                    onToggleCollapse={ctx.close}
-                    onToggleView={() => setCardView((v) => (v === 'list' ? 'editor' : 'list'))}
-                    onChange={changeCard}
-                    onSelectCard={(id) => {
-                      const row = savedCards.find((c) => c.id === id);
-                      if (row) void selectCard(row);
-                    }}
-                    onNew={newCard}
-                    onDuplicate={duplicateCard}
-                    onDelete={deleteCard}
-                    onImport={() => importer.pick()}
-                    onExport={() => void exportCard()}
-                    onExportBundle={cardId ? () => setExportBundleFor({ id: cardId, name: card?.name ?? '' }) : undefined}
-                    onOpenStudio={(tab) => openStudio({ tab, slot: 'sprite' })}
-                    onPickAvatar={() => pickAvatarFor({ kind: 'card' })}
-                    bindings={cardBindings}
-                  />
+                  {card && cardId ? <div className="st-body">{renderStudioProfile({ onOpenPreset: ctx.openPreset })}</div> : null}
                 </div>
               );
             }
@@ -4223,6 +4468,7 @@ export default function DebugApp() {
               return (
                 <div className="vn-embed vn-plugin-embed">
                   {renderPluginsDrawer(ctx.pluginFocus, ctx.close, {
+                    game: true,
                     gameSettings: ctx.openConfig,
                     library: (tab) => {
                       setMenuLibrary({ tab, id: null });
@@ -4237,22 +4483,10 @@ export default function DebugApp() {
               return <div className="vn-embed vn-library-embed">{renderAssetLibrary(menuLibrary, setMenuLibrary, true)}</div>;
             }
             if (page === 'preset') {
+              // 「预设」= 和卡编辑器资料页「预设」子页同一份组件(PresetView):块列表 + 右栏就地改 + 预算条
               return (
                 <div className="vn-embed vn-preset-embed">
-                  {renderPresetPanel({
-                    collapsed: false,
-                    onToggleCollapse: ctx.close,
-                    // 插件块的正文在插件页里改:换到菜单的插件页,滚到那个插件的模板
-                    onOpenPlugin: (identifier) => ctx.openPlugin(pluginOfBlock(identifier)),
-                  })}
-                  {/* 和调试台左栏一样:预算记在这个预设里 */}
-                  <BudgetBar
-                    report={preview.budget}
-                    value={tokenBudget}
-                    onChange={changeBudget}
-                    range={rangeScale}
-                    onRange={changeRange}
-                  />
+                  {renderStudioPreset({ onOpenPlugin: (identifier) => ctx.openPlugin(pluginOfBlock(identifier)) })}
                 </div>
               );
             }
@@ -4260,6 +4494,9 @@ export default function DebugApp() {
             return (
               <div className="vn-embed vn-model-embed">
                 <ConnectionsDrawer
+                  // 局内菜单里排成三栏(连接 + Jev / 表单 / 测试);调试台的 API 抽屉不传,还是单栏
+                  game
+                  setLeaveGuard={ctx.setLeaveGuard}
                   connections={connections}
                   notify={notify}
                   onClose={ctx.close}
@@ -4304,6 +4541,18 @@ export default function DebugApp() {
         onRefuse={(reason) => notify('error', reason)}
       />
       <ImportProgress phase={importer.phase} onCancel={importer.cancelUpload} />
+      {importDone && vnOpen && (
+        <ImportDoneCard
+          key={importDone.notice.jobId ?? importDone.cardId}
+          cardId={importDone.cardId}
+          cardName={importDone.cardName}
+          avatar={cardAvatars.get(importDone.cardId) ?? null}
+          notice={importDone.notice}
+          created={importDone.created}
+          onClassify={classifyInDone}
+          onClose={() => setImportDone(null)}
+        />
+      )}
       {exportBundleFor && (
         <ExportBundleDialog
           key={exportBundleFor.id}
@@ -4340,6 +4589,9 @@ export default function DebugApp() {
           onNotify={notify}
         />
       )}
+
+      <ConfirmHost req={confirmReq} theme={paperTheme} onSettle={confirmer.settle} />
     </div>
+    </ConfirmProvider>
   );
 }

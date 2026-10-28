@@ -11,7 +11,7 @@ import { describeRecords } from '../../../vn/dataTab';
 import { setTimelineEngine, useTimelineEngine } from '../../../vn/useTimelineEngine';
 import { errText } from '../../pluginRunner';
 import { SettingRow } from '../../settings/SettingRow';
-import { PageHead, Section } from '../frame';
+import { PageHead, PageShell, Panel, Section } from '../frame';
 
 const ENGINE_OPTIONS = [
   { value: 'records', label: '认词记录' },
@@ -37,7 +37,13 @@ function ModelStatus() {
   }, []);
   if (error) return <div className="dw-line dw-bad">查不到模型状态:{error}</div>;
   if (!status) return <div className="dw-line">检查中…</div>;
-  if (status.ready) return <div className="dw-line">已装好 · {status.model}</div>;
+  if (status.ready)
+    return (
+      <div className="dw-line">
+        <i className="dw-dot on" aria-hidden="true" />
+        已装好 · {status.model}
+      </div>
+    );
   return (
     <div className="dw-line">
       <span className="dw-bad">没装,对不上名字的词不会自动认</span>{' '}
@@ -79,21 +85,26 @@ export function EnginePage() {
       .finally(() => setSaving(false));
   };
   return (
-    <>
-      <PageHead title="表情认法" tip="engine" inUse={engine ? { on: true, text: ENGINE_TEXT[engine] } : null} tags={[]} />
-      <Section title="常用">
-        <SettingRow
-          label="表情认法"
-          control={{ kind: 'segmented', options: ENGINE_OPTIONS }}
-          value={engine ?? 'legacy'}
-          disabled={saving || engine === null}
-          onChange={pick}
-        />
-        <div className={`dw-line${error ? ' dw-bad' : ''}`}>{error ?? describeRecords(summary)}</div>
-      </Section>
-      <Section title="本地小模型" tip="adv_model">
-        <ModelStatus />
-      </Section>
-    </>
+    <PageShell
+      commonFirst
+      head={<PageHead title="表情认法" tip="engine" inUse={engine ? { on: true, text: ENGINE_TEXT[engine] } : null} tags={[]} />}
+      common={
+        <Section title="常用" en="Common">
+          <SettingRow
+            label="表情认法"
+            control={{ kind: 'segmented', options: ENGINE_OPTIONS }}
+            value={engine ?? 'legacy'}
+            disabled={saving || engine === null}
+            onChange={pick}
+          />
+          <div className={`dw-line dw-pad${error ? ' dw-bad' : ''}`}>{error ?? describeRecords(summary)}</div>
+        </Section>
+      }
+      preview={
+        <Panel title="本地小模型" en="Local model" tip="adv_model">
+          <ModelStatus />
+        </Panel>
+      }
+    />
   );
 }

@@ -67,7 +67,7 @@ export function BackgroundInspector(props: BackgroundInspectorProps) {
     tag.state === 'off'
       ? `「${tag.text}」停用了或还没传文件,游戏里切到这张背景时不换曲子。`
       : tag.state === 'foreign'
-        ? '这首在这张卡没绑的包里,游戏里切过来时不会换。改成上面列表里的一首,或者去「BGM」那一栏绑上它所在的包。'
+        ? '这首不在这张卡用的 BGM 里,游戏里切过来时不会换。改成上面列表里的一首,或者去「BGM」那一栏换成它所在的包。'
         : null;
 
   return (

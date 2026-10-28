@@ -1,0 +1,100 @@
+/* ══════════ 统一的实机预览舞台(Stage.tsx) ══════════
+   舞台本身的样子在 studio/preview/stagePreview.css(照游戏画面);那份用的是调试台的颜色变量(--text 这类),
+   而插件页、素材页的纸面皮会把这些变量换成纸色,所以舞台自己在这里把它们钉回「深色画面上的浅字」。 */
+
+.av-stage {
+  --text: #f4f4f8;
+  --text-body: #e6e6ec;
+  --text-dim: rgba(244, 244, 248, 0.72);
+  --text-faint: rgba(244, 244, 248, 0.5);
+  --border: rgba(255, 255, 255, 0.14);
+  --border-strong: rgba(255, 255, 255, 0.28);
+  border-radius: var(--av-r-panel, 8px);
+  background: #0b0b12;
+  /* 组件库 .av-stage:浮起一点 + 一圈细线 */
+  box-shadow:
+    0 12px 30px rgba(30, 24, 48, 0.16),
+    0 0 0 1px var(--av-hair, rgba(42, 42, 51, 0.14));
+}
+
+/* 立绘「头的高度」:一条虚线横过舞台,小字写在右边线上面 */
+.av-stage-guide {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 1px dashed rgba(255, 255, 255, 0.78);
+  pointer-events: none;
+}
+.av-stage-guide > span {
+  position: absolute;
+  right: 12px;
+  bottom: 5px;
+  color: #fff;
+  font: 500 12px/1 var(--av-sans, sans-serif);
+  letter-spacing: 0.04em;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+
+/* ── 舞台上的小牌子(10-27 照设计稿组件库 .av-stage-tag / .av-stage-chip 实画对齐):
+   暗玻璃小方块,26 高、圆角 6;左上「✦ 实机预览」(小星星是角色色),舞台窄也照样写字;右上一排同一种小块 ── */
+.av-stage .st-stage-pill,
+.av-stage .st-stage-chip {
+  height: 26px;
+  gap: 6px;
+  padding: 0 10px;
+  border-radius: 6px;
+  background: rgba(16, 17, 28, 0.55);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  color: #eceaf2;
+  font: 500 12px/1 var(--av-sans, sans-serif);
+  letter-spacing: 0.04em;
+}
+.av-stage .st-stage-pill.live {
+  left: 10px;
+  top: 10px;
+}
+.av-stage .st-stage-pill.live > svg {
+  display: none;
+}
+.av-stage .st-stage-pill.live::before {
+  content: '';
+  flex: none;
+  width: 10px;
+  height: 10px;
+  background: var(--av-acc, #eceaf2);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-10 -10 20 20'%3E%3Cpath d='M0-10C1.1-2.6 2.6-1.1 10 0 2.6 1.1 1.1 2.6 0 10-1.1 2.6-2.6 1.1-10 0-2.6-1.1-1.1-2.6 0-10Z'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-10 -10 20 20'%3E%3Cpath d='M0-10C1.1-2.6 2.6-1.1 10 0 2.6 1.1 1.1 2.6 0 10-1.1 2.6-2.6 1.1-10 0-2.6-1.1-1.1-2.6 0-10Z'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+}
+/* stagePreview.css 在舞台窄于 520 时把字藏了只留图标;设计稿 460 宽的预览照样写「✦ 实机预览」 */
+@container (max-width: 520px) {
+  .av-stage .st-stage-pill.live > span {
+    display: inline;
+  }
+  .av-stage .st-stage-pill.live {
+    padding: 0 10px;
+  }
+}
+.av-stage .st-stage-pill em {
+  font-style: normal;
+  font-weight: 600;
+  color: #fff;
+}
+.av-stage .st-stage-pill.playing {
+  background: rgba(251, 250, 248, 0.95);
+  color: #2a2a33;
+}
+.av-stage .st-stage-badges {
+  right: 10px;
+  top: 10px;
+}
+.av-stage .st-stage-chip:hover {
+  background: rgba(16, 17, 28, 0.7);
+}
+.av-stage .st-stage-chip > img {
+  height: 18px;
+  border-radius: 4px;
+}

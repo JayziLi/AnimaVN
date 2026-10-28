@@ -21,7 +21,7 @@ import { labelFromFile, uniqueLabel } from '../../lib/assetNames';
 import { DEFAULT_SPRITE_LAYOUT, facesByCanvas, type SpriteStage } from '../../plugins/spriteLayout';
 import { audioBus } from '../../vn/audioBus';
 import { greetingLine } from '../cardInfo';
-import { StagePreview } from '../preview/StagePreview';
+import { Stage } from '../../vn/ui/Stage';
 import type { Notify, PackSync } from '../types';
 import { Inspector } from '../ui';
 import { SpriteFaceGrid, type UploadTile } from './SpriteFaceGrid';
@@ -39,7 +39,7 @@ const scanTried = new Set<string>();
 
 export interface SpritePackEditorProps {
   packId: string;
-  /** 主区顶上那一行(卡编辑器:类型小牌子 + 包页签 + ⋯;素材管理:包名、用量、绑定) */
+  /** 主区顶上那一行(卡编辑器:类型小牌子 + 包下拉框 + ⋯;素材管理:包名、用量、在用的卡) */
   header: ReactNode;
   /** 所有角色共用的构图(useSpriteLayout 的 stage) */
   stage: SpriteStage;
@@ -195,6 +195,13 @@ export function SpritePackEditor({
     setPlayKey((k) => k + 1);
   };
 
+  /** 点一张差分:舞台换成这一张,它设了入场动效的话顺手放一次(没设就只是换一张;点一下也顺手解锁声音) */
+  const pick = (id: string) => {
+    audioBus.unlock();
+    setSelectedId(id);
+    setPlayKey((k) => k + 1);
+  };
+
   const reorder = (ids: string[]) => {
     const byId = new Map(latest.current.map((s) => [s.id, s]));
     const optimistic = ids.map((id) => byId.get(id)).filter((s): s is PackSprite => Boolean(s));
@@ -313,7 +320,7 @@ export function SpritePackEditor({
     <>
       <main className="st-main">
         {header}
-        <StagePreview
+        <Stage
           background={previewBackground}
           sprite={
             selected && src
@@ -347,7 +354,7 @@ export function SpritePackEditor({
             sprites={list}
             faces={faces}
             selectedId={selected?.id ?? null}
-            onSelect={setSelectedId}
+            onSelect={pick}
             onReorder={reorder}
             uploads={uploads}
             onAdd={() => addInput.current?.click()}

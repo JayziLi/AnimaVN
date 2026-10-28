@@ -14,7 +14,8 @@ import { sceneFileUrl, sceneImageUrl, sceneThumbUrl, type SceneAsset } from '../
 import { bgmPlayer, useBgm } from '../../vn/bgm';
 import { Icon } from '../icons';
 import { PlayButton, SoundBars } from '../PlayButton';
-import { StagePreview, type StagePreviewSprite } from '../preview/StagePreview';
+import type { StagePreviewSprite } from '../preview/StagePreview';
+import { Stage } from '../../vn/ui/Stage';
 import type { Notify, PackSync } from '../types';
 import { Btn, Inspector } from '../ui';
 import { BackgroundInspector } from './BackgroundInspector';
@@ -26,7 +27,7 @@ const stagePrefs = { sprite: true, phone: true };
 
 export interface BackgroundPackEditorProps {
   packId: string;
-  /** 主区顶上那一行(卡编辑器:类型小牌子 + 包页签 + ⋯;素材管理:包名、用量、绑定) */
+  /** 主区顶上那一行(卡编辑器:类型小牌子 + 包下拉框 + ⋯;素材管理:包名、用量、在用的卡) */
   header: ReactNode;
   /** 默认 BGM 能选的曲子(卡编辑器:这张卡 BGM 栏绑的全部曲子);游戏里切到背景时只会换成这里面的 */
   bgmChoices: readonly BgmChoice[];
@@ -95,13 +96,13 @@ export function BackgroundPackEditor({
   // 离开这一栏、换包时停掉,还原成之前在放的
   useEffect(() => () => bgmPlayer.stopPreview(), []);
 
-  // 这个包自己的曲子(BGM 栏没绑它时,默认 BGM 指着它们算「另一个包里的」,但名字、试听还是知道的)
+  // 这个包自己的曲子(BGM 栏没用它时,默认 BGM 指着它们算「另一个包里的」,但名字、试听还是知道的)
   const ownTracks = useMemo(() => (list ?? []).filter((a) => a.kind === 'bgm'), [list]);
   const tagOf = (a: SceneAsset) => {
     const t = bgmTag(a, bgmChoices);
-    // 指着这张卡没绑的曲子:是这个包自己的就写出曲名(游戏里还是不换)
+    // 指着这张卡没用的曲子:是这个包自己的就写出曲名(游戏里还是不换)
     const own = t.state === 'foreign' ? ownTracks.find((x) => x.id === a.bgm_id) : undefined;
-    return own ? { ...t, text: `${own.label}(没绑)` } : t;
+    return own ? { ...t, text: `${own.label}(没用)` } : t;
   };
 
   // ---- 上传 ----
@@ -158,7 +159,7 @@ export function BackgroundPackEditor({
         </div>
       </div>
     ) : (
-      <StagePreview
+      <Stage
         background={src ? { src, focus } : null}
         sprite={showSprite && sprite ? sprite : null}
         editable={phone && src ? 'focus' : null}
@@ -272,7 +273,7 @@ function StageBgm({
     tag.state === 'off'
       ? `「${tag.text}」停用了或没传文件,游戏里切到这张背景时不换曲子`
       : tag.state === 'foreign'
-        ? '设的曲子在这张卡没绑的包里,游戏里切到这张背景时不换曲子'
+        ? '设的曲子不在这张卡用的 BGM 里,游戏里切到这张背景时不换曲子'
         : undefined;
   return (
     <div className={`st-stage-bgm${url ? '' : ' idle'}`} title={why}>

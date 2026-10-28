@@ -1,0 +1,536 @@
+/* 游戏上的居中小窗口(历史 / 模型),照设计稿 kit/scene.css 的 .pw-*;游戏只压暗不糊 */
+.vn-pw-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  /* flex 不是 grid:grid 的行高跟着内容走,窗口的 max-height: 100% 量的是它自己那一行,连接一多就顶出屏幕;
+     flex 容器的高是这一层的高,max-height 才真的封顶(多出来的在 .vn-pw-body 里滚) */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.vn-pw-veil {
+  position: absolute;
+  inset: 0;
+  background: rgba(12, 12, 22, 0.32);
+  animation: vn-fade-in var(--av-t, 0.22s) ease both;
+}
+.vn-pw-win {
+  position: relative;
+  max-width: calc(100% - 48px);
+  max-height: calc(100% - 48px);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 24px 30px 14px 32px;
+  border: none;
+  border-radius: 8px;
+  box-shadow: 0 0 0 1px var(--av-hair), var(--av-shadow-float);
+  outline: none;
+  cursor: auto;
+  user-select: text;
+  -webkit-user-select: text;
+  animation: vn-pw-in var(--av-t, 0.22s) var(--av-ease) both;
+}
+.vn-pw-win.av-night {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1), 0 18px 48px rgba(0, 0, 0, 0.5);
+}
+.vn-pw-layer.leaving {
+  /* 整层还接住点击(组件里吞掉),只是窗口不再能点 */
+  cursor: default;
+}
+.vn-pw-layer.leaving .vn-pw-veil {
+  animation: vn-fade-out var(--av-t-out, 0.18s) ease both;
+}
+.vn-pw-layer.leaving .vn-pw-win {
+  animation: vn-pw-out var(--av-t-out, 0.18s) ease both;
+}
+@keyframes vn-pw-in {
+  from {
+    opacity: 0;
+    translate: 0 var(--av-rise, 10px);
+  }
+}
+@keyframes vn-pw-out {
+  to {
+    opacity: 0;
+    translate: 0 calc(var(--av-rise, 10px) * 0.6);
+  }
+}
+/* 顶上一行:标题 · 小字 ……(显示原文)· 关闭;下面一条细线往右淡掉,左端一小段角色色 */
+.vn-pw-head {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 34px;
+  padding-bottom: 14px;
+  margin-bottom: 4px;
+}
+.vn-pw-head::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: linear-gradient(90deg, var(--av-hair) 60%, transparent);
+}
+.vn-pw-head::before {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  left: 0;
+  bottom: 0;
+  width: 28px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--av-acc);
+}
+.vn-pw-title {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-weight: inherit;
+}
+.vn-pw-title .zh {
+  font: 600 22px/1.2 var(--av-serif);
+  letter-spacing: 0.12em;
+}
+.vn-pw-title .en {
+  font: italic 500 14px/1 var(--av-latin);
+  letter-spacing: 0.08em;
+  color: var(--av-dim);
+}
+.vn-pw-where {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font: 500 12.5px/1.2 var(--av-serif);
+  letter-spacing: 0.14em;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--av-ink) 66%, transparent);
+  transform: translateY(2px);
+}
+.vn-pw-headr {
+  margin-left: auto;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.vn-pw-x {
+  gap: 7px;
+  padding: 0 8px 0 10px;
+}
+.vn-pw-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+/* 历史:里面是菜单历史页同一份内容,让它自己滚 */
+.vn-pw-hist .vn-pw-body {
+  overflow: hidden;
+}
+.vn-pw-hist .vn-pw-body > * {
+  flex: 1;
+  min-height: 0;
+}
+
+/* ---------- 模型:连接一行一条(选中 = 白纸浮起 + 墨色细线)/ 模型 · 思考 · 流式 / 打开模型页 ---------- */
+.vn-mw {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding-top: 14px;
+  /* 撑满窗口:连接多了只让连接那一列自己滚,下面的模型 / 思考 / 流式 / 打开模型页一直看得见 */
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.vn-mw > * {
+  flex: none;
+}
+.vn-mw > section:first-child {
+  flex: 0 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.vn-mw > section:first-child > .vn-mw-conns {
+  /* 至少露两条半,看得出还能往下滚 */
+  min-height: 150px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* 选中那条的墨线、浮起的影子在滚动框里不被切掉 */
+  padding: 2px 4px 4px 2px;
+  margin: -2px -4px -4px -2px;
+}
+.vn-mw-gh {
+  margin: 0 0 8px;
+  font: 600 13px/1.4 var(--av-serif);
+  letter-spacing: 0.16em;
+  color: var(--av-ink-2);
+}
+.vn-mw-conns {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.vn-mw-conn {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 14px;
+  min-height: 54px;
+  padding: 8px 14px 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  text-align: left;
+  font: inherit;
+  color: var(--av-ink);
+  box-shadow: inset 0 0 0 1px var(--av-hair-2);
+  cursor: pointer;
+  transition: background 0.16s, box-shadow 0.16s;
+}
+.vn-mw-conn:hover {
+  background: var(--av-hair-2);
+}
+.vn-mw-conn.on {
+  background: var(--av-paper);
+  box-shadow: inset 0 0 0 1.5px var(--av-sel, var(--av-ink)), 0 3px 10px rgba(30, 24, 48, 0.1);
+}
+.av-night .vn-mw-conn.on {
+  background: var(--av-paper-2);
+}
+.vn-mw-ic {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 7px;
+  font: 600 12px/1 var(--av-latin);
+  letter-spacing: 0.04em;
+  color: var(--av-ink-2);
+  box-shadow: inset 0 0 0 1px var(--av-hair);
+}
+.vn-mw-conn .tx {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.vn-mw-conn b {
+  font: 600 14.5px/1.3 var(--av-sans);
+  letter-spacing: 0.02em;
+}
+.vn-mw-conn small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 12px/1.3 var(--av-sans);
+  color: var(--av-ink-2);
+}
+.vn-mw-now {
+  font: 500 13px/1 var(--av-sans);
+  letter-spacing: 0.06em;
+  color: var(--av-ink-2);
+}
+.vn-mw-row {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  align-items: center;
+  min-height: 52px;
+  border-top: 1px solid var(--av-hair-2);
+}
+.vn-mw-row:first-child {
+  border-top: 0;
+}
+.vn-mw-k {
+  font: 600 13.5px/1.3 var(--av-serif);
+  letter-spacing: 0.1em;
+}
+.vn-mw-c {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.vn-mw-model {
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--av-hair);
+  border-radius: 7px;
+  background: var(--av-paper);
+  color: var(--av-ink);
+  font: 13px var(--av-mono, ui-monospace, monospace);
+  /* 下拉照组件库 .av-select:不用系统的箭头,画一个小折角 */
+  padding-right: 28px;
+  -webkit-appearance: none;
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--av-dim) 50%),
+    linear-gradient(135deg, var(--av-dim) 50%, transparent 50%);
+  background-position:
+    calc(100% - 15px) 50%,
+    calc(100% - 10px) 50%;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+}
+.vn-mw-ref {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  justify-content: center;
+}
+.vn-mw-ref.busy .av-ic {
+  animation: vn-mw-spin 0.8s linear infinite;
+}
+@keyframes vn-mw-spin {
+  to {
+    rotate: 360deg;
+  }
+}
+.vn-mw-foot {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--av-hair-2);
+}
+/* 「打开模型页 ›」:设计稿是 30 高、带一个小折角 */
+.vn-mw-foot .av-btn {
+  height: 32px;
+  gap: 6px;
+  padding: 0 12px;
+  font-size: 13px;
+}
+.vn-mw-foot .av-btn::after {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-top: 1.3px solid currentColor;
+  border-right: 1.3px solid currentColor;
+  rotate: 45deg;
+  opacity: 0.7;
+}
+
+/* ══════════ 第 9 段 手机竖屏(≤ 640px):从下面升起来的大半屏窗口 ══════════
+   设计稿 phone.html / pages/phone.css 的 .pf-hw:上面露着一截游戏(压暗 0.46),窗口从 200px 起贴到底、上边两个圆角,
+   顶上一条小横杠 + 一行 标题 · 小控件 · 关(只有图标);标题右边那行小字手机上不放。
+   点外面、点关、按住顶上那行往下拉(过 90px 松手)都能关;开 0.22s(上浮 24px),关 0.18s,拉下去关的那次接着往下滑走。
+   历史、模型同一个形状。 */
+/* 电脑上和对话区、四角细条一起照设计稿按窗口等比缩放(--ga-k,见 vnLine.css .ga-stage);
+   封顶的高宽按缩放前算,缩完正好是画面减 48 */
+@media (min-width: 641px) {
+  .vn-pw-win {
+    scale: var(--ga-k, 1);
+    max-width: calc((100% - 48px) / var(--ga-k, 1));
+    max-height: calc((100% - 48px) / var(--ga-k, 1));
+  }
+}
+
+@media (max-width: 640px) {
+  .vn-pw-layer {
+    display: block;
+  }
+  .vn-pw-veil {
+    background: rgba(10, 12, 26, 0.46);
+  }
+  .vn-pw-win {
+    position: absolute;
+    left: 0;
+    right: 0;
+    /* 设计稿是 844 高的屏上 top 200;矮屏(横过来)别让窗口只剩一条 */
+    top: min(200px, 30%);
+    bottom: 0;
+    width: 100% !important;
+    height: auto !important;
+    max-width: none;
+    max-height: none;
+    padding: 0;
+    border-radius: 10px 10px 0 0;
+    box-shadow: 0 -10px 30px rgba(10, 10, 30, 0.3);
+    overflow: hidden;
+    transition: translate 0.2s var(--av-ease);
+    animation: vn-pw-up var(--av-t, 0.22s) var(--av-ease) both;
+  }
+  .vn-pw-win.is-drag {
+    transition: none;
+  }
+  .vn-pw-win.av-night {
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1), 0 -10px 30px rgba(0, 0, 0, 0.5);
+  }
+  .vn-pw-layer.leaving .vn-pw-win {
+    animation: vn-pw-down var(--av-t-out, 0.18s) ease both;
+  }
+  /* 拉下去关的:接着往下滑出去,不再淡 */
+  .vn-pw-layer.leaving.dropped .vn-pw-win {
+    animation: none;
+    translate: 0 110% !important;
+    transition: translate 0.2s ease-in;
+  }
+  /* 顶上一条小横杠:告诉手指这是从下面升起来的(按住那一行能往下拉) */
+  .vn-pw-win::before {
+    content: '';
+    position: absolute;
+    z-index: 2;
+    left: 50%;
+    top: 6px;
+    width: 36px;
+    height: 4px;
+    margin-left: -18px;
+    border-radius: 2px;
+    background: var(--av-faint, var(--av-hair));
+    pointer-events: none;
+  }
+  .vn-pw-head {
+    flex-wrap: wrap;
+    gap: 2px 6px;
+    min-height: 0;
+    padding: 16px 8px 8px 20px;
+    margin-bottom: 0;
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .vn-pw-win.is-drag .vn-pw-head {
+    cursor: grabbing;
+  }
+  .vn-pw-head::after {
+    left: 20px;
+  }
+  .vn-pw-head::before {
+    left: 20px;
+  }
+  .vn-pw-title {
+    gap: 8px;
+    white-space: nowrap;
+  }
+  .vn-pw-title .zh {
+    font: 700 19px/1 var(--av-serif);
+    letter-spacing: 0.26em;
+  }
+  .vn-pw-title .en {
+    font-size: 13px;
+    letter-spacing: 0.14em;
+    color: var(--av-ink-2);
+  }
+  .vn-pw-where {
+    display: none;
+  }
+  .vn-pw-headr {
+    gap: 6px;
+  }
+  /* 「显示原文 ? 开关」:一整行 40 高好点,开关还是 40 × 22,「?」20 */
+  .vn-pw-headr .vn-raw-toggle {
+    min-height: 40px;
+    gap: 4px;
+    font-size: 13px;
+  }
+  .vn-pw-headr .vn-raw-toggle > .av-switch {
+    margin-left: 6px;
+  }
+  .vn-pw-headr .vn-raw-toggle > .vn-page-note {
+    width: 20px;
+    height: 20px;
+    margin-left: 4px;
+  }
+  /* 关:只留图标,40 × 40,不画框 */
+  .vn-pw-x,
+  .vn-pw-x.av-btn {
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    justify-content: center;
+    border: 0;
+    background: none;
+    box-shadow: none;
+    color: var(--av-ink-2);
+  }
+  .vn-pw-x:hover {
+    background: var(--av-hair-2);
+    color: var(--av-ink);
+  }
+  .vn-pw-x span,
+  .vn-pw-x kbd {
+    display: none;
+  }
+  .vn-pw-body {
+    padding: 4px 18px calc(env(safe-area-inset-bottom) + 18px);
+  }
+  /* 历史:滚的是里面那份列表,内边距挪到它身上(每句左右各伸出 8px 的底色不被裁掉) */
+  .vn-pw-hist .vn-pw-body {
+    padding: 0;
+  }
+  .vn-pw-hist .vn-pw-body .vh-scroll {
+    margin: 0;
+    padding: 4px 18px env(safe-area-inset-bottom);
+  }
+  /* 历史里每条消息的头一行(名字 · 小字 · 几个操作):名字不拆开,小字放不下就省略,操作钮手指点得到 */
+  .vn-pw-hist .chat-who {
+    flex: none;
+    white-space: nowrap;
+  }
+  .vn-pw-hist .chat-meta {
+    flex: 1 1 0;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .vn-pw-hist .chat-msg-actions {
+    flex: none;
+    margin-left: auto;
+  }
+  .vn-pw-hist .chat-msg-actions .icon-btn {
+    width: 36px;
+    height: 36px;
+  }
+
+  /* ---------- 模型:一栏排(名目在上、控件在下),点击区 ≥ 40 ---------- */
+  .vn-mw {
+    gap: 12px;
+    padding-top: 8px;
+  }
+  .vn-mw-conn {
+    min-height: 56px;
+  }
+  .vn-mw-row {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 8px;
+    padding: 10px 0;
+  }
+  .vn-mw-row:has(.vn-switch, .av-switch) {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .vn-mw-model {
+    height: 40px;
+    font-size: 16px; /* 不小于 16:iOS 点进去不放大 */
+  }
+  .vn-mw-ref {
+    width: 40px;
+    height: 40px;
+  }
+  .vn-mw-foot .av-btn {
+    min-height: 40px;
+  }
+}
+@keyframes vn-pw-up {
+  from {
+    opacity: 0;
+    translate: 0 24px;
+  }
+}
+@keyframes vn-pw-down {
+  to {
+    opacity: 0;
+    translate: 0 16px;
+  }
+}

@@ -1,217 +1,521 @@
-/* 存档 / 读档(10-04 定稿,画布「存档 / 读档」)。盖在 vn.css 原来的 .vn-slot 样式上。
-   页面底:存档那一刻的场景虚化(跟着鼠标换),压一层暗;格子上半场景、下半白纸,圆头像压在接缝上。 */
+/* 存档 / 读档(设计稿 pages/whole.css 的 .mn-saves / .mn-save,局内菜单 A 那档 --save-*):
+   一行四格(格子 1 : 0.9),上半 54% 是场景 + 地点,下半白纸;圆头像压在接缝上,名字 · 什么时候,她最后一句(三行);
+   正在玩那格一圈墨色细线 + 右上「正在玩」;左上「⋯」(指到那格才出)点开 重命名 / 删除。第一格是虚线框「在这里存档」。
+   10-23 起直接摆在菜单的纸上(页头是场景横幅),不放立绘、不另糊底。手机(≤ 640)一格一行,见文件最后。 */
 
-/* 虚化底图铺满整个菜单页(标题栏也算),不跟着列表滚 */
-.vn-menu-page:has(> .vn-menu-body > .vn-saves) {
+.vn-saves {
+  --save-min: 260px;
+  --save-ar: 1 / 0.9;
+  --save-pic: 54%;
+}
+/* 「新的故事」放在页头右边,和「返回游戏」一行(设计稿 .mn-head-r;页头的右边距 164 = 36 + 关闭键那 128) */
+.page-save .vn-menu-body {
+  position: static;
+}
+.vn-saves-acts {
+  position: absolute;
+  z-index: 2;
+  top: calc(env(safe-area-inset-top) + 46px);
+  right: calc(env(safe-area-inset-right) + 164px);
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.vn-slots {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--save-min), 1fr));
+  gap: 16px 14px;
+  padding: 4px 4px 18px 2px;
+}
+.vn-slot {
   position: relative;
-  z-index: 0;
+  display: flex;
+  flex-direction: column;
+  aspect-ratio: var(--save-ar);
+  border-radius: 8px;
+  background: var(--av-paper);
+  color: var(--av-ink);
+  box-shadow: 0 0 0 1px var(--av-hair), 0 4px 12px rgba(30, 24, 48, 0.1);
+  text-align: left;
+  transition:
+    transform 0.16s var(--av-ease),
+    box-shadow 0.16s;
+}
+.vn-slot:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0 0 1px var(--av-faint), 0 12px 24px rgba(30, 24, 48, 0.18);
+}
+/* 正在玩的那一格:一圈墨色细线(选中 / 当前不跟角色色) */
+.vn-slot.current,
+.vn-slot.current:hover {
+  box-shadow: 0 0 0 1.5px var(--av-sel, var(--av-ink)), 0 4px 12px rgba(30, 24, 48, 0.12);
+}
+.av-night .vn-slot.current {
+  box-shadow: 0 0 0 1.5px var(--av-sel, var(--av-ink)), 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+.vn-slot-open {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.vn-slot.current .vn-slot-open {
+  cursor: default;
+}
+.vn-slot-thumb {
+  position: relative;
+  flex: 0 0 var(--save-pic);
   overflow: hidden;
+  border-radius: 8px 8px 0 0;
+  background: #0b0c16;
 }
-.vn-saves-blur {
-  position: absolute;
-  inset: -40px;
-  z-index: -2;
-  width: calc(100% + 80px);
-  height: calc(100% + 80px);
-  object-fit: cover;
-  filter: blur(22px) saturate(1.1);
-  animation: vn-saves-in 0.35s ease both;
-  pointer-events: none;
+.vn-slot-thumb.loading {
+  animation: vn-pulse 1.2s ease-in-out infinite;
+  background: var(--av-hair-2);
 }
-.vn-saves-veil {
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: linear-gradient(180deg, rgba(12, 14, 30, 0.55), rgba(12, 14, 30, 0.35) 40%, rgba(12, 14, 30, 0.55));
-  pointer-events: none;
-}
-@keyframes vn-saves-in {
-  from {
-    opacity: 0;
+@keyframes vn-pulse {
+  50% {
+    opacity: 0.35;
   }
 }
-
-.vn-saves.with-side {
-  display: grid;
-  grid-template-columns: minmax(180px, 26%) 1fr;
-  gap: 8px;
-}
-/* 左边的她:贴着页面底,列表滚的时候不动 */
-.vn-saves-side {
-  position: sticky;
-  top: 0;
-  align-self: start;
-  height: calc(100dvh - 120px);
-  container-type: size;
-  pointer-events: none;
-}
-.vn-saves-spr {
+.vn-slot-bg {
   position: absolute;
-  max-width: none;
-  width: auto;
-  filter: drop-shadow(0 10px 24px rgba(5, 5, 20, 0.45));
-  animation: vn-saves-in 0.25s ease both;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.4s var(--av-ease);
 }
-.vn-saves-main {
-  min-width: 0;
+.vn-slot:hover .vn-slot-bg {
+  transform: scale(1.04);
 }
-
-.vn-saves .vn-slots {
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-  gap: 18px;
-  padding-bottom: 12px;
-}
-.vn-saves .vn-slot {
-  position: relative;
-  overflow: visible;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.7);
-  background: #fbfaf8;
-  color: #2a2a33;
-  box-shadow: 0 8px 22px rgba(10, 10, 30, 0.28);
-  transition:
-    transform 0.2s,
-    box-shadow 0.2s;
-}
-.vn-saves .vn-slot:hover {
-  border-color: #fff;
-  transform: translateY(-3px);
-  box-shadow: 0 12px 28px rgba(10, 10, 30, 0.36);
-}
-.vn-saves .vn-slot.current {
-  border-color: var(--vn-accent);
-  box-shadow:
-    0 0 0 1px var(--vn-accent),
-    0 8px 22px rgba(10, 10, 30, 0.28);
-}
-.vn-saves .vn-slot-open {
-  color: inherit;
-}
-.vn-saves .vn-slot-thumb {
-  overflow: hidden;
-  border-radius: 7px 7px 0 0;
-  aspect-ratio: 16 / 8;
-}
-.vn-saves .vn-slot-place {
+.vn-slot-place,
+.vn-slot-badge {
   position: absolute;
-  right: 8px;
-  bottom: 8px;
-  padding: 2px 9px;
+  right: 6px;
+  height: 20px;
+  padding: 0 7px;
   border-radius: 4px;
-  background: rgba(14, 16, 34, 0.6);
-  color: #f6f6f8;
-  font-size: 11px;
-  letter-spacing: 0.12em;
+  font: 600 12px/20px var(--av-serif);
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+  color: #fff;
 }
-.vn-saves .vn-slot-badge {
-  border-radius: 4px;
+.vn-slot-place {
+  bottom: 6px;
+  background: rgba(14, 14, 24, 0.55);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+}
+.vn-slot-badge {
+  top: 6px;
+  background: var(--av-acc);
+  font-family: var(--av-sans);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  box-shadow: 0 2px 6px rgba(10, 10, 30, 0.25);
+}
+.vn-menu.is-glass .vn-slot-place {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: rgba(14, 14, 24, 0.66);
 }
 
 /* 下半:圆头像压在接缝上,名字 · 时间,最后一句 */
-.vn-saves .vn-slot-body {
+.vn-slot-body {
   position: relative;
-  padding: 10px 14px 10px 72px;
-  min-height: 68px;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 8px 11px 10px;
+}
+.vn-slot-title {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  min-height: 18px;
+  padding-left: 48px;
+  font-size: 12px;
+  line-height: 17.6px;
+  color: var(--av-dim);
+  white-space: nowrap;
 }
 .vn-slot-face {
   position: absolute;
-  left: 14px;
-  top: -22px;
-  width: 48px;
-  height: 48px;
+  left: 10px;
+  top: -24px;
+  width: 42px;
+  height: 42px;
   display: grid;
   place-items: center;
   overflow: hidden;
   border-radius: 50%;
-  border: 2px solid #fff;
-  background: var(--vn-accent);
-  color: var(--vn-accent-ink);
-  font: 700 18px / 1 'Noto Serif SC', serif;
-  box-shadow: 0 2px 8px rgba(30, 30, 50, 0.3);
+  background: var(--av-paper-2);
+  color: var(--av-ink-2);
+  font: 700 17px / 1 var(--av-serif);
+  box-shadow: 0 0 0 2px var(--av-paper), 0 2px 6px rgba(20, 20, 40, 0.22);
 }
 .vn-slot-face img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
-.vn-saves .vn-slot-name {
-  font-family: 'Noto Serif SC', 'Source Han Serif SC', serif;
-  font-weight: 700;
+.vn-slot-name {
+  flex: 0 1 auto;
+  min-width: 2.2em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font: 600 13px/1.3 var(--av-serif);
   letter-spacing: 0.08em;
-  color: #2a2a33;
+  color: var(--av-ink);
 }
-.vn-saves .vn-slot-time {
-  color: rgba(42, 42, 51, 0.5);
+.vn-slot-time {
+  flex: none;
 }
-.vn-saves .vn-slot-line {
-  margin-top: 4px;
-  font-family: 'Noto Serif SC', 'Source Han Serif SC', serif;
-  color: rgba(42, 42, 51, 0.82);
+/* 条数:电脑上的格子不写(设计稿局内菜单 A 那档藏了),手机一行里写 */
+.vn-slot-count {
+  display: none;
+  flex: none;
+  font-style: normal;
+  font-variant-numeric: lining-nums tabular-nums;
 }
-.vn-saves .vn-slot-actions {
-  border-top: 1px dotted rgba(42, 42, 51, 0.2);
-  color: rgba(42, 42, 51, 0.5);
+.vn-slot-line {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  font: 400 12.5px/1.65 var(--av-serif);
+  letter-spacing: 0.02em;
+  color: var(--av-ink-2);
 }
-.vn-saves .vn-slot-actions button {
-  color: rgba(42, 42, 51, 0.6);
+/* 改名:就地一个输入框,盖在名字那一行上 */
+.vn-slot-rename {
+  position: absolute;
+  z-index: 2;
+  top: calc(var(--save-pic) + 4px);
+  left: 56px;
+  right: 8px;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 1px solid var(--av-faint);
+  background: var(--av-paper);
+  color: var(--av-ink);
+  font: 600 13px/1 var(--av-serif);
+  letter-spacing: 0.08em;
+  outline: none;
 }
-.vn-saves .vn-slot-actions button:hover {
-  color: #2a2a33;
-  background: rgba(42, 42, 51, 0.07);
-}
-.vn-saves .vn-slot-rename {
-  color: #2a2a33;
-  background: #fff;
-  border-color: rgba(42, 42, 51, 0.25);
+.vn-slot.is-renaming .vn-slot-name {
+  visibility: hidden;
 }
 
-/* 第一格:在这里存档 */
-.vn-saves .vn-slot-new {
+/* 左上「⋯」:指到那格才出,点开 重命名 / 删除 */
+.vn-slot-more {
+  position: absolute;
+  z-index: 2;
+  left: 6px;
+  top: 6px;
+  width: 26px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: rgba(14, 14, 24, 0.5);
+  color: #fff;
+  font: 700 13px/22px var(--av-sans);
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.16s;
+}
+.vn-slot:hover .vn-slot-more,
+.vn-slot-more:focus-visible,
+.vn-slot-more.on {
+  opacity: 1;
+}
+.vn-slot-more::before {
+  content: '';
+  position: absolute;
+  inset: min(0px, calc(50% - var(--av-hit) / 2));
+}
+.vn-slot-pop {
+  position: absolute;
+  z-index: 30;
+  left: 6px;
+  top: 32px;
   display: flex;
   flex-direction: column;
+  min-width: 96px;
+  padding: 5px;
+  border-radius: 8px;
+  background: var(--av-paper);
+  color: var(--av-ink);
+  box-shadow: var(--av-shadow-card), 0 0 0 1px var(--av-hair);
+  animation: vn-slot-popin 0.16s var(--av-ease) both;
+}
+.vn-menu.is-glass .vn-slot-pop {
+  background: var(--av-solid, var(--gl-solid));
+}
+@keyframes vn-slot-popin {
+  from {
+    opacity: 0;
+    translate: 0 -4px;
+  }
+}
+.vn-slot-pop > button {
+  padding: 8px 10px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  text-align: left;
+  font: 500 12.5px/1.1 var(--av-sans);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.vn-slot-pop > button:hover {
+  background: var(--av-hair-2);
+}
+.vn-slot-pop > button.bad {
+  color: var(--av-bad-ink);
+}
+
+/* 第一格:在这里存档(虚线框,纸半透) */
+.vn-slot-new {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-height: 200px;
-  border: 1px dashed rgba(255, 255, 255, 0.6);
-  background: rgba(251, 250, 248, 0.14);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
-  color: #f6f6f8;
+  padding: 0;
+  border: 1.5px dashed var(--av-faint);
+  background: color-mix(in srgb, var(--av-paper) 55%, transparent);
+  box-shadow: none;
+  color: var(--av-ink);
   font: inherit;
   cursor: pointer;
+}
+.vn-slot-new:hover:not(:disabled) {
+  border-color: var(--av-acc-deep);
   box-shadow: none;
 }
-.vn-saves .vn-slot-new:hover:not(:disabled) {
-  background: rgba(251, 250, 248, 0.24);
-  border-color: #fff;
-}
-.vn-saves .vn-slot-new:disabled {
+.vn-slot-new:disabled {
   opacity: 0.5;
   cursor: default;
   transform: none;
 }
 .vn-slot-new .plus {
-  font-size: 30px;
-  line-height: 1;
-  font-weight: 300;
+  display: inline-flex;
+  color: var(--av-dim);
+}
+.vn-slot-new .tx {
+  display: contents;
 }
 .vn-slot-new .t {
-  font: 700 16px / 1.2 'Noto Serif SC', serif;
-  letter-spacing: 0.24em;
+  font: 700 15px/1.2 var(--av-serif);
+  letter-spacing: 0.2em;
 }
 .vn-slot-new .s {
-  font-size: 11px;
-  letter-spacing: 0.1em;
-  opacity: 0.7;
+  font-size: 12px;
+  color: var(--av-dim);
 }
 
-/* 窄屏:不放左边的她 */
-@media (max-width: 860px) {
-  .vn-saves.with-side {
-    display: block;
+/* 删存档:就地确认(组件在 ui/ConfirmHere.tsx)—— 盖住那一格的下半截,图上面那截露着;别的格子淡到四成 */
+.vn-slot.is-asking,
+.vn-slot.is-asking:hover {
+  transform: none;
+}
+.vn-slot.is-asking .vn-slot-more {
+  visibility: hidden;
+}
+.vn-slot > .av-here {
+  border-radius: 0 0 8px 8px;
+}
+
+/* ══════════ 手机(≤ 640,设计稿 phone.css 的 .pf-save):一格一行,左边场景小图,中间 名字 · 时间 · 条数 + 两行台词,右边「⋯」 ══════════ */
+@media (max-width: 640px) {
+  .vn-saves-acts {
+    position: static;
+    height: auto;
+    justify-content: flex-end;
+    margin: 0 0 10px;
   }
-  .vn-saves-side {
-    display: none;
+  .vn-slots {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 0 0 12px;
+  }
+  .vn-slot {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 34px;
+    align-items: center;
+    gap: 12px;
+    aspect-ratio: auto;
+    padding: 8px;
+    border-radius: var(--av-r-bar);
+    box-shadow: inset 0 0 0 1px var(--av-hair), 0 2px 8px rgba(30, 24, 48, 0.06);
+  }
+  .vn-slot:hover {
+    transform: none;
+    box-shadow: inset 0 0 0 1px var(--av-faint), 0 2px 8px rgba(30, 24, 48, 0.06);
+  }
+  .av-night .vn-slot {
+    background: var(--av-paper-2);
+  }
+  .vn-slot.current,
+  .vn-slot.current:hover,
+  .av-night .vn-slot.current {
+    box-shadow: inset 0 0 0 1.5px var(--av-sel, var(--av-ink)), 0 2px 8px rgba(30, 24, 48, 0.08);
+  }
+  .vn-slot-open {
+    display: grid;
+    grid-template-columns: 104px minmax(0, 1fr);
+    align-items: center;
+    gap: 12px;
+  }
+  .vn-slot-thumb {
+    width: 104px;
+    height: 70px;
+    border-radius: 6px;
+  }
+  .vn-slot:hover .vn-slot-bg {
+    transform: none;
+  }
+  .vn-slot-badge {
+    left: 5px;
+    right: auto;
+    top: 5px;
+    height: 18px;
+    padding: 0 6px;
+    background: var(--av-acc-deep);
+    font: 600 12px/18px var(--av-sans);
+    box-shadow: none;
+  }
+  .vn-slot-place {
+    left: 3px;
+    right: auto;
+    bottom: 3px;
+    height: auto;
+    padding: 1px 5px;
+    font: 400 12px/1.4 var(--av-sans);
+    letter-spacing: 0.06em;
+    background: rgba(16, 17, 28, 0.58);
+  }
+  .vn-slot-body {
+    gap: 4px;
+    padding: 0;
+  }
+  .vn-slot-title {
+    align-items: center;
+    gap: 6px;
+    padding-left: 0;
+    color: var(--av-ink-2);
+  }
+  .vn-slot-face {
+    position: static;
+    flex: none;
+    width: 22px;
+    height: 22px;
+    font-size: 11px;
+    box-shadow: 0 0 0 1px var(--av-hair);
+  }
+  .vn-slot-count {
+    display: inline;
+  }
+  .vn-slot-count::before {
+    content: '· ';
+  }
+  .vn-slot-line {
+    -webkit-line-clamp: 2;
+    font: 500 13.5px/1.55 var(--av-serif);
+    color: var(--av-ink);
+  }
+  .vn-slot-more {
+    position: static;
+    width: 34px;
+    height: 44px;
+    border-radius: var(--av-r-btn);
+    background: none;
+    color: var(--av-ink-2);
+    font-size: 18px;
+    line-height: 1;
+    opacity: 1;
+  }
+  .vn-slot-pop {
+    left: auto;
+    right: 8px;
+    top: 54px;
+    min-width: 120px;
+    padding: 4px;
+    border-radius: var(--av-r-panel);
+    box-shadow: var(--av-shadow-float), inset 0 0 0 1px var(--av-hair-2);
+  }
+  .av-night .vn-slot-pop {
+    background: var(--av-paper-3);
+  }
+  .vn-slot-pop > button {
+    height: 40px;
+    padding: 0 14px;
+    font-size: 13.5px;
+  }
+  .vn-slot-rename {
+    top: 8px;
+    left: 124px;
+    right: 50px;
+    height: 30px;
+    font-size: 16px;
+  }
+  /* 「在这里存档」:一行,左边一个 48 的加号框 */
+  .vn-slot-new {
+    display: grid;
+    grid-template-columns: 48px minmax(0, 1fr);
+    justify-items: start;
+    border: none;
+    background: transparent;
+    box-shadow: inset 0 0 0 1px var(--av-hair);
+  }
+  .vn-slot-new:hover:not(:disabled) {
+    box-shadow: inset 0 0 0 1px var(--av-faint);
+  }
+  .vn-slot-new .plus {
+    width: 48px;
+    height: 48px;
+    display: grid;
+    place-items: center;
+    border-radius: 8px;
+    box-shadow: inset 0 0 0 1px var(--av-faint);
+    color: var(--av-ink-2);
+  }
+  .vn-slot-new .tx {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .vn-slot-new .t {
+    font: 600 14px/1.4 var(--av-serif);
+    letter-spacing: 0.1em;
+  }
+  .vn-slot-new .s {
+    color: var(--av-ink-2);
+  }
+  /* 删存档:一行太窄,那一行往下长出一截,确认贴在这截里 */
+  .vn-slot.is-asking {
+    padding-bottom: 66px;
+  }
+  .vn-slot > .av-here {
+    top: auto !important;
+    height: 58px;
+    border-radius: 0 0 var(--av-r-bar) var(--av-r-bar);
   }
 }

@@ -28,15 +28,30 @@ export const DEFAULT_AVATAR = '/assets/default-avatar.jpg';
  * 视觉小说主题色(accent.ts)的「灰白」:不抢立绘和背景的颜色;
  * 跟角色取不到颜色(没立绘、读不出像素)时也用它
  */
-export const VN_ACCENT_MONO: AccentVars = { accent: '#e4e4ea', ink: '#17181f', rgb: '228, 228, 234' };
+export const VN_ACCENT_MONO: AccentVars = {
+  accent: '#e4e4ea',
+  ink: '#17181f',
+  rgb: '228, 228, 234',
+  deep: '#55565f',
+  soft: '#ececf0',
+  nameInk: '#17181f',
+};
 
 /** 视觉小说主题色(accent.ts)的「粉色」:原来的样子 */
-export const VN_ACCENT_PINK: AccentVars = { accent: '#f4a9c4', ink: '#2b1420', rgb: '244, 169, 196' };
+export const VN_ACCENT_PINK: AccentVars = {
+  accent: '#f4a9c4',
+  ink: '#2b1420',
+  rgb: '244, 169, 196',
+  deep: '#b0466f',
+  soft: '#fbe8ef',
+  nameInk: '#2b1420',
+};
 
 /** 封面(VNTitle)的点缀色:从立绘里取不到颜色(没立绘、读不出像素)时用的粉色 */
 export const TITLE_DEFAULT_ACCENT: Accent = {
   acc: '#f4a9c4',
   deep: 'hsl(335 40% 38%)',
   ink: '#2b1420',
+  soft: '#fbe8ef',
   rgb: '244, 169, 196',
 };

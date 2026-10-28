@@ -1,0 +1,159 @@
+/* 模型报错纸卡(ModelError.tsx):挂在台词框上方,照设计稿 .wh-errbox / .pp-err / .pp-pop / .pp-detail */
+.vn-box > .vn-err {
+  position: absolute;
+  left: 0;
+  /* 让开压在框上沿的名牌 */
+  bottom: calc(100% + 34px);
+  z-index: 6;
+  width: min(580px, 100%);
+  padding: 16px 22px;
+  cursor: auto;
+  text-shadow: none;
+  text-align: left;
+}
+.vn-err .av-eyebrow {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--av-ink-2);
+}
+.vn-err-t {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font: 500 13px/1.4 var(--av-sans);
+  letter-spacing: 0.04em;
+  color: var(--av-dim);
+}
+.vn-err-t b {
+  font: 700 19px/1.3 var(--av-serif);
+  letter-spacing: 0.12em;
+  color: var(--av-ink);
+}
+.vn-err-raw {
+  margin-top: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 12px/1.55 var(--av-mono);
+  color: var(--av-ink-2);
+}
+.vn-err-tip {
+  margin: 6px 0 0;
+  font: 12.5px/1.6 var(--av-sans);
+  color: var(--av-dim);
+}
+.vn-err-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+.vn-err-acts .av-btn svg {
+  width: 13px;
+  height: 13px;
+  margin-left: 2px;
+}
+.vn-err-acts .av-btn.ghost {
+  color: var(--av-ink-2);
+}
+.vn-err-pickwrap {
+  position: relative;
+}
+.vn-err-pop {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  z-index: 8;
+  width: 260px;
+  padding: 8px;
+}
+.vn-err-pop .cap {
+  padding: 4px 8px 8px;
+  font: 12px/1.4 var(--av-sans);
+  letter-spacing: 0.04em;
+  color: var(--av-dim);
+}
+.vn-err-pop .cap.none {
+  padding-top: 0;
+}
+.vn-err-pop .list {
+  max-height: 220px;
+  overflow-y: auto;
+}
+.vn-err-pop .it {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.vn-err-pop .it b {
+  font: 500 13px/1.3 var(--av-mono);
+  overflow-wrap: anywhere;
+}
+.vn-err-pop .it small {
+  flex: none;
+  font-size: 12px;
+  color: var(--av-dim);
+}
+.vn-err-pop .it:hover {
+  background: var(--av-hair-2);
+}
+.vn-err-pop .it.on {
+  background: var(--av-paper-2);
+  box-shadow: inset 2px 0 0 var(--av-ctl);
+}
+.vn-err-pop .ln {
+  margin-top: 4px;
+  padding: 8px 10px 4px;
+  border-top: 1px solid var(--av-hair-2);
+  font-size: 12.5px;
+}
+.vn-err-pop .av-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--av-ctl);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.vn-err-detail {
+  position: absolute;
+  left: -1px;
+  right: -1px;
+  bottom: calc(100% + 10px);
+  z-index: 9;
+  padding: 16px 20px 14px;
+}
+.vn-err-detail dl {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 6px 14px;
+  margin: 0;
+  font-size: 12.5px;
+}
+.vn-err-detail dt {
+  color: var(--av-dim);
+  font: 600 12.5px/1.6 var(--av-serif);
+  letter-spacing: 0.08em;
+}
+.vn-err-detail dd {
+  margin: 0;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.vn-err-detail .mono {
+  font: 12px/1.6 var(--av-mono);
+}
+.vn-err-detail .ft {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+}

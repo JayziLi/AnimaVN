@@ -1,4 +1,8 @@
-/* 素材等待页(画布 Menu-Loading)。尺寸按 1440×810 的画板换成 cqh / cqw。
+/* ══════════ 素材等待页(U32,照星海的加载页;设计稿 kit/loading.css) ══════════
+   整屏场景 + 白细线 + 走到哪一颗白菱形;正中标绕一圈细轨道;左下 Tips;右下「正在载入 · 名字 · 场景包」。
+   没有纸,字、线、轨道一律白色(不跟角色色、不跟主题);不发光;右上的轨道弧和小星压得很淡。
+   尺寸按设计稿的画板换成 cqh / cqw(.vn-ld 是尺寸容器):电脑 1440×810;.is-phone = 手机竖屏 390×844,
+   同样的元素竖着居中排(标 → 小贴士 → 细线 → 正在载入),单位 --pu = 手机屏上的 1px。
    .vn-gate 的定位、层级、淡入还是 vn.css 里那份,这里只管新的样子。 */
 
 .vn-gate.vn-ld {
@@ -7,287 +11,305 @@
   color: #fff;
   container: vn-ld / size;
 }
-.vn-ld-sky,
-.vn-ld-bg {
+.av-ld {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  color: #fff;
+  cursor: default;
+  --ld-ink: rgba(255, 255, 255, 0.93);
+  --ld-ink-2: rgba(255, 255, 255, 0.82);
+  --ld-dim: rgba(255, 255, 255, 0.72);
+  --ld-line: rgba(255, 255, 255, 0.24);
+  --ld-k: 1;
+  --p: 0;
+}
+/* 图没到时先铺它的平均色(VNLoading 写在行内),下完了淡入 */
+.av-ld-ph {
+  position: absolute;
+  inset: 0;
+}
+.av-ld-bg {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
+  opacity: 0;
+  transition: opacity 0.32s ease;
 }
-.vn-ld-bg {
-  opacity: 0.28;
-  filter: blur(6px) saturate(0.9);
-  transform: scale(1.04);
-  animation: vn-ld-in 0.6s ease both;
-}
-.vn-ld-shade {
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(ellipse at 30% 60%, rgba(14, 16, 34, 0) 0%, rgba(14, 16, 34, 0.7) 100%);
-}
-@keyframes vn-ld-in {
-  from {
-    opacity: 0;
-  }
+.av-ld-bg.ready {
+  opacity: 1;
 }
 
-.vn-ld-twinkle {
+/* 压暗:底下一大层(字和细线在这里),上沿一小层,四周再暗一点。白天的场景亮,--ld-k 大,压得多 */
+.av-ld-shade {
   position: absolute;
-  fill: #fff;
-  opacity: 0.6;
-  animation: vn-ld-twinkle 3.2s ease-in-out infinite;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(0deg, rgba(12, 12, 20, calc(0.8 * var(--ld-k))) 0%, rgba(12, 12, 20, calc(0.46 * var(--ld-k))) 19%, rgba(12, 12, 20, 0) 42%),
+    linear-gradient(180deg, rgba(12, 12, 20, calc(0.34 * var(--ld-k))) 0%, rgba(12, 12, 20, 0) 24%),
+    radial-gradient(ellipse 80% 90% at 50% 46%, rgba(0, 0, 0, 0) 58%, rgba(0, 0, 0, calc(0.26 * var(--ld-k))) 100%);
 }
-.vn-ld-twinkle svg {
-  display: block;
+/* 白天:场景整体亮,底下那层再压深一点、往上多铺一点 */
+.av-ld.is-day .av-ld-shade {
+  background:
+    linear-gradient(0deg, rgba(14, 14, 22, calc(0.86 * var(--ld-k))) 0%, rgba(14, 14, 22, calc(0.56 * var(--ld-k))) 20%, rgba(14, 14, 22, 0) 46%),
+    linear-gradient(180deg, rgba(14, 14, 22, calc(0.26 * var(--ld-k))) 0%, rgba(14, 14, 22, 0) 22%),
+    radial-gradient(ellipse 80% 90% at 50% 46%, rgba(0, 0, 0, 0) 58%, rgba(0, 0, 0, calc(0.22 * var(--ld-k))) 100%);
+}
+
+/* 右上角的轨道弧和小星:细、淡、不发光;从右上角往外淡掉(位置固定,VNLoading 照设计稿的种子画) */
+.av-ld-sky {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  -webkit-mask-image: radial-gradient(circle at 100% 0%, #000 26%, transparent 62%);
+  mask-image: radial-gradient(circle at 100% 0%, #000 26%, transparent 62%);
 }
-@keyframes vn-ld-twinkle {
-  50% {
-    opacity: 0.15;
-    transform: scale(0.7);
-  }
+.av-ld-sky .o {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.3);
+  stroke-width: 1;
+}
+.av-ld-sky .o.dot {
+  stroke: rgba(255, 255, 255, 0.34);
+  stroke-dasharray: 1 7;
+  stroke-linecap: round;
+}
+.av-ld-sky .pl {
+  fill: rgba(255, 255, 255, 0.75);
+}
+.av-ld-sky .st,
+.av-ld-sky .sp {
+  fill: #fff;
+}
+/* 白天天是亮的:星点不画,轨道也收一点 */
+.av-ld.is-day .av-ld-sky {
+  opacity: 0.62;
+}
+.av-ld.is-day .av-ld-sky .st {
+  display: none;
 }
 
-/* 左:她 */
-.vn-ld-stage {
+/* ---- 字、标、细线 ---- */
+.av-ld-ui {
   position: absolute;
   inset: 0;
-  container-type: size;
   pointer-events: none;
 }
-.vn-ld-spr {
+.av-ld-ui > * {
   position: absolute;
-  max-width: none;
-  width: auto;
-  filter: drop-shadow(0 1.2cqh 3.2cqh rgba(10, 10, 30, 0.35));
-  animation: vn-ld-rise 0.6s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  margin: 0;
 }
-@keyframes vn-ld-rise {
-  from {
-    opacity: 0;
-    translate: 0 10px;
-  }
+/* 进场:整块上浮 10px(整屏的淡入是 vn.css 的 .vn-gate) */
+.av-ld.is-rise .av-ld-ui {
+  animation: av-lift var(--av-t) var(--av-ease) backwards;
 }
-/* 没有立绘:拱形的头像 */
-.vn-ld-face {
-  position: absolute;
-  left: 18cqw;
-  top: 16cqh;
-  width: 37cqh;
-  height: 55cqh;
+
+/* 标:AnimaVN 的标 + 一圈细轨道(后半圈在标后面,前半圈和小点在前面) */
+.av-ld-mark {
+  left: 50%;
+  bottom: 8.89cqh;
+  width: 9.88cqh;
+  height: 9.88cqh;
+  margin-left: -4.94cqh;
   display: grid;
   place-items: center;
-  overflow: hidden;
-  border: 3px solid #fbfaf8;
-  border-radius: 18.5cqh 18.5cqh 10px 10px;
-  background: rgba(255, 255, 255, 0.06);
-  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.5);
-  animation: vn-ld-rise 0.6s cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
-.vn-ld-face img {
+.av-ld-mark img {
+  position: relative;
+  width: 4.44cqh;
+  height: 4.44cqh;
+  opacity: 0.95;
+}
+.av-ld-mark .ring {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
-  object-position: 50% 18%;
+  overflow: visible;
 }
-.vn-ld-face span {
-  font: 700 12cqh / 1 'Noto Serif SC', serif;
-  color: rgba(255, 255, 255, 0.6);
+.av-ld-mark .ring path {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.62);
+  stroke-width: 1;
 }
-
-.vn-ld-lockup {
-  position: absolute;
-  left: 4.9cqw;
-  top: 6.7cqh;
-  display: flex;
-  align-items: center;
-  opacity: 0.9;
-}
-.vn-ld-lockup .mark {
-  width: 7.9cqh;
-  height: 7.9cqh;
-}
-.vn-ld-lockup .word {
-  height: 7.2cqh;
-  margin-left: -1cqh;
-}
-
-/* 右:接下来 */
-.vn-ld-info {
-  position: absolute;
-  left: 60.4cqw;
-  top: 58cqh;
-  width: min(34.7cqw, 520px);
-  animation: vn-ld-rise 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) 0.08s both;
-}
-.vn-ld-next {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font: 13px / 1 'Noto Serif SC', serif;
-  letter-spacing: 0.32em;
-  opacity: 0.8;
-}
-.vn-ld-next svg {
-  width: 11px;
-  height: 11px;
+.av-ld-mark .ring circle {
   fill: #fff;
 }
-.vn-ld-place {
-  margin-top: 10px;
-  font: 700 max(4.2cqh, 24px) / 1.2 'Noto Serif SC', serif;
-  letter-spacing: 0.2em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+
+/* 左下:斜体 Tips + 一句操作小贴士 */
+.av-ld-tip {
+  left: 4.44cqw;
+  bottom: 9.51cqh;
+  max-width: 38.9cqw;
+  display: flex;
+  align-items: baseline;
+  gap: 1.73cqh;
+  font: 500 max(1.85cqh, 12px) / 1.4 var(--av-serif);
+  letter-spacing: 0.1em;
+  color: var(--ld-ink);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
 }
-.vn-ld-line {
-  margin: 8px 0 0;
-  font: 15px / 1.8 'Noto Serif SC', serif;
-  opacity: 0.85;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+.av-ld-tip em {
+  flex: none;
+  font: italic 500 max(1.98cqh, 13px) / 1 var(--av-latin);
+  letter-spacing: 0.16em;
+  color: var(--ld-dim);
+}
+/* 右下:正在载入 · 名字 · 场景包(宋体、字距宽) */
+.av-ld-what {
+  right: 4.44cqw;
+  bottom: 9.75cqh;
+  display: flex;
+  align-items: baseline;
+  white-space: nowrap;
+  font: 500 max(1.6cqh, 11px) / 1.4 var(--av-serif);
+  letter-spacing: 0.26em;
+  color: var(--ld-ink-2);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+/* 点左边已经带着前一个字的字距(.26em),所以左边少给一点;点自己不带字距,两边看起来一样宽 */
+.av-ld-what i {
+  font-style: normal;
+  letter-spacing: 0;
+  margin: 0 0.56em 0 0.3em;
+  color: var(--ld-dim);
 }
 
-/* 进度:一道细线,头上一颗角色主题色的星 */
-.vn-ld-bar {
-  position: relative;
-  margin-top: 28px;
-  height: 2px;
-  border-radius: 2px;
-  background: rgba(255, 255, 255, 0.18);
+/* 底部贯穿全宽的 1px 细线:走过的一段渐亮,头上一颗白色小菱形 */
+.av-ld-bar {
+  left: 0;
+  right: 0;
+  bottom: 6.42cqh;
+  height: 1px;
+  background: linear-gradient(90deg, var(--ld-line), var(--ld-line) 86%, rgba(255, 255, 255, 0));
 }
-.vn-ld-bar i {
+.av-ld-bar i {
   position: absolute;
   left: 0;
   top: 0;
-  height: 2px;
-  border-radius: 2px;
-  background: var(--vn-accent);
+  height: 1px;
+  width: calc(var(--p) * 100%);
   transition: width 0.3s ease;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.92) 28%);
 }
-.vn-ld-bar-star {
+.av-ld-bar b {
   position: absolute;
-  top: -8px;
-  width: 18px;
-  height: 18px;
-  margin-left: -9px;
-  fill: var(--vn-accent);
-  filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.6));
+  left: calc(var(--p) * 100%);
+  top: -3.5px;
+  width: 8px;
+  height: 8px;
+  margin-left: -4px;
+  border-radius: 1px;
+  background: #fff;
+  transform: rotate(45deg);
   transition: left 0.3s ease;
 }
 
-.vn-ld-list {
-  margin: 16px 0 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 12px;
-  letter-spacing: 0.08em;
-  color: rgba(255, 255, 255, 0.7);
-}
-.vn-ld-list li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.vn-ld-list li.now {
+/* 网络慢:左下换成「先进去」 */
+.av-ld-skip {
+  left: 4.44cqw;
+  bottom: 8.64cqh;
+  height: max(4.2cqh, 34px);
+  padding: 0 max(1.11cqw, 16px);
+  border: 0;
+  border-radius: var(--av-r-btn);
+  background: rgba(12, 12, 20, 0.34);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.42);
+  font: 500 max(1.67cqh, 13px) / max(4.2cqh, 34px) var(--av-sans);
+  letter-spacing: 0.06em;
   color: #fff;
+  pointer-events: auto;
+  cursor: pointer;
+  transition: background 0.16s;
+  animation: av-fade var(--av-t) ease backwards;
 }
-.vn-ld-list .n {
-  opacity: 0.6;
+.av-ld-skip:hover,
+.av-ld-skip:focus-visible {
+  background: rgba(255, 255, 255, 0.14);
 }
-.vn-ld-list svg {
-  flex: none;
-  width: 14px;
-  height: 14px;
-}
-.vn-ld-list .ok {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-.vn-ld-list .star {
-  width: 12px;
-  height: 12px;
-  fill: var(--vn-accent);
-}
-.vn-ld-list li.now .star {
-  animation: vn-ld-spin 2.4s linear infinite;
-}
-@keyframes vn-ld-spin {
-  to {
-    transform: rotate(360deg);
-  }
+.av-ld-skip:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
 }
 
-.vn-ld-tip {
-  margin-top: 26px;
-  padding: 14px 16px;
-  border-radius: 8px;
-  background: rgba(251, 250, 248, 0.9);
-  color: #2a2a33;
-  font-size: 12px;
-  line-height: 1.7;
-  letter-spacing: 0.04em;
+/* ---------- 手机竖屏:标 → 小贴士 → 细线 → 正在载入,竖着居中;底下让开横条 ---------- */
+.av-ld.is-phone {
+  --pu: min(100cqw / 390, 100cqh / 844);
+  --sab: env(safe-area-inset-bottom, 0px);
 }
-.vn-ld-tip b {
-  margin-right: 8px;
-  font-family: 'Noto Serif SC', serif;
+.av-ld.is-phone .av-ld-shade {
+  background:
+    linear-gradient(0deg, rgba(12, 12, 20, calc(0.82 * var(--ld-k))) 0%, rgba(12, 12, 20, calc(0.5 * var(--ld-k))) 20%, rgba(12, 12, 20, 0) 44%),
+    linear-gradient(180deg, rgba(12, 12, 20, calc(0.4 * var(--ld-k))) 0%, rgba(12, 12, 20, 0) 18%),
+    radial-gradient(ellipse 90% 80% at 50% 44%, rgba(0, 0, 0, 0) 60%, rgba(0, 0, 0, calc(0.24 * var(--ld-k))) 100%);
+}
+.av-ld.is-phone.is-day .av-ld-shade {
+  background:
+    linear-gradient(0deg, rgba(14, 14, 22, calc(0.88 * var(--ld-k))) 0%, rgba(14, 14, 22, calc(0.6 * var(--ld-k))) 22%, rgba(14, 14, 22, 0) 48%),
+    linear-gradient(180deg, rgba(14, 14, 22, calc(0.3 * var(--ld-k))) 0%, rgba(14, 14, 22, 0) 16%),
+    radial-gradient(ellipse 90% 80% at 50% 44%, rgba(0, 0, 0, 0) 60%, rgba(0, 0, 0, calc(0.2 * var(--ld-k))) 100%);
+}
+.av-ld.is-phone .av-ld-mark {
+  bottom: calc(var(--sab) + 150 * var(--pu));
+  width: calc(80 * var(--pu));
+  height: calc(80 * var(--pu));
+  margin-left: calc(-40 * var(--pu));
+}
+.av-ld.is-phone .av-ld-mark img {
+  width: calc(36 * var(--pu));
+  height: calc(36 * var(--pu));
+}
+.av-ld.is-phone .av-ld-tip {
+  left: calc(28 * var(--pu));
+  right: calc(28 * var(--pu));
+  bottom: calc(var(--sab) + 104 * var(--pu));
+  max-width: none;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(8 * var(--pu));
+  text-align: center;
+  font-size: max(calc(14 * var(--pu)), 12px);
+  letter-spacing: 0.08em;
+}
+.av-ld.is-phone .av-ld-tip em {
+  font-size: max(calc(14 * var(--pu)), 12px);
+}
+.av-ld.is-phone .av-ld-bar {
+  bottom: calc(var(--sab) + 80 * var(--pu));
+}
+.av-ld.is-phone .av-ld-what {
+  left: 0;
+  right: 0;
+  bottom: calc(var(--sab) + 44 * var(--pu));
+  justify-content: center;
+  font-size: max(calc(12.5 * var(--pu)), 11px);
   letter-spacing: 0.2em;
 }
-.vn-ld-skip {
-  margin-top: 26px;
-  padding: 10px 16px;
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.06);
-  color: #fff;
-  font: inherit;
+.av-ld.is-phone .av-ld-skip {
+  left: 50%;
+  bottom: calc(var(--sab) + 100 * var(--pu));
+  height: 40px;
+  transform: translateX(-50%);
   font-size: 13px;
-  letter-spacing: 0.08em;
-  cursor: pointer;
-}
-.vn-ld-skip:hover {
-  border-color: #fff;
-  background: rgba(255, 255, 255, 0.12);
-}
-
-/* 竖屏:她在上半,信息在下面 */
-@container vn-ld (max-aspect-ratio: 1/1) {
-  .vn-ld-info {
-    left: 7cqw;
-    right: 7cqw;
-    width: auto;
-    top: auto;
-    bottom: 5cqh;
-  }
-  .vn-ld-face {
-    left: 50%;
-    top: 12cqh;
-    width: 24cqh;
-    height: 36cqh;
-    translate: -50% 0;
-  }
-  .vn-ld-lockup .word {
-    display: none;
-  }
+  line-height: 40px;
+  white-space: nowrap;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .vn-ld-twinkle,
-  .vn-ld-list li.now .star,
-  .vn-ld-spr,
-  .vn-ld-face,
-  .vn-ld-info {
+  .av-ld.is-rise .av-ld-ui,
+  .av-ld-skip {
     animation: none;
+  }
+  .av-ld-bg,
+  .av-ld-bar i,
+  .av-ld-bar b {
+    transition: none;
   }
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { TYPE_SOUNDS } from '../vn/typeSound';
-import { FX_BUBBLES, FX_MOTIONS, FX_SOUNDS, MOTION_FRAMES, fxStep, normalizeEffect } from './spriteFx';
+import { FX_BUBBLES, FX_MOTIONS, FX_SOUNDS, MOTION_FRAMES, fxStep, fxSwapsInstantly, normalizeEffect } from './spriteFx';
 
 describe('normalizeEffect', () => {
   it('keeps known ids and treats unknown ones as not set', () => {
@@ -62,5 +62,27 @@ describe('fxStep:立绘层什么时候放切换特效', () => {
     expect(fxStep(cue, 2, 'smile:1', true)).toBe('skip');
     // 跳过的那次算处理过了,CG 收起以后不补放
     expect(fxStep(cue, 3, 'smile:1', false)).toBe('wait');
+  });
+});
+
+describe('fxSwapsInstantly:带特效的那次换表情不淡入(旧图不留在底下一起跳)', () => {
+  const cue = (effect: { motion?: string | null; bubble?: string | null }) => ({ id: 3, target: 'smile:1', effect });
+
+  it('带动作或气泡、换的正是它要的那张:直接换', () => {
+    expect(fxSwapsInstantly(cue({ motion: 'hop' }), 2, 'smile:1', false, false)).toBe(true);
+    expect(fxSwapsInstantly(cue({ bubble: FX_BUBBLES[0].id }), 2, 'smile:1', false, false)).toBe(true);
+  });
+
+  it('只有音效、已经放过、换的不是它、被 CG 盖着:照常淡入', () => {
+    expect(fxSwapsInstantly(cue({}), 2, 'smile:1', false, false)).toBe(false);
+    expect(fxSwapsInstantly(cue({ motion: 'hop' }), 3, 'smile:1', false, false)).toBe(false);
+    expect(fxSwapsInstantly(cue({ motion: 'hop' }), 2, 'idle:1', false, false)).toBe(false);
+    expect(fxSwapsInstantly(cue({ motion: 'hop' }), 2, 'smile:1', true, false)).toBe(false);
+    expect(fxSwapsInstantly(null, 2, 'smile:1', false, false)).toBe(false);
+  });
+
+  it('减少动态:动作不放就不必直接换;有气泡还是直接换', () => {
+    expect(fxSwapsInstantly(cue({ motion: 'hop' }), 2, 'smile:1', false, true)).toBe(false);
+    expect(fxSwapsInstantly(cue({ motion: 'hop', bubble: FX_BUBBLES[0].id }), 2, 'smile:1', false, true)).toBe(true);
   });
 });

@@ -5,7 +5,7 @@
 
 import type { PackSprite, SceneAsset, SpriteLayout } from '../lib/api';
 
-/** 顶栏的两个页签:资料(卡、预设、人设) / 素材(绑定的包) */
+/** 顶栏的两个页签:资料(卡、预设、人设) / 素材(在用的包) */
 export type StudioTab = 'profile' | 'assets';
 
 /** 素材页左栏的一行 = 一栏。ai 只有装了生图卡带才有 */
@@ -41,13 +41,13 @@ export interface PackSync {
   packs(kind: 'sprite' | 'scene' | 'cg' | 'voice'): void;
 }
 
-/** 左栏一行:ok = 绑了东西;empty = 还没有(画成虚线圈 + 号) */
+/** 左栏一行:ok = 用着东西;empty = 还没有(画成虚线圈 + 号) */
 export type SlotState = 'ok' | 'empty';
 
 export interface SlotRow {
   key: SlotKey;
   name: string;
-  /** 副标题:「2 套服装 · 玉衡星」「未绑定」这类 */
+  /** 副标题:「2 套服装 · 玉衡星」「还没有」这类 */
   sub: string;
   state: SlotState;
 }

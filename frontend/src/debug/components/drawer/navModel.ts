@@ -184,3 +184,12 @@ export function switchTargetOf(rowId: string, panels: readonly CartridgePanel[])
   if (panel?.toggle) return { kind: 'panel', key: panel.key };
   return null;
 }
+
+/** 游戏皮左栏一行行尾画什么:全局组写状态字;角色 / 实验组开关关着写「关」,否则一个圆点(在用 = 实心)、没有圆点的页什么都不画 */
+export type GameEnd = { kind: 'text'; text: string } | { kind: 'off' } | { kind: 'dot'; on: boolean } | null;
+
+export function gameEnd(r: NavRow): GameEnd {
+  if (r.group === 'global') return r.end?.kind === 'text' ? { kind: 'text', text: r.end.text } : null;
+  if (r.end?.kind === 'switch' && !r.end.on) return { kind: 'off' };
+  return r.inUse === null ? null : { kind: 'dot', on: r.inUse };
+}

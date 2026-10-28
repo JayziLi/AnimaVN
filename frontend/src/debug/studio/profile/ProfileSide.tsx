@@ -3,7 +3,7 @@ import type { BudgetReport } from '../../lib/assembler';
 import { parseBudgetInput } from '../../lib/budget';
 import { formatTokens } from '../../lib/tokens';
 import { TERMS } from '../terms';
-import { Inspector, Section, SelectRow } from '../ui';
+import { Btn, Inspector, Section, SelectRow } from '../ui';
 import { ArmedBtn } from './ArmedBtn';
 import { budgetUsage, tokenShare } from './tokenShare';
 
@@ -45,19 +45,13 @@ export interface ProfileSideProps {
   onChangeBudget: (v: number | null) => void;
   busy: boolean;
   /** 已经点过两下了,直接删 */
+  /** 「复制这张卡」:设计稿放在右栏底下、删除的左边 */
+  onDuplicate?: () => void;
   onDelete: () => void;
 }
 
 /** 预算数字框:打字只改自己,回车 / 失焦才交出去;空或 0 = 不截断,填错了弹回原值 */
-function BudgetInput({
-  value,
-  disabled,
-  onCommit,
-}: {
-  value: number | null;
-  disabled: boolean;
-  onCommit: (v: number | null) => void;
-}) {
+function BudgetInput({ value, disabled, onCommit }: { value: number | null; disabled: boolean; onCommit: (v: number | null) => void }) {
   const [draft, setDraft] = useState<string | null>(null);
   const shown = value === null ? '' : String(value);
   const commit = () => {
@@ -84,7 +78,7 @@ function BudgetInput({
   );
 }
 
-export function ProfileSide({ binding, report, budget, canBudget, onChangeBudget, busy, onDelete }: ProfileSideProps) {
+export function ProfileSide({ binding, report, budget, canBudget, onChangeBudget, busy, onDuplicate, onDelete }: ProfileSideProps) {
   const share = tokenShare(report.parts);
   const usage = budgetUsage(report, budget);
   return (
@@ -92,13 +86,18 @@ export function ProfileSide({ binding, report, budget, canBudget, onChangeBudget
       label="这张卡怎么发给 AI"
       footer={
         <>
+          {onDuplicate && (
+            <Btn small onClick={onDuplicate} disabled={busy}>
+              复制这张卡
+            </Btn>
+          )}
           <span className="st-flex" />
           <ArmedBtn label="删除角色卡" disabled={busy} onConfirm={onDelete} />
         </>
       }
     >
       <div className="pf-side">
-        <Section title="绑定" help={TERMS.bind} first />
+        <Section title="绑定" en="Binding" help={TERMS.bind} first />
         <SelectRow
           label="玩家身份"
           value={binding.personaId ?? ''}
@@ -106,9 +105,7 @@ export function ProfileSide({ binding, report, budget, canBudget, onChangeBudget
           options={[
             {
               value: '',
-              label: binding.defaultPersonaName
-                ? `不绑定(用默认人设「${binding.defaultPersonaName}」)`
-                : '不绑定(不自动切换)',
+              label: binding.defaultPersonaName ? `不绑定(用默认人设「${binding.defaultPersonaName}」)` : '不绑定(不自动切换)',
             },
             ...binding.personas.map((p) => ({ value: p.id, label: p.name })),
           ]}
@@ -118,16 +115,14 @@ export function ProfileSide({ binding, report, budget, canBudget, onChangeBudget
           label="预设"
           value={binding.presetId ?? ''}
           disabled={busy}
-          options={[
-            { value: '', label: '不绑定(用对话记的预设)' },
-            ...binding.presets.map((p) => ({ value: p.id, label: p.name })),
-          ]}
+          options={[{ value: '', label: '不绑定(用对话记的预设)' }, ...binding.presets.map((p) => ({ value: p.id, label: p.name }))]}
           onChange={(v) => binding.onPreset(v || null)}
         />
         <div className="pf-gap" />
 
         <Section
           title="Token 分布"
+          en="Tokens"
           help={TERMS.token}
           right={<span className="pf-side-total">~{formatTokens(share.total)}</span>}
         />
@@ -153,7 +148,7 @@ export function ProfileSide({ binding, report, budget, canBudget, onChangeBudget
           ))}
         </div>
 
-        <Section title="上下文预算" help={TERMS.budget} />
+        <Section title="上下文预算" en="Budget" help={TERMS.budget} />
         <div className="pf-budget-row">
           <BudgetInput value={budget} disabled={!canBudget} onCommit={onChangeBudget} />
           <span className="pf-budget-text">{canBudget ? usage.text : '还没有预设,不截断'}</span>

@@ -6,7 +6,7 @@
 
 import { autoRows, type SendView } from '../../../core/sendPlan';
 import { SettingRow } from '../../settings/SettingRow';
-import { PageHead, Section } from '../frame';
+import { PageHead, PageShell, Panel, Section } from '../frame';
 import './sendPages.css';
 
 export function AutoFillPage({
@@ -35,31 +35,36 @@ export function AutoFillPage({
           ? '这次不用补'
           : null;
   return (
-    <>
-      <PageHead title="自动补块" tip="autofill" inUse={{ on: autoFill, text: autoFill ? '开着' : '关着' }} tags={[]} />
-      <Section title="常用">
-        <SettingRow label="缺块时补上" control={{ kind: 'toggle' }} value={autoFill} default={true} onChange={onChange} />
-      </Section>
-      {send && (
-        <Section title={`${card?.name || '这张卡'}这次会补`} tip="auto_fill">
-          <div className="dw-send-body">
-            {other && <div className="dw-muted">只看得到当前聊天这张卡({card?.name})的。</div>}
-            {send.presetName && <div className="dw-muted">当前预设「{send.presetName}」</div>}
-            {empty !== null ? (
-              <div className="dw-send-empty">{empty}</div>
-            ) : (
-              <ul className="dw-send-list">
-                {rows.map((r) => (
-                  <li key={r.identifier} className="dw-send-item">
-                    <span className="dw-send-name">{r.name}</span>
-                    <span className="dw-send-note">{r.note}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+    <PageShell
+      commonFirst
+      head={<PageHead title="自动补块" tip="autofill" inUse={{ on: autoFill, text: autoFill ? '开着' : '关着' }} tags={[]} />}
+      common={
+        <Section title="常用" en="Common">
+          <SettingRow label="缺块时补上" control={{ kind: 'toggle' }} value={autoFill} default={true} onChange={onChange} />
         </Section>
-      )}
-    </>
+      }
+      preview={
+        send && (
+          <Panel title={`${card?.name || '这张卡'}这次会补`} tip="auto_fill">
+            <div className="dw-send-body">
+              {other && <div className="dw-muted">只看得到当前聊天这张卡({card?.name})的。</div>}
+              {send.presetName && <div className="dw-muted">当前预设「{send.presetName}」</div>}
+              {empty !== null ? (
+                <div className="dw-send-empty">{empty}</div>
+              ) : (
+                <ul className="dw-send-list">
+                  {rows.map((r) => (
+                    <li key={r.identifier} className="dw-send-item">
+                      <span className="dw-send-name">{r.name}</span>
+                      <span className="dw-send-note">{r.note}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </Panel>
+        )
+      }
+    />
   );
 }

@@ -1,6 +1,6 @@
 /**
  * 背景栏、BGM 栏的几样小算法:默认 BGM 下拉里有哪些曲子、切到一张背景时游戏里放什么、
- * 一首曲子被哪些背景当默认、封面曲是哪首、绑定只改一边、曲子删了以后背景上的引用、时长怎么写。
+ * 一首曲子被哪些背景当默认、封面曲是哪首、换包只换一边、曲子删了以后背景上的引用、时长怎么写。
  *
  * 和游戏里的规则一样(plugins/scene.ts 的 applySceneTag、titleBgmOf):
  *   - 背景的默认 BGM 要在这张卡拼好的素材里(BGM 栏绑的包)、没停用,才会换;否则等于「不换」
@@ -14,8 +14,8 @@ import type { SelectOption } from '../ui';
 export type SceneSide = 'bg' | 'bgm';
 
 export const NO_BGM_LABEL = '不换(沿用之前的音乐)';
-/** 背景的默认 BGM 指着这张卡没绑的包里的曲子(后端允许指向任何包) */
-export const FOREIGN_BGM_LABEL = '(另一个包里的曲子,这张卡没绑)';
+/** 背景的默认 BGM 指着这张卡没用的包里的曲子(后端允许指向任何包) */
+export const FOREIGN_BGM_LABEL = '(另一个包里的曲子,这张卡没用)';
 
 /** 播放器读到时长才有;秒 → 2:05 / 1:02:03 */
 export function formatDuration(sec: number | null | undefined): string {
@@ -88,7 +88,7 @@ export interface BgmTag {
 export function bgmTag(bg: Pick<SceneAsset, 'bgm_id'>, choices: readonly BgmChoice[]): BgmTag {
   if (!bg.bgm_id) return { state: 'none', text: '不换', choice: null };
   const choice = choices.find((c) => c.asset.id === bg.bgm_id) ?? null;
-  if (!choice) return { state: 'foreign', text: '没绑的曲子', choice: null };
+  if (!choice) return { state: 'foreign', text: '没用的曲子', choice: null };
   const playable = choice.asset.enabled && choice.asset.has_file;
   return { state: playable ? 'ok' : 'off', text: choice.asset.label, choice };
 }
@@ -130,7 +130,14 @@ export function coverTrack(
   return first ? { id: first.id, explicit: false } : null;
 }
 
-/** 只往一边加一个包(接在后面);已经在那边了原样返回 */
+/** 只换一边:这一边整个换成这一个包(10-27「一样只用一个」),另一边不动;已经只有它了原样返回 */
+export function replaceSide(binding: SceneBinding, side: SceneSide, packId: string): SceneBinding {
+  const now = binding[side];
+  if (now.length === 1 && now[0] === packId) return binding;
+  return { ...binding, [side]: [packId] };
+}
+
+/** 只往一边加一个包(接在后面);已经在那边了原样返回(调试台网页素材管理的绑定框用) */
 export function bindSide(binding: SceneBinding, side: SceneSide, packId: string): SceneBinding {
   if (binding[side].includes(packId)) return binding;
   return { ...binding, [side]: [...binding[side], packId] };

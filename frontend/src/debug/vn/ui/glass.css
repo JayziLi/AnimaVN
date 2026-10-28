@@ -1,0 +1,83 @@
+/* ══════════ 主题 · 玻璃(设置 · 外观 · 主题选「玻璃」)══════════
+   照设计稿 docs/design/unify/kit/glass.css:纸面变量换成半透明的深色玻璃,字一直是白的;颜色是 --gl-* 变量,
+   VNScreen 按这一幕的场景算好写在 .vn-root 上(ui/glass.ts),没写的地方(DebugApp 里的确认框)用下面 :root 的默认深色。
+   这一步管的是提示条、确认框、就地确认、报错纸卡、右键小菜单、句检查器(它们的 class 带 .is-glass,popThemeClass 挂的);
+   菜单 / 设置页 / 封面这些大面积的玻璃等菜单外壳换皮时再接。
+   选择器前面都带 :root —— 只为权重比 ui.css 里 .av-night 那几条高,和 css 谁先谁后无关。
+   玻璃卡不 backdrop-filter、不垫糊开的图(设计稿的规矩:一屏只糊一层),只是半透明的场景色。 */
+
+:root {
+  --gl-base: 22, 24, 36;
+  --gl-total: rgba(22, 24, 36, 0.72);
+  --gl-solid: rgb(24, 26, 38);
+  --gl-edge: rgba(255, 255, 255, 0.16);
+}
+
+:root :is(.is-glass) {
+  --av-paper: rgba(255, 255, 255, 0.07);
+  --av-paper-2: rgba(255, 255, 255, 0.05);
+  --av-paper-3: rgba(255, 255, 255, 0.13);
+  --av-ink: #f4f3f8;
+  --av-ink-2: rgba(244, 243, 248, 0.88);
+  --av-dim: rgba(244, 243, 248, 0.72);
+  --av-faint: rgba(244, 243, 248, 0.38);
+  --av-hair: rgba(255, 255, 255, 0.17);
+  --av-hair-2: rgba(255, 255, 255, 0.09);
+  --av-glass: rgba(24, 26, 38, 0.8);
+  --av-glass-edge: rgba(255, 255, 255, 0.16);
+  --av-map-opacity: 0;
+  --av-sel: #fff;
+  /* 实心底(贴底的那排按钮、弹出来的小菜单):玻璃是半透明的,压在字上要不透 */
+  --av-solid: var(--gl-solid);
+  /* 出错 / 警告 / 成功当字用时,深玻璃上换亮一档 */
+  --av-bad-ink: #f7a89d;
+  --av-warn-ink: #e0b25c;
+  --av-good-ink: #8fc49a;
+  color: var(--av-ink);
+}
+/* 开关、滑块、焦点框:深玻璃上用亮的那格角色色 */
+:root :is(.is-glass, .is-glass *) {
+  --av-ctl: var(--av-acc);
+}
+/* 墨底主按钮:玻璃上墨 = 白,字用实心的深色(纸色是半透明的,当字色看不见) */
+:root .is-glass .av-btn.primary {
+  color: var(--gl-solid);
+}
+:root .is-glass .av-btn.danger {
+  color: var(--av-bad-ink);
+}
+:root .is-glass .av-help:hover::after {
+  background: var(--av-ink);
+  color: var(--gl-solid);
+}
+
+/* 提示条、确认框、报错纸卡:这一幕的玻璃色,压得比面板深一点,压在清楚的场景、立绘上字也看得清(≥ 4.5) */
+:root .av-toasts.is-glass .av-toast.is-x,
+:root .av-dlg.is-glass,
+:root .av-pcard.is-glass {
+  background: rgba(var(--gl-base), 0.9);
+  border-color: var(--gl-edge);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.38);
+}
+/* 小菜单、压在另一张卡上面的那种(.is-solid):实心那档 */
+:root .av-pcard.is-glass.is-solid {
+  background: var(--gl-solid);
+}
+:root .av-toasts.is-glass .av-toast.is-x.is-warn {
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.38), inset 3px 0 0 var(--av-warn-ink);
+}
+:root .av-toasts.is-glass .av-toast.is-x.is-err {
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.38), inset 3px 0 0 var(--av-bad-ink);
+}
+/* 大一点的纸卡(模型报错)压在她身上:垫这一幕糊开的场景(ModelError 的 frostSrc),压的色和整块玻璃一样深 —— 她不会透过来 */
+:root .av-pcard.is-glass.av-frosted {
+  --av-frost-tint: var(--gl-total);
+}
+/* 就地确认要盖住那一格的字:实心那档 */
+:root .av-here.is-glass {
+  background: var(--gl-solid);
+  border-top-color: var(--gl-edge);
+}
+:root .av-dlg.is-glass::after {
+  border-color: rgba(255, 255, 255, 0.08);
+}

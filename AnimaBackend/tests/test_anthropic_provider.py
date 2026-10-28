@@ -471,14 +471,14 @@ def test_complete_warns_when_reply_hits_max_tokens(monkeypatch, caplog):
 @pytest.mark.parametrize(
     ("status", "expected"),
     [
-        (401, "API 密钥无效或已过期"),
-        (403, "没有权限"),
-        (404, "模型不存在"),
-        (429, "请求被限流"),
-        (500, "服务返回错误 500"),
+        (401, "^401 Unauthorized: detail$"),
+        (403, "^403 Forbidden: detail$"),
+        (404, "^404 Not Found: detail$"),
+        (429, "^429 Too Many Requests: detail$"),
+        (500, "^500 Internal Server Error: detail$"),
     ],
 )
-def test_http_errors_are_translated_to_actionable_messages(monkeypatch, status: int, expected: str):
+def test_http_errors_carry_status_and_upstream_message(monkeypatch, status: int, expected: str):
     async def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(
             status,
@@ -497,3 +497,27 @@ def test_http_errors_are_translated_to_actionable_messages(monkeypatch, status: 
 
     with pytest.raises(LLMError, match=expected):
         run(scenario())
+
+
+def test_timeout_and_connect_errors_are_plain_facts(monkeypatch):
+    for exc, expected in [
+        (httpx.ReadTimeout, "Request to https://anthropic.test timed out"),
+        (httpx.ConnectError, "Cannot connect to https://anthropic.test: boom"),
+    ]:
+
+        async def handler(request: httpx.Request, exc=exc) -> httpx.Response:
+            raise exc("boom", request=request)
+
+        client = install_transport(monkeypatch, handler)
+
+        async def scenario():
+            try:
+                provider = AnthropicProvider("secret", "https://anthropic.test")
+                provider._client = provider._client.with_options(max_retries=0)
+                return await provider.complete([ChatMessage(role="user", content="hi")], "claude-test")
+            finally:
+                await client.aclose()
+
+        with pytest.raises(LLMError) as err:
+            run(scenario())
+        assert err.value.message == expected

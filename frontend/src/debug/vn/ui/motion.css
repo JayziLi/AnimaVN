@@ -1,0 +1,71 @@
+/* ══════════ 动效规矩 ══════════
+   照设计稿 kit/tokens.css「动」那几段抄:整屏换整屏 / 弹层开 0.22,关 0.18,换页 0.16;整块上浮 10px。
+   时长、缓动都从 theme.css 的 --av-* 取(减少动态效果时 theme.css 已经把时长改成 0.16s、上浮改成 0)。
+   用法:进场挂 class,放完用 settle()(motion.ts)摘掉 —— 动画挂着 fill-mode 会让里面的毛玻璃失效。
+   这一步只加不接:游戏里还没有地方用这些 class。 */
+
+/* 进场:整块淡入 0.22s + 上浮 0.32s 缓出,同一层的组件一起出(不排队) */
+.av-rise {
+  animation:
+    av-fade 0.22s ease backwards,
+    av-lift 0.32s var(--av-ease) backwards;
+}
+@keyframes av-lift {
+  from {
+    translate: 0 var(--av-rise);
+  }
+}
+@keyframes av-fade {
+  from {
+    opacity: 0;
+  }
+}
+.av-fade {
+  animation: av-fade var(--av-t) ease backwards;
+}
+.av-fade-out {
+  animation: av-fade-out var(--av-t) ease both;
+}
+@keyframes av-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+/* 弹层进出(提示条、确认框、检查器、输入条):进 0.22s 上浮 10px,出 0.18s 反着来。
+   整屏压暗层不要带 backdrop-filter —— 它底下的毛玻璃也在做时,Chrome 会把底下画花;压暗只用半透明底色 */
+.av-pop-in {
+  animation: av-pop-in 0.22s var(--av-ease) backwards;
+}
+.av-pop-out {
+  animation: av-pop-out 0.18s ease forwards;
+  pointer-events: none;
+}
+@keyframes av-pop-in {
+  from {
+    opacity: 0;
+    translate: 0 var(--av-rise);
+  }
+}
+@keyframes av-pop-out {
+  to {
+    opacity: 0;
+    translate: 0 calc(var(--av-rise) * 0.6);
+  }
+}
+
+/* 换页:新页 0.16s 淡入(旧页由调用方用 .av-fade-out 或直接摘掉,交叉淡入) */
+.av-page-in {
+  animation: av-fade var(--av-t-fast) ease backwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .av-rise,
+  .av-fade,
+  .av-fade-out,
+  .av-pop-in,
+  .av-pop-out,
+  .av-page-in {
+    animation: none;
+  }
+}

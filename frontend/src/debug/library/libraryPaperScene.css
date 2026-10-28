@@ -1,0 +1,239 @@
+/* ══════════ 局内菜单「素材」页 · 背景 / BGM / CG 换成纸面 ══════════
+   接在 libraryPaper.css 后面(--lib-lift / --lib-on-ink 在那边定)。
+   这里管 studio.css 里背景栏、BGM 栏的 .st-bg-* / .st-track* / .st-play / .st-stage-*,和 editors/cgPackEditor.css 的 .cg-*。
+   只在 .lib-embedded 里生效,调试台和卡编辑器不变。选中 = 白纸浮起 + 墨色细线;不胶囊。 */
+
+/* 舞台上的小块:方角,字钉在深色画面上的浅字(vn/ui/stage.css) */
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-stage-toggles {
+  padding: 2px;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-stage-toggle[aria-pressed='true'] {
+  background: rgba(255, 255, 255, 0.2);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-stage-bgm {
+  height: 30px;
+  padding-left: 3px;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-stage-chip.cg-toggle.on {
+  background: rgba(244, 244, 248, 0.92);
+}
+
+/* 圆的 ▶(试听):墨底纸色三角;曲目表里是描边小圆,在放的那行变实心 */
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-play.solid,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-play.ghost.on {
+  background: var(--av-ink);
+  color: var(--lib-on-ink);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-play.solid:hover:not(:disabled) {
+  background: var(--av-ink);
+  opacity: 0.86;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-play.ghost {
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+  color: var(--av-ink-2);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-play.ghost:hover:not(:disabled) {
+  box-shadow: inset 0 0 0 1px var(--av-ink-2);
+  color: var(--av-ink);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-play:focus-visible {
+  outline: 1.5px solid var(--av-ctl, var(--av-ink));
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-bars > i {
+  background: var(--av-faint);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-bars.on > i {
+  background: var(--av-ink);
+}
+/* 舞台上的音浪在深色小块里,照旧浅色 */
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-stage-bgm .st-bars > i {
+  background: rgba(244, 244, 248, 0.4);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-stage-bgm .st-bars.on > i {
+  background: #f4f4f8;
+}
+
+/* 背景 / CG 的缩略图格子:白纸小块,选中 = 墨色细线 + 浮起;能拖动排序(CG) */
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-bgs {
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 8px;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) :is(.st-bg-tile, .cg-tile) {
+  padding: 4px 4px 5px;
+  border-radius: var(--av-r-btn, 7px);
+  background: var(--av-paper);
+  box-shadow: 0 0 0 1px var(--av-hair);
+  color: var(--av-ink-2);
+  transition: box-shadow var(--av-t-fast, 0.16s);
+}
+.av-night .lib-embedded :is(.st-bg-tile, .cg-tile) {
+  background: var(--av-paper-2);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) :is(.st-bg-tile, .cg-tile):hover {
+  background: var(--av-paper);
+  box-shadow: 0 0 0 1px var(--av-faint);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) :is(.st-bg-tile, .cg-tile).selected {
+  background: var(--lib-lift);
+  box-shadow:
+    0 0 0 1.5px var(--av-ink),
+    0 4px 12px rgba(30, 24, 48, 0.12);
+  color: var(--av-ink);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) :is(.st-bg-tile, .cg-tile).selected :is(.st-bg-name, .cg-tile-name) {
+  font-weight: 700;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) :is(.st-bg-tile, .cg-tile):focus-visible {
+  outline: 1.5px solid var(--av-ctl, var(--av-ink));
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) :is(.st-bg-tile, .cg-tile).uploading.fail {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--av-bad) 55%, transparent);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) :is(.st-bg-thumb, .cg-thumb) {
+  border-radius: 4px;
+  background: var(--av-paper-3);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-bg-name,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .cg-tile-name {
+  font-family: var(--av-serif);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) :is(.st-bg-bgm, .cg-tile-sub, .cg-thumb-none, .st-ihead-blank) {
+  color: var(--av-dim);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) :is(.st-bg-flag, .cg-off) {
+  border-radius: 3px;
+  background: var(--av-ink);
+  color: var(--lib-on-ink);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .cg-progress {
+  border-radius: 4px;
+  background: var(--av-paper);
+  box-shadow: 0 0 0 1px var(--av-hair);
+  color: var(--av-ink);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) :is(.cg-tile.drop-before, .cg-tile.drop-after)::after {
+  background: var(--av-ink);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .cg-add {
+  border: 1px dashed var(--av-faint);
+  border-radius: var(--av-r-btn, 7px);
+  color: var(--av-dim);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .cg-add:hover {
+  border-color: var(--av-ink-2);
+  color: var(--av-ink);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) :is(.cg-stage-empty, .cg-ihead-none, .cg-free) {
+  color: var(--av-dim);
+}
+
+/* CG 右栏:每张构图的差分行 */
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .cg-var {
+  border-radius: var(--av-r-btn, 7px);
+  box-shadow: inset 0 0 0 1px var(--av-hair);
+  color: var(--av-ink-2);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .cg-var:hover {
+  background: var(--av-hair-2);
+  color: var(--av-ink);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .cg-var.open {
+  background: var(--lib-lift);
+  box-shadow: inset 0 0 0 1.5px var(--av-ink);
+  color: var(--av-ink);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .cg-var-thumb {
+  border-radius: 4px;
+  background: var(--av-paper-3);
+  color: var(--av-dim);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) :is(.cg-var-sub, .cg-var-warn) {
+  color: var(--av-dim);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .cg-var-input {
+  border-color: var(--av-ink-2);
+  border-radius: 5px;
+  background: var(--av-paper);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .cg-forms .conn-label {
+  color: var(--av-dim);
+}
+
+/* 默认 BGM 的说明、警告 */
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-bgm-note,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-bgm-user-pack,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-bgm-file > .st-icon,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-tracks-tip,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-tracks-empty {
+  color: var(--av-dim);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-bgm-note.warn {
+  color: var(--av-warn-ink);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-bgm-user > img,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-bgm-user-blank {
+  border-radius: 4px;
+  background: var(--av-paper-3);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-bgm-user-name {
+  color: var(--av-ink);
+}
+
+/* BGM 曲目表:一行一行,选中那行是浮起的白纸 + 左边墨色细线 */
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-tracks {
+  border-color: var(--av-hair);
+  border-radius: var(--av-r-panel, 8px);
+  background: color-mix(in srgb, var(--av-paper-2) 70%, transparent);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-tracks-head {
+  border-bottom-color: var(--av-hair);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-track {
+  border-top-color: var(--av-hair-2);
+  color: var(--av-ink-2);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-tracks-head + .st-track {
+  border-top: 0;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-track:hover {
+  background: var(--av-hair-2);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-track.selected {
+  background: var(--lib-lift);
+  box-shadow:
+    0 0 0 1px var(--av-hair-2),
+    inset 2px 0 0 var(--av-ink);
+  color: var(--av-ink);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-track-name {
+  color: var(--av-ink);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-track-label {
+  font-family: var(--av-serif);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-track-name:focus-visible {
+  outline: 1.5px solid var(--av-ctl, var(--av-ink));
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) :is(.st-track-index, .st-track-aliases, .st-track-desc, .st-track-used, .st-track-time) {
+  color: var(--av-dim);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-track-alias {
+  border-radius: 5px;
+  background: var(--av-hair-2);
+  color: var(--av-ink-2);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-track.fail {
+  color: var(--av-bad-ink);
+}
+
+/* 页头上的小签(AI 生成)继承了包名的宋体字距,字距还原 */
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-head-name > .st-chip,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-row-name > .st-chip {
+  font-family: var(--av-sans);
+  font-weight: 400;
+  letter-spacing: 0;
+}

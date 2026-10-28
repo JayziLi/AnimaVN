@@ -19,6 +19,8 @@ const FADE = 1.5;
 /** 解码后的曲子最多留几首 */
 const MAX_BUFFERS = 3;
 const STORE_KEY = 'anima.vn.audio';
+/** BGM 音量的默认值(设置页「恢复默认」用) */
+export const DEFAULT_BGM_VOLUME = 0.7;
 
 interface Track {
   url: string;
@@ -53,7 +55,7 @@ class BgmPlayer {
     wanted: null,
     playing: null,
     preview: null,
-    volume: 0.7,
+    volume: DEFAULT_BGM_VOLUME,
     muted: false,
     error: null,
     durations: {},

@@ -1,0 +1,84 @@
+/* ══════════ 局内菜单「素材」页 · 导入记录和几个小对话框换成纸面 ══════════
+   接在 libraryPaper.css 后面。导入记录照设计稿 .tl-job:靠左、一行一条、行与行之间一条细线,不套框;
+   对话框(绑定、删除确认、导入 refs.json)是挂到 body 上的浮层,带 .st-paper(studio/ui.tsx 的 LayerSkin)。 */
+
+/* ── 导入记录:靠左的一列,不居中 ── */
+
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-jobs {
+  padding-left: 0;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-jobs > * {
+  max-width: 820px;
+  margin: 0;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-job-list {
+  gap: 0;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-job {
+  gap: 14px;
+  padding: 12px 4px;
+  border: 0;
+  border-bottom: 1px solid var(--av-hair-2);
+  border-radius: 0;
+  background: transparent;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-job.highlight {
+  border-color: transparent;
+  border-bottom-color: var(--av-hair-2);
+  background: var(--lib-lift);
+  box-shadow: inset 2px 0 0 var(--av-ink);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-job-title {
+  font-family: var(--av-serif);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-job-title > .st-chip {
+  font-family: var(--av-sans);
+  font-weight: 400;
+  letter-spacing: 0;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) :is(.lib-job-time, .lib-job-sub, .lib-jobs-empty .st-empty-note) {
+  color: var(--av-dim);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-job.undone .lib-job-title {
+  color: var(--av-dim);
+}
+
+/* ── 对话框里的小块 ── */
+
+.st-paper .lib-bind-row:hover {
+  background: var(--av-hair-2);
+}
+.st-paper .lib-bind-row > input {
+  accent-color: var(--av-ctl, var(--av-ink));
+}
+.st-paper .lib-bind-avatar {
+  background: var(--av-paper-3);
+}
+.st-paper :is(.lib-bind-row, .lib-bind-text) {
+  color: var(--av-ink);
+}
+.st-paper :is(.lib-bind-sub, .lib-bind-state, .lib-bind-count, .lib-del-effect, .lib-refs-note) {
+  color: var(--av-dim);
+}
+.st-paper .lib-del-cards > li {
+  border-radius: 5px;
+  background: var(--av-hair-2);
+}
+.st-paper .lib-del-card {
+  color: var(--av-ink);
+}
+.st-paper .lib-refs-note.error {
+  color: var(--av-bad-ink);
+}
+.st-paper .lib-refs-conflict {
+  border-color: var(--av-hair);
+  border-radius: var(--av-r-btn, 7px);
+  background: var(--av-hair-2);
+  color: var(--av-ink-2);
+}
+.st-paper .lib-undo-lines {
+  color: var(--av-ink);
+}

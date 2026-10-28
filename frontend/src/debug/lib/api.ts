@@ -292,7 +292,7 @@ async function streamComplete(
     if (!ended) void reader.cancel().catch(() => undefined);
   }
 
-  throw new Error('流意外中断——没有收到结束帧');
+  throw new Error('Stream ended unexpectedly: no done frame received');
 }
 
 export interface HealthResult {
@@ -1500,9 +1500,31 @@ function withParam(url: string, param: string): string {
 
 /** <img src> 直接用的地址。有指纹走文件仓库;没有时带版本号:换图后 URL 变,浏览器就不会继续显示缓存里的旧图 */
 export function spriteImageUrl(s: PackSprite): string | null {
+  return spriteUrlAt(s, SPRITE_WIDTH);
+}
+
+function spriteUrlAt(s: PackSprite, w: number): string | null {
   if (!s.has_image) return null;
-  if (s.image_sha) return blobUrl(s.image_sha, SPRITE_WIDTH);
-  return `${BASE_URL}/api/sprite-packs/${s.pack_id}/sprites/${s.id}/image?v=${s.image_version}&w=${SPRITE_WIDTH}`;
+  if (s.image_sha) return blobUrl(s.image_sha, w);
+  return `${BASE_URL}/api/sprite-packs/${s.pack_id}/sprites/${s.id}/image?v=${s.image_version}&w=${w}`;
+}
+
+/**
+ * 小地方显示的图(差分小头像这类)要多宽:显示宽度(CSS 像素)× 屏幕倍率,往上取到这几档 ——
+ * 后端按「原图 + 宽度」缓存转好的图,档少了缓存命中高。比最大一档还宽时是 null(用游戏里那份大图)。
+ * 不能有 160 和 96:封面取色(vn/titleArt.ts)用这两个宽度以跨域方式读像素,普通 <img> 先载过同一个地址
+ * 浏览器缓存里那份没有 CORS 头,取色会被拦
+ */
+const THUMB_WIDTHS = [128, 240, 320, 480, 640];
+export function thumbWidth(cssWidth: number): number | null {
+  const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+  return THUMB_WIDTHS.find((w) => w >= cssWidth * dpr) ?? null;
+}
+
+/** 立绘缩到够显示 cssWidth 宽的小图;要得比档位还宽时就是 spriteImageUrl */
+export function spriteThumbUrl(s: PackSprite, cssWidth: number): string | null {
+  const w = thumbWidth(cssWidth);
+  return w ? spriteUrlAt(s, w) : spriteImageUrl(s);
 }
 
 /**

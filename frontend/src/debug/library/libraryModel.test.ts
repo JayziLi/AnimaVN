@@ -7,6 +7,7 @@ import {
   duplicateGroups,
   dupeIds,
   filterChips,
+  filterChipsForActiveCard,
   filterItems,
   formatSize,
   headerSummary,
@@ -98,6 +99,13 @@ describe('filterItems', () => {
     expect(names(filterItems([item('Alice · Uniform')], 'all', 'uni'))).toEqual(['Alice · Uniform']);
   });
 
+  it('active: bound to this one card specifically, not just bound to someone', () => {
+    // c 绑了 c2、c3;d 也绑了 c2 —— 「在用」只认 activeCardId 这一张,不管是不是唯一绑定
+    expect(names(filterItems(all, 'active', '', { activeCardId: 'c2' }))).toEqual(['星绘', 'AI 生图 · 星绘']);
+    expect(names(filterItems(all, 'active', '', { activeCardId: 'c1' }))).toEqual(['刻晴 · 玉衡星']);
+    expect(filterItems(all, 'active', '')).toEqual([]);
+  });
+
   it('query: also the names of the bound cards and the expression names given', () => {
     const cardNames = new Map([
       ['c1', 'DeepSeek娘(中文)'],
@@ -140,6 +148,18 @@ describe('filterChips', () => {
     const list = [item('a'), item('b', { generated: true })];
     expect(filterChips('cg', list).map((c) => c.label)).toEqual(['全部', '已绑定', '未绑定', '导入的', 'AI 生成']);
     expect(filterChips('cg', [item('a')]).map((c) => c.key)).toEqual(['all', 'bound', 'unbound']);
+  });
+});
+
+describe('filterChipsForActiveCard', () => {
+  it('just 全部 / 在用, 重复 only when there are some (10-26 菜单「素材」页)', () => {
+    const list = [item('a', { card_ids: ['x'] }), item('b')];
+    expect(filterChipsForActiveCard(list, 'x')).toEqual([
+      { key: 'all', label: '全部', count: 2 },
+      { key: 'active', label: '在用', count: 1 },
+    ]);
+    const dup = [...list, item('c', { content_key: 'k' }), item('d', { content_key: 'k' })];
+    expect(filterChipsForActiveCard(dup, 'x').map((c) => c.key)).toEqual(['all', 'active', 'dupes']);
   });
 });
 
@@ -187,6 +207,9 @@ describe('labels', () => {
   it('bound label', () => {
     expect(boundLabel(item('a', { card_ids: ['x', 'y'] }))).toBe('2 张卡');
     expect(boundLabel(item('a'))).toBe('未绑定');
+    // 游戏菜单里不说绑定
+    expect(boundLabel(item('a'), true)).toBe('没人用');
+    expect(boundLabel(item('a', { card_ids: ['x'] }), true)).toBe('1 张卡');
   });
 
   it('header: count with the long unit and size', () => {

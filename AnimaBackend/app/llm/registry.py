@@ -17,11 +17,11 @@ def provider_for(conn: ApiConnection) -> LLMProvider:
         return MockProvider()
     if conn.api_type == "anthropic":
         if not conn.api_key:
-            raise LLMError(f"连接「{conn.name}」还没有配置 API 密钥")
+            raise LLMError(f"Connection '{conn.name}' has no API key")
         return AnthropicProvider(conn.api_key, conn.base_url, conn.thinking)
     if conn.api_type == "openai_compatible":
         return OpenAICompatibleProvider(conn.api_key, conn.base_url, conn.thinking)
-    raise LLMError(f"未知的 API 类型：{conn.api_type}")
+    raise LLMError(f"Unknown API type: {conn.api_type}")
 
 
 def active_connection(db: Session) -> ApiConnection | None:

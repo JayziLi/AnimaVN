@@ -1,0 +1,178 @@
+/* ══════════ 局内菜单「素材」页 · 声音页换成纸面(试音台 + 情绪参考) ══════════
+   接在 libraryPaper.css 后面:颜色变量、--lib-lift / --lib-on-ink 在那边定。
+   这里只管 studio/editors/voiceEditor.css 的 .vo-*,只在 .lib-embedded 里生效,调试台和卡编辑器不变。 */
+
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-panel {
+  border-color: var(--av-hair);
+  border-radius: var(--av-r-panel, 8px);
+  background: color-mix(in srgb, var(--av-paper-2) 70%, transparent);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-title {
+  font-family: var(--av-serif);
+  letter-spacing: 0.12em;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-note,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-time.small,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-player-hint,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-bench-foot,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-dash,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-refnote,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-foot-note,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-more-note,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-aux-count,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-table-empty {
+  color: var(--av-dim);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-note.warn,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-match.warn {
+  color: var(--av-warn-ink);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-pending {
+  border-color: color-mix(in srgb, var(--av-warn) 55%, transparent);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-settings-head {
+  border-radius: var(--av-r-panel, 8px);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-settings-head:hover {
+  background: var(--av-hair-2);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-settings .st-input.vo-path,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-input.vo-path {
+  background: var(--av-paper);
+}
+
+/* 圆的 ▶:墨底纸色三角(设计稿的 .tl-play 也是圆的);不亮、不发光 */
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-play {
+  background: var(--av-ink);
+  color: var(--lib-on-ink);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-play.muted {
+  background: var(--av-hair-2);
+  color: var(--av-ink-2);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-play:hover:not(:disabled) {
+  filter: none;
+  opacity: 0.86;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-wave rect {
+  fill: var(--av-faint);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-wave rect.on {
+  fill: var(--av-ink);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-time {
+  color: var(--av-ink-2);
+}
+
+/* 试听台:例句是方角小块,选中 = 白纸浮起 + 墨色细线;台词用宋体 */
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-sample {
+  height: 24px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 5px;
+  box-shadow: inset 0 0 0 1px var(--av-hair);
+  color: var(--av-ink-2);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-sample:hover {
+  color: var(--av-ink);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-sample.on {
+  background: var(--lib-lift);
+  box-shadow: 0 0 0 1.5px var(--av-ink);
+  color: var(--av-ink);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-sample:focus-visible,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-row-main:focus-visible,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-settings-head:focus-visible,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-play:focus-visible,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-more:focus-visible {
+  outline: 1.5px solid var(--av-ctl, var(--av-ink));
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-bench-text {
+  border-color: var(--av-hair);
+  border-radius: var(--av-r-btn, 7px);
+  background: var(--av-paper);
+  font-family: var(--av-serif);
+  font-size: 15px;
+  letter-spacing: 0.03em;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-bench-text:focus {
+  border-color: var(--av-ink-2);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-label {
+  color: var(--av-ink-2);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-player {
+  border-radius: var(--av-r-btn, 7px);
+  background: var(--av-paper);
+  box-shadow: inset 0 0 0 1px var(--av-hair-2);
+}
+.av-night .lib-embedded .vo-player {
+  background: var(--av-paper-3);
+}
+
+/* 情绪参考表:一行一行,选中那行是浮起的白纸 + 左边墨色细线 */
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-table-head {
+  border-bottom-color: var(--av-hair);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-match {
+  border-radius: 5px;
+  background: var(--av-hair-2);
+  color: var(--av-ink-2);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-match.warn {
+  color: var(--av-warn-ink);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-row {
+  border-top-color: var(--av-hair-2);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-row.selected {
+  background: var(--lib-lift);
+  box-shadow:
+    0 0 0 1px var(--av-hair-2),
+    inset 2px 0 0 var(--av-ink);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-row:hover:not(.selected) {
+  background: var(--av-hair-2);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-row-label {
+  font-family: var(--av-serif);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-row-text {
+  color: var(--av-ink-2);
+  font-family: var(--av-serif);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-row-text.faint {
+  color: var(--av-dim);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-alias,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-aux-item {
+  border-radius: 5px;
+  background: var(--av-hair-2);
+  color: var(--av-ink-2);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-aux-name {
+  color: var(--av-ink-2);
+}
+
+/* 右栏:参考音频卡片、更多参数 */
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-refcard {
+  border-color: var(--av-hair);
+  border-radius: var(--av-r-btn, 7px);
+  background: var(--av-paper-2);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-more {
+  border-top-color: var(--av-hair);
+  font-family: var(--av-serif);
+  letter-spacing: 0.08em;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-input.vo-seed.bad {
+  border-color: var(--av-bad);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-row-error,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-bench-foot.error,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .vo-refnote.error {
+  color: var(--av-bad-ink);
+}

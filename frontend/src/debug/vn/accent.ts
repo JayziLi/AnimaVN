@@ -21,14 +21,42 @@ export const VN_ACCENTS: { value: VNAccent; name: string }[] = [
   { value: 'pink', name: '粉色' },
 ];
 
-/** 写到 .vn-root 上的三个变量:颜色本身、压在它上面的字色、给半透明底色用的「r, g, b」 */
+/**
+ * 写到 .vn-root 上的主题色:颜色本身、很深的角色色(13%)、给半透明底色用的「r, g, b」,
+ * 加纸面用的深色(deep)、淡底(soft),和压在 accent 上的字色(nameInk)。
+ * ink 和 nameInk 别弄混:ink 是角色色的深档,nameInk 是名牌 / 按钮上的字色(现在三种主题色里两者相等,画面不变)
+ */
 export interface AccentVars {
   accent: string;
   ink: string;
   rgb: string;
+  deep: string;
+  soft: string;
+  nameInk: string;
 }
 
-const fromAccent = (a: Accent): AccentVars => ({ accent: a.acc, ink: a.ink, rgb: a.rgb });
+const fromAccent = (a: Accent): AccentVars => ({
+  accent: a.acc,
+  ink: a.ink,
+  rgb: a.rgb,
+  deep: a.deep,
+  soft: a.soft,
+  nameInk: a.ink,
+});
+
+/** 要写到 .vn-root 上的变量:旧的 --vn-accent* 三个 + 底稿的 --av-acc* 四个(--av-ctl 由 theme.css 按 deep 算) */
+export function accentCssVars(a: AccentVars): Record<string, string> {
+  return {
+    '--vn-accent': a.accent,
+    '--vn-accent-ink': a.nameInk,
+    '--vn-accent-rgb': a.rgb,
+    '--av-acc': a.accent,
+    '--av-acc-deep': a.deep,
+    '--av-acc-ink': a.ink,
+    '--av-acc-soft': a.soft,
+    '--av-name-ink': a.nameInk,
+  };
+}
 
 /** 选的主题色 → 这一刻要用的颜色。跟角色时还没取到(或者立绘读不出像素)先用灰白 */
 export function useVNAccent(mode: VNAccent, sprites: readonly PackSprite[]): AccentVars {

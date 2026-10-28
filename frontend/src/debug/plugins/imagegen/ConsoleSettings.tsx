@@ -12,7 +12,16 @@ import type { ImageGenStore } from './useImageGen';
 
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-export function ConsoleSettings({ store, card }: { store: ImageGenStore; card: { id: string; name: string } | null }) {
+export function ConsoleSettings({
+  store,
+  card,
+  place = 'console',
+}: {
+  store: ImageGenStore;
+  card: { id: string; name: string } | null;
+  /** 游戏菜单里的插件页用纸面那套(和游戏设置里的 AI 生图同一个样子) */
+  place?: 'game' | 'console';
+}) {
   const other = card && card.id !== store.cardId ? card : null;
   const otherId = other?.id ?? null;
   const { notify } = store;
@@ -32,7 +41,7 @@ export function ConsoleSettings({ store, card }: { store: ImageGenStore; card: {
   }, [otherId, notify]);
   const timer = useRef<number | undefined>(undefined);
 
-  if (!other) return <ImageGenSettings store={store} place="console" />;
+  if (!other) return <ImageGenSettings store={store} place={place} />;
 
   const prefs = loaded?.cardId === other.id ? loaded.prefs : DEFAULT_CARD_PREFS;
   const changePrefs = (next: CardImagePrefs) => {
@@ -56,5 +65,5 @@ export function ConsoleSettings({ store, card }: { store: ImageGenStore; card: {
     albumError: `相册跟着调试台当前那张卡${store.cardName ? `(${store.cardName})` : ''};要看${other.name}画过的,先在右栏选它`,
     reloadAlbum: async () => {},
   };
-  return <ImageGenSettings store={view} place="console" />;
+  return <ImageGenSettings store={view} place={place} />;
 }

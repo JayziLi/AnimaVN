@@ -114,7 +114,7 @@ export function headTags(page: string, f: DrawerCardFacts, connections: readonly
     case 'sprite':
       return f.spritePack ? [`${f.spritePack.name || '立绘包'} · ${f.sprites} 张`] : ['没绑立绘'];
     case 'voice': {
-      if (!main) return ['没设主声音'];
+      if (!main) return ['没设音色'];
       const c = connections.find((x) => x.id === main.connection_id);
       return c ? [main.name, `用 ${connectionLabel(c)}`] : [main.name];
     }
@@ -126,7 +126,7 @@ export function headTags(page: string, f: DrawerCardFacts, connections: readonly
       if (s.cg === 0 && s.cgPackName === null) return ['没绑 CG 包'];
       return [`${s.cgPackName ?? s.packName ?? 'CG'} · ${s.cg} 张`];
     case 'lang':
-      return main ? [`${main.name}的声音${isJaLang(main.text_lang) ? '是' : '不是'}日语`] : ['没设主声音'];
+      return main ? [`${main.name}的声音${isJaLang(main.text_lang) ? '是' : '不是'}日语`] : ['没设音色'];
     default:
       return [];
   }

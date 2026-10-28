@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { ImportApplyBody, ImportGroup, ImportPlan, ImportResult } from '../lib/api';
 import type { ImportTarget } from './dropTarget';
+import { EMPTY_BIND } from '../vn/pick/pickLogic';
 import {
+  doneRows,
   applyBody,
   confirmModel,
   defaultDecisions,
@@ -333,5 +335,25 @@ describe('importErrorText', () => {
     expect(importErrorText(err(500, '导入失败,库里什么都没改:boom'))).toBe('导入失败,库里什么都没改:boom');
     expect(importErrorText('奇怪的东西')).toBe('导入失败:奇怪的东西');
     expect(importErrorText(err(400, '「a.png」不是音频,不能当 BGM'), '归类失败')).toBe('归类失败:「a.png」不是音频,不能当 BGM');
+  });
+});
+
+describe('doneRows(游戏里的「导入完成」)', () => {
+  const bind = {
+    ...EMPTY_BIND,
+    spritePack: '玉衡星',
+    scene: { name: '原神 · 璃月', bg: 16, bgm: 7, cg: 0 },
+    voice: '刻晴(日语)',
+    preset: '刻晴 DeepSeek',
+    persona: 'Lj',
+  };
+  const none = { cards: [], sprite_packs: [], scene_packs: [], cg_packs: [] };
+  it('只列这次新建了的那几类,人设不列', () => {
+    const rows = doneRows(bind, 14, { ...none, cards: ['k'], sprite_packs: ['s'], voices: ['v'] });
+    expect(rows.map((r) => r.kind)).toEqual(['sprite', 'voice']);
+    expect(rows[0].v).toBe('「玉衡星」· 14 张');
+  });
+  it('老后端没给 created:有的都列,空的(没有立绘包)不列', () => {
+    expect(doneRows({ ...bind, scene: null }, 0, undefined).map((r) => r.kind)).toEqual(['voice', 'preset']);
   });
 });

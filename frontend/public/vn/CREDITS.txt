@@ -63,3 +63,11 @@ deflate.mp3(stupid5)  type-cute.mp3(cursor7)  type-pa.mp3(cursor9)  type-ko.mp3(
 字体 fonts/rhr-core.woff2、fonts/rhr-extra.woff2
   资源圆体 Resource Han Rounded v1.910 — CyanoHao, https://github.com/CyanoHao/Resource-Han-Rounded
   SIL Open Font License 1.1(基于 Adobe 思源黑体 Source Han Sans)。只取了常用字子集,未改字形。
+
+字体 fonts/nss-core.woff2、fonts/nss-extra.woff2
+  Noto Serif SC v2.003(思源宋体)— Adobe, https://github.com/google/fonts/tree/main/ofl/notoserifsc
+  SIL Open Font License 1.1,许可证全文 fonts/LICENSE-NotoSerifSC.txt。只取了常用字和日文汉字子集,未改字形。
+
+字体 fonts/cormorant.woff2、fonts/cormorant-italic.woff2
+  Cormorant Garamond v4.001 — The Cormorant Project Authors, https://github.com/google/fonts/tree/main/ofl/cormorantgaramond
+  SIL Open Font License 1.1,许可证全文 fonts/LICENSE-CormorantGaramond.txt。只取了拉丁字母子集,未改字形。

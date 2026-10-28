@@ -562,9 +562,12 @@ export function PresetPanel({
               const skippedNow = state?.kind === 'skip';
               const on = entry.enabled && !skippedNow;
               const badge = plugin ? { cls: 'badge-plugin', text: '插件' } : badgeFor(prompt);
+              // 10-25 晚用户定的原话:点插件块先选中它,右栏说一句「该块属于插件块,可在插件内修改」,
+              // 旁边「去插件页」点了才跳——只有 page 变体(卡编辑器资料页、菜单「预设」页)这样;
+              // 调试台左栏(弹窗变体)照旧直接跳插件页,不改
               const open = () => {
                 if (!prompt) return;
-                if (plugin) onOpenPlugin(entry.identifier);
+                if (plugin && !page) onOpenPlugin(entry.identifier);
                 else openBlock(entry.identifier);
               };
               const key = `${entry.identifier}:${i}`;

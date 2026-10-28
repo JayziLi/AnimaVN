@@ -128,10 +128,22 @@ export function RecordsTab({
           onChange={(e) => setQuery(e.target.value)}
         />
         <span className="set-seg" role="radiogroup" aria-label="筛选">
-          <button type="button" role="radio" aria-checked={!onlyGuessed} className={onlyGuessed ? '' : 'on'} onClick={() => setOnlyGuessed(false)}>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={!onlyGuessed}
+            className={onlyGuessed ? '' : 'on'}
+            onClick={() => setOnlyGuessed(false)}
+          >
             全部
           </button>
-          <button type="button" role="radio" aria-checked={onlyGuessed} className={onlyGuessed ? 'on' : ''} onClick={() => setOnlyGuessed(true)}>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={onlyGuessed}
+            className={onlyGuessed ? 'on' : ''}
+            onClick={() => setOnlyGuessed(true)}
+          >
             模型猜的 {guessed}
           </button>
         </span>

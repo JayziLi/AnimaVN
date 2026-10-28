@@ -1,50 +1,37 @@
 /**
- * 卡编辑器「素材」页的 CG 栏(导入的现成 CG):顶上一排这张卡绑的 CG 包页签 +「＋」从素材库挑 / 上传新建 +「⋯」,
- * 下面是选中那个包的编辑器(CgPackEditor)。
+ * 卡编辑器「素材」页的 CG 栏(导入的现成 CG):顶上一行是「用哪个 CG 包」的下拉框(库里导入的全部 CG 包列在一起,
+ * 选了整个替换掉原来的)+「上传新建」+「⋯」,下面是这个包的编辑器(CgPackEditor)。
  *
- * 只列 generated = false 的包:生图收藏建的「AI 生图 · 卡名」包归「AI 生成」那一栏(用户要求两种 CG 分开放);
- * 游戏里两种 CG 一样能被选到。「＋」的素材库里列全部 CG 包,AI 生成的标「AI 生成」。
- * 绑定走 useScenePlugin(bindCgPacks,整组、按顺序);包里的内容由编辑器自己读写、经 PackSync 同步进游戏。
+ * 10-27 用户定「不做绑定了」:导入的 CG 一张卡只用一个包。只列 generated = false 的包:生图收藏建的
+ * 「AI 生图 · 卡名」包归「AI 生成」那一栏(用户要求两种 CG 分开放),游戏里两种 CG 一样能被选到;
+ * 所以换包只换导入的这一个,卡上绑着的 AI 生成的包留着(editors/cgEdit 的 replaceImportedCgPack)。
+ * 绑定走 useScenePlugin(bindCgPacks,整组);包里的内容由编辑器自己读写、经 PackSync 同步进游戏。
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { debugApi, sceneThumbUrl, type SceneAsset } from '../../lib/api';
+import { debugApi, type SceneAsset } from '../../lib/api';
 import type { ScenePluginState } from '../../plugins/useScenePlugin';
 import { CG_ACCEPT, CgPackEditor } from '../editors/CgPackEditor';
-import { cgCounts, cgPackSub, coverOf, generatedBoundCount, importedCgPackIds } from '../editors/cgEdit';
+import { cgCounts, cgPackSub, generatedBoundCount, importedCgPackIds, replaceImportedCgPack } from '../editors/cgEdit';
 import { Icon } from '../icons';
-import { PackPicker } from '../PackPicker';
 import type { Notify, PackSync } from '../types';
-import { Btn, ConfirmDialog, Inspector, InspectorHead, MoreMenu, PackTabs, PromptDialog, Section, TypeLabel } from '../ui';
+import { Btn, Inspector, InspectorHead, MoreMenu, PackSwap, PromptDialog, Section, TypeLabel } from '../ui';
 import { packExportItem } from '../../components/export/packExport';
 
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-/** 还没绑 CG 包时右栏的说明 */
+/** 还没选 CG 包时右栏的说明 */
 const INTRO = [
   'CG 是剧情里某个场面的一整张图(一般是横图),出 CG 时盖住立绘和背景。AI 写了 CG 标签、或者 Jev 挑中时出。',
-  '一个 CG 包是一组构图;每张构图下面还能挂几张表情差分,角色说话时按她当时的表情换。一张卡可以绑几个包,几个包里有同名的构图时用排前面的。',
+  '一个 CG 包是一组构图;每张构图下面还能挂几张表情差分,角色说话时按她当时的表情换。一张卡只用一个 CG 包,在顶上的下拉框里选;选了就整个换掉原来的。',
   '游戏里画笔画的、自动出图收藏下来的 CG 在「AI 生成」那一栏。',
 ];
 
-type Dialog =
-  | { kind: 'picker' }
-  | { kind: 'create'; files: File[] }
-  | { kind: 'rename'; id: string }
-  | { kind: 'unbind'; id: string }
-  | null;
-
-/** 页签、素材库里的缩略图和张数(编辑器改完会报上来) */
-interface PackInfo {
-  cover: SceneAsset | null;
-  counts: { cgs: number; variants: number };
-}
-
-const infoOf = (list: readonly SceneAsset[]): PackInfo => ({ cover: coverOf(list), counts: cgCounts(list) });
+type Dialog = { kind: 'create'; files: File[] } | { kind: 'rename'; id: string } | null;
 
 export interface CgSlotProps {
   cardName: string;
-  /** 场景插件里 CG 那几样:全部 CG 包、这张卡绑的(按顺序,含 AI 生成的)、改绑定、刷新包列表 */
+  /** 场景插件里 CG 那几样:全部 CG 包、这张卡用的(含 AI 生成的)、整组改、刷新包列表 */
   scene: Pick<ScenePluginState, 'cgPacks' | 'cgPackIds' | 'bindCgPacks' | 'refreshCgPacks' | 'ready'>;
   /** 当前服装启用的差分名(表情差分对不对得上、还缺哪些) */
   emotions: readonly string[];
@@ -65,59 +52,28 @@ export function CgSlot({ cardName, scene, emotions, sync, notify }: CgSlotProps)
 
   // 这一栏刚建的包:包列表刷新之前也当导入的显示
   const [created, setCreated] = useState<ReadonlySet<string>>(new Set());
-  const tabIds = importedCgPackIds(cgPackIds, cgPacks, created);
+  const usedIds = importedCgPackIds(cgPackIds, cgPacks, created);
   const generated = generatedBoundCount(cgPackIds, cgPacks);
   const loading = !scene.ready || (!listed && cgPackIds.some((id) => !byId.has(id)));
 
-  // 看的是哪个包:点过的页签;它被解除了就回到第一个
-  const [pick, setPick] = useState<string | null>(null);
-  const shown = pick && tabIds.includes(pick) ? pick : (tabIds[0] ?? null);
+  // 用的是哪个包:导入的里排第一的(以前存着几个的卡,多出来的在下次换的时候拿掉)
+  const shown = usedIds[0] ?? null;
 
-  // ---- 每个包的缩略图和张数(页签、素材库列表用) ----
-  const [infos, setInfos] = useState<Record<string, PackInfo | null>>({});
-  const asked = useRef(new Set<string>());
-  const loadInfos = useCallback((ids: readonly string[]) => {
-    for (const id of ids) {
-      if (asked.current.has(id)) continue;
-      asked.current.add(id);
-      debugApi
-        .listCgAssets(id)
-        .then((list) => setInfos((m) => ({ ...m, [id]: infoOf(list) })))
-        .catch(() => setInfos((m) => ({ ...m, [id]: null })));
-    }
-  }, []);
-  const tabKey = tabIds.join(',');
-  useEffect(() => {
-    loadInfos(tabKey ? tabKey.split(',') : []);
-  }, [tabKey, loadInfos]);
+  // 编辑器改完会报上来每个包现在的构图 / 差分数(下拉框右边的灰字);没报过的用包列表里的数
+  const [subs, setSubs] = useState<Record<string, string>>({});
   const onAssets = useCallback((pid: string, list: SceneAsset[]) => {
-    setInfos((m) => ({ ...m, [pid]: infoOf(list) }));
+    setSubs((m) => ({ ...m, [pid]: cgPackSub(cgCounts(list)) }));
   }, []);
-  const thumbOf = (id: string) => {
-    const cover = infos[id]?.cover;
-    return cover ? sceneThumbUrl(cover, 96) : null;
-  };
 
-  // ---- 绑定 ----
+  // ---- 换一个 / 新建 ----
   const [dialog, setDialog] = useState<Dialog>(null);
   const createInput = useRef<HTMLInputElement>(null);
   const [incoming, setIncoming] = useState<{ packId: string; nonce: number; files: File[] } | null>(null);
 
-  const openPicker = () => {
-    // 构图数、在用的卡数在别处也会变
-    void refreshCgPacks();
-    loadInfos(cgPacks.map((p) => p.id));
-    setDialog({ kind: 'picker' });
-  };
-  const pickNewFiles = () => createInput.current?.click();
-
-  /** 绑上一个包(接在最后),页签切过去;AI 生成的不在这一栏,说一声去哪看 */
-  const bind = async (id: string) => {
-    setDialog(null);
-    await bindCgPacks([...cgPackIds, id]);
-    const pack = byId.get(id);
-    if (pack?.generated) notify('ok', `「${pack.name}」绑上了 · AI 生成的 CG 在「AI 生成」那一栏看`);
-    else setPick(id);
+  /** 选了一个包:整个换掉原来导入的;AI 生成的留着 */
+  const replace = async (id: string | null) => {
+    if (!id) return;
+    await bindCgPacks(replaceImportedCgPack(cgPackIds, cgPacks, id));
   };
 
   const create = async (packName: string, files: File[]) => {
@@ -125,8 +81,7 @@ export function CgSlot({ cardName, scene, emotions, sync, notify }: CgSlotProps)
     try {
       const pack = await debugApi.createCgPack(packName);
       setCreated((s) => new Set(s).add(pack.id));
-      await bindCgPacks([...cgPackIds, pack.id]);
-      setPick(pack.id);
+      await bindCgPacks(replaceImportedCgPack(cgPackIds, cgPacks, pack.id));
       // 编辑器开起来以后自己传(网格里一张张出进度)
       setIncoming({ packId: pack.id, nonce: Date.now(), files });
     } catch (e) {
@@ -144,11 +99,21 @@ export function CgSlot({ cardName, scene, emotions, sync, notify }: CgSlotProps)
     }
   };
 
-  const unbind = async (id: string) => {
-    setDialog(null);
-    await bindCgPacks(cgPackIds.filter((x) => x !== id));
-    setPick(null);
-  };
+  const swap = (
+    <PackSwap
+      ariaLabel={`「${name}」的 CG 包`}
+      options={cgPacks
+        .filter((p) => !p.generated)
+        .map((p) => ({ id: p.id, name: p.name, sub: subs[p.id] ?? `${p.cg_count} 个构图` }))}
+      value={shown}
+      disabled={loading}
+      onPick={(id) => void replace(id)}
+    >
+      <Btn icon="upload" small onClick={() => createInput.current?.click()}>
+        上传新建
+      </Btn>
+    </PackSwap>
+  );
 
   const dialogs = (
     <>
@@ -164,32 +129,6 @@ export function CgSlot({ cardName, scene, emotions, sync, notify }: CgSlotProps)
           if (files.length) setDialog({ kind: 'create', files });
         }}
       />
-      {dialog?.kind === 'picker' && (
-        <PackPicker
-          title="添加 CG 包"
-          packs={cgPacks.map((p) => {
-            const thumb = thumbOf(p.id);
-            return {
-              id: p.id,
-              name: p.name,
-              count: `${p.cg_count} 个构图`,
-              cardCount: p.card_count,
-              media: thumb ? <img className="cg-picker-img" src={thumb} alt="" draggable={false} /> : undefined,
-              tag: p.generated ? 'AI 生成' : undefined,
-            };
-          })}
-          cardName={name}
-          boundIds={cgPackIds}
-          icon="cg"
-          onPick={(id) => void bind(id)}
-          createLabel="上传图片新建一个 CG 包"
-          onCreate={() => {
-            setDialog(null);
-            pickNewFiles();
-          }}
-          onCancel={() => setDialog(null)}
-        />
-      )}
       {dialog?.kind === 'create' && (
         <PromptDialog
           title="新建 CG 包"
@@ -210,46 +149,28 @@ export function CgSlot({ cardName, scene, emotions, sync, notify }: CgSlotProps)
           onCancel={() => setDialog(null)}
         />
       )}
-      {dialog?.kind === 'unbind' && (
-        <ConfirmDialog
-          title={`解除绑定「${byId.get(dialog.id)?.name ?? '这个 CG 包'}」?`}
-          body={
-            <p className="st-dialog-p">只是这张卡不再出这些 CG,包和里面的构图、表情差分都留着,素材库里还能找到。</p>
-          }
-          confirmLabel="解除绑定"
-          onConfirm={() => void unbind(dialog.id)}
-          onCancel={() => setDialog(null)}
-        />
-      )}
     </>
   );
 
-  // ---- 还没绑导入的 CG 包 ----
+  // ---- 还没选导入的 CG 包 ----
   if (!shown) {
     return (
       <>
         <main className="st-main">
           <div className="st-slot-bar">
             <TypeLabel slot="cg" />
+            {swap}
           </div>
           {!loading ? (
             <div className="st-empty">
               <span className="st-empty-icon">
                 <Icon name="cg" size={26} />
               </span>
-              <span className="st-empty-title">还没有绑定 CG 包</span>
-              <span className="st-empty-note">从素材库选,或者把 CG 文件夹拖进来</span>
+              <span className="st-empty-title">还没有 CG 包</span>
+              <span className="st-empty-note">从上面的下拉框选一个,或者上传图片新建一个</span>
               {generated > 0 && (
-                <span className="st-empty-note">另外绑着 {generated} 个 AI 生成的 CG 包,在「AI 生成」那一栏看</span>
+                <span className="st-empty-note">另外有 {generated} 个 AI 生成的 CG 包在用,在「AI 生成」那一栏看</span>
               )}
-              <div className="st-empty-actions">
-                <Btn icon="search" onClick={openPicker}>
-                  从素材库选
-                </Btn>
-                <Btn icon="upload" onClick={pickNewFiles}>
-                  上传图片新建一个 CG 包
-                </Btn>
-              </div>
             </div>
           ) : (
             <div className="st-empty">
@@ -271,36 +192,17 @@ export function CgSlot({ cardName, scene, emotions, sync, notify }: CgSlotProps)
   }
 
   const current = byId.get(shown);
-  const tabs = tabIds.map((id) => {
-    const p = byId.get(id);
-    const counts = infos[id]?.counts ?? { cgs: p?.cg_count ?? 0, variants: 0 };
-    return {
-      id,
-      name: p?.name ?? '…',
-      sub: cgPackSub(counts),
-      selected: id === shown,
-      thumb: thumbOf(id),
-      icon: 'cg' as const,
-    };
-  });
 
   const header = (
     <div className="st-slot-bar">
       <TypeLabel slot="cg" />
-      <PackTabs
-        items={tabs}
-        onSelect={setPick}
-        onAdd={openPicker}
-        addLabel="添加 CG 包(从素材库选,或上传图片新建一个)"
-        label="这张卡绑的 CG 包"
-      />
+      {swap}
       <span className="st-flex" />
       <MoreMenu
-        label="更多:重命名、导出这个包、解除绑定"
+        label="更多:重命名、导出这个包"
         items={[
           { label: '重命名', onClick: () => setDialog({ kind: 'rename', id: shown }) },
           packExportItem('cg', shown, notify),
-          { label: '解除绑定', onClick: () => setDialog({ kind: 'unbind', id: shown }) },
         ]}
       />
     </div>

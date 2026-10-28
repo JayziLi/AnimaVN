@@ -1,178 +1,167 @@
 /**
  * 素材等待页:进游戏、换角色、换立绘包时,图还没到齐就先盖着它(什么时候露、等多久见 assetGate.ts)。
  *
- * 10-04 定稿样式(画布 Menu-Loading):夜空(上次那张背景下好了就淡淡叠上去),左边站着她,
- * 左上 logo;右边「接下来 · 地点」、她最后一句、一道带星星的进度线、逐项的准备清单、一条小贴士。
- * 立绘本身也在等的东西里:下好了才淡入,没好之前先只有夜空。不放大字和装饰数字(用户的审美偏好)。
+ * 照星海的加载页(设计稿 kit/loading.js,U32;电脑和手机竖屏是同一份,手机只是竖着排):
+ * 整屏铺要进的那个场景,不放立绘、不放卡、没有纸;底下按场景亮度压一层暗渐变(亮的白天压得多);
+ * 右上一道很淡的轨道弧和几颗小星;底部一条贯穿全宽的白细线,走到哪是一颗白色小菱形(不跟角色色);
+ * 细线上方正中是 AnimaVN 的标,外面绕一圈细轨道;左下斜体 Tips + 一句小贴士(8 条轮换,只写真有的功能);
+ * 右下「正在载入 · 名字 · 场景包」。网络慢(等了 12 秒 must 还没齐)时进度停在六成,左下换成「先进去」按钮。
+ * 图还没到时先铺它的平均色(读不到就用上一次的),下完了淡入 —— 不先出一个空拱形。
+ * 不放角色台词、不写作品名。
  */
 
-import { useState, type CSSProperties } from 'react';
-import type { GateProgress } from './assetGate';
-import { useSettledView } from './assetGate';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { loadingWhat, slowHold } from './cover/loadingLogic';
+import { skyShapes } from './cover/loadingSky';
+import { nextTip } from './cover/loadingTips';
+import { isPortrait, useBoxSize } from './pick/useBoxSize';
+import { sceneToneOf } from './titleArt';
+import './theme.css';
+import './ui/ui.css';
 import './vnLoading.css';
 
 interface Props {
   charName: string;
-  /** 按脸裁的小头像;没有立绘时站在左边的是它(读不到换卡面头像,再没有就写名字的第一个字) */
-  faceSrc: string | null;
-  /** 卡面头像:不预先拉,小头像读不到时 onFaceMissing 要了才有 */
-  avatar: string | null;
-  onFaceMissing: () => void;
-  /** 已经下好的背景,淡淡叠在夜空上;还没下好是 null */
+  /** 场景包名(没绑场景包、或者只有卡图时是 null);右下角接在名字后面 */
+  scenePackName?: string | null;
+  /** 已经下好的背景;还没下好是 null */
   backdrop: string | null;
-  /** 默认表情的立绘(地址 + 按脸摆好的行内样式);没有立绘是 null */
-  sprite?: { src: string; style: CSSProperties } | null;
-  /** 接下来的地点(上次停下的那张背景的名字) */
-  place?: string;
-  /** 她最后说的一句 */
-  line?: string | null;
-  progress: GateProgress[];
+  /** 背景的地址(不管下好没有):有的话先下一张很小的缩略图取平均色铺底,不用等整张下完。不给就用上一次的颜色 */
+  backdropSrc?: string | null;
+  /** 按种类数的进度条(立绘 9/15 · 背景 3/17……)和整条进度 0–1;网络慢时进度停在六成 */
   fraction: number;
   slow: boolean;
   onSkip: () => void;
+
 }
 
-const TIPS = [
-  '对话框最下面随时可以打字插话,不用等她说完。',
-  '她说完了,画面正中会弹出输入条 —— 轮到你了。',
-  '菜单「角色」里能给她换立绘包、声音和场景包,换了马上生效。',
-  '设置 → 外观 可以换封面、对话框皮肤和对话框文字的字体。',
-  '在封面上点一下她,她会有反应。',
-  '读档页把鼠标移到存档上,能看到那一刻的场景和她的表情。',
-];
+/** 取不到场景色调(还没下好、读不出像素)时的底色和亮度:偏暗的灰蓝 */
+const NEUTRAL_TONE = { avg: [32, 32, 42] as [number, number, number], lum: 0.35 };
+/** 上一次读到的色调:这一次的图还没到时先用它铺底,换角色时不闪回灰色 */
+let lastTone: { avg: [number, number, number]; lum: number } | null = null;
 
-const STAR = 'M0-10C1.1-2.6 2.6-1.1 10 0 2.6 1.1 1.1 2.6 0 10-1.1 2.6-2.6 1.1-10 0-2.6-1.1-1.1-2.6 0-10Z';
-const Star = ({ className }: { className?: string }) => (
-  <svg className={className} viewBox="-10 -10 20 20" aria-hidden="true">
-    <path d={STAR} />
-  </svg>
-);
-const Check = () => (
-  <svg viewBox="0 0 24 24" aria-hidden="true" className="ok">
-    <path d="M5 12.5l4.5 4.5L19 7.5" />
-  </svg>
-);
+/** 这张图的平均色和亮度;换图时先留着上一次的,新的算好再换 */
+function useSceneTone(src: string | null) {
+  const [tone, setTone] = useState(lastTone ?? NEUTRAL_TONE);
+  useEffect(() => {
+    if (!src) return;
+    let alive = true;
+    void sceneToneOf(src).then((t) => {
+      if (!alive || !t) return;
+      lastTone = t;
+      setTone(t);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [src]);
+  return tone;
+}
 
-/** 夜空上几颗闪的星:位置照画板 */
-const TWINKLES: [number, number, number][] = [
-  [12.2, 15.8, 14],
-  [41.9, 35.3, 12],
-  [1.9, 36.5, 12],
-  [9.4, 46.9, 11],
-  [55.4, 28.6, 10],
-  [49.6, 95, 12],
-];
+const STAR_SPARK = 'M0-10C1.1-2.6 2.6-1.1 10 0 2.6 1.1 1.1 2.6 0 10-1.1 2.6-2.6 1.1-10 0-2.6-1.1-1.1-2.6 0-10Z';
 
-export function VNLoading({
-  charName,
-  faceSrc,
-  avatar,
-  onFaceMissing,
-  backdrop,
-  sprite = null,
-  place,
-  line,
-  progress,
-  fraction,
-  slow,
-  onSkip,
-}: Props) {
-  const [stage, setStage] = useState<'face' | 'avatar' | 'none'>(faceSrc ? 'face' : 'avatar');
-  const src = stage === 'face' ? faceSrc : stage === 'avatar' ? avatar : null;
-  const fail = () => {
-    if (stage === 'face') {
-      setStage('avatar');
-      onFaceMissing();
-    } else {
-      setStage('none');
-    }
-  };
-  const [tip] = useState(() => TIPS[Math.floor(Math.random() * TIPS.length)]);
-  // 立绘整张下好了才露出来,半截的不显示
-  const shown = useSettledView({ key: sprite?.src ?? '', src: sprite?.src ?? '', style: sprite?.style ?? {} });
-  const pct = Math.round(Math.min(1, Math.max(0, fraction)) * 100);
-  const pending = progress.find((g) => g.done < g.total);
+/** 右上角的轨道弧和小星(固定种子,每次一样) */
+function Sky({ phone }: { phone: boolean }) {
+  const s = skyShapes(phone);
+  const { orbit: o } = s;
+  return (
+    <svg className="av-ld-sky" viewBox={`0 0 ${s.w} ${s.h}`} preserveAspectRatio="xMaxYMin slice" aria-hidden="true">
+      <circle className="o" cx={o.cx} cy={o.cy} r={o.r} />
+      <circle className="o dot" cx={o.cx} cy={o.cy} r={o.r + o.gap} />
+      <circle className="pl" cx={o.px} cy={o.py} r={2} />
+      {s.dots.map((d, i) => (
+        <circle key={i} className="st" cx={d.cx} cy={d.cy} r={d.r} opacity={d.o} />
+      ))}
+      {s.sparks.map((p, i) => (
+        <path key={i} className="sp" d={STAR_SPARK} transform={`translate(${p.x} ${p.y}) scale(${p.s / 10})`} opacity={p.o} />
+      ))}
+    </svg>
+  );
+}
+
+export function VNLoading({ charName, scenePackName = null, backdrop, backdropSrc = null, fraction, slow, onSkip }: Props) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const portrait = isPortrait(useBoxSize(rootRef));
+  // 小贴士:每出一次换下一条,同一次等待里不变(电脑 / 手机各一套,横竖屏转了也留着这一句)
+  const [tips] = useState(() => ({ pc: nextTip(false), phone: nextTip(true) }));
+  const tip = portrait ? tips.phone : tips.pc;
+
+  const tone = useSceneTone(backdrop ?? backdropSrc);
+  const night = tone.lum < 0.3;
+  // 场景越亮,底下压得越多(白天的客厅、璃月的白天都很亮)
+  const k = Math.max(0.75, Math.min(1.15, 0.62 + tone.lum * 0.7));
+
+  // 进度:网络慢了停在六成,不往回缩
+  const peak = useRef(0);
+  peak.current = slowHold(peak.current, fraction, slow);
+  const shown = peak.current;
+  const pct = Math.round(shown * 100);
+
+  // 图下完了才淡入,之前先铺平均色
+  const [ready, setReady] = useState(false);
+  const imgRef = useRef<HTMLImageElement>(null);
+  useEffect(() => {
+    setReady(Boolean(imgRef.current?.complete && imgRef.current.naturalWidth > 0));
+  }, [backdrop]);
+
+  const what = loadingWhat(charName, scenePackName);
+  const vars = { '--ld-k': k.toFixed(2), '--p': shown.toFixed(4) } as CSSProperties;
 
   return (
-    <div className="vn-gate vn-ld" role="status" aria-live="polite" aria-label={`正在准备${charName}的素材`}>
-      <img className="vn-ld-sky" src="/vn/ui/sky-pick.svg" alt="" draggable={false} />
-      {backdrop && <img className="vn-ld-bg" src={backdrop} alt="" draggable={false} />}
-      <div className="vn-ld-shade" />
-      {TWINKLES.map(([x, y, s], i) => (
-        <span
-          key={i}
-          className="vn-ld-twinkle"
-          style={{ left: `${x}%`, top: `${y}%`, width: s, height: s, animationDelay: `${i * 0.7}s` }}
-        >
-          <Star />
-        </span>
-      ))}
-
-      <div className="vn-ld-stage">
-        {shown.src ? (
-          <img className="vn-ld-spr" src={shown.src} style={shown.style} alt={charName} draggable={false} />
-        ) : !sprite ? (
-          <div className="vn-ld-face">
-            {src ? (
-              <img src={src} alt="" draggable={false} onError={fail} />
-            ) : (
-              <span>{charName.slice(0, 1) || '?'}</span>
-            )}
-          </div>
-        ) : null}
-      </div>
-
-      <div className="vn-ld-lockup">
-        <img className="mark" src="/anima-logo.svg" alt="" draggable={false} />
-        <img className="word" src="/vn/ui/wordmark.png" alt="AnimaVN" draggable={false} />
-      </div>
-
-      <div className="vn-ld-info">
-        <div className="vn-ld-next">
-          <Star />
-          接下来
-        </div>
-        <div className="vn-ld-place">{place || charName}</div>
-        {line && <p className="vn-ld-line">「{line}」</p>}
-
-        <div className="vn-ld-bar" aria-label={`${pct}%`}>
-          <i style={{ width: `${pct}%` }} />
-          <svg className="vn-ld-bar-star" style={{ left: `${pct}%` }} viewBox="-10 -10 20 20" aria-hidden="true">
-            <path d={STAR} />
-          </svg>
-        </div>
-
-        <ul className="vn-ld-list">
-          {progress.map((g) => {
-            const done = g.done >= g.total;
-            return (
-              <li key={g.kind} className={done ? 'done' : g === pending ? 'now' : ''}>
-                {done ? <Check /> : <Star className="star" />}
-                {g.kind}
-                <span className="n">
-                  {g.done}/{g.total}
-                </span>
-              </li>
-            );
-          })}
-          {progress.length === 0 && (
-            <li className="now">
-              <Star className="star" />
-              正在准备 · {charName}
-            </li>
-          )}
-        </ul>
-
-        {slow ? (
-          <button type="button" className="vn-ld-skip" onClick={onSkip}>
-            网络有点慢 · 先进去,剩下的边玩边下
-          </button>
-        ) : (
-          <div className="vn-ld-tip">
-            <b>小贴士</b>
-            {tip}
-          </div>
+    <div ref={rootRef} className="vn-gate vn-ld" role="status" aria-live="polite" aria-label={`正在准备${charName}的素材`}>
+      <div className={`av-ld ${night ? 'is-night' : 'is-day'}${portrait ? ' is-phone' : ''} is-rise`} style={vars}>
+        <div className="av-ld-ph" style={{ background: `rgb(${tone.avg.join(' ')})` }} />
+        {backdrop && (
+          <img
+            ref={imgRef}
+            key={backdrop}
+            className={`av-ld-bg${ready ? ' ready' : ''}`}
+            src={backdrop}
+            alt=""
+            draggable={false}
+            onLoad={() => setReady(true)}
+          />
         )}
+        <div className="av-ld-shade" />
+        <Sky phone={portrait} />
+        <div className="av-ld-ui">
+          <div className="av-ld-mark" aria-hidden="true">
+            <svg className="ring" viewBox="-40 -40 80 80">
+              <g transform="rotate(-18)">
+                <path d="M-36 0A36 12 0 0 1 36 0" />
+              </g>
+            </svg>
+            <img src="/anima-logo.svg" alt="" draggable={false} />
+            <svg className="ring" viewBox="-40 -40 80 80">
+              <g transform="rotate(-18)">
+                <path d="M36 0A36 12 0 0 1-36 0" />
+                <circle cx="31.2" cy="6" r="1.8" />
+              </g>
+            </svg>
+          </div>
+          {slow ? (
+            <button type="button" className="av-ld-skip" onClick={onSkip}>
+              网络有点慢 · 先进去,剩下的边玩边下
+            </button>
+          ) : (
+            <p className="av-ld-tip">
+              <em>Tips</em>
+              <span>{tip}</span>
+            </p>
+          )}
+          <p className="av-ld-what">
+            {what.map((w, i) => (
+              <span key={i}>
+                {i > 0 && <i>·</i>}
+                {w}
+              </span>
+            ))}
+          </p>
+          <div className="av-ld-bar" role="progressbar" aria-label="载入进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}>
+            <i />
+            <b />
+          </div>
+        </div>
       </div>
     </div>
   );

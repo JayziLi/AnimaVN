@@ -1,4 +1,5 @@
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
+import { rangeFill } from '../../vn/ui/logic';
 import { Tip } from '../drawer/Tip';
 import { isTipKey, type TipKey } from '../drawer/tips';
 import { differsFromDefault, SCOPE_NAME, type SettingScope } from './settingValues';
@@ -111,6 +112,8 @@ function Control(p: SettingRowProps) {
             step={c.step}
             value={q.value}
             disabled={p.disabled}
+            // 填到哪(游戏皮的纸面滑条用它画角色色那一段;调试台不用)
+            style={{ '--p': rangeFill(q.value, c.min, c.max) } as CSSProperties}
             onChange={(e) => q.onChange(Number(e.target.value))}
           />
           {c.high && <span className="set-slider-end">{c.high}</span>}

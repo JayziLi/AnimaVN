@@ -3,6 +3,7 @@
  * 「16 张差分 · 18 MB · 已绑定 2 张卡:卡名、卡名」(卡名点了打开那张卡的卡编辑器素材页)、
  * 和别的包重复的写出来(点了选那个包)、来自哪次导入(点了看导入记录);
  * 右边「绑定到角色卡…」和「⋯」(重命名、创建副本、删除)。
+ * 游戏菜单里(embedded)不做绑定:右边只有「给她用」(整个替换),小字写「在用」不写「绑定」,没有「绑定到角色卡…」。
  */
 
 import { Fragment } from 'react';
@@ -27,6 +28,17 @@ export interface LibraryHeaderProps {
   onSelect: (id: string) => void;
   onOpenJob: (jobId: string) => void;
   menu: readonly MenuItem[];
+  /**
+   * 「给「她」用」(10-26,菜单「素材」页才有):游戏里现在这张卡;调试台的素材管理页没有当前卡,不给就不显示这颗按钮,
+   * 照旧只有「绑定到角色卡…」
+   */
+  active?: { id: string; name: string } | null;
+  /** 这个包是不是已经是 active 这一样唯一在用的那个 */
+  activeBound?: boolean;
+  usingActive?: boolean;
+  onUseForActive?: () => void;
+  /** 游戏菜单里的素材页:没有「绑定到角色卡…」,小字写「在用」 */
+  embedded?: boolean;
 }
 
 export function LibraryHeader({
@@ -41,6 +53,11 @@ export function LibraryHeader({
   onSelect,
   onOpenJob,
   menu,
+  active,
+  activeBound,
+  usingActive,
+  onUseForActive,
+  embedded,
 }: LibraryHeaderProps) {
   const cards = item.card_ids.filter((id) => cardNames.has(id));
   const shown = cards.slice(0, MAX_CARDS);
@@ -52,17 +69,31 @@ export function LibraryHeader({
         <TitleEdit value={item.name} label="名字" onCommit={onRename} />
         {item.generated && <Chip>AI 生成</Chip>}
       </span>
-      <Btn icon="link" onClick={onBind}>
-        绑定到角色卡…
-      </Btn>
+      {active ? (
+        <Btn
+          icon={activeBound ? 'check' : 'link'}
+          kind={activeBound ? 'secondary' : 'primary'}
+          disabled={activeBound || usingActive}
+          onClick={onUseForActive}
+          title={activeBound ? undefined : `整个替换掉「${active.name}」现在用的那个`}
+        >
+          {activeBound ? `「${active.name}」在用` : usingActive ? '换中…' : `给「${active.name}」用`}
+        </Btn>
+      ) : (
+        !embedded && (
+          <Btn icon="link" onClick={onBind}>
+            绑定到角色卡…
+          </Btn>
+        )
+      )}
       <MoreMenu label={`更多:${menu.map((m) => m.label).join('、')}`} items={menu} />
       <span className="lib-head-sub">
         <span>{headerSummary(kind, item)}</span>
         {cards.length === 0 ? (
-          <span>未绑定</span>
+          <span>{embedded ? '没有卡在用' : '未绑定'}</span>
         ) : (
           <span title={cards.length > MAX_CARDS ? all : undefined}>
-            已绑定 {cards.length} 张卡:
+            {embedded ? `${cards.length} 张卡在用:` : `已绑定 ${cards.length} 张卡:`}
             {shown.map((id, i) => (
               <Fragment key={id}>
                 {i > 0 && '、'}

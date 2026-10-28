@@ -30,7 +30,7 @@ describe('summarizeSlots', () => {
 
   it('marks every unbound slot as empty', () => {
     for (const row of summarizeSlots(base())) {
-      expect(row).toMatchObject({ sub: '未绑定', state: 'empty' });
+      expect(row).toMatchObject({ sub: '还没有', state: 'empty' });
     }
   });
 
@@ -51,7 +51,7 @@ describe('summarizeSlots', () => {
     );
   });
 
-  it('voice: main voice name, emotion count, and +N for the extra voices', () => {
+  it('voice: the voice name and emotion count; leftover backup voices are not shown', () => {
     const profiles = [
       { id: 'zh', name: '刻晴(中文)', emotions: new Array(12).fill(null) },
       { id: 'ja', name: '刻晴(日语)', emotions: [null, null] },
@@ -62,13 +62,13 @@ describe('summarizeSlots', () => {
       sub: '刻晴(中文) · 12 种情绪',
       state: 'ok',
     });
+    // 卡里存着的备用声音界面上不显示:一张卡只用一个音色
     expect(rowOf(base({ voice: { profiles, binding: { main: 'zh', extras: ['ja'] } } }), 'voice').sub).toBe(
-      '刻晴(中文) +1 · 12 种情绪',
+      '刻晴(中文) · 12 种情绪',
     );
-    // 只有备用、没有主声音
     expect(rowOf(base({ voice: { profiles, binding: { main: null, extras: ['ja'] } } }), 'voice')).toMatchObject({
-      sub: '1 个备用声音',
-      state: 'ok',
+      sub: '还没有',
+      state: 'empty',
     });
   });
 
@@ -80,7 +80,7 @@ describe('summarizeSlots', () => {
 
   it('background and BGM are bound separately', () => {
     const scene = { packs: scenePacks, binding: { bg: [], bgm: ['mu'] } };
-    expect(rowOf(base({ scene }), 'bg')).toMatchObject({ sub: '未绑定', state: 'empty' });
+    expect(rowOf(base({ scene }), 'bg')).toMatchObject({ sub: '还没有', state: 'empty' });
     expect(rowOf(base({ scene }), 'bgm')).toMatchObject({ sub: '鸣潮 · BGM · 3 首', state: 'ok' });
   });
 
@@ -112,7 +112,7 @@ describe('summarizeSlots', () => {
       state: 'ok',
     });
     expect(rowOf(base({ cg: { packs, bound: ['g', 'c1'] } }), 'cg').sub).toBe('爱弥斯 · CG · 30 个构图');
-    expect(rowOf(base({ cg: { packs, bound: ['g'] } }), 'cg')).toMatchObject({ sub: '未绑定', state: 'empty' });
+    expect(rowOf(base({ cg: { packs, bound: ['g'] } }), 'cg')).toMatchObject({ sub: '还没有', state: 'empty' });
   });
 
   it('ai: album size and kept count when the image cartridge is installed', () => {

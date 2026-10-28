@@ -6,7 +6,7 @@ import anthropic
 from anthropic import AsyncAnthropic
 
 from app.llm.base import ChatMessage, LLMProvider, StreamChunk
-from app.llm.errors import LLMError
+from app.llm.errors import LLMError, status_message
 from app.llm.http_client import make_http_client
 from app.llm.thinking import anthropic_params
 
@@ -15,6 +15,8 @@ logger = logging.getLogger(__name__)
 # 5-minute TTL: writes cost 1.25x input, reads 0.1x — pays off from the
 # second request inside the window, which a live chat easily hits
 EPHEMERAL = {"type": "ephemeral"}
+
+DEFAULT_ENDPOINT = "https://api.anthropic.com"
 
 # 思考也算在 max_tokens 里。Opus 5.5 关不掉思考、也不返回思考内容，1024 时
 # 思考吃掉一半多，正文只剩一两段就被切断(2026-09-28 实测中转站)。回复多长由
@@ -58,22 +60,17 @@ class AnthropicProvider(LLMProvider):
         )
 
     def _map_error(self, e: Exception) -> LLMError:
-        endpoint = self._base_url or "Anthropic 官方端点"
-        if isinstance(e, anthropic.AuthenticationError):
-            return LLMError("API 密钥无效或已过期 (401)")
-        if isinstance(e, anthropic.PermissionDeniedError):
-            return LLMError("该密钥没有权限访问此模型 (403)")
-        if isinstance(e, anthropic.NotFoundError):
-            return LLMError("模型不存在 (404)——检查模型名拼写")
-        if isinstance(e, anthropic.RateLimitError):
-            return LLMError("请求被限流 (429)，稍后重试或检查余额")
+        endpoint = self._base_url or DEFAULT_ENDPOINT
+        # 报错只写上游原话和事实,不写建议(界面上直接给用户看)
+        # APITimeoutError subclasses APIConnectionError, so it goes first
         if isinstance(e, anthropic.APIStatusError):
-            return LLMError(f"服务返回错误 {e.status_code}：{e.message}")
+            return LLMError(status_message(e.status_code, e.body if e.body is not None else e.message))
         if isinstance(e, anthropic.APITimeoutError):
-            return LLMError(f"请求 {endpoint} 超时——服务可能过载或网络不通")
+            return LLMError(f"Request to {endpoint} timed out")
         if isinstance(e, anthropic.APIConnectionError):
-            return LLMError(f"无法连接到 {endpoint}——检查地址拼写和网络")
-        return LLMError(f"调用失败：{e}")
+            cause = f": {e.__cause__}" if e.__cause__ else ""
+            return LLMError(f"Cannot connect to {endpoint}{cause}")
+        return LLMError(f"Request failed: {e}")
 
     @staticmethod
     def _split(messages: list[ChatMessage]) -> tuple[str | list[dict], list[dict]]:

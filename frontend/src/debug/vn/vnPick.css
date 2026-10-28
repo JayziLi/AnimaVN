@@ -1,20 +1,24 @@
-/* 选角色(画布 Pick-E3 / E4)。尺寸按 1440×810 的画板换成 cqh / cqw(.vn-pick 是尺寸容器)。
-   进场和封面一样:整页 0.22 秒淡入,组件一起上浮 10px。控件一律圆角方框,不用全圆胶囊。 */
+/* ══════════ 选角色(10-23 定的新版,设计稿 flow.html#pick / kit/pick.css + pages/cardface.css;手机竖屏 phone.html#a) ══════════
+   电脑:左边一块纸面板(返回 · 角色 · 最近 / 名字 · 导入 · 搜索 · 3 列卡面)、中间她站着、右边名字 + 一条一条的素材 + 继续 / 资料。
+   手机:上面场景 + 大立绘 + 名字和按钮,下面一张斜切的纸放搜索和卡面。
+   尺寸:--u = 设计稿(电脑 1440×810 / 手机 390×844)上的 1px 现在是几个像素,--k 是同一个数(没有单位,给 zoom 用),
+   都由 VNPick 按这一层现在的大小量出来写在根元素上;字号另设下限,窗口缩小了也不会小到看不清。
+   颜色全走底稿变量 --av-*(theme.css,界面统一 U33):纸、墨、淡字、细线、宋体、斜体英文;
+   面板 / 右边资料 / 名字底下那层渐变带 popThemeClass 的 av-day / av-night / is-glass,跟设置里的「主题」(白 / 黑 / 玻璃)走;
+   选中是白色(压在图上),不跟角色变;角色色只点在标题下那一小段细线和焦点框。 */
 
 .vn-pick {
-  --pk-paper: #fbfaf8;
-  --pk-ink: #2a2a33;
-  --pk-dim: rgba(42, 42, 51, 0.56);
-  --pk-serif: 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', serif;
-  --pk-latin: 'Cormorant Garamond', 'EB Garamond', Garamond, 'Palatino Linotype', serif;
+  --f-xs: max(calc(12 * var(--u)), 11px);
+  --f-s: max(calc(13 * var(--u)), 11.5px);
+  --f-m: max(calc(14 * var(--u)), 12px);
   position: absolute;
   inset: 0;
   z-index: 9;
   overflow: hidden;
   background: #161a33;
-  color: var(--pk-ink);
+  font-family: var(--av-sans);
   container: vn-pick / size;
-  animation: vn-pk-in 0.22s ease both;
+  animation: vn-pk-in var(--av-t) ease both;
 }
 @keyframes vn-pk-in {
   from {
@@ -24,13 +28,19 @@
 @keyframes vn-pk-rise {
   from {
     opacity: 0;
-    translate: 0 10px;
+    translate: 0 var(--av-rise);
   }
 }
 .vn-pick .pk-ui {
-  animation: vn-pk-rise 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) 0.08s both;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  animation: vn-pk-rise var(--av-t) var(--av-ease) both;
 }
-.vn-pick button {
+.vn-pick .pk-ui > * {
+  pointer-events: auto;
+}
+:where(.vn-pick button) {
   font: inherit;
   color: inherit;
   background: none;
@@ -38,14 +48,21 @@
   padding: 0;
   cursor: pointer;
 }
-.vn-pick img {
+:where(.vn-pick img) {
   user-select: none;
   -webkit-user-drag: none;
 }
 
-/* ---- 底 ---- */
+/* ---- 底:她的场景(换一张叠上去淡入);没场景 = 卡图糊开 / 夜空 ---- */
+.pk-bgs,
+.pk-bare {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
 .pk-sky,
-.pk-scene {
+.pk-scene,
+.pk-bare img {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -54,15 +71,41 @@
 }
 .pk-scene {
   transform: scale(1.04);
+}
+.pk-scene.in,
+.pk-bare {
   animation: vn-pk-in 0.3s ease both;
 }
-.vn-pick.scene .pk-shade {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(180deg, rgba(12, 14, 30, 0.4) 0%, rgba(12, 14, 30, 0) 22%);
+.pk-bare {
+  background: var(--av-paper-3);
+}
+.pk-bare img {
+  filter: blur(40px) saturate(1.15);
+  transform: scale(1.4);
 }
 
-/* ---- 左:大立绘 ---- */
+/* 右边名字底下一层纸色渐变,字才看得清(不发光、不用毛玻璃) */
+.pk-veil {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    270deg,
+    color-mix(in srgb, var(--av-paper) 88%, transparent) 0,
+    color-mix(in srgb, var(--av-paper) 76%, transparent) calc(380 * var(--u)),
+    color-mix(in srgb, var(--av-paper) 0%, transparent) calc(640 * var(--u))
+  );
+}
+.pk-veil.is-glass {
+  background: linear-gradient(
+    270deg,
+    rgba(var(--gl-base), calc(var(--gl-a) + 0.08)) 0,
+    rgba(var(--gl-base), var(--gl-a)) calc(380 * var(--u)),
+    rgba(var(--gl-base), 0) calc(640 * var(--u))
+  );
+}
+
+/* ---- 中间:大立绘(画到大腿的:下边 10% 渐隐,不留硬切口) ---- */
 .pk-hero {
   position: absolute;
   inset: 0;
@@ -73,746 +116,1059 @@
   position: absolute;
   max-width: none;
   width: auto;
-  filter: drop-shadow(0 1.2cqh 3cqh rgba(5, 5, 20, 0.5));
-  animation: vn-pk-in 0.25s ease both;
+  filter: drop-shadow(0 10px 24px rgba(20, 20, 50, 0.32));
+  -webkit-mask-image: linear-gradient(0deg, transparent 0, #000 10%);
+  mask-image: linear-gradient(0deg, transparent 0, #000 10%);
+  animation: vn-pk-in 0.2s ease both;
 }
-.pk-hero-av {
+/* 没立绘:中间放一张「相片」—— 纸边 + 卡图 */
+.pk-print {
   position: absolute;
-  left: 15.3cqw;
-  top: 11.4cqh;
-  width: 37cqh;
-  height: 55.5cqh;
-  border: 3px solid var(--pk-paper);
-  border-radius: 18.5cqh 18.5cqh 10px 10px;
-  overflow: hidden;
-  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.5);
-  animation: vn-pk-in 0.25s ease both;
+  left: calc(590 * var(--u));
+  top: calc(150 * var(--u));
+  width: calc(330 * var(--u));
+  height: calc(440 * var(--u));
+  padding: calc(10 * var(--u));
+  border-radius: 5px;
+  background: var(--av-paper);
+  box-shadow: var(--av-shadow-float);
+  animation: vn-pk-in 0.2s ease both;
 }
-.pk-hero-av img {
+.pk-print .win {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--av-paper-3);
+}
+.pk-print .bed,
+.pk-print .im {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: 50% 18%;
+}
+.pk-print .bed {
+  filter: blur(16px) saturate(1.15);
+  transform: scale(1.5);
+  opacity: 0.75;
+}
+.pk-print .im {
+  object-position: 50% 24%;
 }
 .pk-hero-none {
   position: absolute;
-  left: 14.6cqw;
-  top: 14.8cqh;
-  width: 39.5cqh;
+  left: calc(615 * var(--u));
+  top: calc(200 * var(--u));
+  width: calc(300 * var(--u));
   opacity: 0.3;
 }
-/* 左下压暗,字才看得清;到面板那儿停 */
-.pk-hero-shade {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(to top, rgba(12, 14, 30, 0.92) 0%, rgba(12, 14, 30, 0.6) 32%, rgba(12, 14, 30, 0) 52%);
-  -webkit-mask-image: linear-gradient(90deg, #000 0, #000 58cqw, transparent 61cqw);
-  mask-image: linear-gradient(90deg, #000 0, #000 58cqw, transparent 61cqw);
-  pointer-events: none;
-}
 
-/* ---- 左上:返回 + 标题 ---- */
-.pk-head {
-  position: absolute;
-  left: 4cqw;
-  top: 4.4cqh;
-  display: flex;
-  align-items: center;
-  gap: 2.5cqh;
-  color: #f6f6f8;
-  text-shadow: 0 1px 8px rgba(10, 10, 30, 0.45);
-}
-.pk-back {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 14px !important;
-  border: 1px solid rgba(246, 246, 248, 0.4) !important;
-  border-radius: 6px;
-  font-size: 13px;
-  letter-spacing: 0.16em;
-  transition: border-color 0.2s;
-}
-.pk-back:hover {
-  border-color: #fff !important;
-}
-.pk-back span {
-  font-size: 11px;
-  opacity: 0.6;
-}
-.pk-head h2 {
-  margin: 0;
-  font: 700 max(3.3cqh, 20px) / 1 var(--pk-serif);
-  letter-spacing: 0.4em;
-}
-.pk-head .en {
-  font: italic 500 max(1.85cqh, 12px) / 1 var(--pk-latin);
-  letter-spacing: 0.2em;
-  opacity: 0.75;
-}
-
-/* ---- 左下:她的名字和按钮 ---- */
-.pk-info {
-  position: absolute;
-  left: 4cqw;
-  bottom: 5.4cqh;
-  width: min(33cqw, 480px);
-  color: #f6f6f8;
-}
-.pk-work {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font: 700 max(1.73cqh, 12px) / 1.2 var(--pk-serif);
-  letter-spacing: 0.22em;
-  opacity: 0.85;
-}
-.pk-work svg,
-.pk-primary svg {
-  width: 12px;
-  height: 12px;
-  fill: var(--pk-acc);
-}
-.pk-name {
-  margin-top: 6px;
-  font: 700 max(6.4cqh, 30px) / 1.12 var(--pk-serif);
-  letter-spacing: 0.12em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
-}
-.pk-line {
-  margin: 10px 0 0;
-  font: 500 max(1.85cqh, 13px) / 1.7 var(--pk-serif);
-  letter-spacing: 0.04em;
-  opacity: 0.9;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.pk-meta {
-  margin-top: 8px;
-  font-size: 12px;
-  letter-spacing: 0.1em;
-  opacity: 0.72;
-}
-.pk-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 14px;
-}
-.pk-primary {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  height: 44px;
-  padding: 0 22px 0 16px !important;
-  border-radius: 6px;
-  background: var(--pk-paper) !important;
-  color: var(--pk-ink) !important;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
-  transition:
-    transform 0.25s,
-    box-shadow 0.25s;
-}
-.pk-primary:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 10px 22px rgba(30, 30, 50, 0.3);
-}
-.pk-primary,
-.pk-ghost {
-  white-space: nowrap;
-}
-.pk-primary span {
-  font: 700 16px / 1 var(--pk-serif);
-  letter-spacing: 0.26em;
-}
-.pk-ghost {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 44px;
-  padding: 0 18px !important;
-  border: 1px solid rgba(246, 246, 248, 0.4) !important;
-  border-radius: 6px;
-  font: 700 15px / 1 var(--pk-serif);
-  letter-spacing: 0.2em;
-  transition: background 0.2s;
-}
-.pk-ghost.small {
-  padding: 0 16px !important;
-  font: 400 13px / 1 inherit;
-  font-family: inherit;
-  letter-spacing: 0.16em;
-}
-.pk-ghost:hover,
-.pk-ghost.on {
-  background: rgba(255, 255, 255, 0.12) !important;
-}
-.pk-ghost svg {
-  width: 14px;
-  height: 14px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.6;
-}
-
-/* ---- 右:浮起的纸面板(夜空)/ 毛玻璃纸面板(她的场景) ---- */
-.pk-panel-wrap {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
+/* ══════════ 左边:纸面板(left 28 / 宽 472 / 上下 28),不发光、不做实时毛玻璃 ══════════ */
 .pk-panel {
   position: absolute;
-  left: 61.4cqw;
-  top: 2.2cqh;
-  right: 1.25cqw;
-  bottom: 2.2cqh;
-  overflow: hidden;
-  border-radius: 8px 8px 46px 8px;
-  border: 1px solid rgba(255, 255, 255, 0.7);
-  background: var(--pk-paper);
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
-}
-.vn-pick.scene .pk-panel {
-  border-color: rgba(255, 255, 255, 0.85);
-  background: rgba(251, 250, 248, 0.84);
-  -webkit-backdrop-filter: blur(18px) saturate(1.1);
-  backdrop-filter: blur(18px) saturate(1.1);
-  box-shadow: 0 20px 50px rgba(20, 20, 40, 0.3);
-}
-.pk-map {
-  position: absolute;
-  right: 0;
-  top: 0;
-  height: 100%;
-  opacity: 0.12;
-}
-
-.pk-side {
-  position: absolute;
-  left: 63.5cqw;
-  right: 2.2cqw;
-  top: 3.5cqh;
-  bottom: 3.5cqh;
+  left: calc(28 * var(--u));
+  top: calc(28 * var(--u));
+  bottom: calc(28 * var(--u));
+  width: calc(472 * var(--u));
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--av-r-panel);
+  background: var(--av-paper);
+  box-shadow:
+    inset 0 0 0 1px var(--av-hair-2),
+    var(--av-shadow-float);
+  color: var(--av-ink);
 }
-.pk-scroll {
-  overflow-y: auto;
-  scrollbar-width: none;
+/* 纸上那层淡星图(封面同款) */
+.pk-panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: url('/vn/ui/map-left.svg') center / cover no-repeat;
+  opacity: var(--av-map-opacity);
+  pointer-events: none;
 }
-.pk-scroll::-webkit-scrollbar {
-  display: none;
+.pk-panel > * {
+  position: relative;
 }
-
-.pk-tools {
-  flex: none;
+/* 标题行:返回 · 角色 Heroine ……… 最近 / 名字 · 导入;下一行整行搜索;下面一道细线,左端一小段角色色 */
+.pk-phead {
   display: flex;
+  flex: none;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: 12px 10px;
+  padding: calc(16 * var(--u)) calc(20 * var(--u)) calc(14 * var(--u));
 }
-.pk-search {
+.pk-phead::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: linear-gradient(90deg, var(--av-hair) 60%, transparent);
+}
+.pk-phead::before {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  left: calc(20 * var(--u));
+  bottom: 0;
+  width: 28px;
+  height: 1px;
+  background: var(--av-ctl);
+}
+.pk-phead h2 {
+  margin: 0 0 0 4px;
+  font: 700 max(calc(21 * var(--u)), 16px) / 1 var(--av-serif);
+  letter-spacing: 0.26em;
+}
+.pk-phead .en {
+  font: italic 500 var(--f-s) / 1 var(--av-latin);
+  letter-spacing: 0.14em;
+  color: var(--av-dim);
+}
+.pk-phead .sp {
   flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 36px;
-  padding: 0 12px;
-  border: 1px solid rgba(42, 42, 51, 0.2);
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.7);
-  transition: border-color 0.2s;
 }
-.pk-search:focus-within,
-.pk-search:hover {
-  border-color: rgba(42, 42, 51, 0.45);
+/* 窗口小了面板跟着窄,按钮是固定大小的:先收起斜体英文,免得「导入」掉到下一行 */
+@container vn-pick (max-width: 1200px) {
+  .pk-phead .en {
+    display: none;
+  }
 }
-.pk-search svg {
+/* 按钮里的图标:整合版(whole.html)实际渲染出来是普通按钮 14px、小号按钮 12px(组件库 kit/creator.css 的 .av-btn svg),
+   不管传进来的 size 是多少;手机竖屏照 phone.html 原样 */
+.vn-pick:not(.portrait) .av-btn svg {
+  width: 14px;
+  height: 14px;
+}
+.vn-pick:not(.portrait) .av-btn.sm svg,
+.vn-pick:not(.portrait) .av-btn .av-star {
+  width: 12px;
+  height: 12px;
+}
+.pk-back {
+  gap: 4px;
+  padding: 0 8px 0 7px;
+}
+/* 返回的图标四周留了白,往两边收一点 */
+.pk-back .av-ic,
+.pk-all .av-ic {
   flex: none;
-  width: 15px;
-  height: 15px;
-  fill: none;
-  stroke: rgba(42, 42, 51, 0.55);
-  stroke-width: 1.7;
+  margin: 0 -3px 0 -4px;
+}
+.pk-back .av-kbd {
+  height: 18px;
+  min-width: 26px;
+  font-size: 12.5px;
+}
+.pk-import {
+  gap: 4px;
+  font-size: 12.5px;
+}
+.pk-import .av-ic {
+  flex: none;
+  margin-left: -2px;
+}
+/* 搜索:整格描一道焦点框(输入框自己不画) */
+.pk-search {
+  display: flex;
+  order: 9;
+  flex: 1 1 100%;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: var(--av-r-btn);
+  background: var(--av-paper-2);
+  box-shadow: inset 0 0 0 1px var(--av-hair-2);
+  color: var(--av-ink-2);
+}
+.pk-search .av-ic {
+  flex: none;
 }
 .pk-search input {
   flex: 1;
   min-width: 0;
-  border: none;
+  height: 100%;
+  border: 0;
+  background: transparent;
   outline: none;
-  background: none;
-  font: inherit;
-  font-size: 13px;
-  letter-spacing: 0.06em;
-  color: var(--pk-ink);
+  color: var(--av-ink);
+  font: 14px / 34px var(--av-sans);
 }
 .pk-search input::placeholder {
-  color: rgba(42, 42, 51, 0.45);
+  color: var(--av-ink-2);
 }
-.pk-sort {
-  flex: none;
-  display: flex;
-  padding: 3px;
-  border-radius: 6px;
-  background: rgba(42, 42, 51, 0.07);
+.pk-search:focus-within {
+  box-shadow: inset 0 0 0 1.5px var(--av-ctl);
 }
-.pk-sort button {
-  padding: 5px 13px !important;
-  border-radius: 4px;
-  font-size: 12px;
-  letter-spacing: 0.14em;
-  color: var(--pk-dim);
+/* 桌面面板顶上那格照组件库 .av-input(kit/pick.css 的 .p2-search):纸底、一道细边、13px 字,不带放大镜;
+   上面那套(paper-2 底 + 放大镜)是手机竖屏 phone.html 的 .pf-sbox */
+.pk-phead .pk-search {
+  padding: 0 10px;
+  border: 1px solid var(--av-hair);
+  background: var(--av-paper);
+  box-shadow: none;
+  color: var(--av-ink);
+  transition:
+    border-color 0.16s,
+    box-shadow 0.16s;
 }
-.pk-sort button.on {
-  background: #fff !important;
-  color: var(--pk-ink);
-  box-shadow: 0 1px 3px rgba(30, 30, 50, 0.15);
+.pk-phead .pk-search input {
+  font: 13px / 30px var(--av-sans);
 }
-.pk-import {
-  flex: none;
-  height: 36px;
-  padding: 0 16px !important;
-  border-radius: 6px;
-  background: var(--pk-ink) !important;
-  color: #fff !important;
-  font-size: 13px;
-  letter-spacing: 0.14em;
-  white-space: nowrap;
+.pk-phead .pk-search input::placeholder {
+  color: color-mix(in srgb, var(--av-ink) 66%, transparent);
 }
-
-.pk-grid-wrap {
+.pk-phead .pk-search:focus-within {
+  border-color: var(--av-ctl);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--av-acc) 35%, transparent);
+}
+.pk-side {
+  position: relative;
   flex: 1;
   min-height: 0;
-  margin: 0 -1cqw;
-  padding: 2.2cqh 1cqw 8cqh;
-  -webkit-mask-image: linear-gradient(transparent 0, #000 18px, #000 calc(100% - 60px), transparent 100%);
-  mask-image: linear-gradient(transparent 0, #000 18px, #000 calc(100% - 60px), transparent 100%);
+}
+.pk-list {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+  padding: calc(18 * var(--u)) calc(18 * var(--u)) calc(22 * var(--u));
+  /* Tab 走到下面一排时,别停在底下那段渐隐里 */
+  scroll-padding: 18px 0 24px;
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 18px, #000 calc(100% - 18px), transparent);
+  mask-image: linear-gradient(180deg, transparent 0, #000 18px, #000 calc(100% - 18px), transparent);
+}
+.pk-list::-webkit-scrollbar {
+  display: none;
 }
 .pk-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(13.8cqh, 112px), 1fr));
-  gap: 2.2cqh 1.7cqh;
-}
-.pk-tile {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  min-width: 0;
-  transition: transform 0.25s;
-}
-.pk-tile:hover {
-  transform: translateY(-5px);
-}
-.pk-tile-art {
-  position: relative;
-  display: block;
-  aspect-ratio: 112 / 176;
-  border: 2px solid #fff;
-  border-radius: 56px 56px 6px 6px;
-  overflow: hidden;
-  background: #161a33;
-  box-shadow: 0 4px 12px rgba(30, 30, 50, 0.22);
-  container-type: size;
-  transition: box-shadow 0.2s;
-}
-.pk-tile.selected .pk-tile-art {
-  box-shadow:
-    0 0 0 2px var(--pk-acc),
-    0 8px 18px rgba(30, 30, 50, 0.3);
-}
-.pk-tile-art .bg {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  filter: brightness(0.92);
-}
-.pk-tile-art .spr {
-  position: absolute;
-  max-width: none;
-  width: auto;
-  filter: drop-shadow(0 3px 6px rgba(5, 5, 20, 0.35));
-}
-.pk-tile-art .av {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: 50% 15%;
-}
-.pk-tile-art .logo {
-  position: absolute;
-  left: 12%;
-  top: 24%;
-  width: 76%;
-  opacity: 0.45;
-}
-.pk-tile-art .tav {
-  position: absolute;
-  left: 50%;
-  bottom: 8px;
-  transform: translateX(-50%);
-  padding: 1px 8px;
-  border-radius: 4px;
-  background: rgba(14, 16, 34, 0.62);
-  color: #f6f6f8;
-  font-size: 10px;
-  letter-spacing: 0.12em;
-  white-space: nowrap;
-}
-.pk-tile-star {
-  position: absolute;
-  right: -5px;
-  top: -5px;
-  width: 14px;
-  height: 14px;
-  fill: rgba(42, 42, 51, 0.35);
-}
-.pk-tile-star.on {
-  width: 20px;
-  height: 20px;
-  fill: var(--pk-acc);
-}
-.pk-tile-name {
-  margin-top: 8px;
-  text-align: center;
-  font: 700 14px / 1.3 var(--pk-serif);
-  letter-spacing: 0.06em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.pk-tile.selected .pk-tile-name {
-  color: var(--pk-ink);
-}
-.pk-tile.import .pk-tile-art {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+  grid-template-columns: repeat(3, calc(132 * var(--u)));
   justify-content: center;
-  gap: 6px;
-  border: 1px dashed rgba(42, 42, 51, 0.35);
-  background: none;
-  box-shadow: none;
-  color: rgba(42, 42, 51, 0.5);
-}
-.pk-tile.import b {
-  font-size: 24px;
-  font-weight: 400;
-  line-height: 1;
-}
-.pk-tile.import small {
-  font-size: 10px;
-  letter-spacing: 0.1em;
-}
-.pk-tile.import .pk-tile-name {
-  font: 400 12px / 1.3 inherit;
-  font-family: inherit;
-  color: rgba(42, 42, 51, 0.5);
+  grid-auto-rows: calc(236 * var(--u));
+  /* 星语式的格子外面有一圈错开的细线框,行距、边距放大一点 */
+  gap: calc(24 * var(--u)) calc(14 * var(--u));
 }
 .pk-empty {
-  margin: 4cqh 0;
+  margin: 30px 0 0;
   text-align: center;
   font-size: 13px;
-  letter-spacing: 0.1em;
-  color: var(--pk-dim);
+  color: var(--av-ink-2);
 }
 
-/* ---- 资料 / 开场白 ---- */
-.pk-sheet-top {
-  flex: none;
-  display: flex;
+/* ══════════ 角色格:星语式卡面(设计稿 pages/cardface.css 的 oratio) ══════════
+   整张铺满、右上一个大圆角;卡外一圈错开的细线框(比卡大一点、往左上挪,线头在角上伸出去);小四角星只给选中 / 指到的那张;
+   左上写名字、右下 AnimaVN 小标。格子按设计稿 132×236 画,用 zoom 缩到现在的大小。 */
+.pk-tile {
+  position: relative;
+  display: block;
+  width: 132px;
+  height: 236px;
+  zoom: var(--k);
+  border-radius: 3px 36px 3px 3px;
+  text-align: left;
+  box-shadow: 0 2px 6px rgba(30, 24, 48, 0.18);
+  transition:
+    transform 0.2s var(--av-ease),
+    box-shadow 0.2s;
+}
+.pk-tile:hover {
+  transform: translateY(-2px);
+}
+.pk-tile .cl {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  border-radius: inherit;
+  background: var(--av-paper-3);
+}
+.pk-tile .art {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  /* 立绘用 cqh / cqw 摆(titleArt.ts),这里就是它的舞台 */
+  container-type: size;
+}
+.pk-tile .art img {
+  position: absolute;
+  max-width: none;
+}
+.pk-tile .art img.bg,
+.pk-tile .art img.bed,
+.pk-tile .art img.av {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.pk-tile .art img.bed {
+  filter: blur(16px) saturate(1.15);
+  transform: scale(1.5);
+  opacity: 0.75;
+}
+/* 卡图(多半是半身 / 头像):按脸那块铺满 */
+.pk-tile .art img.av {
+  object-position: 50% 22%;
+}
+.pk-tile .art img.logo {
+  left: 50%;
+  top: 50%;
+  width: 46%;
+  height: auto;
+  transform: translate(-50%, -50%);
+  opacity: 0.6;
+}
+.pk-tile .cap {
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  right: 0;
+  top: 0;
+  padding: 11px 16px 34px 11px;
+  /* 白字压在图上:渐变要够深(浅色衣服的卡也要 4.5 以上) */
+  background: linear-gradient(180deg, rgba(12, 12, 22, 0.74) 0, rgba(12, 12, 22, 0.5) 45%, transparent);
+  color: #fff;
+}
+.pk-tile .cap b {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font: 900 15px / 1.2 var(--av-serif);
+  letter-spacing: 0.08em;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+/* 选中:名字下一道白色短线 */
+.pk-tile .cap .ul {
+  display: block;
+  width: 18px;
+  height: 2px;
+  margin-top: 6px;
+  border-radius: 1px;
+  background: #fff;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.pk-tile.on .cap .ul {
+  opacity: 1;
+}
+.pk-tile .mk {
+  position: absolute;
+  z-index: 2;
+  right: 7px;
+  bottom: 7px;
+  width: 24px;
+  height: 24px;
+  opacity: 0.72;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
+  pointer-events: none;
+}
+/* 「刚导入」小签:压在卡面左下(右下是 AnimaVN 小标,左上是名字),墨色底白字,不跟角色变(设计稿 kit/transfer.css 的 .tf-new) */
+.pk-tile .pk-new {
+  position: absolute;
+  z-index: 3;
+  left: 8px;
+  bottom: 8px;
+  display: inline-flex;
   align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 4px;
+  background: rgba(16, 18, 32, 0.8);
+  color: #fff;
+  font: normal 500 12px/1 var(--av-sans);
+  letter-spacing: 0.08em;
+  pointer-events: none;
+}
+/* 卡外那圈错开的细线框:墨色 34%;小星墨色 60%,只在选中 / 指到的那张出现 */
+.pk-tile .ofr {
+  position: absolute;
+  left: -14px;
+  top: -14px;
+  width: 160px;
+  height: 264px;
+  overflow: visible;
+  pointer-events: none;
+}
+.pk-tile .ofr path {
+  fill: none;
+  stroke: color-mix(in srgb, var(--av-ink) 34%, transparent);
+  stroke-width: 1;
+  transition: stroke 0.2s;
+}
+.pk-tile .ofr .ost {
+  fill: color-mix(in srgb, var(--av-ink) 60%, transparent);
+  stroke: none;
+  opacity: 0;
+  transition:
+    opacity 0.2s,
+    fill 0.2s;
+}
+.pk-tile:is(.on, :hover) .ofr .ost {
+  opacity: 1;
+}
+/* 选中 = 白色,不跟角色变。白天米白纸上纯白看不见,所以每样白都有东西托着:
+   卡上压一圈 2px 白内描边(里面再一道很淡的墨线,浅色画面也分得开),卡外一道墨色细线 + 浮起 3px、影子加深;
+   外圈细线和星是白色 + 一圈 1px 的淡墨晕;名字下的短线压在名字后面的暗渐变上,白色直接看得清 */
+.pk-tile.on,
+.pk-tile.on:hover {
+  transform: translateY(-3px);
+  box-shadow:
+    0 0 0 2px #fff,
+    0 0 0 3px rgba(16, 18, 32, 0.55),
+    0 10px 20px rgba(30, 24, 48, 0.32);
+}
+.av-night .pk-tile.on,
+.av-night .pk-tile.on:hover {
+  box-shadow:
+    0 0 0 2px #fff,
+    0 0 0 3px rgba(0, 0, 0, 0.45),
+    0 10px 22px rgba(0, 0, 0, 0.5);
+}
+.pk-tile .cl::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  border-radius: inherit;
+  box-shadow:
+    inset 0 0 0 2px #fff,
+    inset 0 0 0 3px rgba(16, 18, 32, 0.24);
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none;
+}
+.pk-tile.on .cl::after {
+  opacity: 1;
+}
+.pk-tile.on .ofr path {
+  stroke: #fff;
+  stroke-width: 1.5;
+}
+.pk-tile.on .ofr .ost {
+  fill: #fff;
+}
+.pk-tile.on .ofr {
+  filter: drop-shadow(0 0 0.6px rgba(16, 18, 32, 0.9)) drop-shadow(0 0 1.2px rgba(16, 18, 32, 0.45));
+}
+.pk-tile:focus-visible {
+  outline: 2px solid var(--av-ctl);
+  outline-offset: 5px;
+}
+
+/* 导入那一格:同样大小的虚线长方形 */
+.pk-tile.add {
+  border-radius: 6px;
+  box-shadow: none;
+}
+.pk-tile.add .cl {
+  border-radius: 6px;
+  border: 1px dashed var(--av-faint);
+  background: color-mix(in srgb, var(--av-paper) 70%, transparent);
+}
+.pk-tile.add .cl::after {
+  display: none;
+}
+.pk-tile.add .art {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 8px;
+  color: var(--av-ink-2);
+}
+.pk-tile.add .art .av-ic {
+  flex: none;
+}
+.pk-tile.add .art small {
+  font-size: 12px;
+  letter-spacing: 0.06em;
+}
+.pk-tile.add .cap {
+  top: auto;
+  bottom: 0;
+  padding: 12px;
+  background: none;
+  color: var(--av-ink-2);
+  text-align: center;
+}
+.pk-tile.add .cap b {
+  font-weight: 600;
+  text-shadow: none;
+}
+
+/* ---- 资料(面板换成她的卡) ---- */
+.pk-sheet-in {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 20px 0;
+}
+.pk-sheet-in .top {
+  display: flex;
+  align-items: flex-end;
   justify-content: space-between;
+  border-bottom: 1px solid var(--av-hair);
 }
-.pk-link {
-  font-size: 13px;
-  letter-spacing: 0.14em;
-  color: var(--pk-dim) !important;
-  transition: color 0.2s;
-}
-.pk-link:hover {
-  color: var(--pk-ink) !important;
+.pk-all {
+  margin-bottom: 6px;
+  padding: 0 8px 0 4px;
+  gap: 4px;
+  color: var(--av-ink-2);
 }
 .pk-tabs {
   display: flex;
-  gap: 24px;
 }
 .pk-tabs button {
-  padding-bottom: 6px !important;
-  border-bottom: 2px solid transparent !important;
-  font: 700 15px / 1 var(--pk-serif);
-  letter-spacing: 0.24em;
-  color: var(--pk-dim) !important;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 12px;
+  border-bottom: 2px solid transparent;
+  color: var(--av-dim);
+  transition: color 0.16s;
+}
+.pk-tabs button:hover {
+  color: var(--av-ink);
 }
 .pk-tabs button.on {
-  border-bottom-color: var(--pk-acc) !important;
-  color: var(--pk-ink) !important;
+  border-bottom-color: var(--av-ink);
+  color: var(--av-ink);
 }
-.pk-sheet-head {
-  flex: none;
-  margin-top: 3cqh;
-  padding-bottom: 14px;
-  border-bottom: 1px dotted rgba(42, 42, 51, 0.28);
+.pk-tabs .zh {
+  font: 600 14px / 36px var(--av-serif);
+  letter-spacing: 0.16em;
 }
-.pk-sheet-head .nm {
-  font: 700 max(3.5cqh, 22px) / 1.15 var(--pk-serif);
-  letter-spacing: 0.12em;
+.pk-tabs .en {
+  font: italic 500 12px / 1 var(--av-latin);
+  letter-spacing: 0.08em;
 }
-.pk-sheet-head .by {
-  margin-left: 12px;
+.pk-tabs .n {
   font-size: 12px;
-  letter-spacing: 0.1em;
-  color: var(--pk-dim);
+  color: var(--av-dim);
 }
-.pk-tags {
+.pk-sheet-in .hd {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 18px 0 6px;
+}
+.pk-sheet-in .hd img {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+  object-position: 50% 20%;
+  box-shadow:
+    0 0 0 2px var(--av-paper),
+    0 2px 8px rgba(0, 0, 0, 0.15);
+}
+.pk-sheet-in .hd b {
+  font: 700 20px / 1.2 var(--av-serif);
+  letter-spacing: 0.16em;
+}
+.pk-sheet-in .hd .by {
+  font-size: 12px;
+  color: var(--av-dim);
+}
+.pk-sheet-in .bd {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+  padding: 6px 4px 20px 0;
+}
+.pk-sheet-in .bd::-webkit-scrollbar {
+  display: none;
+}
+.pk-sheet-in h4 {
+  margin: 12px 0 6px;
+  font: 600 15px / 1.4 var(--av-serif);
+  letter-spacing: 0.16em;
+}
+.pk-sheet-in .bd p {
+  margin: 0 0 10px;
+  font: 14px / 1.85 var(--av-serif);
+  color: var(--av-ink-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ══════════ 右边:名字 + 上次停在哪 + 一条一条的素材(纸面小卡,细线分隔)+ 继续 / 资料 ══════════ */
+.pk-info {
+  position: absolute;
+  right: calc(56 * var(--u));
+  top: calc(92 * var(--u));
+  bottom: calc(58 * var(--u));
+  width: calc(380 * var(--u));
+  display: flex;
+  flex-direction: column;
+  background: none;
+  color: var(--av-ink);
+  animation: vn-pk-in 0.2s ease both;
+}
+.pk-info .nm {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font: 700 max(calc(46 * var(--u)), 28px) / 1.1 var(--av-serif);
+  letter-spacing: 0.2em;
+}
+/* 名字那一行:名字 + 右边一个小号「导出」;名字太长放不下时,按钮换到下一行右边 */
+.pk-nmrow {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+.pk-nmrow .nm {
+  margin-right: auto;
+}
+.pk-export {
+  flex: none;
+  margin-left: auto;
+  gap: 4px;
+}
+.pk-export .av-ic {
+  flex: none;
+  margin-left: -2px;
+}
+.pk-info .rule {
+  height: 1px;
+  margin: calc(18 * var(--u)) 0 calc(12 * var(--u));
+  background: linear-gradient(90deg, var(--av-ctl) 0 36px, var(--av-hair) 36px);
+}
+.pk-last {
+  font-size: var(--f-xs);
+  letter-spacing: 0.08em;
+  color: var(--av-ink-2);
+}
+.pk-rows {
+  display: flex;
+  flex-direction: column;
+  margin-top: calc(22 * var(--u));
+  padding: 2px 0;
+  border-radius: var(--av-r-panel);
+  background: color-mix(in srgb, var(--av-paper) 94%, transparent);
+  box-shadow:
+    inset 0 0 0 1px var(--av-hair-2),
+    var(--av-shadow-card);
+}
+/* 一条 = 左边名目(宋体 + 斜体英文)| 值(下面一行小字)| 最右「更多 ›」;能点的整行悬停浅底 + 「更多」变角色色 */
+.pk-row {
+  display: grid;
+  grid-template-columns: calc(62 * var(--u)) minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 12px;
+  min-height: 48px;
+  padding: 8px 12px 8px 16px;
+  text-align: left;
+  transition: background 0.16s;
+}
+.pk-row + .pk-row {
+  border-top: 1px solid var(--av-hair-2);
+}
+button.pk-row:hover {
+  background: var(--av-hair-2);
+}
+.pk-row:first-child {
+  border-radius: var(--av-r-panel) var(--av-r-panel) 0 0;
+}
+.pk-row:last-child {
+  border-radius: 0 0 var(--av-r-panel) var(--av-r-panel);
+}
+.pk-row .k b {
+  display: block;
+  font: 600 13.5px / 1.3 var(--av-serif);
+  letter-spacing: 0.2em;
+}
+.pk-row .k i {
+  display: block;
+  margin-top: 2px;
+  font: italic 500 12px / 1.2 var(--av-latin);
+  letter-spacing: 0.08em;
+  color: var(--av-ink-2);
+}
+.pk-row .v {
+  min-width: 0;
+}
+.pk-row .v > span:first-child {
+  display: block;
+  overflow-wrap: anywhere;
+  font: 13.5px / 1.45 var(--av-sans);
+  color: var(--av-ink);
+}
+.pk-row .v small {
+  display: block;
+  font-size: 12px;
+  line-height: 1.5;
+  letter-spacing: 0.04em;
+  color: var(--av-ink-2);
+}
+.pk-row .more {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font: 12px / 1 var(--av-sans);
+  letter-spacing: 0.06em;
+  color: var(--av-ink-2);
+  transition: color 0.16s;
+}
+.pk-row .more .av-ic {
+  flex: none;
+}
+button.pk-row:hover .more {
+  color: var(--av-ctl);
+}
+button.pk-row:focus-visible {
+  outline: 2px solid var(--av-ctl);
+  outline-offset: -2px;
+}
+/* 表情差分的圆头像(按脸裁),在「立绘」那条里 */
+.pk-faces {
+  display: flex;
+  gap: 5px;
+  margin-top: 5px;
+}
+.pk-faces > span {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--av-paper-3);
+  box-shadow:
+    0 0 0 1.5px var(--av-paper),
+    0 0 0 2.5px var(--av-hair);
+  container-type: size;
+}
+.pk-faces img {
+  position: absolute;
+  max-width: none;
+}
+.pk-btns {
+  display: flex;
+  gap: 8px;
+  margin-top: auto;
+}
+.pk-btns .av-btn {
+  height: 44px;
+  padding: 0 18px;
+  font-size: 14px;
+}
+.pk-btns .av-btn.primary {
+  flex: 1;
+}
+.pk-btns .av-star {
+  width: 12px;
+  height: 12px;
+}
+/* 「资料」按下:墨色边(选中不跟角色色) */
+.pk-btns .av-btn.on {
+  border-color: var(--av-sel, var(--av-ink));
+}
+
+/* ---- 主题 · 玻璃:面板 = 她背后那张场景糊开 + 玻璃色(对齐整张画面,一层糊);右边素材条半透明;星图不要 ---- */
+.pk-panel.is-glass {
+  background: transparent;
+  box-shadow:
+    inset 0 0 0 1px var(--gl-edge),
+    0 18px 48px rgba(0, 0, 0, 0.28);
+}
+.pk-panel.is-glass::before {
+  inset: auto;
+  left: calc(-28 * var(--u));
+  top: calc(-28 * var(--u));
+  width: 100cqw;
+  height: 100cqh;
+  background: linear-gradient(var(--gl-total), var(--gl-total)), var(--gl-bg, linear-gradient(#222, #222)) center / cover no-repeat;
+  filter: blur(26px) saturate(0.85);
+  opacity: 1;
+}
+.pk-info.is-glass .pk-rows {
+  background: rgba(var(--gl-base), 0.42);
+  box-shadow:
+    inset 0 0 0 1px var(--gl-edge),
+    0 10px 30px rgba(0, 0, 0, 0.22);
+}
+.is-glass .pk-tile.add .cl {
+  background: rgba(var(--gl-base), 0.4);
+}
+
+/* ══════════ 手机竖屏(390×844,照 phone.html#a):上面场景 + 大立绘 + 名字和按钮,下面一张斜切的纸放搜索和卡面 ══════════ */
+.vn-pick.portrait .pk-pkshade {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: calc(440 * var(--u));
+  background: linear-gradient(
+    rgba(10, 10, 24, 0.68) 0,
+    rgba(10, 10, 24, 0.36) calc(92 * var(--u)),
+    rgba(10, 10, 24, 0) calc(150 * var(--u)),
+    rgba(10, 10, 24, 0) calc(186 * var(--u)),
+    rgba(12, 14, 30, 0.58) calc(280 * var(--u)),
+    rgba(12, 14, 30, 0.86) calc(440 * var(--u))
+  );
+  pointer-events: none;
+}
+.vn-pick.portrait .pk-print {
+  left: calc(95 * var(--u));
+  top: calc(92 * var(--u));
+  width: calc(200 * var(--u));
+  height: calc(200 * var(--u));
+  padding: calc(6 * var(--u));
+  border-radius: 6px;
+  background: #fbfaf8;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.35);
+}
+.vn-pick.portrait .pk-hero-none {
+  left: calc(95 * var(--u));
+  top: calc(110 * var(--u));
+  width: calc(200 * var(--u));
+}
+/* 顶上一条:返回「封面」+ 标题,压在场景上 */
+.vn-pick.portrait .pk-top {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 12 * var(--u));
+  left: calc(12 * var(--u));
+  right: calc(12 * var(--u));
+  height: 44px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  pointer-events: none;
+}
+.vn-pick.portrait .pk-top > * {
+  pointer-events: auto;
+}
+.vn-pick.portrait .pk-back {
+  height: 40px;
+  padding: 0 14px 0 6px;
+  gap: 2px;
+  background: rgba(16, 17, 28, 0.42);
+  border: 0;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+  color: #fff;
+  font: 500 14px / 1 var(--av-sans);
+  letter-spacing: 0.06em;
+}
+.vn-pick.portrait .pk-back .av-ic {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+}
+.pk-ttl {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  white-space: nowrap;
+  color: #fff;
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.5),
+    0 1px 8px rgba(0, 0, 0, 0.45);
+}
+.pk-ttl .zh {
+  font: 700 18px / 1 var(--av-serif);
+  letter-spacing: 0.26em;
+}
+.pk-ttl .en {
+  font: italic 500 13px / 1 var(--av-latin);
+  letter-spacing: 0.14em;
+}
+/* 选中那位:名字 + 上次停在哪 + 继续 / 资料(素材那几条放不下,点「资料」看) */
+.vn-pick.portrait .pk-info {
+  left: calc(22 * var(--u));
+  right: calc(22 * var(--u));
+  top: calc(252 * var(--u));
+  bottom: auto;
+  width: auto;
+  color: #fff;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.35);
+}
+.vn-pick.portrait .pk-info .nm {
+  /* 「导出」紧跟在名字右边(phone.html 的 .nmrow),不像电脑那样推到最右 */
+  margin-right: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font: 700 calc(30 * var(--u)) / 1.15 var(--av-serif);
+  letter-spacing: 0.14em;
+}
+.vn-pick.portrait .pk-nmrow {
+  flex-wrap: nowrap;
+  gap: 10px;
+}
+.vn-pick.portrait .pk-export {
+  position: relative;
+  height: 32px;
+  margin: 4px 0;
+  background: rgba(16, 17, 28, 0.32);
+  border: 0;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+  color: #fff;
+  text-shadow: none;
+}
+/* 手指好点:可点的范围往上下各多 4px,看着还是 32px 高 */
+.vn-pick.portrait .pk-export::before {
+  content: '';
+  position: absolute;
+  inset: -4px 0;
+}
+.vn-pick.portrait .pk-last {
+  margin-top: 4px;
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.9);
+}
+.vn-pick.portrait .pk-btns {
+  margin-top: calc(12 * var(--u));
+  text-shadow: none;
+}
+.vn-pick.portrait .pk-btns .av-btn {
+  height: 40px;
+  padding: 0 16px;
+  font-size: 13.5px;
+}
+.vn-pick.portrait .pk-btns .pk-go {
+  flex: none;
+  min-width: 120px;
+  background: #fbfaf8;
+  border: 0;
+  color: #2a2a33;
+  font: 600 14px / 1 var(--av-serif);
+  letter-spacing: 0.16em;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+.vn-pick.portrait .pk-btns .pk-info-btn {
+  background: rgba(16, 17, 28, 0.3);
+  border: 0;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45);
+  color: #fff;
+}
+.vn-pick.portrait .pk-btns .pk-info-btn.on {
+  box-shadow: inset 0 0 0 1.5px #fff;
+}
+/* 下面斜切的纸 */
+.pk-sheetwrap {
+  display: none;
+}
+.vn-pick.portrait .pk-sheetwrap {
+  display: block;
+  filter: drop-shadow(0 -6px 16px rgba(10, 10, 30, 0.3));
+}
+.vn-pick.portrait .pk-sheetwrap > .pk-sheet {
+  left: 0;
+  right: 0;
+  top: calc(404 * var(--u));
+  bottom: 0;
+  width: auto;
+  border-radius: 0;
+  box-shadow: none;
+  clip-path: polygon(0 calc(36 * var(--u)), 100% 0, 100% 100%, 0 100%);
+}
+.vn-pick.portrait .pk-sheet.is-glass {
+  box-shadow: none;
+}
+.vn-pick.portrait .pk-sheet.is-glass::before {
+  left: 0;
+  top: calc(-404 * var(--u));
+}
+.pk-sheet > .cut {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: var(--av-acc);
+  opacity: 0.8;
+  clip-path: polygon(0 calc(36 * var(--u)), 100% 0, 100% 1.4px, 0 calc(36 * var(--u) + 1.4px));
+  pointer-events: none;
+}
+.pk-sheetin {
+  position: absolute !important;
+  left: 0;
+  right: 0;
+  top: calc(46 * var(--u));
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0 calc(16 * var(--u)) calc(env(safe-area-inset-bottom, 0px) + 14 * var(--u));
+}
+.pk-sheetin .pk-tools {
+  display: flex;
+  flex: none;
+  gap: 8px;
+}
+.pk-sheetin .pk-search {
+  order: 0;
+  flex: 1;
+  height: 40px;
+  min-width: 0;
+}
+.pk-sheetin .pk-search input {
+  line-height: 40px;
+}
+.pk-sheetin .pk-import {
+  flex: none;
+  height: 40px;
+}
+.pk-chips {
+  display: flex;
+  flex: none;
+  align-items: center;
   gap: 6px;
   margin-top: 10px;
 }
-.pk-tags span {
-  padding: 2px 10px;
-  border-radius: 4px;
-  background: rgba(42, 42, 51, 0.07);
-  font-size: 11px;
-  letter-spacing: 0.1em;
-  color: var(--pk-dim);
+.pk-chips .av-seg > button {
+  height: 34px;
+  min-width: 52px;
+  line-height: 34px;
 }
-.pk-sheet-body {
+.vn-pick.portrait .pk-sheetin .pk-list {
+  position: relative;
+  inset: auto;
   flex: 1;
   min-height: 0;
-  padding: 2cqh 0 6cqh;
+  /* 星语式的卡外细线框往左上伸出 11px,四周留够 */
+  padding: calc(22 * var(--u)) 4px calc(8 * var(--u)) calc(12 * var(--u));
+  -webkit-mask-image: none;
+  mask-image: none;
 }
-.pk-sheet-body section + section {
-  margin-top: 2.4cqh;
+.vn-pick.portrait .pk-grid {
+  grid-template-columns: repeat(3, calc(103 * var(--u)));
+  grid-auto-rows: calc(184 * var(--u));
+  justify-content: space-between;
+  gap: calc(22 * var(--u)) 0;
 }
-.pk-sheet-body h4 {
-  margin: 0 0 6px;
-  font: 700 13px / 1 var(--pk-serif);
-  letter-spacing: 0.3em;
-  color: var(--pk-dim);
+.vn-pick.portrait .pk-tile {
+  zoom: calc(0.78 * var(--k));
 }
-.pk-sheet-body p {
-  margin: 0;
-  white-space: pre-wrap;
-  font: 500 14px / 1.85 var(--pk-serif);
-  letter-spacing: 0.03em;
-  color: rgba(42, 42, 51, 0.88);
+.vn-pick.portrait .pk-tile .cap b {
+  font-size: 16px;
 }
-.pk-greet {
-  padding: 14px 16px;
-  border-radius: 6px;
-  background: rgba(42, 42, 51, 0.04);
-}
-
-/* ---- 竖屏:她在上半,面板在下半 ---- */
-@container vn-pick (max-aspect-ratio: 1/1) {
-  .pk-panel {
-    left: 2cqw;
-    right: 2cqw;
-    top: 50cqh;
-    bottom: 1.5cqh;
-    border-radius: 8px;
-  }
-  .pk-side {
-    left: 5cqw;
-    right: 5cqw;
-    top: 52cqh;
-    bottom: 2cqh;
-  }
-  .pk-hero-shade {
-    -webkit-mask-image: none;
-    mask-image: none;
-    background: linear-gradient(to top, rgba(12, 14, 30, 0.9) 50%, rgba(12, 14, 30, 0.5) 62%, rgba(12, 14, 30, 0) 75%);
-  }
-  .pk-info {
-    left: 5cqw;
-    right: 5cqw;
-    width: auto;
-    bottom: 51cqh;
-  }
-  .pk-name {
-    font-size: 26px;
-  }
-  .pk-line {
-    display: none;
-  }
-  .pk-actions {
-    margin-top: 8px;
-  }
-  .pk-primary,
-  .pk-ghost {
-    height: 36px;
-  }
-  .pk-hero-av {
-    left: 50%;
-    top: 9cqh;
-    width: 22cqh;
-    height: 30cqh;
-    translate: -50% 0;
-  }
-  .pk-hero-none {
-    left: 50%;
-    top: 10cqh;
-    width: 22cqh;
-    translate: -50% 0;
-  }
-  /* 工具栏两行:搜索一整行,排序和导入在下面 */
-  .pk-tools {
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  .pk-search {
-    flex: 1 1 100%;
-  }
-  .pk-sort {
-    margin-right: auto;
-  }
-  .pk-import {
-    padding: 0 12px !important;
-  }
-  .pk-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 14px 10px;
-  }
-  .pk-tile-name {
-    font-size: 13px;
-  }
-  .pk-head h2 {
-    font-size: 20px;
-  }
-  .pk-head .en {
-    display: none;
-  }
-}
-
-/* 手机横屏:面板窄,工具栏也分两行 */
-@media (max-height: 500px) {
-  .pk-tools {
-    flex-wrap: wrap;
-    gap: 6px;
-  }
-  .pk-search {
-    flex: 1 1 100%;
-    height: 32px;
-  }
-  .pk-sort {
-    margin-right: auto;
-  }
-  .pk-import {
-    height: 32px;
-  }
-  .pk-info {
-    width: 56cqw;
-  }
-  .pk-actions {
-    flex-wrap: nowrap;
-  }
-  .pk-primary,
-  .pk-ghost {
-    height: 36px;
-    white-space: nowrap;
-  }
-  .pk-name {
-    font-size: 26px;
-  }
-}
-
-/* 触屏没有 Esc */
-@media (pointer: coarse) {
-  .pk-back span {
-    display: none;
-  }
-  /* iPhone 上输入框字小于 16px 一点就会整页放大 */
-  .pk-search input {
-    font-size: 16px;
-  }
+/* 资料:顶上那排页签、名字和正文都在纸里留 16px 的边 */
+.vn-pick.portrait .pk-sheet-in {
+  inset: 0 calc(16 * var(--u)) env(safe-area-inset-bottom, 0px);
+  padding: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .vn-pick,
   .vn-pick .pk-ui,
-  .pk-scene,
-  .pk-hero-spr {
+  .pk-scene.in,
+  .pk-bare,
+  .pk-hero-spr,
+  .pk-print,
+  .pk-info {
     animation: none;
   }
-}
-
-/* ---- 标签(10-04 加):左边她的标签、面板里按标签筛选、卡片下面的作品名 ---- */
-.pk-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 10px 0 0;
-  padding: 0;
-  list-style: none;
-}
-.pk-chips li {
-  padding: 3px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.08);
-  -webkit-backdrop-filter: blur(6px);
-  backdrop-filter: blur(6px);
-  font-size: 11px;
-  letter-spacing: 0.1em;
-  white-space: nowrap;
-}
-.pk-chips li.more {
-  border-style: dashed;
-  opacity: 0.7;
-}
-
-.pk-filter {
-  flex: none;
-  display: flex;
-  gap: 6px;
-  margin-top: 12px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
-  mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
-}
-.pk-filter button {
-  flex: none;
-  padding: 4px 11px !important;
-  border: 1px solid rgba(42, 42, 51, 0.16) !important;
-  border-radius: 4px;
-  font-size: 12px;
-  letter-spacing: 0.08em;
-  color: var(--pk-dim) !important;
-  white-space: nowrap;
-  transition:
-    background 0.15s,
-    color 0.15s;
-}
-.pk-filter button:hover {
-  background: rgba(42, 42, 51, 0.06) !important;
-  color: var(--pk-ink) !important;
-}
-.pk-filter button.on {
-  border-color: var(--pk-ink) !important;
-  background: var(--pk-ink) !important;
-  color: #fff !important;
-}
-
-.pk-tile-work {
-  margin-top: 1px;
-  text-align: center;
-  font-size: 10.5px;
-  letter-spacing: 0.08em;
-  color: var(--pk-dim);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }

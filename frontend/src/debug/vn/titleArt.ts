@@ -9,8 +9,9 @@ import type { FaceBox } from '../plugins/spriteLayout';
 
 // ---- 表情 ----
 
-/** 封面上的几种场合。菜单的按钮各对应一种,鼠标移上去她就换这个表情 */
-export type TitleMood = 'idle' | 'continue' | 'new' | 'load' | 'config' | 'exit' | 'poke' | 'ghost';
+/** 封面上的几种场合。菜单的按钮各对应一种,鼠标移上去她就换这个表情
+ *  (10-26 起去掉了「ghost」—— 那是旧海报版纸上印的那张脸,海报版已经删掉了) */
+export type TitleMood = 'idle' | 'continue' | 'new' | 'load' | 'config' | 'exit' | 'poke';
 
 /** 每种场合一串近义词,按顺序找立绘名(或别名)对得上的第一个;都没有就用默认表情 */
 const MOODS: Record<TitleMood, string[]> = {
@@ -21,26 +22,25 @@ const MOODS: Record<TitleMood, string[]> = {
   config: ['疑惑', '好奇', '眨眼', '惊讶'],
   exit: ['难过', '委屈', '幽怨', '担心', '闷闷', '无奈', '疲惫'],
   poke: ['害羞', '不好意思', '慌张', '惊讶', '羞恼', '心虚'],
-  ghost: ['温柔', '平静', '微笑'],
 };
-
-/** 电影片头里每个镜头换一个,按顺序挑她有的 */
-const MONTAGE: string[] = ['开心', '温柔', '害羞', '说话', '调皮', '俏皮', '眨眼', '兴奋', '好奇', '平静'];
 
 const named = (sprites: readonly PackSprite[], name: string) =>
   sprites.find((s) => s.has_image && (s.label === name || s.aliases.includes(name))) ?? null;
 
-/** sprites 是启用的立绘,排第一的是默认表情(和游戏里一样) */
-export function spriteForMood(sprites: readonly PackSprite[], mood: TitleMood): PackSprite | null {
+/**
+ * sprites 是启用的立绘,排第一的是默认表情(和游戏里一样)。
+ * override:先按这个具体的表情名找(封面「继续」换成存档那一刻的表情时用);没给、没找到都退回这个场合的近义词表。
+ */
+export function spriteForMood(sprites: readonly PackSprite[], mood: TitleMood, override?: string | null): PackSprite | null {
+  if (override) {
+    const hit = named(sprites, override);
+    if (hit) return hit;
+  }
   for (const name of MOODS[mood]) {
     const hit = named(sprites, name);
     if (hit) return hit;
   }
   return sprites.find((s) => s.has_image) ?? null;
-}
-
-export function montageSprites(sprites: readonly PackSprite[]): PackSprite[] {
-  return MONTAGE.map((n) => named(sprites, n)).filter((s): s is PackSprite => s !== null);
 }
 
 // ---- 按脸摆立绘 ----
@@ -165,13 +165,49 @@ function cached<T>(fn: (src: string) => Promise<T>): (src: string) => Promise<T>
   };
 }
 
+/**
+ * 一张场景图的色调:平均色(0–255)和亮度(0–1,Rec.601 的明度取平均)。主题「玻璃」按它给提示条、确认框这些卡定颜色。
+ * 读不出像素(跨域被拦、图没了)是 null,调用方用中性色。
+ */
+export const sceneToneOf = cached(async (src: string): Promise<{ avg: [number, number, number]; lum: number } | null> => {
+  const px = await readPixels(shrunk(src, 96), 48);
+  if (!px || px.length < 4) return null;
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  const n = px.length / 4;
+  for (let i = 0; i < px.length; i += 4) {
+    r += px[i];
+    g += px[i + 1];
+    b += px[i + 2];
+  }
+  r /= n;
+  g /= n;
+  b /= n;
+  return { avg: [Math.round(r), Math.round(g), Math.round(b)], lum: (0.299 * r + 0.587 * g + 0.114 * b) / 255 };
+});
+
 /** 角色的点缀色:深色界面上用 acc,纸面上用 deep;ink 是压在 acc 底色上的字色(游戏里的主题色用) */
 export interface Accent {
   acc: string;
   deep: string;
   ink: string;
+  /** 角色色的淡底(94% 亮度,和 ink 同饱和度):选中行、浅色块的底 */
+  soft: string;
   /** 「r, g, b」—— 画光点用 */
   rgb: string;
+}
+
+/** 色相 + 饱和度 → 四格点缀色(亮度 72 / 36 / 13 / 94);抽出来是为了好测 */
+export function accentFromHue(h: number, s: number): Accent {
+  const acc = hslToRgb(h, clamp(s, 0.42, 0.78), 0.72);
+  return {
+    acc: `rgb(${acc.join(' ')})`,
+    deep: hsl(h, clamp(s, 0.35, 0.62), 0.36),
+    ink: hsl(h, clamp(s, 0.3, 0.5), 0.13),
+    soft: hsl(h, clamp(s, 0.3, 0.5), 0.94),
+    rgb: acc.join(', '),
+  };
 }
 
 /**
@@ -201,13 +237,7 @@ export const accentOf = cached(async (src: string): Promise<Accent | null> => {
     for (const e of buckets.values()) if (!best || e[0] > best[0]) best = e;
     if (best && best[0] > 3) {
       const [h, s] = rgbToHsl(best[1] / best[0] / 255, best[2] / best[0] / 255, best[3] / best[0] / 255);
-      const acc = hslToRgb(h, clamp(s, 0.42, 0.78), 0.72);
-      return {
-        acc: `rgb(${acc.join(' ')})`,
-        deep: hsl(h, clamp(s, 0.35, 0.62), 0.36),
-        ink: hsl(h, clamp(s, 0.3, 0.5), 0.13),
-        rgb: acc.join(', '),
-      };
+      return accentFromHue(h, s);
     }
   }
   return null;

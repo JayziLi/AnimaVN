@@ -25,7 +25,7 @@ export interface BgmPackEditorProps {
   packId: string;
   /** 这个包的名字(「这些背景切过来时放它」里标背景在哪个包) */
   packName: string;
-  /** 主区顶上那一行(卡编辑器:类型小牌子 + 包页签 + ⋯;素材管理:包名、用量、绑定) */
+  /** 主区顶上那一行(卡编辑器:类型小牌子 + 包下拉框 + ⋯;素材管理:包名、用量、在用的卡) */
   header: ReactNode;
   /** 包上记的封面曲;null = 放排第一的那首 */
   titleBgmId: string | null;

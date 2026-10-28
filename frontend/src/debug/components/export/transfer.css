@@ -1,0 +1,627 @@
+/* ══════════ 游戏里的导入 / 导出弹层(TransferDialog / ExportPaper / 导入进度)· 前缀 tf- ══════════
+   照设计稿 docs/design/unify/kit/transfer.css(10-23 用户 17 条评论后的 A「在游戏里就地完成」)抄的数值:
+   纸卡、宋体标题 + 斜体英文 + 细线;界面上只留标题、按钮、值,说明收进「?」。纸跟设置里的「主题」(白 / 黑 / 玻璃)。 */
+
+.tf-host {
+  position: fixed;
+  inset: 0;
+  /* 盖过游戏(90)、卡编辑器(92)、块编辑弹窗(95),和确认框那层一样 */
+  z-index: 97;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  font-family: var(--av-sans);
+}
+.tf-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(8, 9, 17, 0.4);
+}
+.tf-dlg {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  max-width: calc(100vw - 32px);
+  max-height: min(740px, calc(100dvh - 32px));
+  padding: 20px 24px 18px;
+  border-radius: var(--av-r-panel);
+  background: var(--av-paper);
+  color: var(--av-ink);
+  box-shadow:
+    inset 0 0 0 1px var(--av-hair-2),
+    var(--av-shadow-float);
+  outline: none;
+  text-align: left;
+}
+/* 玻璃主题:游戏外面那层没有场景可糊,用实心的那档深色 */
+.tf-dlg.is-glass {
+  background: var(--av-solid, rgb(24, 26, 38));
+}
+/* 纸上那层淡星图(选角色面板同款) */
+.tf-dlg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: url('/vn/ui/map-left.svg') center / cover no-repeat;
+  opacity: var(--av-map-opacity);
+  pointer-events: none;
+}
+.tf-dlg > * {
+  position: relative;
+}
+.tf-dlg button {
+  cursor: pointer;
+}
+.tf-dlg button:disabled {
+  cursor: default;
+}
+.tf-dlg .av-btn svg {
+  width: 13px;
+  height: 13px;
+  flex: none;
+}
+
+/* 标题:宋体 + 斜体英文,下面一道细线,左端一小段点缀色 */
+.tf-dh {
+  display: flex;
+  flex: none;
+  align-items: baseline;
+  gap: 12px;
+  padding-bottom: 14px;
+}
+.tf-dh::after,
+.tf-dh::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 1px;
+}
+.tf-dh::after {
+  right: 0;
+  background: linear-gradient(90deg, var(--av-hair) 60%, transparent);
+}
+.tf-dh::before {
+  z-index: 1;
+  width: 28px;
+  background: var(--av-ctl);
+}
+.tf-dh h3 {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font: 700 20px/1.2 var(--av-serif);
+  letter-spacing: 0.22em;
+}
+.tf-dh .en {
+  flex: none;
+  font: italic 500 13px/1 var(--av-latin);
+  letter-spacing: 0.14em;
+  color: var(--av-ink-2);
+}
+.tf-db {
+  min-height: 0;
+  padding: 18px 0 14px;
+  overflow: auto;
+  scrollbar-width: thin;
+}
+.tf-db.two {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 24px;
+}
+.tf-df {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--av-hair-2);
+}
+.tf-df .av-btn {
+  height: 36px;
+  padding: 0 18px;
+  font-size: 13.5px;
+}
+.tf-df .av-btn.primary {
+  min-width: 96px;
+}
+.tf-flex {
+  flex: 1;
+  min-width: 0;
+}
+.tf-cap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: 600 13px/1.3 var(--av-serif);
+  letter-spacing: 0.14em;
+  color: var(--av-ink-2);
+}
+.tf-file {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font: 600 13.5px/1.3 var(--av-serif);
+  letter-spacing: 0.06em;
+}
+.tf-busy {
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--av-ink-2);
+}
+
+/* 输入框(组件库 .av-input / .av-textarea):纸底、一道细边 */
+.tf-input,
+.tf-ta {
+  box-sizing: border-box;
+  border: 1px solid var(--av-hair);
+  border-radius: var(--av-r-btn);
+  background: var(--av-paper);
+  color: var(--av-ink);
+  font: 13px/30px var(--av-sans);
+  outline: none;
+  transition:
+    border-color 0.16s,
+    box-shadow 0.16s;
+}
+.tf-dlg.is-glass :is(.tf-input, .tf-ta) {
+  background: color-mix(in srgb, #fff 6%, transparent);
+}
+.tf-input {
+  height: 34px;
+  padding: 0 10px;
+}
+.tf-ta {
+  display: block;
+  width: 100%;
+  min-height: 64px;
+  padding: 6px 10px;
+  line-height: 1.6;
+  resize: vertical;
+}
+.tf-input::placeholder,
+.tf-ta::placeholder {
+  color: color-mix(in srgb, var(--av-ink) 66%, transparent);
+  opacity: 1;
+}
+.tf-input:focus,
+.tf-ta:focus {
+  border-color: var(--av-ctl);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--av-acc) 35%, transparent);
+}
+
+/* ══════════ 导出:左边预览图(卡面)| 右边 名字 · 格式 · 要带的 · 分享说明 ══════════ */
+.tf-xpic {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  margin: -2px 0 0 -10px;
+}
+.tf-xpic .b {
+  display: flex;
+  gap: 6px;
+}
+/* 星语式卡面(选角色同款 .pk-tile,样子在 vn/vnPick.css):外面那圈错开的细线框比卡大 14px,这里留出来;只是给人看,不浮起 */
+.tf-cf {
+  position: relative;
+  display: block;
+  flex: none;
+  padding: 14px;
+  --k: 1;
+}
+.tf-cf .pk-tile,
+.tf-cf .pk-tile:hover {
+  transform: none;
+  cursor: default;
+}
+.tf-cf .pk-tile .art .none {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  color: var(--av-ink-2);
+}
+.tf-xform {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+/* 导出的名字(10-24):不填 = 卡名(占位字就是卡名),底下「导出为 - …」跟着走 */
+.tf-xname {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+.tf-xname .tf-cap {
+  flex: none;
+}
+.tf-xname .tf-input {
+  flex: 1;
+  min-width: 0;
+  max-width: 320px;
+  font-size: 13.5px;
+}
+/* 格式:分段,每格名字旁一个「?」;还没做的那格不能选 */
+.tf-fmt {
+  align-self: flex-start;
+}
+.tf-fmt > .c {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 5px;
+  color: var(--av-dim);
+  transition:
+    background 0.16s,
+    color 0.16s,
+    box-shadow 0.16s;
+}
+.tf-fmt > .c > button:not(.av-help) {
+  height: 100%;
+  padding: 0;
+  font: 500 13px/28px var(--av-sans);
+  letter-spacing: 0.04em;
+  color: inherit;
+  white-space: nowrap;
+}
+.tf-fmt > .c .av-help {
+  margin-left: 5px;
+}
+.tf-fmt > .c:hover:not(.on):not(.dis) {
+  color: var(--av-ink);
+}
+.tf-fmt > .c.on {
+  background: var(--av-paper);
+  color: var(--av-ink);
+  box-shadow:
+    0 1px 3px rgba(30, 24, 48, 0.12),
+    0 0 0 1px var(--av-hair-2);
+}
+.av-night .tf-fmt > .c.on {
+  background: var(--av-paper-3);
+}
+.tf-fmt > .c.dis > button:not(.av-help) {
+  color: var(--av-ink-2);
+  cursor: default;
+}
+.tf-exp {
+  margin: 12px 0 16px;
+  border-top: 1px solid var(--av-hair-2);
+}
+.tf-erow {
+  display: grid;
+  grid-template-columns: 16px 64px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 12px;
+  min-height: 48px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--av-hair-2);
+  cursor: pointer;
+}
+.tf-erow input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--av-ctl);
+}
+.tf-erow .k b,
+.tf-list .k b {
+  display: block;
+  font: 600 13.5px/1.3 var(--av-serif);
+  letter-spacing: 0.2em;
+}
+.tf-erow .k i,
+.tf-list .k i {
+  display: block;
+  margin-top: 2px;
+  font: italic 500 12px/1.2 var(--av-latin);
+  letter-spacing: 0.08em;
+  color: var(--av-ink-2);
+}
+.tf-erow .what {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  font: 13.5px/1.45 var(--av-sans);
+}
+.tf-erow .what .t {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.tf-erow .what .t > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.tf-erow .what small {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--av-ink-2);
+}
+.tf-erow .what small.warn {
+  color: var(--av-warn-ink, #8d6219);
+}
+.tf-erow .sz {
+  font: 12.5px/1 var(--av-sans);
+  color: var(--av-ink-2);
+  white-space: nowrap;
+}
+.tf-erow.off .k,
+.tf-erow.off .what,
+.tf-erow.off .sz {
+  opacity: 0.45;
+}
+.tf-xform > .tf-cap {
+  margin-bottom: 6px;
+}
+/* 小缩略图:立绘按脸的小圆头像、背景 40×23 的小横图、声音是 24 的小方块里一个喇叭 */
+.tf-face {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--av-acc) 30%, #e9e6e0);
+  box-shadow:
+    0 0 0 2px var(--av-paper),
+    0 1px 4px rgba(30, 24, 48, 0.2);
+  object-fit: cover;
+  object-position: 50% 12%;
+}
+.tf-bgt {
+  display: block;
+  flex: none;
+  width: 40px;
+  height: 23px;
+  object-fit: cover;
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px var(--av-hair);
+}
+.tf-ic {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: var(--av-paper-2);
+  color: var(--av-ctl);
+}
+.tf-ic svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* 出错:红点 + 原文(组件库 .av-errs 的样子) */
+.tf-errs {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tf-errs li {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--av-hair-2);
+}
+.tf-errs li:last-child {
+  border-bottom: 0;
+}
+.tf-errs li > .av-dot {
+  flex: none;
+  margin-top: 8px;
+}
+.tf-errs b {
+  display: block;
+  font: 600 14px/1.4 var(--av-serif);
+  letter-spacing: 0.04em;
+}
+.tf-errs code {
+  display: block;
+  margin-top: 3px;
+  font: 12.5px/1.5 var(--av-mono);
+  color: var(--av-ink-2);
+  overflow-wrap: anywhere;
+}
+
+/* ══════════ 导入中:一个进度条 + 取消 ══════════ */
+.tf-dlg.prog .tf-db {
+  padding: 26px 0 24px;
+}
+.tf-prog {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.tf-bar {
+  position: relative;
+  flex: 1;
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--av-hair);
+  overflow: hidden;
+}
+.tf-bar i {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--av-ctl);
+  transition: width 0.12s linear;
+}
+/* 整理 / 导入那两步不知道走到哪:一小段来回走 */
+.tf-bar.busy i {
+  position: absolute;
+  width: 30%;
+  animation: tf-busy 1.2s ease-in-out infinite alternate;
+}
+@keyframes tf-busy {
+  from {
+    left: 0;
+  }
+  to {
+    left: 70%;
+  }
+}
+.tf-prog b {
+  min-width: 44px;
+  text-align: right;
+  font: 600 14px/1 var(--av-sans);
+  font-variant-numeric: tabular-nums;
+}
+.tf-prog b.word {
+  min-width: 0;
+  font: 500 12.5px/1 var(--av-sans);
+  letter-spacing: 0.08em;
+  color: var(--av-ink-2);
+}
+
+/* 手机竖屏:弹层占满宽,两栏改上下排 */
+@media (max-width: 640px) {
+  .tf-host {
+    padding: 12px;
+  }
+  .tf-dlg {
+    padding: 16px 16px 14px;
+  }
+  .tf-db.two {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  .tf-dlg {
+    max-width: calc(100vw - 24px);
+  }
+  /* 预览图缩到一半,和两个按钮排成一行 */
+  .tf-xpic {
+    flex-direction: row;
+    gap: 10px;
+    margin: 0;
+  }
+  .tf-xpic > .tf-cap {
+    display: none;
+  }
+  .tf-cf {
+    padding: 7px;
+    --k: 0.5;
+  }
+  .tf-xpic .b {
+    flex-direction: column;
+  }
+  .tf-erow {
+    grid-template-columns: 16px 52px minmax(0, 1fr) auto;
+    column-gap: 10px;
+  }
+}
+
+/* ══════════ 导入完成:她的卡面 | 导进来的几样(宋体名目 + 斜体英文 | 值 | 小头像 / 小横图) ══════════ */
+.tf-who {
+  margin: -10px 0 -10px -10px;
+  pointer-events: none;
+}
+.tf-list {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tf-list li {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 12px;
+  min-height: 50px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--av-hair-2);
+}
+.tf-dlg .tf-list li:last-child {
+  border-bottom: 0;
+}
+.tf-list .v {
+  min-width: 0;
+}
+.tf-list .v > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: 13.5px/1.45 var(--av-sans);
+}
+.tf-list .v small {
+  display: block;
+  font-size: 12px;
+  line-height: 1.5;
+  letter-spacing: 0.04em;
+  color: var(--av-ink-2);
+}
+.tf-list .pv {
+  display: flex;
+  align-items: center;
+}
+.tf-faces {
+  display: inline-flex;
+}
+.tf-head {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  overflow: hidden;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--av-acc) 30%, #e9e6e0);
+  box-shadow:
+    0 0 0 2px var(--av-paper),
+    0 1px 4px rgba(30, 24, 48, 0.2);
+  container-type: size;
+}
+.tf-head + .tf-head {
+  margin-left: -6px;
+}
+.tf-head img {
+  position: absolute;
+  max-width: none;
+}
+/* 没认出来的文件:选它是什么(一排小分段) */
+.tf-dseg > button {
+  min-width: 0;
+  height: 26px;
+  padding: 0 9px;
+  font-size: 12.5px;
+  line-height: 26px;
+}
+@media (max-width: 640px) {
+  .tf-who {
+    display: none;
+  }
+  .tf-list li {
+    grid-template-columns: 52px minmax(0, 1fr);
+  }
+  .tf-list .pv {
+    grid-column: 2;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tf-bar.busy i {
+    animation: none;
+    left: 0;
+    width: 100%;
+    opacity: 0.5;
+  }
+}

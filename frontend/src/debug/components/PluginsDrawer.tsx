@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { pickLabels } from './drawer/cardView';
+import { CardPick } from './drawer/CardPick';
 import type { SendView } from '../core/sendPlan';
 import { debugApi } from '../lib/api';
 import type { ChatEntry } from '../lib/chatEntry';
@@ -21,8 +23,13 @@ import type { SlotKey } from '../studio/types';
 import type { TagKind } from '../vn/script';
 import { useTimelineEngine } from '../vn/useTimelineEngine';
 import './drawer/drawer.css';
+import './drawer/drawerGame.css';
 import { JEV_HEALTH_TEXT, ttsSummary, withTimeout, type TtsTest } from './drawer/globalStatus';
-import { drawerNav, switchTargetOf } from './drawer/navModel';
+import { drawerNav, gameEnd, switchTargetOf } from './drawer/navModel';
+import { NavIcon } from './drawer/navIcons';
+import { PageSwap } from './drawer/skin';
+import { DrawerSkinContext } from './drawer/skinContext';
+import { betaShown, type PagePower } from './drawer/skinModel';
 import { recentLines, recentSpriteWords } from './drawer/previewModel';
 import { AutoFillPage } from './drawer/pages/AutoFillPage';
 import { CartridgePage } from './drawer/pages/CartridgePage';
@@ -48,6 +55,9 @@ import { errText } from './pluginRunner';
  *          全局(Jev 标注、语音服务、自动补块、表情认法)/ 实验(实验组的卡带);圆点 = 看的那张卡在用,行尾 = 总开关或状态
  *   右边   一页一个文件(components/drawer/pages/):页头 → 常用 → 高级页签 → 底部链接
  *
+ * 游戏菜单里那份(game)换纸面三栏的皮:左栏线条图标、中间页头 + 实机预览舞台、右边常用和高级(drawer/skin.tsx、drawerGame.css);
+ * 调试台和卡编辑器里的 10-25 定了先不改。
+ *
  * 设置都是全局一份,经 DebugApp 的 usePluginConfig 读写;按卡的东西(圆点、页头小标签、认词记录、配对表)
  * 按看的那张卡单独去读(useCardView)。素材本身(立绘表、场景包、声音……)在卡编辑器和素材管理里改。
  */
@@ -65,6 +75,8 @@ export interface PluginFocus {
 }
 
 interface Props extends PresetControls {
+  /** 游戏菜单里那份:换纸面三栏的皮(调试台、卡编辑器不传) */
+  game?: boolean;
   card: { id: string; name: string } | null;
 
   sprite: {
@@ -152,6 +164,7 @@ function NavSwitch({ on, label, onToggle }: { on: boolean; label: string; onTogg
 
 export function PluginsDrawer(outer: Props) {
   const { focus } = outer;
+  const game = Boolean(outer.game);
   const [section, setSection] = useState<string>(pageOf(focus?.section ?? 'sprite'));
   // Jev 页(全局组):各插件页「Jev 还没填 key · 去填」都能点过去
   const props: Props = { ...outer, jev: { ...outer.jev, openPage: () => setSection('jev') } };
@@ -174,6 +187,14 @@ export function PluginsDrawer(outer: Props) {
     return props.cards.find((c) => c.id === viewId) ?? null;
   }, [viewId, props.card, props.cards]);
   const view = useCardView(viewCard, props.voice.profiles);
+  // 游戏菜单里:「看哪张卡」放进菜单面板的页头右边(设计稿 whole.js 的 topSlot),三栏上面不再多占一行
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [headSlot, setHeadSlot] = useState<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    if (!game) return;
+    const head = rootRef.current?.closest('.vn-menu-pagein')?.querySelector<HTMLElement>(':scope > .vn-menu-head') ?? null;
+    setHeadSlot(head);
+  }, [game]);
   const isCurrent = viewCard !== null && viewCard.id === currentId;
   // 看的是当前卡时,调试台这边换了包、绑了声音(卡编辑器、游戏里改的)就重读一次,圆点和小标签跟着变
   const currentAssets = [
@@ -267,11 +288,15 @@ export function PluginsDrawer(outer: Props) {
   // 打开到的那一页不在左栏(卡带没装、拿掉了):回到立绘
   const known = nav.some((g) => g.rows.some((r) => r.id === section));
   const page = known ? section : 'sprite';
+  // 游戏皮:这一页的插件开关挪到页头名字旁(左栏只看在不在用)
+  const pageEnd = nav.flatMap((g) => g.rows).find((r) => r.id === page)?.end;
+  const power: PagePower | null =
+    game && pageEnd?.kind === 'switch' ? { on: pageEnd.on, label: pageEnd.label, onToggle: () => flip(page) } : null;
+  const skin = { game, page, power };
 
   // ---- 从预设里点插件块过来:开那一页的「高级」,AI 写开「提示词模板」、Jev 标开「问法」,再滚过去闪一下 ----
   const [advOpen, setAdvOpen] = useState<{ page: string; tab: string; nonce: number } | null>(null);
-  const modeOf = (pg: string) =>
-    pg === 'sprite' ? props.sprite.config.mode : isScene(pg) ? props.scene.configs[pg].mode : null;
+  const modeOf = (pg: string) => (pg === 'sprite' ? props.sprite.config.mode : isScene(pg) ? props.scene.configs[pg].mode : null);
   const modeRef = useRef(modeOf);
   useEffect(() => {
     modeRef.current = modeOf;
@@ -319,6 +344,74 @@ export function PluginsDrawer(outer: Props) {
     props.scene.configs.bgm,
     props.scene.configs.cg,
   );
+
+  /**
+   * 素材直接换(10-25/26 用户定):插件页立绘 / 语音 / 背景 / BGM / CG 五页「常用」第一行一个下拉框,
+   * 下拉里是库里全部的包,不分「她的 / 别人的」,选了马上整个替换掉这张卡这一样原来的绑定(声音也不留备用)。
+   * 看的是当前卡就走插件状态(游戏里马上换上);看别的卡就直接写库再重读那张卡。后台接口本来就是整组替换
+   * (PUT sprite-packs / voices / scene-packs / cg-packs),没加新接口。
+   */
+  const replaceSprite = async (packId: string) => {
+    if (!viewCard) return;
+    try {
+      // 直接写库再重读(不走 sprite.packs.setPacks:它写失败时自己弹过提示又吞掉异常,这里会重复弹)
+      await debugApi.setCardSpritePacks(viewCard.id, [packId], packId);
+      if (isCurrent) await props.sprite.packs.reload();
+      else view.reload();
+      await props.sprite.packs.refreshPacks();
+      const name = props.sprite.packs.packs.find((x) => x.id === packId)?.name ?? packId;
+      props.notify('ok', `「${viewName}」换上「${name}」`);
+    } catch (e) {
+      props.notify('error', `换立绘包失败: ${errText(e)}`);
+    }
+  };
+  const replaceVoice = async (id: string | null) => {
+    if (!viewCard) return;
+    const target = { main: id, extras: [] };
+    try {
+      if (isCurrent) {
+        if (!(await props.voice.bind(target))) return;
+      } else {
+        await debugApi.setCardVoices(viewCard.id, target);
+        view.reload();
+      }
+      const name = id ? (props.voice.profiles.find((v) => v.id === id)?.name ?? id) : null;
+      props.notify('ok', name ? `「${viewName}」换上「${name}」` : `「${viewName}」不念了`);
+    } catch (e) {
+      props.notify('error', `换音色失败: ${errText(e)}`);
+    }
+  };
+  const replaceScenePack = async (kind: 'bg' | 'bgm', packId: string) => {
+    if (!viewCard) return;
+    try {
+      // 背景 / BGM 各挂各的:先读这张卡现在两边各绑哪些,只换要换的那一边
+      const current = isCurrent ? props.scene.binding : await debugApi.getCardScenePacks(viewCard.id);
+      const next = kind === 'bg' ? { bg: [packId], bgm: current.bgm } : { bg: current.bg, bgm: [packId] };
+      // 直接写库再重读(不走 scene.bindScene:它写失败时自己弹过提示又吞掉异常,这里会重复弹)
+      await debugApi.setCardScenePacks(viewCard.id, next);
+      if (isCurrent) await props.scene.reloadCard();
+      else view.reload();
+      await props.scene.refreshPacks();
+      const name = props.scene.packs.find((x) => x.id === packId)?.name ?? packId;
+      props.notify('ok', `「${viewName}」换上「${name}」`);
+    } catch (e) {
+      props.notify('error', `绑定场景包失败: ${errText(e)}`);
+    }
+  };
+  const replaceCgPack = async (packId: string) => {
+    if (!viewCard) return;
+    try {
+      await debugApi.setCardCgPacks(viewCard.id, [packId]);
+      if (isCurrent) await props.scene.reloadCard();
+      else view.reload();
+      await props.scene.refreshCgPacks();
+      const name = props.scene.cgPacks.find((x) => x.id === packId)?.name ?? packId;
+      props.notify('ok', `「${viewName}」换上「${name}」`);
+    } catch (e) {
+      props.notify('error', `绑定 CG 包失败: ${errText(e)}`);
+    }
+  };
+
   const panel = cartridgePanels.find((p) => p.key === page) ?? null;
   const preset: PresetControls = {
     presetName: props.presetName,
@@ -335,10 +428,21 @@ export function PluginsDrawer(outer: Props) {
   };
 
   return (
-    <div className="conn-drawer dw">
+    <div ref={rootRef} className={`conn-drawer dw${game ? ' dw-game' : ''}${game && headSlot ? ' dw-pick-out' : ''}`}>
+      {game &&
+        headSlot &&
+        createPortal(
+          <CardPick cards={props.cards} labels={cardLabels} viewId={viewId} currentId={currentId} onPick={setViewId} />,
+          headSlot,
+        )}
       <div className="dw-head">
-        <span className="dw-title">插件 · PLUGINS</span>
-        <Tip k="drawer" />
+        {/* 游戏菜单里:菜单面板已经有页头「插件」,这里不再重复大标题,只剩右边「看哪张卡 + ?」一行 */}
+        {!game && (
+          <>
+            <span className="dw-title">插件 · PLUGINS</span>
+            <Tip k="drawer" />
+          </>
+        )}
         <span className="dw-flex" />
         <label className="dw-pick">
           <span>看哪张卡</span>
@@ -357,6 +461,7 @@ export function PluginsDrawer(outer: Props) {
             ))}
           </select>
         </label>
+        {game && <Tip k="drawer" />}
         <button type="button" className="dw-close" onClick={props.onClose} aria-label="关闭插件抽屉" title="关闭">
           <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24">
             <path d="M6 6l12 12M18 6L6 18" />
@@ -371,9 +476,11 @@ export function PluginsDrawer(outer: Props) {
               <div className="dw-group-head">
                 <span className="dw-group-name">{g.title}</span>
                 <span className="dw-flex" />
-                {g.id === 'role' && (
+                {/* 游戏皮照设计稿只留「角色 ?」,「圆点 = 在用」收进问号 */}
+                {g.id === 'role' && game && <Tip k="nav" />}
+                {g.id === 'role' && !game && (
                   <span className="dw-group-note">
-                    <span className="dw-note-text">圆点 = {viewName}在用</span>
+                    <span className="dw-note-text">{`圆点 = ${viewName}在用`}</span>
                     <Tip k="nav" />
                   </span>
                 )}
@@ -383,113 +490,154 @@ export function PluginsDrawer(outer: Props) {
                   </span>
                 )}
               </div>
-              {g.rows.map((r) => (
-                <div key={r.id} className={`dw-row${page === r.id ? ' on' : ''}`}>
-                  <button
-                    type="button"
-                    className="dw-row-main"
-                    aria-current={page === r.id ? 'page' : undefined}
-                    onClick={() => setSection(r.id)}
-                  >
-                    {r.inUse !== null && (
+              {g.rows.map((r) => {
+                const end = game ? gameEnd(r) : null;
+                return (
+                  <div key={r.id} className={`dw-row${page === r.id ? ' on' : ''}${end?.kind === 'off' ? ' is-off' : ''}`}>
+                    <button
+                      type="button"
+                      className="dw-row-main"
+                      aria-current={page === r.id ? 'page' : undefined}
+                      onClick={() => setSection(r.id)}
+                    >
+                      {game && <NavIcon id={r.id} />}
+                      {!game && r.inUse !== null && (
+                        <span
+                          className={`dw-dot${r.inUse ? ' on' : ''}`}
+                          role="img"
+                          aria-label={r.inUse ? `${viewName}在用` : `${viewName}没在用`}
+                        />
+                      )}
+                      <span className="dw-row-name">{r.name}</span>
+                      {betaShown(game, r.id, r.beta) && <span className="dw-beta">BETA</span>}
+                    </button>
+                    {!game && r.end?.kind === 'switch' && <NavSwitch on={r.end.on} label={r.end.label} onToggle={() => flip(r.id)} />}
+                    {!game && r.end?.kind === 'text' && <span className="dw-row-end">{r.end.text}</span>}
+                    {end?.kind === 'text' && <span className="dw-row-end">{end.text}</span>}
+                    {end?.kind === 'off' && <span className="dw-row-end">关</span>}
+                    {end?.kind === 'dot' && (
                       <span
-                        className={`dw-dot${r.inUse ? ' on' : ''}`}
+                        className={`dw-dot${end.on ? ' on' : ''}`}
                         role="img"
-                        aria-label={r.inUse ? `${viewName}在用` : `${viewName}没在用`}
+                        aria-label={end.on ? `${viewName}在用` : `${viewName}没在用`}
                       />
                     )}
-                    <span className="dw-row-name">{r.name}</span>
-                    {r.beta && <span className="dw-beta">BETA</span>}
-                  </button>
-                  {r.end?.kind === 'switch' && <NavSwitch on={r.end.on} label={r.end.label} onToggle={() => flip(r.id)} />}
-                  {r.end?.kind === 'text' && <span className="dw-row-end">{r.end.text}</span>}
-                </div>
-              ))}
+                  </div>
+                );
+              })}
             </div>
           ))}
         </nav>
 
-        <div className="dw-body">
-          {page === 'jev' && (
-            <JevPage jev={props.jev} rows={jevRows} testOk={jevTestOk} onTested={setJevTestOk} notify={props.notify} />
-          )}
-          {page === 'tts' && <TtsServicePage voice={props.voice} tests={ttsTests} onTest={testTts} notify={props.notify} />}
-          {page === 'autofill' && (
-            <AutoFillPage autoFill={props.assembly.autoFill} onChange={props.assembly.onChange} send={props.send} viewCard={viewCard} />
-          )}
-          {page === 'engine' && <EnginePage />}
-          {page === 'sprite' && (
-            <SpritePage
-              view={view}
-              card={viewCard}
-              config={props.sprite.config}
-              onChangeConfig={props.sprite.onChangeConfig}
-              stage={props.sprite.layout.stage}
-              onChangeStage={props.sprite.layout.changeStage}
-              block={props.sprite.block}
-              preset={preset}
-              jev={props.jev}
-              fixedEmotion={props.voice.config.fixedEmotion}
-              cards={props.cards}
-              links={links}
-              advOpen={advFor('sprite')}
-              recent={recent}
-              jevPrompts={jevPrompts}
-              userName={userName}
-              notify={props.notify}
-              onSpritesChanged={() => {
-                if (isCurrent) void props.sprite.packs.reload();
-              }}
-            />
-          )}
-          {isScene(page) && (
-            <ScenePage
-              key={page}
-              kind={page}
-              view={view}
-              card={viewCard}
-              isCurrent={isCurrent}
-              scene={props.scene}
-              block={props.sceneBlocks[page]}
-              preset={preset}
-              jev={props.jev}
-              currentMacros={props.sceneMacros}
-              cards={props.cards}
-              links={links}
-              advOpen={advFor(page)}
-              recentLines={recent.lines}
-              jevPrompts={jevPrompts}
-              userName={userName}
-              notify={props.notify}
-            />
-          )}
-          {page === 'voice' && (
-            <VoicePage
-              view={view}
-              card={viewCard}
-              isCurrent={isCurrent}
-              voice={props.voice}
-              cards={props.cards}
-              links={links}
-              advOpen={advFor('voice')}
-              notify={props.notify}
-            />
-          )}
-          {page === 'lang' && (
-            <LangPage
-              view={view}
-              card={viewCard}
-              config={props.lang.config}
-              onChangeConfig={props.lang.onChangeConfig}
-              send={props.send}
-              jaHide={props.lang.jaHide}
-              links={links}
-              advOpen={advFor('lang')}
-            />
-          )}
-          {panel && (
-            <CartridgePage panel={panel} facts={view.facts} card={viewCard} profiles={props.voice.profiles} links={links} />
-          )}
+        <div className={`dw-body${game ? ' dw-body-3col' : ''}`}>
+          <DrawerSkinContext.Provider value={skin}>
+            <PageSwap key={page} game={game}>
+              {page === 'jev' && (
+                <JevPage
+                  jev={props.jev}
+                  rows={jevRows}
+                  testOk={jevTestOk}
+                  onTested={setJevTestOk}
+                  notify={props.notify}
+                  cardName={props.card?.name}
+                />
+              )}
+              {page === 'tts' && (
+                <TtsServicePage
+                  voice={props.voice}
+                  tests={ttsTests}
+                  onTest={testTts}
+                  notify={props.notify}
+                  onLibrary={() => props.links.library('voice')}
+                />
+              )}
+              {page === 'autofill' && (
+                <AutoFillPage autoFill={props.assembly.autoFill} onChange={props.assembly.onChange} send={props.send} viewCard={viewCard} />
+              )}
+              {page === 'engine' && <EnginePage />}
+              {page === 'sprite' && (
+                <SpritePage
+                  view={view}
+                  card={viewCard}
+                  config={props.sprite.config}
+                  onChangeConfig={props.sprite.onChangeConfig}
+                  stage={props.sprite.layout.stage}
+                  onChangeStage={props.sprite.layout.changeStage}
+                  block={props.sprite.block}
+                  preset={preset}
+                  jev={props.jev}
+                  fixedEmotion={props.voice.config.fixedEmotion}
+                  cards={props.cards}
+                  links={links}
+                  advOpen={advFor('sprite')}
+                  recent={recent}
+                  jevPrompts={jevPrompts}
+                  userName={userName}
+                  notify={props.notify}
+                  onSpritesChanged={() => {
+                    if (isCurrent) void props.sprite.packs.reload();
+                  }}
+                  packs={props.sprite.packs.packs}
+                  onReplacePack={replaceSprite}
+                />
+              )}
+              {isScene(page) && (
+                <ScenePage
+                  key={page}
+                  kind={page}
+                  view={view}
+                  card={viewCard}
+                  isCurrent={isCurrent}
+                  scene={props.scene}
+                  block={props.sceneBlocks[page]}
+                  preset={preset}
+                  jev={props.jev}
+                  currentMacros={props.sceneMacros}
+                  cards={props.cards}
+                  links={links}
+                  advOpen={advFor(page)}
+                  recentLines={recent.lines}
+                  jevPrompts={jevPrompts}
+                  userName={userName}
+                  notify={props.notify}
+                  stage={props.sprite.layout.stage}
+                  scenePacks={props.scene.packs}
+                  cgPacks={props.scene.cgPacks}
+                  onReplaceScenePack={replaceScenePack}
+                  onReplaceCgPack={replaceCgPack}
+                />
+              )}
+              {page === 'voice' && (
+                <VoicePage
+                  view={view}
+                  card={viewCard}
+                  isCurrent={isCurrent}
+                  voice={props.voice}
+                  cards={props.cards}
+                  links={links}
+                  advOpen={advFor('voice')}
+                  notify={props.notify}
+                  stage={props.sprite.layout.stage}
+                  recentLines={recent.lines}
+                  onReplaceVoice={replaceVoice}
+                />
+              )}
+              {page === 'lang' && (
+                <LangPage
+                  view={view}
+                  card={viewCard}
+                  config={props.lang.config}
+                  onChangeConfig={props.lang.onChangeConfig}
+                  send={props.send}
+                  jaHide={props.lang.jaHide}
+                  links={links}
+                  advOpen={advFor('lang')}
+                  stage={props.sprite.layout.stage}
+                />
+              )}
+              {panel && <CartridgePage panel={panel} facts={view.facts} card={viewCard} profiles={props.voice.profiles} links={links} />}
+            </PageSwap>
+          </DrawerSkinContext.Provider>
         </div>
       </div>
     </div>

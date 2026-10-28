@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   debugApi,
   type JevKeyStatus,
@@ -6,15 +6,17 @@ import {
   type DebugConnection,
   type ThinkingLevel,
 } from '../lib/api';
+import { useConfirm } from '../vn/ui/confirm';
+import { ConnectionsGame } from './connections/ConnectionsGame';
+import {
+  BASE_URL_HINTS,
+  type ConnBusy as Busy,
+  type ConnFormState as FormState,
+  type TestResult,
+} from './connections/connModel';
 
 /** 与游戏版 ConnectionsPanel 同一份逻辑(增删改/选中即激活/两步删除/
  *  模型刷新与未保存预览/ping/测试消息),只是换成控制台顶部的抽屉式呈现 */
-
-const BASE_URL_HINTS: Record<ApiType, string> = {
-  openai_compatible: 'https://api.openai.com/v1 · OpenRouter / Ollama 等兼容地址',
-  anthropic: '留空使用官方 API',
-  mock: '无需填写',
-};
 
 const DEFAULT_TEST_MESSAGE = 'Hi! Reply with one short sentence.';
 
@@ -30,16 +32,13 @@ interface Props {
    * 不给就不显示这一行
    */
   jev?: { status: JevKeyStatus | null; onOpen: () => void };
-}
-
-interface FormState {
-  name: string;
-  api_type: ApiType;
-  base_url: string;
-  api_key: string;
-  model: string;
-  stream: boolean;
-  thinking: ThinkingLevel | null;
+  /**
+   * 局内菜单「模型」页传 true:排成三栏(左 已保存的连接 + Jev,中 表单,右 测试,结果就地显示);
+   * 数据、动作和调试台网页里的抽屉完全是同一份。不传 = 原来的单栏抽屉
+   */
+  game?: boolean;
+  /** 局内菜单给的「离开前先问」登记口(PageContext.setLeaveGuard);有没保存的改动时关菜单 / 换页先问 */
+  setLeaveGuard?: (guard: (() => Promise<boolean>) | null) => void;
 }
 
 /** 思考的几档。关和深浅三档 DeepSeek、Kimi、GLM 用的是同一套名字(2026-09-26 实测) */
@@ -50,8 +49,6 @@ const THINKING_OPTIONS: { value: ThinkingLevel | ''; name: string }[] = [
   { value: 'high', name: '高' },
   { value: 'max', name: '最大 —— 想得最多,也最慢' },
 ];
-
-type Busy = 'save' | 'delete' | 'refresh' | 'ping' | 'test' | null;
 
 function formFrom(conn: DebugConnection | null): FormState {
   return {
@@ -65,7 +62,7 @@ function formFrom(conn: DebugConnection | null): FormState {
   };
 }
 
-export function ConnectionsDrawer({ connections: shared, notify, onClose, onChanged, jev }: Props) {
+export function ConnectionsDrawer({ connections: shared, notify, onClose, onChanged, jev, game, setLeaveGuard }: Props) {
   const [connections, setConnections] = useState<DebugConnection[] | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(() => formFrom(null));
@@ -73,13 +70,32 @@ export function ConnectionsDrawer({ connections: shared, notify, onClose, onChan
   const [testMessage, setTestMessage] = useState(DEFAULT_TEST_MESSAGE);
   const [busy, setBusy] = useState<Busy>(null);
   const [deleteArmed, setDeleteArmed] = useState(false);
+  // 三栏版右栏就地显示的测试结果;换连接就清掉
+  const [result, setResult] = useState<TestResult | null>(null);
 
   const selected = connections?.find((c) => c.id === selectedId) ?? null;
   // 表单和这条连接(新建时是空表单)不一样 = 有没保存的改动,包括刚填的 API key
   const formDirty = JSON.stringify(form) !== JSON.stringify(formFrom(selected));
-  const confirmDiscard = () =>
-    !formDirty || window.confirm('连接的改动还没保存(填了的 API key 也会丢),放弃这些改动?');
+  const confirm = useConfirm();
+  const confirmDiscard = async () =>
+    !formDirty ||
+    (await confirm({
+      title: '放弃这些改动?',
+      body: '连接的改动还没保存,填了的 API key 也会丢',
+      en: 'Unsaved',
+      del: '放弃改动',
+      keep: '继续改',
+      message: '连接的改动还没保存(填了的 API key 也会丢),放弃这些改动?',
+    }));
   const active = connections?.find((c) => c.is_active) ?? null;
+  // 局内菜单里:有没保存的改动时,关菜单 / 换页 / 返回标题前先问(旧抽屉的「收起」也是这么问的)
+  const confirmRef = useRef(confirmDiscard);
+  confirmRef.current = confirmDiscard;
+  useEffect(() => {
+    if (!setLeaveGuard) return;
+    setLeaveGuard(formDirty ? () => confirmRef.current() : null);
+  }, [formDirty, setLeaveGuard]);
+  useEffect(() => () => setLeaveGuard?.(null), [setLeaveGuard]);
 
   const reload = useCallback(async (keepId?: string | null) => {
     const list = await debugApi.listConnections();
@@ -122,10 +138,11 @@ export function ConnectionsDrawer({ connections: shared, notify, onClose, onChan
     if (!conn) return;
     // 点的就是正在编辑的这条:表单不动(以前会重置,填了一半的 key 就没了)
     if (id !== selectedId) {
-      if (!confirmDiscard()) return;
+      if (!(await confirmDiscard())) return;
       setSelectedId(id);
       setForm(formFrom(conn));
       setCachedModels(conn.cached_models ?? []);
+      setResult(null);
     }
     setDeleteArmed(false);
     // 和游戏版一致:在列表里选中一条非启用的连接 = 把它设为当前启用
@@ -140,12 +157,13 @@ export function ConnectionsDrawer({ connections: shared, notify, onClose, onChan
     }
   };
 
-  const startNew = () => {
-    if (!confirmDiscard()) return;
+  const startNew = async () => {
+    if (!(await confirmDiscard())) return;
     setSelectedId(null);
     setForm(formFrom(null));
     setCachedModels([]);
     setDeleteArmed(false);
+    setResult(null);
   };
 
   const save = async () => {
@@ -257,41 +275,74 @@ export function ConnectionsDrawer({ connections: shared, notify, onClose, onChan
     }
   };
 
-  const ping = async () => {
+  /** 测试(连接 / 发测试消息)的统一收口:三栏版把结果放在右栏里,单栏抽屉照旧弹提示 */
+  const runTest = async (what: 'ping' | 'test', job: () => Promise<{ ok: boolean; text: string }>) => {
     if (!selectedId) return;
-    setBusy('ping');
+    setBusy(what);
+    if (game) setResult({ kind: 'busy', what });
+    const t0 = performance.now();
     try {
-      if (formDirty) {
+      const { ok, text } = await job();
+      const ms = performance.now() - t0;
+      if (game) setResult({ kind: ok ? 'ok' : 'error', what, text, ms });
+      else notify(ok ? 'ok' : 'error', text);
+    } catch (e) {
+      const text = e instanceof Error ? e.message : String(e);
+      if (game) setResult({ kind: 'error', what, text, ms: performance.now() - t0 });
+      else notify('error', text);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const ping = () =>
+    runTest('ping', async () => {
+      if (formDirty && selectedId) {
         const models = await debugApi.previewConnectionModels({
           api_type: form.api_type,
           base_url: form.base_url || null,
           api_key: form.api_key.trim() || null,
           connection_id: selectedId,
         });
-        notify('ok', `连接成功，探测到 ${models.length} 个可用模型`);
-        return;
+        return { ok: true, text: `连接成功，探测到 ${models.length} 个可用模型` };
       }
-      const result = await debugApi.pingConnection(selectedId);
-      notify(result.ok ? 'ok' : 'error', result.message);
-    } catch (e) {
-      notify('error', e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(null);
-    }
-  };
+      const r = await debugApi.pingConnection(selectedId!);
+      return { ok: r.ok, text: r.message };
+    });
 
-  const sendTestMessage = async () => {
-    if (!selectedId) return;
-    setBusy('test');
-    try {
-      const result = await debugApi.testConnectionMessage(selectedId, testMessage);
-      notify('ok', result.reply);
-    } catch (e) {
-      notify('error', e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(null);
-    }
-  };
+  const sendTestMessage = () =>
+    runTest('test', async () => {
+      const r = await debugApi.testConnectionMessage(selectedId!, testMessage);
+      return { ok: true, text: r.reply };
+    });
+
+  if (game) {
+    return (
+      <ConnectionsGame
+        connections={connections}
+        selectedId={selectedId}
+        selected={selected}
+        form={form}
+        onForm={(patch) => setForm((f) => ({ ...f, ...patch }))}
+        dirty={formDirty}
+        cachedModels={cachedModels}
+        testMessage={testMessage}
+        onTestMessage={setTestMessage}
+        busy={busy}
+        deleteArmed={deleteArmed}
+        result={result}
+        jev={jev}
+        onSelect={selectConnection}
+        onNew={startNew}
+        onSave={save}
+        onDelete={remove}
+        onRefresh={refreshModels}
+        onPickModel={pickModel}
+        onPing={ping}
+        onSendTest={sendTestMessage}
+      />
+    );
+  }
 
   return (
     <div className="conn-drawer">
@@ -304,7 +355,7 @@ export function ConnectionsDrawer({ connections: shared, notify, onClose, onChan
             <span className="dot on" /> {active.name} · {active.model || '未设模型'}
           </span>
         )}
-        <button className="panel-collapse" onClick={() => confirmDiscard() && onClose()} title="收起">
+        <button className="panel-collapse" onClick={async () => (await confirmDiscard()) && onClose()} title="收起">
           ✕
         </button>
       </div>

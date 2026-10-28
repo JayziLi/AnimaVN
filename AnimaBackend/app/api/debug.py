@@ -41,20 +41,20 @@ def _resolve(
 ) -> tuple[ApiConnection, str, list[ChatMessage]]:
     """Shared front half of both endpoints: pick the connection, model, history."""
     if not req.messages:
-        raise HTTPException(400, "messages 不能为空")
+        raise HTTPException(400, "messages must not be empty")
 
     if req.connection_id:
         conn = db.get(ApiConnection, req.connection_id)
         if conn is None:
-            raise HTTPException(400, "指定的 API 连接不存在")
+            raise HTTPException(400, "Connection not found")
     else:
         conn = active_connection(db)
         if conn is None:
-            raise HTTPException(400, "没有启用的 API 连接，请先在设置里添加并启用一个")
+            raise HTTPException(400, "No active connection")
 
     model = req.model or conn.model
     if conn.api_type != "mock" and not model:
-        raise HTTPException(400, f"连接「{conn.name}」还没有填写模型名")
+        raise HTTPException(400, f"Connection '{conn.name}' has no model name set")
 
     history = [ChatMessage(role=m.role, content=m.content, name=m.name) for m in req.messages]
     return conn, model, history
@@ -158,7 +158,7 @@ async def stream(req: CompleteRequest, db: Session = Depends(get_db)):
                 yield _sse("delta", {"text": tail_text})
 
             if not emitted:
-                yield _sse("error", {"message": "服务返回了空响应——中转站可能出错了"})
+                yield _sse("error", {"message": "Empty response: the stream ended with no content"})
                 return
 
             reasoning_type = "model" if native_reasoning else ("parsed" if splitter.used else None)
@@ -175,7 +175,7 @@ async def stream(req: CompleteRequest, db: Session = Depends(get_db)):
         except LLMError as e:
             yield _sse("error", {"message": e.message})
         except Exception as e:  # noqa: BLE001 - the frame is the only channel left
-            yield _sse("error", {"message": f"生成中断：{e}"})
+            yield _sse("error", {"message": f"Stream interrupted: {e}"})
         finally:
             await events.aclose()
 

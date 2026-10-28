@@ -27,6 +27,8 @@ interface Props {
   /** 填了也发不出去的字段有几个 */
   warnCount: number;
   onJump: (key: ProfileKey) => void;
+  /** 顶上那块头像 + 卡名;局内菜单「角色」页不要(挪到右栏 ProfileHer 了) */
+  identity?: boolean;
   onChangeName: (name: string) => void;
   onPickAvatar: () => void;
 }
@@ -73,39 +75,41 @@ export function ProfileToc(props: Props) {
       <span className="pf-row-label" title={r.label}>
         {r.label}
       </span>
-      {r.badge && <span className={`pf-row-badge${r.warn ? ' warn' : ''}`}>{r.badge}</span>}
+      {r.badge && <span className={`pf-row-badge${r.warn ? ' warn' : ''}${r.badge === '空' ? ' nil' : ''}`}>{r.badge}</span>}
     </button>
   );
 
   return (
     <aside ref={root} className="pf-toc" aria-label="资料目录">
-      <div className="pf-id">
-        <button
-          type="button"
-          className="pf-avatar-btn"
-          title="点击更换头像(裁成 1:1 · 512×512)"
-          aria-label="更换头像"
-          onClick={props.onPickAvatar}
-        >
-          <CardAvatar className="pf-avatar" sources={[props.avatarUrl]} name={name} />
-          <span className="pf-avatar-badge" aria-hidden="true">
-            <Icon name="image" size={12} />
-          </span>
-        </button>
-        <div className="pf-id-text">
-          <input
-            className="pf-name"
-            value={card.name}
-            placeholder="(无名)"
-            aria-label="卡名"
-            title="卡名,点一下就能改"
-            onChange={(e) => props.onChangeName(e.target.value)}
-          />
-          <span className="pf-spec" title={spec}>
-            {spec}
-          </span>
+      {props.identity !== false && (
+        <div className="pf-id">
+          <button
+            type="button"
+            className="pf-avatar-btn"
+            title="点击更换头像(裁成 1:1 · 512×512)"
+            aria-label="更换头像"
+            onClick={props.onPickAvatar}
+          >
+            <CardAvatar className="pf-avatar" sources={[props.avatarUrl]} name={name} />
+            <span className="pf-avatar-badge" aria-hidden="true">
+              <Icon name="image" size={12} />
+            </span>
+          </button>
+          <div className="pf-id-text">
+            <input
+              className="pf-name"
+              value={card.name}
+              placeholder="(无名)"
+              aria-label="卡名"
+              title="卡名,点一下就能改"
+              onChange={(e) => props.onChangeName(e.target.value)}
+            />
+            <span className="pf-spec" title={spec}>
+              {spec}
+            </span>
+          </div>
         </div>
-      </div>
+      )}
 
       <nav className="pf-nav" aria-label="资料目录">
         <div className="pf-group">

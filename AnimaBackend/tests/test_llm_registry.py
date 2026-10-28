@@ -49,12 +49,12 @@ def test_registry_hands_the_connections_thinking_level_to_the_provider(monkeypat
 
 
 def test_anthropic_connection_requires_api_key():
-    with pytest.raises(LLMError, match="还没有配置 API 密钥"):
+    with pytest.raises(LLMError, match="^Connection '.*' has no API key$"):
         provider_for(connection("anthropic", api_key=None))
 
 
 def test_registry_rejects_unknown_api_type():
-    with pytest.raises(LLMError, match="未知的 API 类型"):
+    with pytest.raises(LLMError, match="^Unknown API type: future-provider$"):
         provider_for(connection("future-provider"))
 
 

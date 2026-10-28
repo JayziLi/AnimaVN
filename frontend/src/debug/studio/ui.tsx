@@ -26,6 +26,7 @@ import { LABEL_MAX } from '../plugins/common';
 import { useAnchored, useDismiss } from './floating';
 import { Icon, type IconName } from './icons';
 import { PanelCollapseButton } from './panelParts';
+import { LayerSkin } from './layerSkin';
 import { InspectorCollapse } from './sidePanels';
 import { SLOT_NAMES } from './slotSummary';
 import type { SlotKey } from './types';
@@ -41,6 +42,7 @@ export function HelpTip({ text }: { text: string }) {
   const btn = useRef<HTMLButtonElement | null>(null);
   const tip = useRef<HTMLSpanElement | null>(null);
   const id = useId();
+  const skin = useContext(LayerSkin);
   const style = useAnchored(open, btn, tip, 'start', 8, -12);
   useDismiss(open, [btn], () => {
     setPinned(false);
@@ -78,7 +80,7 @@ export function HelpTip({ text }: { text: string }) {
       </button>
       {open &&
         createPortal(
-          <span ref={tip} id={id} role="tooltip" className="st-tip st-layer" style={style}>
+          <span ref={tip} id={id} role="tooltip" className={`st-tip st-layer${skin ? ` ${skin}` : ''}`} style={style}>
             {text}
           </span>,
           document.body,
@@ -92,6 +94,7 @@ export function HelpTip({ text }: { text: string }) {
 /** 右栏里一节的标题行(上面一条分隔线,first 不画):标题、「?」、右边的按钮;note 是标题下面一行小字 */
 export function Section({
   title,
+  en,
   help,
   right,
   note,
@@ -99,6 +102,8 @@ export function Section({
   children,
 }: {
   title: ReactNode;
+  /** 标题后面的斜体英文小标(纸面皮:绑定 Binding) */
+  en?: string;
   help?: string;
   right?: ReactNode;
   note?: ReactNode;
@@ -109,6 +114,7 @@ export function Section({
     <>
       <div className={`st-section${first ? ' first' : ''}`}>
         <span className="st-section-title">{title}</span>
+        {en && <span className="st-section-en">{en}</span>}
         {help && <HelpTip text={help} />}
         <span className="st-flex" />
         {right}
@@ -637,64 +643,61 @@ export function InspectorHead({ media, title, badge }: { media?: ReactNode; titl
 
 // ---------------------------------------------------------------- 主区顶上那一行
 
-export interface PackTabItem {
+export interface PackSwapOption {
   id: string;
-  /** 缩略图地址;没有就画 icon */
-  thumb?: string | null;
-  icon?: IconName;
-  /** 自己画的缩略图(比如按脸裁的小头像),给了就不用 thumb / icon;填满 32px 的方块 */
-  media?: ReactNode;
   name: string;
-  sub: string;
-  selected: boolean;
+  /** 右边灰字:「14 张」「16 张背景」 */
+  sub?: string;
 }
 
-/** 这张卡挂的几个包(或几个声音)排成一排页签,末尾虚线「＋」 */
-export function PackTabs({
-  items,
-  onSelect,
-  onAdd,
-  addLabel,
+/**
+ * 这一栏用哪个包(音色)的下拉框(界面统一 10-25/27 用户定:一样只用一个,不挂几个、不分她的 / 别人的):
+ * 库里全部的都在里面,选了马上整个替换掉原来的。voidLabel 给时多一个这个字的选项(声音的「不念」),选它是 onPick(null)。
+ * 放在栏顶那一行,后面可以接「上传新建」之类的小按钮(children)。
+ */
+export function PackSwap({
   label,
+  ariaLabel,
+  options,
+  value,
+  voidLabel,
+  disabled,
+  onPick,
+  children,
 }: {
-  items: readonly PackTabItem[];
-  onSelect: (id: string) => void;
-  onAdd?: () => void;
-  /** 「＋」的说明,比如「添加服装(从素材库选择或导入)」 */
-  addLabel: string;
+  /** 下拉框前面的小字(「音色」);不给就只有下拉框 */
   label?: string;
+  ariaLabel: string;
+  options: readonly PackSwapOption[];
+  /** 现在用哪个;没有是 null */
+  value: string | null;
+  voidLabel?: string;
+  disabled?: boolean;
+  onPick: (id: string | null) => void;
+  children?: ReactNode;
 }) {
+  const known = value !== null && options.some((o) => o.id === value);
+  const list: SelectOption[] = [
+    ...(voidLabel ? [{ value: '', label: voidLabel }] : []),
+    ...(!voidLabel && !value ? [{ value: '', label: options.length ? '选一个' : '库里还没有' }] : []),
+    // 手上的列表还没读到这个包(刚开机、刚建的):先占着,免得下拉框显示成一串 id
+    ...(value && !known ? [{ value, label: '…' }] : []),
+    ...options.map((o) => ({ value: o.id, label: o.name, sub: o.sub })),
+  ];
   return (
-    <div className="st-packtabs" role="tablist" aria-label={label}>
-      {items.map((it) => (
-        <button
-          key={it.id}
-          type="button"
-          role="tab"
-          aria-selected={it.selected}
-          className={`st-packtab${it.selected ? ' selected' : ''}`}
-          onClick={() => onSelect(it.id)}
-        >
-          {it.media ? (
-            <span className="st-packtab-media">{it.media}</span>
-          ) : it.thumb ? (
-            <img className="st-packtab-thumb" src={it.thumb} alt="" draggable={false} />
-          ) : (
-            <span className="st-packtab-icon">
-              <Icon name={it.icon ?? 'image'} size={17} />
-            </span>
-          )}
-          <span className="st-packtab-text">
-            <span className="st-packtab-name">{it.name}</span>
-            <span className="st-packtab-sub">{it.sub}</span>
-          </span>
-        </button>
-      ))}
-      {onAdd && (
-        <button type="button" className="st-packtab-add" aria-label={addLabel} title={addLabel} onClick={onAdd}>
-          <Icon name="plus" size={18} />
-        </button>
-      )}
+    <div className="st-swap">
+      {label && <span className="st-swap-label">{label}</span>}
+      <SelectBox
+        label={ariaLabel}
+        value={value ?? ''}
+        options={list}
+        disabled={disabled || (options.length === 0 && !voidLabel)}
+        onChange={(v) => {
+          if (v) onPick(v);
+          else if (voidLabel) onPick(null);
+        }}
+      />
+      {children}
     </div>
   );
 }
@@ -851,15 +854,14 @@ export function MoreMenu({ label, items, size = 34 }: { label: string; items: re
   const [open, setOpen] = useState(false);
   const btn = useRef<HTMLButtonElement | null>(null);
   const menu = useRef<HTMLDivElement | null>(null);
+  const skin = useContext(LayerSkin);
   const style = useAnchored(open, btn, menu, 'end', 6);
   const close = useCallback(() => setOpen(false), []);
   useDismiss(open, [btn, menu], close);
   // 打开后焦点落到第一项(键盘能上下选)。等一帧:量好位置之前菜单是藏着的,藏着的东西拿不到焦点
   useEffect(() => {
     if (!open) return;
-    const raf = requestAnimationFrame(() =>
-      menu.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus(),
-    );
+    const raf = requestAnimationFrame(() => menu.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus());
     return () => cancelAnimationFrame(raf);
   }, [open]);
   return (
@@ -882,7 +884,7 @@ export function MoreMenu({ label, items, size = 34 }: { label: string; items: re
           <div
             ref={menu}
             role="menu"
-            className="st-menu st-layer"
+            className={`st-menu st-layer${skin ? ` ${skin}` : ''}`}
             style={style}
             onKeyDown={(e) => {
               if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
@@ -935,6 +937,7 @@ export function Modal({
   className?: string;
 }) {
   const titleId = useId();
+  const skin = useContext(LayerSkin);
   const latest = useRef(onCancel);
   useEffect(() => {
     latest.current = onCancel;
@@ -953,7 +956,7 @@ export function Modal({
   const downOnBackdrop = useRef(false);
   return createPortal(
     <div
-      className="st-modal-backdrop st-layer"
+      className={`st-modal-backdrop st-layer${skin ? ` ${skin}` : ''}`}
       onPointerDown={(e) => (downOnBackdrop.current = e.target === e.currentTarget)}
       onClick={(e) => {
         if (downOnBackdrop.current && e.target === e.currentTarget) latest.current();
@@ -1080,23 +1083,8 @@ export function PromptDialog({
 export function SaveIndicator({ state }: { state: SaveState }) {
   return (
     <span className={`st-save ${state}`} role="status">
-      {state === 'saving' ? (
-        <span className="st-save-dot" aria-hidden="true" />
-      ) : (
-        <Icon name="check" size={14} />
-      )}
+      {state === 'saving' ? <span className="st-save-dot" aria-hidden="true" /> : <Icon name="check" size={14} />}
       <span className="st-save-label">{state === 'saving' ? '保存中…' : '已自动保存'}</span>
     </span>
-  );
-}
-
-// ---------------------------------------------------------------- 挑一个的弹窗
-
-/** 内容自己摆的弹窗(从声音列表里挑一个这类):和确认框同一个外壳,底部只有「取消」,点列表里的一项就算选好 */
-export function ListDialog({ title, children, onCancel }: { title: ReactNode; children: ReactNode; onCancel: () => void }) {
-  return (
-    <Modal title={title} onCancel={onCancel} footer={<Btn onClick={onCancel}>取消</Btn>}>
-      {children}
-    </Modal>
   );
 }

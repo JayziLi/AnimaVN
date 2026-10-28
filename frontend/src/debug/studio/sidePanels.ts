@@ -165,11 +165,14 @@ export function useSidePanels(storageKey: string, options: SidePanelOptions = {}
     const startX = e.clientX;
     const start = widths[side];
     const other = widths[otherSide];
-    const vw = window.innerWidth - reserved;
+    // 栏在整层缩放的菜单里(电脑上局内菜单按窗口等比缩放)时,屏幕上拖 1px 不是栏宽 1px:按外框换算
+    const host = (e.currentTarget as HTMLElement).parentElement;
+    const f = host && host.offsetWidth ? host.getBoundingClientRect().width / host.offsetWidth || 1 : 1;
+    const vw = window.innerWidth / f - reserved;
     // 另一栏按眼下画出来的宽定住:窗口小、两栏正被按占比收着时,拖完不会再跳一下
     let next: PanelPrefs = { ...latest.current, [side]: start, [otherSide]: prefsWidth(latest.current, otherSide, other) };
     const onMove = (ev: PointerEvent) => {
-      const delta = side === 'left' ? ev.clientX - startX : startX - ev.clientX;
+      const delta = (side === 'left' ? ev.clientX - startX : startX - ev.clientX) / f;
       next = { ...next, [side]: dragWidth(side, start, delta, other, vw) };
       latest.current = next;
       setPrefs(next);

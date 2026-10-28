@@ -47,7 +47,8 @@
   pointer-events: none;
 }
 .st-stage-cg.whole {
-  object-fit: contain;
+  object-fit: cover;
+  object-position: 50% 50%;
   background: none;
 }
 /* 游戏里是全屏 blur(24px);舞台小一半多,模糊也减半,看起来才一样 */
@@ -57,83 +58,162 @@
 }
 /* 「对话框上面」:只占对话框上面那一块,整张居中;没有对话框时铺满(游戏里隐藏界面时也是) */
 .st-stage-cg.whole.above {
+  object-fit: contain;
   top: 8px;
   height: calc(100% - var(--st-window-h, 0px) - 16px);
   object-position: 50% 50%;
 }
 .st-stage.has-line {
-  /* 对话框连同下面的空 = 对话框的高 + 离底的距离(见 .st-stage-line) */
-  --st-window-h: calc(13.07cqw + 2.26cqw);
+  /* 对话区连同下面的空 = 名字行 + 线 + 两行台词 + 离底的距离(见 .st-stage-line) */
+  --st-window-h: 14.5cqw;
 }
 .st-stage.tall.has-line {
-  --st-window-h: calc(34cqw + 4cqw);
+  --st-window-h: 40cqw;
 }
 /* 竖长的 CG 上下来回移(关键帧 vn-cg-pan 在 vn.css) */
 .st-stage-cg.tall {
   animation: vn-cg-pan var(--cg-pan-ms) ease-in-out var(--cg-pan-delay) infinite alternate;
 }
 
-/* ── 对话框(画布:左右 26、离底 18、高 104、内边距 14 / 20;按 796 宽折成 cqw) ── */
+/* ── 对话区 A(照 vn/vnLine.css 的 [data-dlg='line']:没有框,底部淡压暗,细线,名字在线上方、台词在线下) ──
+   游戏按 1440 × 810 的画面写 px,这里换算成舞台宽的 cqw(1cqw = 14.4px),舞台缩到多小字就跟着缩到多小 */
 
-.st-stage-line {
+.st-stage-shade {
   position: absolute;
-  left: 3.27cqw;
-  right: 3.27cqw;
-  bottom: 2.26cqw;
-  height: 13.07cqw;
-  box-sizing: border-box;
-  padding: 1.76cqw 2.51cqw;
-  overflow: hidden;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(16, 16, 16, 0.62);
-  -webkit-backdrop-filter: blur(14px);
-  backdrop-filter: blur(14px);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  top: 52%;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(8, 9, 18, 0) 0%,
+    rgba(8, 9, 18, 0.3) 36%,
+    rgba(8, 9, 18, 0.52) 66%,
+    rgba(8, 9, 18, 0.6) 100%
+  );
+}
+/* 有 CG 盖着:压暗从更低的地方开始 */
+.st-stage.cg-on .st-stage-shade {
+  top: 56%;
+}
+.st-stage-line {
+  --st-sh: 0 1px 2px rgba(0, 0, 0, 0.5), 0 0 10px rgba(0, 0, 0, 0.22);
+  position: absolute;
+  left: 50%;
+  bottom: 4.2cqw;
+  width: 61.1cqw;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  color: #fff;
+  text-shadow: var(--st-sh);
   pointer-events: none;
 }
+/* 名字:宋体、字距放宽;声波挂在名字左外侧,名字的字和细线左端、台词对齐 */
 .st-stage-speaker {
-  margin-bottom: 0.75cqw;
-  overflow: hidden;
-  color: var(--text);
-  font-size: clamp(11px, 1.76cqw, 15px);
+  display: flex;
+  align-items: center;
+  height: 2.22cqw;
+  margin-left: -1.53cqw;
+  font-family: var(--av-serif, serif);
+  font-size: 1.25cqw;
   font-weight: 700;
-  line-height: 1.3;
+  letter-spacing: 0.26em;
   white-space: nowrap;
+}
+.st-stage-wave {
+  flex: none;
+  width: 1.53cqw;
+  height: 1.53cqw;
+  opacity: 0.8;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.45));
+}
+.st-stage-name {
+  min-width: 0;
+  overflow: hidden;
   text-overflow: ellipsis;
 }
-.st-stage-speaker.narration {
-  color: var(--text-dim);
+/* 分界线:左端一小段白线,往右渐隐;旁白时左端那段收掉 */
+.st-stage-rule {
+  position: relative;
+  flex: none;
+  height: 1px;
+  margin-bottom: 0.55cqw;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.56), rgba(255, 255, 255, 0.24) 55%, rgba(255, 255, 255, 0));
 }
+.st-stage-rule::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: -0.5px;
+  width: 3.9cqw;
+  height: 2px;
+  border-radius: 1px;
+  background: #fff;
+}
+.st-stage-line.narration .st-stage-rule {
+  /* 旁白没有名字行:线上方空一行,线不上下跳 */
+  margin-top: 2.22cqw;
+}
+.st-stage-line.narration .st-stage-rule::before {
+  opacity: 0;
+}
+/* 日语原文(日中双语):游戏里 15px / 1.6,在中文上面(照 vnLine.css .ga-ja) */
+.st-stage-ja {
+  margin: 0 0 0.28cqw;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: var(--av-serif, serif);
+  font-size: 1.04cqw;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.8);
+}
+/* 台词:宋体 24px、两行的高度先占好(翻句时线不跳) */
 .st-stage-text {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   line-clamp: 2;
   overflow: hidden;
-  color: #f4f4f8;
-  font-size: clamp(12px, 2.01cqw, 17px);
-  line-height: 1.6;
+  min-height: 3.1em;
+  font-family: var(--av-serif, serif);
+  font-size: 1.67cqw;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  line-height: 1.55;
 }
-/* 竖屏舞台窄:对话框按宽算要高一些(游戏里竖屏的对话框约占屏宽的四成高) */
+.st-stage-line.narration .st-stage-text {
+  color: rgba(255, 255, 255, 0.84);
+}
+/* 竖屏舞台:游戏里竖屏的字 17 / 15px、宽 390 → 折成 cqw;底下让出输入那一行 */
 .st-stage.tall .st-stage-line {
-  left: 4cqw;
-  right: 4cqw;
-  bottom: 4cqw;
-  height: 34cqw;
-  padding: 3.5cqw 4.5cqw;
-}
-/* 横屏舞台窄时对话框矮,台词只留一行 */
-@container (max-width: 560px) {
-  .st-stage:not(.tall) .st-stage-text {
-    -webkit-line-clamp: 1;
-    line-clamp: 1;
-  }
+  bottom: 16cqw;
+  width: 90cqw;
 }
 .st-stage.tall .st-stage-speaker {
-  font-size: clamp(10px, 3.6cqw, 15px);
+  height: 7.4cqw;
+  margin-left: -5.6cqw;
+  font-size: 3.85cqw;
+}
+.st-stage.tall .st-stage-wave {
+  width: 5.6cqw;
+  height: 5.6cqw;
+}
+.st-stage.tall .st-stage-rule {
+  margin-bottom: 1.8cqw;
+}
+.st-stage.tall .st-stage-rule::before {
+  width: 12cqw;
+}
+.st-stage.tall .st-stage-line.narration .st-stage-rule {
+  margin-top: 7.4cqw;
 }
 .st-stage.tall .st-stage-text {
-  font-size: clamp(11px, 4.1cqw, 16px);
+  font-size: 4.35cqw;
 }
 
 /* ── 竖屏框:两边压暗、中间虚线 ── */
@@ -230,9 +310,33 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* 左上「✦ 实机预览 · 客厅 · 微笑」:照设计稿组件库 .av-stage-tag(暗玻璃小方牌,26 高、圆角 6,不是胶囊) */
 .st-stage-pill.live {
-  left: 14px;
-  top: 14px;
+  left: 10px;
+  top: 10px;
+  z-index: 6;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 6px;
+  background: rgba(16, 17, 28, 0.55);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  color: #eceaf2;
+  font: 500 12px/1 var(--av-sans, var(--sans));
+  letter-spacing: 0.04em;
+}
+.st-stage-pill.live .av-star {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  fill: currentColor;
+  color: var(--av-acc, #9fbcd6);
+}
+.st-stage-pill.live em {
+  font-style: normal;
+  font-weight: 600;
+  color: #fff;
 }
 .st-stage-pill.hint {
   background: rgba(14, 14, 14, 0.72);

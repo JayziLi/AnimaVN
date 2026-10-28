@@ -12,7 +12,10 @@ import {
   type SharedPromptKey,
 } from '../plugins/jev';
 import type { JevTrial } from '../plugins/jevRun';
-import { PageHead } from './drawer/frame';
+import { Advanced, PageHead, PageShell, Panel, Section } from './drawer/frame';
+import { NavIcon } from './drawer/navIcons';
+import { useDrawerSkin } from './drawer/skinContext';
+import { Icon } from '../studio/icons';
 import { Tip } from './drawer/Tip';
 import { TIPS } from './drawer/tips';
 import { JEV_HEALTH_TEXT as HEALTH_TEXT } from './drawer/globalStatus';
@@ -64,7 +67,10 @@ export function JevPage({
   testOk,
   onTested,
   notify,
+  cardName,
 }: {
+  /** 正在聊的那张卡(试判用它最新一条回复;游戏皮空着时那行字用) */
+  cardName?: string;
   jev: JevControls;
   rows: readonly JevKindRow[];
   /** 这次打开页面以后测过没有(左栏圆点也看它) */
@@ -72,6 +78,7 @@ export function JevPage({
   onTested: (ok: boolean | null) => void;
   notify: Notify;
 }) {
+  const { game } = useDrawerSkin();
   const { config, onChangeConfig, keyStatus, defaults } = jev;
   const s = jev.lastStats;
   const health = jevHealth({
@@ -155,6 +162,357 @@ export function JevPage({
     });
   const setPrompt = (k: SharedPromptKey, v: string | null) => onChangeConfig({ ...config, prompts: { ...config.prompts, [k]: v } });
 
+  const connRows = (
+    <>
+      <SettingRow
+        label="地址"
+        control={{
+          kind: 'custom',
+          render: () =>
+            keyStatus?.url_source === 'env' ? (
+              <span className="jev-fixed">
+                <code className="pl-code">{url}</code> 来自后端环境变量 JEV_BASE_URL,这里改不了
+              </span>
+            ) : (
+              <>
+                <input
+                  className={`text-input set-text mono${urlBad ? ' bad' : ''}`}
+                  type="text"
+                  aria-label="Jev 的地址"
+                  value={urlShown}
+                  placeholder={defaultUrl}
+                  disabled={oldBackend}
+                  spellCheck={false}
+                  onChange={(e) => setUrlDraft(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="btn small accent"
+                  disabled={busy !== null || urlDraft === null || urlBad}
+                  onClick={() => void saveEndpoint(urlShown, modelShown)}
+                >
+                  保存
+                </button>
+                {keyStatus?.url_source === 'settings' && (
+                  <button type="button" className="btn small" disabled={busy !== null} onClick={() => void saveEndpoint('', modelShown)}>
+                    恢复官方
+                  </button>
+                )}
+                {urlBad && <span className="set-error">地址要以 http:// 或 https:// 开头</span>}
+                {oldBackend && <span className="set-error">后端还是旧版,重启后端以后才能填地址</span>}
+              </>
+            ),
+        }}
+        tip={`${TIPS.jev_url}${defaultUrl}`}
+      />
+      <SettingRow
+        label="key"
+        control={{
+          kind: 'custom',
+          render: () =>
+            keyStatus?.source === 'env' ? (
+              <span className="jev-fixed">key 来自后端环境变量 JEV_API_KEY,这里改不了</span>
+            ) : (
+              <>
+                <input
+                  className="text-input set-text"
+                  type="password"
+                  autoComplete="off"
+                  aria-label="Jev 的 key"
+                  placeholder={keyStatus?.has_key ? '已设置 · 填新的就换掉' : '粘贴 Jev 的 key'}
+                  value={keyDraft}
+                  onChange={(e) => setKeyDraft(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="btn small accent"
+                  disabled={busy !== null || !keyDraft.trim()}
+                  onClick={() => void saveKey(keyDraft.trim())}
+                >
+                  {keyStatus?.has_key ? '换一个' : '保存'}
+                </button>
+                {/* key 只能写不能读,删了就找不回来:和别处的删除一样点两次 */}
+                {keyStatus?.has_key && <DeleteButton disabled={busy !== null} onConfirm={() => void saveKey('')} />}
+              </>
+            ),
+        }}
+        tip={keyStatus?.has_key ? 'jev_key' : 'jev_key_missing'}
+      />
+      <SettingRow
+        label="测试"
+        control={{
+          kind: 'custom',
+          render: () => (
+            <>
+              <button type="button" className="btn small" disabled={busy !== null || !keyStatus?.has_key} onClick={() => void test()}>
+                {busy === 'test' ? '测试中…' : tested && !tested.ok ? '再测一次' : '测试'}
+              </button>
+              {tested && <span className={tested.ok ? 'jev-ok' : 'set-error'}>{tested.text}</span>}
+            </>
+          ),
+        }}
+        scopes={[]}
+        tip="jev_test"
+      />
+      <SettingRow
+        label="模型名"
+        control={{
+          kind: 'custom',
+          render: () =>
+            keyStatus?.model_source === 'env' ? (
+              <span className="jev-fixed">
+                <code className="pl-code">{model}</code> 来自后端环境变量 JEV_MODEL,这里改不了
+              </span>
+            ) : (
+              <>
+                <input
+                  className="text-input set-text mono"
+                  type="text"
+                  aria-label="Jev 的模型名"
+                  value={modelShown}
+                  placeholder={defaultModel}
+                  disabled={oldBackend}
+                  spellCheck={false}
+                  onChange={(e) => setModelDraft(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="btn small"
+                  disabled={busy !== null || modelDraft === null}
+                  onClick={() => void saveEndpoint(urlShown, modelShown)}
+                >
+                  保存
+                </button>
+              </>
+            ),
+        }}
+        tip={`${TIPS.jev_model}${defaultModel}`}
+      />
+    </>
+  );
+  const speakerRow = (
+    <SettingRow
+      label="说话人门槛"
+      control={{
+        kind: 'slider',
+        min: SPEAKER_THRESHOLD.min,
+        max: SPEAKER_THRESHOLD.max,
+        step: 0.05,
+        low: '更敢判成别人',
+        high: '更不容易漏念',
+        format: (v) => v.toFixed(2),
+      }}
+      value={config.speakerThreshold}
+      default={SPEAKER_THRESHOLD.default}
+      onChange={(v) => onChangeConfig({ ...config, speakerThreshold: v })}
+      tip="jev_speaker"
+    />
+  );
+  const queuesRow = (
+    <SettingRow
+      label="两条队列(试用)"
+      control={{ kind: 'toggle' }}
+      value={config.twoQueues}
+      default={false}
+      onChange={(v) => onChangeConfig({ ...config, twoQueues: v })}
+      tip="jev_two_queues"
+    />
+  );
+  const promptsBlock = (
+    <div className="jev-prompts">
+      <span className="jev-prompts-title">
+        通用说明和说话人的问法 <Tip k="jev_prompts" />
+      </span>
+      {SHARED_PROMPT_KEYS.map((k) => (
+        <PromptField
+          key={k}
+          label={SHARED_LABELS[k].label}
+          promptKey={k}
+          value={config.prompts[k]}
+          defaults={defaults}
+          placeholders={SHARED_LABELS[k].placeholders}
+          onChange={(v) => setPrompt(k, v)}
+          rows={SHARED_LABELS[k].rows}
+        />
+      ))}
+    </div>
+  );
+
+  /**
+   * 游戏皮(设计稿 kit/plugins.js P.jev):中间 = 试判(纸面板,空着时一行「最新一条回复 · 交给 Jev 的:…」)+ 用量四格;
+   * 右栏 = 哪几路交给 Jev · 常用(带上一条回复、立绘和文字同步)· 高级(连接 · 说话人门槛 · 两条队列 · 问法)。
+   * 调试台里照旧一列(下面那份)。
+   */
+  function renderGame() {
+    const routed = rows.filter((r) => r.mode === 'jev' && r.powerOn && !r.noAssets).map((r) => r.name);
+    const changedPrompts = SHARED_PROMPT_KEYS.some((k) => config.prompts[k] !== null && config.prompts[k] !== undefined);
+    const head = (
+      <PageHead
+        title="Jev 标注"
+        tip="jev_page"
+        inUse={{ on: health === 'ok', text: HEALTH_TEXT[health] }}
+        tags={[]}
+        note={
+          s && s.kinds.length > 0
+            ? `上一条回复 · ${s.lines} 句 · ${tokenText(s.tokens)} token · 最慢 ${(s.maxMs / 1000).toFixed(2)} 秒${
+                s.failed ? ` · ${s.failed} 句没判成${s.error ? `(${s.error})` : ''}` : ''
+              }`
+            : undefined
+        }
+      />
+    );
+    const mid = (
+      <>
+        <Panel
+          title="试判"
+          en="Trial"
+          tip="jev_trial"
+          className="dw-trial"
+          right={
+            <button type="button" className="btn accent" disabled={busy !== null || !keyStatus?.has_key} onClick={() => void runTrial()}>
+              {busy === 'trial' ? '判断中…' : '用最新一条回复试判'}
+            </button>
+          }
+        >
+          {trial ? (
+            <div className="dw-trial-body">
+              <TrialTable trial={trial} kinds={jev.kinds} keep={defaults?.keep ?? '不换'} />
+            </div>
+          ) : (
+            <div className="dw-trial-body dw-blank-in">
+              <NavIcon id="jev" size={28} />
+              <b>{cardName ? `${cardName}最新一条回复` : '最新一条回复'}</b>
+              <span>
+                {keyStatus?.has_key ? `交给 Jev 的:${routed.join(' · ') || '(都是 AI 写)'}` : 'Jev 还没填 key,先在「高级 · 连接」里填'}
+              </span>
+            </div>
+          )}
+        </Panel>
+        <div className="dw-cap2">
+          用量
+          <Tip k="jev_usage" />
+        </div>
+        {usage === 'old' ? (
+          <div className="dw-muted">后端还是旧版,重启后端以后才有用量。</div>
+        ) : (
+          <div className="dw-usage">
+            {(
+              [
+                ['today', '今天'],
+                ['week', '这 7 天'],
+                ['month', '这个月'],
+                ['all', '全部'],
+              ] as const
+            ).map(([k, name]) => (
+              <div key={k}>
+                <div className="k">{name}</div>
+                <div className="n">{usage ? tokenText(usage[k].tokens) : '…'}</div>
+                <div className="s">{usage ? usage[k].requests.toLocaleString() : '…'} 次请求</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </>
+    );
+    const kindsSection = (
+      <Section title="哪几路交给 Jev" en="Routes" tip="jev_kinds">
+        {rows.map((r) => {
+          const st = jevKindStatus({
+            mode: r.mode,
+            inUse: jev.kinds[r.kind],
+            powerOn: r.powerOn,
+            hasKey: Boolean(keyStatus?.has_key),
+            noAssets: r.noAssets,
+          });
+          return (
+            <div key={r.kind} className="dw-kind">
+              <span className="k">
+                <NavIcon id={r.kind} size={16} />
+                {r.name}
+              </span>
+              <div className="set-seg" role="radiogroup" aria-label={`${r.name}的标签由谁写`}>
+                {(['ai', 'jev'] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    role="radio"
+                    aria-checked={r.mode === m}
+                    className={r.mode === m ? 'on' : ''}
+                    onClick={() => r.mode !== m && r.onChangeMode(m)}
+                  >
+                    {m === 'ai' ? 'AI 写' : 'Jev 标'}
+                  </button>
+                ))}
+              </div>
+              <span className={`st${r.mode === 'jev' && jev.kinds[r.kind] ? ' on' : ''}`}>{r.mode === 'jev' ? st : ''}</span>
+              <button type="button" className="dw-go" aria-label={`去${r.name}插件页`} title={`去${r.name}`} onClick={r.onDetail}>
+                <Icon name="chev_r" size={16} />
+              </button>
+            </div>
+          );
+        })}
+      </Section>
+    );
+    const common = (
+      <>
+        {kindsSection}
+        <Section title="常用" en="Common">
+          <SettingRow
+            label="带上一条回复"
+            control={{
+              kind: 'slider',
+              min: JEV_BEFORE_LINES.min,
+              max: JEV_BEFORE_LINES.max,
+              step: 1,
+              format: (v) => (v === 0 ? '不带' : `${v} 句`),
+            }}
+            value={config.beforeLines}
+            default={JEV_BEFORE_LINES.default}
+            onChange={(v) => onChangeConfig({ ...config, beforeLines: v })}
+            tip="jev_before"
+          />
+          <SettingRow
+            label="立绘和文字同步"
+            control={{ kind: 'toggle' }}
+            value={config.syncText}
+            default={true}
+            onChange={(v) => onChangeConfig({ ...config, syncText: v })}
+            tip="jev_sync"
+          />
+        </Section>
+      </>
+    );
+    const advanced = (
+      <Advanced
+        pageId="jev"
+        tabs={[
+          { id: 'conn', name: '连接' },
+          { id: 'speaker', name: '说话人门槛' },
+          { id: 'queues', name: '两条队列' },
+          {
+            id: 'prompts',
+            name: '问法',
+            badge: changedPrompts ? '改过' : String(SHARED_PROMPT_KEYS.length),
+          },
+        ]}
+        render={(tab) =>
+          tab === 'conn' ? (
+            <div className="dw-tab-stack">{connRows}</div>
+          ) : tab === 'speaker' ? (
+            speakerRow
+          ) : tab === 'queues' ? (
+            queuesRow
+          ) : (
+            promptsBlock
+          )
+        }
+      />
+    );
+    return <PageShell head={head} preview={mid} common={common} advanced={advanced} />;
+  }
+
+  if (game) return renderGame();
+
   return (
     <div className="jev-page">
       <PageHead
@@ -171,132 +529,7 @@ export function JevPage({
         }
       />
 
-      <SettingGroup title="连接">
-        <SettingRow
-          label="地址"
-          control={{
-            kind: 'custom',
-            render: () =>
-              keyStatus?.url_source === 'env' ? (
-                <span className="jev-fixed">
-                  <code className="pl-code">{url}</code> 来自后端环境变量 JEV_BASE_URL,这里改不了
-                </span>
-              ) : (
-                <>
-                  <input
-                    className={`text-input set-text mono${urlBad ? ' bad' : ''}`}
-                    type="text"
-                    aria-label="Jev 的地址"
-                    value={urlShown}
-                    placeholder={defaultUrl}
-                    disabled={oldBackend}
-                    spellCheck={false}
-                    onChange={(e) => setUrlDraft(e.target.value)}
-                  />
-                  <button
-                    type="button"
-                    className="btn small accent"
-                    disabled={busy !== null || urlDraft === null || urlBad}
-                    onClick={() => void saveEndpoint(urlShown, modelShown)}
-                  >
-                    保存
-                  </button>
-                  {keyStatus?.url_source === 'settings' && (
-                    <button type="button" className="btn small" disabled={busy !== null} onClick={() => void saveEndpoint('', modelShown)}>
-                      恢复官方
-                    </button>
-                  )}
-                  {urlBad && <span className="set-error">地址要以 http:// 或 https:// 开头</span>}
-                  {oldBackend && <span className="set-error">后端还是旧版,重启后端以后才能填地址</span>}
-                </>
-              ),
-          }}
-          tip={`${TIPS.jev_url}${defaultUrl}`}
-        />
-        <SettingRow
-          label="key"
-          control={{
-            kind: 'custom',
-            render: () =>
-              keyStatus?.source === 'env' ? (
-                <span className="jev-fixed">key 来自后端环境变量 JEV_API_KEY,这里改不了</span>
-              ) : (
-                <>
-                  <input
-                    className="text-input set-text"
-                    type="password"
-                    autoComplete="off"
-                    aria-label="Jev 的 key"
-                    placeholder={keyStatus?.has_key ? '已设置 · 填新的就换掉' : '粘贴 Jev 的 key'}
-                    value={keyDraft}
-                    onChange={(e) => setKeyDraft(e.target.value)}
-                  />
-                  <button
-                    type="button"
-                    className="btn small accent"
-                    disabled={busy !== null || !keyDraft.trim()}
-                    onClick={() => void saveKey(keyDraft.trim())}
-                  >
-                    {keyStatus?.has_key ? '换一个' : '保存'}
-                  </button>
-                  {/* key 只能写不能读,删了就找不回来:和别处的删除一样点两次 */}
-                  {keyStatus?.has_key && <DeleteButton disabled={busy !== null} onConfirm={() => void saveKey('')} />}
-                </>
-              ),
-          }}
-          tip={keyStatus?.has_key ? 'jev_key' : 'jev_key_missing'}
-        />
-        <SettingRow
-          label="测试"
-          control={{
-            kind: 'custom',
-            render: () => (
-              <>
-                <button type="button" className="btn small" disabled={busy !== null || !keyStatus?.has_key} onClick={() => void test()}>
-                  {busy === 'test' ? '测试中…' : tested && !tested.ok ? '再测一次' : '测试'}
-                </button>
-                {tested && <span className={tested.ok ? 'jev-ok' : 'set-error'}>{tested.text}</span>}
-              </>
-            ),
-          }}
-          scopes={[]}
-          tip="jev_test"
-        />
-        <SettingRow
-          label="模型名"
-          control={{
-            kind: 'custom',
-            render: () =>
-              keyStatus?.model_source === 'env' ? (
-                <span className="jev-fixed">
-                  <code className="pl-code">{model}</code> 来自后端环境变量 JEV_MODEL,这里改不了
-                </span>
-              ) : (
-                <>
-                  <input
-                    className="text-input set-text mono"
-                    type="text"
-                    aria-label="Jev 的模型名"
-                    value={modelShown}
-                    placeholder={defaultModel}
-                    disabled={oldBackend}
-                    spellCheck={false}
-                    onChange={(e) => setModelDraft(e.target.value)}
-                  />
-                  <button
-                    type="button"
-                    className="btn small"
-                    disabled={busy !== null || modelDraft === null}
-                    onClick={() => void saveEndpoint(urlShown, modelShown)}
-                  >
-                    保存
-                  </button>
-                </>
-              ),
-          }}
-          tip={`${TIPS.jev_model}${defaultModel}`}
-        />
-      </SettingGroup>
+      <SettingGroup title="连接">{connRows}</SettingGroup>
 
       <SettingGroup title="用量" tip="jev_usage">
         {usage === 'old' ? (
@@ -378,22 +611,7 @@ export function JevPage({
           onChange={(v) => onChangeConfig({ ...config, syncText: v })}
           tip="jev_sync"
         />
-        <SettingRow
-          label="说话人门槛"
-          control={{
-            kind: 'slider',
-            min: SPEAKER_THRESHOLD.min,
-            max: SPEAKER_THRESHOLD.max,
-            step: 0.05,
-            low: '更敢判成别人',
-            high: '更不容易漏念',
-            format: (v) => v.toFixed(2),
-          }}
-          value={config.speakerThreshold}
-          default={SPEAKER_THRESHOLD.default}
-          onChange={(v) => onChangeConfig({ ...config, speakerThreshold: v })}
-          tip="jev_speaker"
-        />
+        {speakerRow}
       </SettingGroup>
 
       <details className="jev-advanced">
@@ -401,37 +619,19 @@ export function JevPage({
           高级 <Tip k="jev_advanced" />
         </summary>
         <SettingGroup title="高级">
-          <SettingRow
-            label="两条队列(试用)"
-            control={{ kind: 'toggle' }}
-              value={config.twoQueues}
-            default={false}
-            onChange={(v) => onChangeConfig({ ...config, twoQueues: v })}
-            tip="jev_two_queues"
-          />
-          <div className="jev-prompts">
-            <span className="jev-prompts-title">
-              通用说明和说话人的问法 <Tip k="jev_prompts" />
-            </span>
-            {SHARED_PROMPT_KEYS.map((k) => (
-              <PromptField
-                key={k}
-                label={SHARED_LABELS[k].label}
-                promptKey={k}
-                value={config.prompts[k]}
-                defaults={defaults}
-                placeholders={SHARED_LABELS[k].placeholders}
-                onChange={(v) => setPrompt(k, v)}
-                rows={SHARED_LABELS[k].rows}
-              />
-            ))}
-          </div>
+          {queuesRow}
+          {promptsBlock}
         </SettingGroup>
       </details>
 
       <SettingGroup title="试判" tip="jev_trial">
         <div className="jev-trial">
-          <button type="button" className="btn small accent" disabled={busy !== null || !keyStatus?.has_key} onClick={() => void runTrial()}>
+          <button
+            type="button"
+            className="btn small accent"
+            disabled={busy !== null || !keyStatus?.has_key}
+            onClick={() => void runTrial()}
+          >
             {busy === 'trial' ? '判断中…' : '用最新一条回复试判'}
           </button>
           {trial && <TrialTable trial={trial} kinds={jev.kinds} keep={defaults?.keep ?? '不换'} />}

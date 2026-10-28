@@ -184,7 +184,7 @@ def test_complete_rejects_success_response_without_choices(monkeypatch):
         finally:
             await client.aclose()
 
-    with pytest.raises(LLMError, match="空响应"):
+    with pytest.raises(LLMError, match="^Empty response: no choices$"):
         run(scenario())
 
 
@@ -292,14 +292,14 @@ def test_stream_separates_reasoning_and_text_and_ignores_usage_only_frames(monke
 @pytest.mark.parametrize(
     ("status", "expected"),
     [
-        (401, "API 密钥无效或已过期"),
-        (403, "没有权限"),
-        (404, "模型不存在或端点路径不对"),
-        (429, "请求被限流"),
-        (500, "服务返回错误 500"),
+        (401, "^401 Unauthorized: upstream detail$"),
+        (403, "^403 Forbidden: upstream detail$"),
+        (404, "^404 Not Found: upstream detail$"),
+        (429, "^429 Too Many Requests: upstream detail$"),
+        (500, "^500 Internal Server Error: upstream detail$"),
     ],
 )
-def test_http_errors_are_translated_to_actionable_messages(monkeypatch, status: int, expected: str):
+def test_http_errors_carry_status_and_upstream_message(monkeypatch, status: int, expected: str):
     async def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(
             status,
@@ -329,9 +329,9 @@ NGINX_301 = (
 @pytest.mark.parametrize(
     ("base_url", "status", "expected"),
     [
-        ("https://llm.test", 301, "试试 https://llm.test/v1"),
-        ("https://llm.test/", 404, "试试 https://llm.test/v1"),
-        ("https://llm.test/v1", 301, "对照服务商文档检查地址"),
+        ("https://llm.test", 301, "from https://llm.test (HTTP 301)"),
+        ("https://llm.test/", 404, "from https://llm.test (HTTP 404)"),
+        ("https://llm.test/v1", 301, "from https://llm.test/v1 (HTTP 301)"),
     ],
 )
 def test_web_page_response_is_explained_as_wrong_base_url(monkeypatch, base_url, status, expected):
@@ -354,6 +354,72 @@ def test_web_page_response_is_explained_as_wrong_base_url(monkeypatch, base_url,
         run(scenario())
 
     assert err.value.explained
-    assert "返回的是网页" in err.value.message
+    assert "Got a web page instead of an API response" in err.value.message
     assert expected in err.value.message
     assert "<html>" not in err.value.message
+
+
+def _status_error(monkeypatch, response: httpx.Response, base_url="https://llm.test/v1"):
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return response
+
+    client = install_transport(monkeypatch, handler)
+
+    async def scenario():
+        try:
+            return await OpenAICompatibleProvider("secret", base_url).complete(
+                [ChatMessage(role="user", content="hi")], "model-a"
+            )
+        finally:
+            await client.aclose()
+
+    with pytest.raises(LLMError) as err:
+        run(scenario())
+    return err.value.message
+
+
+def test_status_error_with_plain_text_body_uses_that_text(monkeypatch):
+    msg = _status_error(
+        monkeypatch,
+        httpx.Response(502, headers={"x-should-retry": "false"}, content=b"upstream connect error"),
+    )
+    assert msg == "502 Bad Gateway: upstream connect error"
+
+
+def test_status_error_without_body_keeps_only_status(monkeypatch):
+    msg = _status_error(monkeypatch, httpx.Response(429, headers={"x-should-retry": "false"}))
+    assert msg == "429 Too Many Requests"
+
+
+def test_status_error_accepts_string_error_field(monkeypatch):
+    msg = _status_error(
+        monkeypatch,
+        httpx.Response(402, headers={"x-should-retry": "false"}, json={"error": "Insufficient Balance"}),
+    )
+    assert msg == "402 Payment Required: Insufficient Balance"
+
+
+def test_timeout_and_connect_errors_are_plain_facts(monkeypatch):
+    def failing(exc):
+        async def handler(request: httpx.Request) -> httpx.Response:
+            raise exc(("boom"), request=request)
+
+        return handler
+
+    for exc, expected in [
+        (httpx.ReadTimeout, "Request to https://llm.test/v1 timed out"),
+        (httpx.ConnectError, "Cannot connect to https://llm.test/v1: boom"),
+    ]:
+        client = install_transport(monkeypatch, failing(exc))
+
+        async def scenario():
+            try:
+                provider = OpenAICompatibleProvider("secret", "https://llm.test/v1")
+                provider._client = provider._client.with_options(max_retries=0)
+                return await provider.complete([ChatMessage(role="user", content="hi")], "model-a")
+            finally:
+                await client.aclose()
+
+        with pytest.raises(LLMError) as err:
+            run(scenario())
+        assert err.value.message == expected

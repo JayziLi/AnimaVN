@@ -13,6 +13,7 @@ import type {
   ImportApplyBody,
   ImportBundleDetail,
   ImportDecision,
+  ImportCreated,
   ImportGroup,
   ImportKind,
   ImportPackDetail,
@@ -24,6 +25,7 @@ import type {
 } from '../lib/api';
 import type { LibraryRoute } from '../library/libraryModel';
 import type { ImportNotice, SlotKey } from '../studio/types';
+import { pickRows, type PickBind, type PickRow } from '../vn/pick/pickLogic';
 import type { ImportTarget } from './dropTarget';
 
 /** 拖到的那张卡现在挂着几套立绘、当前那套叫什么(确认框说「现在用的那套不变」用);读不到时是 null */
@@ -555,3 +557,19 @@ export function importErrorText(e: unknown, prefix = '导入失败'): string {
 
 /** 上传中途点了取消(DOMException 在老浏览器里不算 Error,按名字认) */
 export const isAbort = (e: unknown) => (e as { name?: unknown } | null)?.name === 'AbortError';
+
+// ---------------------------------------------------------------- 游戏里的「导入完成」
+
+/** 这次新建了的那几类才列;老后端没给 created 就都列(「没有立绘包」这类空行不列) */
+export function doneRows(bind: PickBind | undefined, spriteCount: number, created: ImportCreated | undefined): PickRow[] {
+  const made: Record<PickRow['kind'], boolean> = created
+    ? {
+        sprite: created.sprite_packs.length > 0,
+        scene: created.scene_packs.length > 0 || created.cg_packs.length > 0,
+        voice: (created.voices?.length ?? 0) > 0,
+        preset: (created.presets?.length ?? 0) > 0,
+        persona: false,
+      }
+    : { sprite: true, scene: true, voice: true, preset: true, persona: false };
+  return pickRows(bind, spriteCount).filter((r) => made[r.kind] && !r.v.startsWith('没有'));
+}

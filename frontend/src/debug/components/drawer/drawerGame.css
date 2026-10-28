@@ -1,0 +1,1841 @@
+/* ══════════ 插件页 · 游戏皮(界面统一计划 U24 / U25) ══════════
+   设计稿:docs/design/unify/plugins.html 的 E「照星海的三栏」(kit/plugins.css)。
+   只在游戏菜单里那份抽屉上生效(PluginsDrawer 的 game,根上有 .dw-game);调试台、卡编辑器里的抽屉不碰。
+
+   做法:调试台那一整套组件(设置行、下拉框、按钮、滑条……)颜色都走 debug.css 的变量(--bg / --text / --border…),
+   所以这里先在 .dw-game 上把这些变量换成纸面的 --av-*,里面的老组件自动变成纸面;再按设计稿改骨架和几个要紧的样子。
+   规矩(style.html):纸和墨、细线、不发光、不叠毛玻璃;选中 = 白纸浮起 + 一道墨色竖线,不跟角色变色;「在用」是绿点。 */
+
+/* 菜单内容区装插件页时不自己滚,让下面这块板子正好填满 */
+.vn-menu-body:has(> .vn-plugin-embed) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ---------- 底:把调试台的变量换成纸 ---------- */
+.vn-plugin-embed .conn-drawer.dw.dw-game {
+  --pl-dim: color-mix(in srgb, var(--av-ink) 66%, transparent);
+  --bg: var(--av-paper);
+  --bg-panel: transparent;
+  --bg-raised: var(--av-hair-2);
+  --bg-hover: color-mix(in srgb, var(--av-ink) 7%, transparent);
+  --border: var(--av-hair);
+  --border-strong: color-mix(in srgb, var(--av-ink) 26%, transparent);
+  --text: var(--av-ink);
+  --text-body: var(--av-ink-2);
+  --text-dim: var(--pl-dim);
+  --text-faint: color-mix(in srgb, var(--av-ink) 48%, transparent);
+  --accent: var(--av-ctl);
+  --accent-dim: color-mix(in srgb, var(--av-ctl) 22%, transparent);
+  --danger: var(--av-bad);
+  --dw-ok: var(--av-good);
+  --sans: var(--av-sans);
+  --mono: var(--av-mono);
+  position: relative;
+  /* 菜单里这块板子占满页头下面剩的高度(菜单内容区改成不滚的 flex 列,见下面),自己不滚,里面三栏各管各的;
+     原来按「100dvh - 页头约 168px」写死,菜单页头一变就切掉底部的链接 */
+  flex: 1;
+  min-height: 0;
+  height: auto;
+  overflow: hidden;
+  /* 菜单面板自己就是一张纸:这里不再套卡片(没有底、没有阴影、没有圆角) */
+  border: none;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--av-ink);
+  font-family: var(--av-sans);
+}
+.vn-plugin-embed .dw-game .dw-close {
+  display: none;
+}
+
+/* ---------- 三栏上面一行:右侧「看哪张卡 [下拉] ?」(菜单面板已经有页头「插件」,这里不重复大标题) ---------- */
+.dw-game .dw-head {
+  height: 40px;
+  padding: 0 2px 10px;
+  border-bottom: none;
+}
+.dw-game .dw-pick {
+  gap: 8px;
+  font-size: 12.5px;
+}
+.vn-embed .dw-game .dw-pick-select {
+  max-width: 220px;
+  padding: 5px 28px 5px 10px;
+  border: 1px solid var(--av-hair);
+  border-radius: var(--av-r-btn);
+  background-color: var(--av-paper);
+  color: var(--av-ink);
+  font-size: 13px;
+}
+/* 三栏整块不画框(设计稿 whole.html 菜单·插件:左栏一块浅纸底、右栏一道竖线,上下都不画线) */
+.dw-game.dw-pick-out .dw-head {
+  display: none;
+}
+
+/* 「看哪张卡」挂在菜单面板页头右边(PluginsDrawer 用 portal 放进 .vn-menu-head;设计稿 kit/plugins.css .pl-cap / .pl-pick) */
+/* 和右上角「返回游戏」同一行、在它左边(设计稿里「看哪张卡」和关闭键并排);关闭键宽约 122 */
+/* 页头和下面的内容区同是 z-index 1、内容区在后:下拉单从页头垂下来会被内容区盖住,有这个选择器的页头抬高一层 */
+.vn-menu-head:has(> .dw-pickbar) {
+  z-index: 2;
+}
+.vn-menu-head > .dw-pickbar {
+  /* 跟页名同一行、靠右挨着「返回游戏」(页头右边已让出关闭键的位置) */
+  position: relative;
+  z-index: 3;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.dw-pick-cap {
+  font: 600 12.5px/1 var(--av-serif);
+  letter-spacing: 0.14em;
+  color: color-mix(in srgb, var(--av-ink) 66%, transparent);
+  white-space: nowrap;
+  cursor: help;
+}
+.dw-pick-wrap {
+  position: relative;
+}
+.dw-pick-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 8px 0 6px;
+  border-radius: var(--av-r-btn);
+  border: 1px solid var(--av-hair);
+  background: var(--av-paper);
+  font: 500 13px/1 var(--av-sans);
+  letter-spacing: 0.04em;
+  color: var(--av-ink);
+  cursor: pointer;
+  transition: border-color var(--av-t-fast);
+}
+.dw-pick-btn:hover {
+  border-color: var(--av-faint);
+}
+.dw-pick-btn > .st-icon {
+  color: color-mix(in srgb, var(--av-ink) 66%, transparent);
+}
+.dw-pick-name {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dw-pick-name small {
+  font-size: 12px;
+  color: color-mix(in srgb, var(--av-ink) 66%, transparent);
+}
+.dw-pick-face {
+  position: relative;
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--av-paper-3);
+  box-shadow:
+    0 0 0 1.5px #fff,
+    0 1px 4px rgba(30, 24, 48, 0.2);
+}
+.dw-pick-face img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 15%;
+}
+.dw-pick-face.none i {
+  font: 600 12px/1 var(--av-serif);
+  font-style: normal;
+  color: color-mix(in srgb, var(--av-ink) 66%, transparent);
+}
+.dw-pick-menu {
+  position: absolute;
+  right: 0;
+  top: 40px;
+  z-index: 70;
+  width: 236px;
+  max-height: min(60vh, 420px);
+  overflow-y: auto;
+  padding: 5px;
+  border-radius: var(--av-r-panel);
+  background: var(--av-paper);
+  border: 1px solid var(--av-hair);
+  box-shadow: var(--av-shadow-float);
+  text-shadow: none;
+  animation: dw-pop var(--av-t-fast) var(--av-ease) both;
+}
+@keyframes dw-pop {
+  from {
+    opacity: 0;
+    translate: 0 6px;
+  }
+}
+.dw-pick-menu button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--av-ink);
+  text-align: left;
+  font: 500 13px/1.2 var(--av-sans);
+  cursor: pointer;
+}
+.dw-pick-menu button:hover {
+  background: var(--av-hair-2);
+}
+.dw-pick-menu button.on {
+  background: var(--av-paper-2);
+  box-shadow:
+    inset 2px 0 0 var(--av-ink),
+    inset 0 0 0 1px var(--av-hair-2);
+}
+.dw-pick-menu button > div {
+  min-width: 0;
+}
+.dw-pick-menu b {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 600 14px/1.2 var(--av-serif);
+  letter-spacing: 0.1em;
+}
+.dw-pick-menu span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 17.6px;
+  color: color-mix(in srgb, var(--av-ink) 66%, transparent);
+}
+
+/* ---------- 小问号 ---------- */
+.dw-game .dw-tip {
+  border-color: var(--av-hair);
+  color: var(--pl-dim);
+}
+.dw-game .dw-tip:hover,
+.dw-game .dw-tip.open,
+.dw-game .dw-tip:focus-visible {
+  border-color: var(--av-ink);
+  color: var(--av-ink);
+  background: transparent;
+}
+
+/* ---------- 左栏:三组,每项一个线条图标;选中 = 白纸浮起 + 墨色竖线 ---------- */
+.dw-game .dw-main {
+  align-items: stretch;
+}
+.dw-game .dw-nav {
+  width: 196px;
+  padding: 14px 12px 16px;
+  border-right: 1px solid var(--av-hair);
+  background: color-mix(in srgb, var(--av-paper-2) 60%, transparent);
+  scrollbar-width: none;
+}
+.vn-plugin-embed .dw-game .dw-nav {
+  position: static;
+  max-height: none;
+}
+.dw-game .dw-group + .dw-group {
+  margin-top: 14px;
+}
+.dw-game .dw-group-head {
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 2px 8px 8px 14px;
+  font: 600 12px/1 var(--av-serif);
+  letter-spacing: 0.24em;
+  color: var(--pl-dim);
+}
+.dw-game .dw-group-name {
+  flex: none;
+  color: inherit;
+  letter-spacing: inherit;
+  white-space: nowrap;
+}
+.dw-game .dw-group-note {
+  min-width: 0;
+  white-space: nowrap;
+}
+.dw-game .dw-note-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dw-game .dw-group-note {
+  font: 12px/1 var(--av-sans);
+  letter-spacing: 0.02em;
+  color: var(--pl-dim);
+}
+.dw-game .dw-group-note::before {
+  content: '·';
+  margin-right: 6px;
+  color: var(--av-faint);
+}
+.dw-game .dw-group-note:has(.dw-tip)::before {
+  content: none;
+}
+.dw-game .dw-group-head > .dw-flex {
+  display: none;
+}
+.dw-game .dw-row {
+  height: 38px;
+  margin: 0;
+  padding: 0 12px 0 0;
+  gap: 8px;
+  border-radius: var(--av-r-btn);
+  color: var(--av-ink-2);
+  transition:
+    background var(--av-t-fast) var(--av-ease-x),
+    box-shadow var(--av-t-fast) var(--av-ease-x);
+}
+.dw-game .dw-row:hover {
+  background: var(--av-hair-2);
+}
+.dw-game .dw-row.on {
+  background: var(--av-paper);
+  box-shadow:
+    0 1px 3px rgba(30, 24, 48, 0.1),
+    0 0 0 1px var(--av-hair-2);
+}
+.dw-game .dw-row.on::before {
+  top: 9px;
+  bottom: 9px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--av-ink);
+}
+.dw-game .dw-row-main {
+  gap: 10px;
+  padding: 0 0 0 14px;
+  color: var(--av-ink-2);
+  font: 600 14px/1 var(--av-serif);
+  letter-spacing: 0.1em;
+}
+.dw-game .dw-row.on .dw-row-main {
+  color: var(--av-ink);
+  font-weight: 600;
+}
+.dw-game .dw-row-name {
+  flex: none;
+}
+.dw-game .dw-row.is-off .dw-row-name {
+  color: var(--pl-dim);
+}
+.dw-game .dw-ic,
+.dw-game .dw-ic-blank {
+  flex: none;
+  color: var(--pl-dim);
+}
+.dw-game .dw-row.on .dw-ic {
+  color: var(--av-ink);
+}
+.dw-game .dw-row-end {
+  color: var(--pl-dim);
+  font: 12px/1 var(--av-sans);
+  letter-spacing: 0;
+}
+.dw-game .dw-dot {
+  width: 7px;
+  height: 7px;
+  border-color: var(--av-faint);
+}
+.dw-game .dw-dot.on {
+  background: var(--av-good);
+}
+.dw-game .dw-beta {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--pl-dim);
+  font: 600 12.5px/1 var(--av-latin);
+  letter-spacing: 0.08em;
+}
+/* 页头里的 BETA:细框小签(设计稿 .av-chip.beta) */
+.dw-game .dw-page-row > .dw-beta {
+  display: inline-flex;
+  align-items: center;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: var(--av-r-tag);
+  box-shadow: inset 0 0 0 1px var(--av-faint);
+  font-size: 12px;
+}
+
+/* ---------- 右边:换页只有这块淡入,左栏不动 ---------- */
+.dw-game .dw-body {
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+}
+.dw-game .dw-swap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  animation: dw-swap-in var(--av-t-fast) ease both;
+}
+@keyframes dw-swap-in {
+  from {
+    opacity: 0;
+  }
+}
+/* 淡入放完要把动画摘掉的话:fill-mode 只用 both 于 from,没有常驻的 transform,里面的 fixed 浮层(问号)不受影响 */
+
+/* 没有舞台的页(外语、Jev、语音服务、卡带…):排成一列,放在纸面里 */
+.dw-game .dw-body-flow .dw-swap {
+  gap: 12px;
+  overflow-y: auto;
+  padding: 18px 28px 24px;
+}
+.dw-game .dw-body-flow .dw-swap > * {
+  max-width: 880px;
+}
+
+/* 有舞台的页:中间 | 右边,两栏之间一道细线 */
+.dw-game .dw-page {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 352px;
+}
+.dw-game .dw-mid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+  padding: 16px 24px 14px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--av-faint) transparent;
+}
+.dw-game .dw-side {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: 18px 22px 16px;
+  border-left: 1px solid var(--av-hair);
+}
+.dw-game .dw-side-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 6px;
+  margin-right: -6px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--av-faint) transparent;
+}
+
+/* ---------- 页头:立绘 Sprite [开关] ●在用 [星绘 · 14 张] …… [AI 写 | Jev 标] ---------- */
+.dw-game .dw-page-head {
+  flex: none;
+  gap: 6px;
+}
+.dw-game .dw-page-row {
+  gap: 10px;
+  min-height: 36px;
+}
+.dw-game .dw-page-title {
+  font: 700 19px/1 var(--av-serif);
+  letter-spacing: 0.2em;
+  color: var(--av-ink);
+}
+.dw-game .dw-page-en {
+  font: italic 500 13px/1 var(--av-latin);
+  letter-spacing: 0.12em;
+  color: var(--pl-dim);
+}
+.dw-game .dw-page-row > .av-switch {
+  margin: 0 2px 0 4px;
+}
+.dw-game .dw-inuse {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: var(--av-r-tag);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--av-hair);
+  color: var(--pl-dim);
+  font: 500 12px/1 var(--av-sans);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.dw-game .dw-inuse.on {
+  background: var(--av-paper-2);
+  box-shadow: inset 0 0 0 1px var(--av-hair-2);
+  color: var(--av-ink-2);
+}
+.dw-game .dw-inuse-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--av-good);
+}
+.dw-game .dw-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border: none;
+  border-radius: var(--av-r-tag);
+  background: var(--av-paper-2);
+  box-shadow: inset 0 0 0 1px var(--av-hair-2);
+  color: var(--av-ink-2);
+  font: 500 12px/1 var(--av-sans);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.dw-game .dw-page-note {
+  color: var(--pl-dim);
+  font-size: 12.5px;
+}
+.dw-game .dw-page-note .dw-inline-link,
+.dw-game .dw-inline-link {
+  color: var(--av-ink);
+}
+
+/* AI 写 / Jev 标:纸面分段(浅槽 + 选中白底浮起) */
+.dw-game .set-seg {
+  gap: 2px;
+  padding: 3px;
+  border: none;
+  border-radius: var(--av-r-btn);
+  background: var(--av-paper-2);
+  box-shadow: inset 0 0 0 1px var(--av-hair-2);
+}
+.dw-game .set-seg button {
+  min-width: 56px;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 5px;
+  color: var(--pl-dim);
+  font: 500 13px/28px var(--av-sans);
+  letter-spacing: 0.04em;
+}
+.dw-game .set-seg button.on,
+.vn-plugin-embed .dw-game .set-seg button.on {
+  background: var(--av-paper);
+  color: var(--av-ink);
+  font-weight: 500;
+  box-shadow:
+    0 1px 2px rgba(30, 24, 48, 0.12),
+    0 0 0 1px var(--av-hair-2);
+}
+.dw-game .set-seg button:not(.on):hover {
+  color: var(--av-ink);
+}
+
+/* ---------- 右边:常用 / 高级 —— 不画框;每一行底下一道细线(设计稿 kit/plugins.css .pl-sec / .pl-row) ---------- */
+.dw-game .dw-card {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+.dw-game .dw-side .dw-card + .dw-card {
+  margin-top: 22px;
+}
+.dw-game .dw-card-head {
+  gap: 8px;
+  min-height: 0;
+  padding: 0 0 4px;
+  color: var(--av-ink-2);
+  font: 600 13px/1 var(--av-serif);
+  letter-spacing: 0.22em;
+}
+.dw-game .dw-card-en {
+  font: italic 500 12.5px/1 var(--av-latin);
+  letter-spacing: 0.12em;
+  color: var(--pl-dim);
+}
+.dw-game .dw-fold {
+  color: var(--pl-dim);
+  font-family: var(--av-sans);
+  letter-spacing: 0;
+}
+.dw-game .dw-fold:hover {
+  background: var(--av-hair-2);
+  color: var(--av-ink);
+}
+.dw-game .dw-chev,
+.dw-game .dw-arrow {
+  stroke: var(--pl-dim);
+}
+
+/* 设置行:名字(+ ?)一行,控件在下面;值写在名字那行右边,「恢复默认」在控件下面 */
+.dw-game .dw-card .set-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'name side'
+    'ctl ctl'
+    'help help';
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 0;
+  padding: 12px 0;
+  border-top: none;
+  border-bottom: 1px solid var(--av-hair-2);
+}
+.dw-game .dw-card .set-row > .set-name,
+.dw-game .dw-card .set-row > .set-label {
+  grid-area: name;
+  min-height: 22px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.dw-game .dw-card .set-row > .set-ctl {
+  grid-area: ctl;
+  margin-top: 8px;
+}
+.dw-game .dw-card .set-row > .set-side {
+  grid-area: side;
+}
+.dw-game .dw-card .set-row > .set-help,
+.dw-game .dw-card .set-row > .set-affects {
+  grid-area: help;
+  grid-column: auto;
+  margin-top: 6px;
+}
+.dw-game .set-label,
+.dw-game .dw-card .set-label {
+  color: var(--av-ink);
+  font: 600 14px/1.3 var(--av-serif);
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+/* 滑条行:名字 …… 值 / 滑条 / 两头的字 / 恢复默认 X(设计稿 .pl-row.stack + .pl-lohi + .pl-reset) */
+.dw-game .dw-card .set-row:has(> .set-ctl > .set-slider) {
+  grid-template-areas:
+    'name val'
+    'ctl ctl'
+    'lo hi'
+    'side side'
+    'help help';
+}
+.dw-game .dw-card .set-row > .set-ctl:has(> .set-slider),
+.dw-game .dw-card .set-row > .set-ctl > .set-slider {
+  display: contents;
+}
+.dw-game .dw-card .set-slider > input[type='range'] {
+  grid-area: ctl;
+  margin-top: 2px;
+  margin-bottom: -6px;
+}
+.dw-game .dw-card .set-slider > .set-slider-value {
+  grid-area: val;
+  min-width: 0;
+  color: var(--av-ink-2);
+  font: 500 13.5px/1 var(--av-latin);
+  letter-spacing: 0.06em;
+  font-variant-numeric: lining-nums tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+.dw-game .dw-card .set-slider > .set-slider-end {
+  grid-area: lo;
+  margin-top: 6px;
+  color: var(--pl-dim);
+  font-size: 12px;
+  line-height: 17.6px;
+}
+.dw-game .dw-card .set-slider > .set-slider-end ~ .set-slider-end {
+  grid-area: hi;
+  justify-self: end;
+}
+.dw-game .dw-card .set-row:has(> .set-ctl > .set-slider) > .set-side {
+  justify-self: start;
+}
+.dw-game .dw-card .set-row:has(> .set-ctl > .set-slider) > .set-side:not(:empty) {
+  margin-top: 8px;
+}
+
+/* 开关行:名字 …… 开关(设计稿 .pl-row.line) */
+.dw-game .dw-card .set-row:has(> .set-ctl > .set-switch) {
+  grid-template-areas:
+    'name ctl'
+    'side side'
+    'help help';
+}
+.dw-game .dw-card .set-row:has(> .set-ctl > .set-switch) > .set-ctl {
+  margin-top: 0;
+}
+.dw-game .dw-card .set-row:has(> .set-ctl > .set-switch) > .set-side {
+  justify-self: start;
+}
+.dw-game .dw-card .set-row:has(> .set-ctl > .set-switch) > .set-side:not(:empty) {
+  margin-top: 8px;
+}
+
+/* 滑条:细轨 + 角色色填充 + 白圆钮(照组件库 .av-range;填到哪由 SettingRow 写的 --p 给) */
+.dw-game .set-slider {
+  width: 100%;
+}
+.dw-game .set-slider input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  max-width: none;
+  height: 32px;
+  margin: -6px 0;
+  background: transparent;
+  cursor: pointer;
+}
+.dw-game .set-slider input[type='range']::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--av-ctl) var(--p, 50%), var(--av-hair) var(--p, 50%));
+}
+.dw-game .set-slider input[type='range']::-moz-range-track {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--av-hair);
+}
+.dw-game .set-slider input[type='range']::-moz-range-progress {
+  height: 3px;
+  background: var(--av-ctl);
+}
+.dw-game .set-slider input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5.5px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid var(--av-faint);
+  box-shadow: 0 1px 4px rgba(20, 20, 40, 0.22);
+}
+.dw-game .set-slider input[type='range']::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid var(--av-faint);
+}
+.dw-game .set-slider input[type='range']:focus-visible {
+  outline: none;
+}
+.dw-game .set-slider input[type='range']:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px var(--av-acc);
+}
+.dw-game .set-slider input[type='range']:disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+.dw-game .set-slider-value {
+  min-width: 3em;
+  color: var(--pl-dim);
+  font-family: var(--av-sans);
+  text-align: right;
+}
+.dw-game .set-ctl .select,
+.dw-game .set-ctl .text-input {
+  width: 100%;
+  max-width: none;
+}
+/* 恢复默认 X:小字 + 点线下划线(设计稿 .pl-reset) */
+.vn-embed .dw-game .set-side .btn,
+.dw-game .set-side .set-reset {
+  height: auto;
+  padding: 0 0 1px;
+  border: none;
+  border-radius: 0;
+  background: none;
+  color: var(--pl-dim);
+  font: 12px/1 var(--av-sans);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--av-faint);
+}
+.vn-embed .dw-game .set-side .btn:hover:not(:disabled) {
+  background: none;
+  color: var(--av-ink);
+}
+
+/* 开关:圆角方框,不是胶囊(组件库 .av-switch,40×22) */
+.dw-game .set-switch {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: var(--av-paper-3);
+  box-shadow: inset 0 0 0 1px var(--av-hair);
+}
+.dw-game .set-switch .knob {
+  position: absolute;
+  left: 3px;
+  top: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(20, 20, 40, 0.25);
+  transform: none;
+  transition: transform var(--av-t-fast) var(--av-ease);
+}
+.dw-game .set-switch.on {
+  background: var(--av-ctl);
+  box-shadow: none;
+}
+.dw-game .set-switch.on .knob {
+  background: #fff;
+  transform: translateX(18px);
+}
+
+/* ---------- 下拉框、输入框、按钮:纸面 ---------- */
+.vn-embed .dw-game .select,
+.vn-embed .dw-game .text-input,
+.vn-embed .dw-game .card-textarea,
+.vn-embed .dw-game .conn-textarea,
+.vn-embed .dw-game textarea {
+  border-radius: var(--av-r-btn);
+  background-color: var(--av-paper);
+  border-color: var(--av-hair);
+  color: var(--av-ink);
+}
+.vn-embed .dw-game .select option {
+  background: var(--av-paper);
+  color: var(--av-ink);
+}
+.dw-game .select:focus,
+.dw-game .text-input:focus,
+.dw-game textarea:focus {
+  border-color: var(--av-ctl);
+  outline: none;
+}
+.vn-embed .dw-game .btn {
+  border-radius: var(--av-r-btn);
+  border-color: var(--av-hair);
+  background: var(--av-paper);
+  color: var(--av-ink-2);
+}
+.vn-embed .dw-game .btn:hover:not(:disabled) {
+  background: var(--av-paper-2);
+  color: var(--av-ink);
+}
+.vn-embed .dw-game .btn.accent {
+  border-color: var(--av-ink);
+  background: var(--av-ink);
+  color: var(--av-paper);
+}
+.vn-embed .dw-game .btn.accent:hover:not(:disabled) {
+  background: var(--av-ink-2);
+  color: var(--av-paper);
+}
+.vn-embed .dw-game .btn.danger {
+  border-color: color-mix(in srgb, var(--av-bad) 40%, transparent);
+  background: var(--av-paper);
+  color: var(--av-bad);
+}
+.vn-embed .dw-game .btn.danger:hover:not(:disabled),
+.vn-embed .dw-game .btn.danger.armed {
+  background: color-mix(in srgb, var(--av-bad) 10%, var(--av-paper));
+  color: var(--av-bad);
+}
+
+/* ---------- 高级:平时一行「› 标签格式 · 问法 · 提示词模板 · 认词记录 · 配对表」,点哪个展开哪个(设计稿 .pl-adv-line) ---------- */
+.dw-game .dw-adv-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 7px;
+  padding: 2px 0 6px;
+  border-bottom: 1px solid var(--av-hair-2);
+}
+.dw-game .dw-adv-fold {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin: 0 -6px 0 -8px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--pl-dim);
+  cursor: pointer;
+}
+.dw-game .dw-adv-fold:hover {
+  color: var(--av-ink);
+  background: var(--av-hair-2);
+}
+.dw-game .dw-adv-fold .st-icon {
+  transition: transform 0.2s var(--av-ease);
+}
+.dw-game .dw-adv.open .dw-adv-fold .st-icon {
+  transform: rotate(90deg);
+}
+.dw-game .dw-adv-u {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+.dw-game .dw-adv-u.sep::before {
+  content: '·';
+  color: var(--av-faint);
+}
+.dw-game .dw-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: none;
+  color: var(--av-ink-2);
+  font: 500 13px/1 var(--av-serif);
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  box-shadow: none;
+}
+.dw-game .dw-tab:hover {
+  color: var(--av-ink);
+}
+.dw-game .dw-tab.on {
+  background: none;
+  color: var(--av-ink);
+  font-weight: 600;
+  box-shadow: none;
+}
+.dw-game .dw-tab.on::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 4px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--av-ink);
+}
+.dw-game .dw-tab-badge {
+  padding: 2px 4px;
+  border-radius: 3px;
+  background: var(--av-paper-2);
+  box-shadow: inset 0 0 0 1px var(--av-hair-2);
+  color: var(--pl-dim);
+  font: 500 12px/1 var(--av-sans);
+  letter-spacing: 0.02em;
+}
+.dw-game .dw-tab-badge.changed {
+  background: color-mix(in srgb, var(--av-warn) 14%, transparent);
+  box-shadow: none;
+  color: var(--av-warn-ink);
+}
+.dw-game .dw-tab-body {
+  padding: 12px 0 4px;
+  animation: dw-rise 0.2s var(--av-ease) both;
+}
+@keyframes dw-rise {
+  from {
+    opacity: 0;
+    translate: 0 8px;
+  }
+}
+
+/* ---------- 底部跳转(带 →),贴在右栏最下面(设计稿 .pl-foot + .av-link) ---------- */
+.dw-game .dw-side > .dw-footer,
+.dw-game .dw-side .dw-footer {
+  flex: none;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  margin-top: 12px;
+  padding-top: 2px;
+  border-top: 1px solid var(--av-hair-2);
+}
+.dw-game .dw-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 15px;
+  padding: 0 0 2px;
+  border: none;
+  border-bottom: 1px solid var(--av-hair);
+  border-radius: 0;
+  background: none;
+  color: var(--av-ink-2);
+  font: 500 12.5px/1 var(--av-sans);
+  letter-spacing: 0.04em;
+  box-shadow: none;
+  align-self: flex-start;
+}
+.dw-game .dw-link .dw-arrow {
+  display: none;
+}
+.dw-game .dw-link::after {
+  content: '→';
+  font-family: var(--av-latin);
+}
+.dw-game .dw-link:hover {
+  color: var(--av-ink);
+  border-bottom-color: var(--av-acc-deep);
+}
+.dw-game .dw-body-flow .dw-footer {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+/* ---------- 中间的纸面板(试判、连接卡、这次会补、本地小模型、卡带那块;设计稿 .pl-panel / .pl-conn) ---------- */
+.dw-game .dw-panel {
+  position: relative;
+  flex: none;
+  min-width: 0;
+  padding: 14px 16px;
+  border-radius: var(--av-r-panel);
+  background: var(--av-paper);
+  box-shadow:
+    0 0 0 1px var(--av-hair),
+    0 8px 22px rgba(30, 24, 48, 0.06);
+}
+.dw-game .dw-panel-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.dw-game .dw-panel-h .zh {
+  font: 700 14.5px/1 var(--av-serif);
+  letter-spacing: 0.18em;
+  color: var(--av-ink);
+}
+.dw-game .dw-panel-h .en {
+  font: italic 500 12.5px/1 var(--av-latin);
+  letter-spacing: 0.12em;
+  color: var(--pl-dim);
+}
+.dw-game .dw-panel .dw-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: var(--av-ink-2);
+  font: 13px/1.6 var(--av-sans);
+}
+.dw-game .dw-panel .dw-line .dw-dot.on {
+  background: var(--av-good);
+}
+.dw-game .dw-pad {
+  padding: 10px 0;
+  color: var(--pl-dim);
+  font: 12px/1.6 var(--av-sans);
+}
+.vn-embed .dw-game .btn.accent {
+  font-family: var(--av-serif);
+  font-weight: 600;
+  letter-spacing: 0.16em;
+}
+.vn-embed .dw-game .dw-panel-h .btn {
+  height: 32px;
+  padding: 0 14px;
+}
+
+/* 试判:游戏画面那么高的一块,空着时正中一行(设计稿 .pl-trial / .pl-blank) */
+.dw-game .dw-trial {
+  display: flex;
+  flex-direction: column;
+  aspect-ratio: 16 / 9;
+  max-height: 46vh;
+}
+.dw-game .dw-trial-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--av-faint) transparent;
+}
+.dw-game .dw-blank-in {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+  color: var(--pl-dim);
+  font-size: 13px;
+}
+.dw-game .dw-blank-in b {
+  font: 600 15px/1.4 var(--av-serif);
+  letter-spacing: 0.12em;
+  color: var(--av-ink-2);
+}
+.dw-game .dw-blank-in > svg,
+.dw-game .dw-blank-in > .dw-ic {
+  color: var(--av-faint);
+}
+.dw-game .dw-trial-body .vn-console-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  color: var(--av-ink-2);
+}
+.dw-game .dw-trial-body .vn-console-table th {
+  text-align: left;
+  font: 600 12px/1 var(--av-serif);
+  letter-spacing: 0.12em;
+  color: var(--pl-dim);
+  padding: 0 8px 7px 0;
+  border-bottom: 1px solid var(--av-hair);
+  white-space: nowrap;
+  background: none;
+}
+.dw-game .dw-trial-body .vn-console-table td {
+  padding: 6px 8px 6px 0;
+  border-bottom: 1px solid var(--av-hair-2);
+  vertical-align: middle;
+}
+
+/* 小节小标题(用量)+ 用量四格(设计稿 .pl-cap2 / .pl-usage) */
+.dw-game .dw-cap2 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 -4px;
+  font: 600 12.5px/1 var(--av-serif);
+  letter-spacing: 0.14em;
+  color: var(--av-ink-2);
+}
+.dw-game .dw-usage {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  flex: none;
+  border-top: 1px solid var(--av-hair);
+  border-bottom: 1px solid var(--av-hair);
+}
+.dw-game .dw-usage > div {
+  padding: 10px 12px;
+}
+.dw-game .dw-usage > div + div {
+  border-left: 1px solid var(--av-hair-2);
+}
+.dw-game .dw-usage .k {
+  font: 600 12px/1 var(--av-serif);
+  letter-spacing: 0.12em;
+  color: var(--pl-dim);
+}
+.dw-game .dw-usage .n {
+  margin-top: 7px;
+  font: 600 20px/1 var(--av-latin);
+  letter-spacing: 0.02em;
+  font-variant-numeric: lining-nums tabular-nums;
+  color: var(--av-ink);
+}
+.dw-game .dw-usage .s {
+  margin-top: 5px;
+  font-size: 12px;
+  line-height: 17.6px;
+  color: var(--pl-dim);
+}
+
+/* 哪几路交给 Jev:图标 + 名字 | AI 写 / Jev 标 | 在用 | ›(设计稿 .pl-kind) */
+.dw-game .dw-kind {
+  display: grid;
+  grid-template-columns: 64px auto minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--av-hair-2);
+}
+.dw-game .dw-kind .k {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font: 600 13.5px/1 var(--av-serif);
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  color: var(--av-ink);
+}
+.dw-game .dw-kind .k svg {
+  color: var(--pl-dim);
+}
+.dw-game .dw-kind .st {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  color: var(--pl-dim);
+}
+.dw-game .dw-kind .st.on {
+  color: var(--av-good-ink);
+}
+.dw-game .dw-kind .set-seg button {
+  min-width: 0;
+  height: 26px;
+  padding: 0 9px;
+  font-size: 12.5px;
+  line-height: 26px;
+}
+.dw-game .dw-go {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: var(--av-r-btn);
+  background: none;
+  color: var(--pl-dim);
+  cursor: pointer;
+}
+.dw-game .dw-go:hover {
+  color: var(--av-ink);
+  background: var(--av-hair-2);
+}
+
+/* 语音服务:一台一张连接卡(设计稿 .pl-conn / .pl-crow) */
+.dw-game .dw-conns {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.dw-game .dw-conn-card {
+  padding: 12px 16px 4px;
+  border-radius: var(--av-r-panel);
+  background: var(--av-paper);
+  box-shadow: 0 0 0 1px var(--av-hair);
+}
+.dw-game .dw-conn-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--av-hair-2);
+}
+.dw-game .dw-conn-h > svg {
+  color: var(--pl-dim);
+}
+.dw-game .dw-conn-h b {
+  font: 700 15px/1 var(--av-serif);
+  letter-spacing: 0.12em;
+  color: var(--av-ink);
+}
+.dw-game .dw-conn-h b {
+  flex: none;
+  white-space: nowrap;
+}
+.dw-game .dw-conn-h .dw-chip {
+  flex: none;
+}
+.dw-game .dw-conn-st {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.dw-game .dw-ok {
+  color: var(--av-good-ink);
+}
+.dw-game .dw-conn-card .pl-field,
+.dw-game .dw-crow {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--av-hair-2);
+}
+.dw-game .dw-crow {
+  border-bottom: 0;
+}
+.dw-game .dw-conn-card .conn-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--av-ink);
+  font: 600 13.5px/1.3 var(--av-serif);
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+.vn-embed .dw-game .dw-conn-card .pl-field .text-input {
+  grid-column: 2 / 4;
+  height: 32px;
+  padding: 0 10px;
+  font: 13px/30px var(--av-sans);
+}
+.dw-game .dw-crow-c {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.dw-game .dw-crow-c .dw-muted {
+  font-size: 12px;
+}
+.dw-game .dw-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 0 2px;
+}
+.vn-embed .dw-game .dw-btns .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 14px;
+  color: var(--av-ink);
+  font: 500 13px/1 var(--av-sans);
+  letter-spacing: 0.06em;
+}
+.vn-embed .dw-game .btn.small.danger {
+  border-color: var(--av-hair);
+}
+
+/* 卡带那一块(比如 AI 生图):放在一张纸面板里 */
+.dw-game .dw-mid > .dw-cart {
+  padding: 14px 16px;
+  border-radius: var(--av-r-panel);
+  background: var(--av-paper);
+  box-shadow:
+    0 0 0 1px var(--av-hair),
+    0 8px 22px rgba(30, 24, 48, 0.06);
+}
+
+/* ---------- 插件关着:中间变灰 + 一张小卡「立绘关着 [打开]」,右边淡下去(设计稿 .pl-off / .pl-offcard / .pl-dim) ---------- */
+.dw-game .dw-midbody {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  container-type: inline-size;
+}
+.dw-game .dw-off > :not(.dw-offcard) {
+  opacity: 0.38;
+  filter: grayscale(0.75);
+  pointer-events: none;
+  transition:
+    opacity 0.2s,
+    filter 0.2s;
+}
+.dw-game .dw-page.is-off .dw-side-scroll {
+  opacity: 0.38;
+  filter: grayscale(0.75);
+  pointer-events: none;
+}
+.dw-game .dw-offcard {
+  position: absolute;
+  z-index: 10;
+  left: 50%;
+  top: max(24px, calc(28.1cqi - 24px));
+  translate: -50% 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px 10px 16px;
+  border-radius: var(--av-r-panel);
+  background: var(--av-paper);
+  border: 1px solid var(--av-hair);
+  box-shadow: var(--av-shadow-float);
+  white-space: nowrap;
+  animation: dw-rise 0.22s var(--av-ease) both;
+}
+.dw-game .dw-offcard .av-star {
+  width: 12px;
+  height: 12px;
+  color: var(--av-faint);
+}
+.dw-game .dw-offcard b {
+  font: 600 14px/1 var(--av-serif);
+  letter-spacing: 0.1em;
+  color: var(--av-ink);
+}
+
+/* ---------- 零碎 ---------- */
+.dw-game .dw-empty {
+  border-color: var(--av-hair);
+  border-radius: var(--av-r-panel);
+}
+.dw-game .dw-muted,
+.dw-game .dw-line {
+  color: var(--pl-dim);
+}
+.dw-game .dw-bad {
+  color: var(--av-bad);
+}
+.dw-game .dw-block {
+  border-radius: var(--av-r-panel);
+  background: var(--av-hair-2);
+}
+
+/* 窄一点(菜单面板不到 980):右边栏排到中间下面,别的页照旧一列 */
+@container (max-width: 980px) {
+  .dw-game .dw-nav {
+    width: 176px;
+  }
+  .dw-game .dw-page {
+    grid-template-columns: minmax(0, 1fr) 300px;
+  }
+}
+@container (max-width: 760px) {
+  .dw-game .dw-main {
+    flex-direction: column;
+  }
+  .dw-game .dw-nav {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 8px;
+    border-right: none;
+    border-bottom: 1px solid var(--av-hair);
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  .dw-game .dw-group {
+    display: flex;
+    align-items: center;
+    flex: none;
+    margin-top: 0 !important;
+  }
+  .dw-game .dw-group-head {
+    display: none;
+  }
+  .dw-game .dw-row {
+    flex: none;
+    width: auto;
+  }
+  .dw-game .dw-row-end {
+    display: none;
+  }
+  .dw-game .dw-page {
+    grid-template-columns: minmax(0, 1fr);
+    overflow-y: auto;
+  }
+  .dw-game .dw-mid {
+    overflow: visible;
+  }
+  .dw-game .dw-side {
+    border-left: none;
+    border-top: 1px solid var(--av-hair);
+  }
+  .dw-game .dw-side-scroll {
+    overflow: visible;
+  }
+}
+
+/* ---------- 实机预览:舞台 → 一排表情差分 → 试一下(U25,舞台是 vn/ui/Stage.tsx;间距照设计稿 .pl-body gap 10) ---------- */
+.dw-game .dw-stagebox {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  /* 差分一排按这一栏的宽算每格多宽(设计稿 pitch = min(60, 宽 / 张数)) */
+  container-type: inline-size;
+}
+.dw-game .dw-stagebox > .st-stage {
+  margin: 0;
+  border-radius: var(--av-r-panel);
+  box-shadow:
+    0 12px 30px rgba(30, 24, 48, 0.16),
+    0 0 0 1px var(--av-hair);
+}
+.dw-game .dw-stage-try {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* 表情差分:圆头像 + 名字;选中 = 白圈 + 外面一圈墨线托住,不跟角色变色(设计稿 .pl-strip) */
+.dw-game .dw-strip {
+  --pitch: min(60px, calc(100cqi / var(--n, 8)));
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+  padding: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.dw-game .dw-strip button {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: var(--pitch);
+  padding: 4px 0 3px;
+  border: none;
+  border-radius: var(--av-r-btn);
+  background: none;
+  color: var(--pl-dim);
+  font: 12px/1.1 var(--av-sans);
+  cursor: pointer;
+  transition:
+    background var(--av-t-fast),
+    color var(--av-t-fast);
+}
+.dw-game .dw-strip .lb {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 12px/1.1 var(--av-sans);
+}
+.dw-game .dw-strip button:hover {
+  background: var(--av-hair-2);
+  color: var(--av-ink);
+}
+.dw-game .dw-strip button.cur {
+  color: var(--av-ink);
+  font-weight: 600;
+}
+.dw-game .dw-strip .dw-face-round {
+  width: clamp(28px, calc(var(--pitch) - 12px), 44px);
+  height: clamp(28px, calc(var(--pitch) - 12px), 44px);
+}
+.dw-game .dw-face-round {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--av-paper-3);
+  box-shadow:
+    0 0 0 1.5px #fff,
+    0 1px 4px rgba(30, 24, 48, 0.2);
+  transition: box-shadow var(--av-t-fast) var(--av-ease-x);
+}
+.dw-game .dw-strip button.cur .dw-face-round {
+  box-shadow:
+    0 0 0 2px #fff,
+    0 0 0 3.5px rgba(16, 18, 32, 0.62),
+    0 4px 10px rgba(30, 24, 48, 0.22);
+}
+
+/* 试一下:输入框(放大镜)+ 按钮 + ?(设计稿 .pl-try / .pl-field) */
+.dw-game .dw-try {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.dw-game .dw-try-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 300px;
+  height: 34px;
+  flex: none;
+  padding: 0 12px 0 10px;
+  border-radius: var(--av-r-btn);
+  border: 1px solid var(--av-hair);
+  background: var(--av-paper);
+  color: var(--pl-dim);
+  transition:
+    border-color var(--av-t-fast),
+    box-shadow var(--av-t-fast);
+}
+.dw-game .dw-try-field.wide {
+  width: 440px;
+  flex: 0 1 440px;
+  min-width: 0;
+}
+.dw-game .dw-try-field:focus-within {
+  border-color: var(--av-ctl);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--av-acc) 35%, transparent);
+}
+.vn-embed .dw-game .dw-try-field .dw-try-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--av-ink);
+  font: 13px/1 var(--av-sans);
+}
+.dw-game .dw-try-field .dw-try-input::placeholder {
+  color: var(--pl-dim);
+}
+.vn-embed .dw-game .dw-try .btn.small {
+  height: 34px;
+  padding: 0 14px;
+  border-color: var(--av-hair);
+  color: var(--av-ink);
+  font: 500 13px/1 var(--av-sans);
+  letter-spacing: 0.06em;
+}
+.vn-embed .dw-game .dw-try .btn.small:disabled {
+  opacity: 0.45;
+}
+.dw-game .dw-recent {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.dw-game .dw-recent::before {
+  content: '最近';
+  margin-right: 2px;
+  color: var(--pl-dim);
+  font-size: 12px;
+}
+.dw-game .dw-recent-chip {
+  flex: none;
+  max-width: 180px;
+  height: 22px;
+  padding: 0 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: none;
+  border-radius: var(--av-r-tag);
+  background: var(--av-paper-2);
+  box-shadow: inset 0 0 0 1px var(--av-hair-2);
+  color: var(--av-ink-2);
+  font: 500 12px/22px var(--av-sans);
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition:
+    box-shadow var(--av-t-fast),
+    color var(--av-t-fast);
+}
+.dw-game .dw-recent-chip:hover {
+  color: var(--av-ink);
+  box-shadow: inset 0 0 0 1px var(--av-faint);
+}
+.dw-game .dw-result {
+  border-radius: var(--av-r-panel);
+  background: var(--av-hair-2);
+}
+.dw-game .dw-result-name {
+  font-family: var(--av-serif);
+  letter-spacing: 0.08em;
+}
+.dw-game .dw-face-44 {
+  border-radius: 50%;
+}
+
+/* 试音条:播放键 + 波形 + 参考音频(设计稿 .pl-take);还没念过时虚线 + 「还没念过」 */
+.dw-game .dw-take {
+  flex-wrap: nowrap;
+  gap: 10px;
+  height: 40px;
+  padding: 0 12px 0 5px;
+  border-radius: var(--av-r-bar);
+  background: var(--av-paper-2);
+  box-shadow: inset 0 0 0 1px var(--av-hair-2);
+}
+.dw-game .dw-take .dw-play {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--av-r-btn);
+  background: var(--av-paper);
+  box-shadow:
+    0 0 0 1px var(--av-hair),
+    0 1px 3px rgba(30, 24, 48, 0.1);
+}
+.dw-game .dw-take .dw-play svg {
+  fill: var(--av-ink);
+}
+.dw-game .dw-take.empty .dw-play {
+  opacity: 0.45;
+}
+.dw-game .dw-take .dw-wave {
+  flex: 1;
+  height: 24px;
+}
+.dw-game .dw-take .dw-wave rect {
+  fill: var(--av-faint);
+}
+.dw-game .dw-take .dw-wave rect.on {
+  fill: var(--av-ctl);
+}
+.dw-game .dw-take-dash {
+  flex: 1;
+  min-width: 0;
+  height: 0;
+  border-top: 2px dashed var(--av-faint);
+}
+.dw-game .dw-take .dw-mono {
+  min-width: 82px;
+  color: var(--pl-dim);
+  font: 12px/1 var(--av-sans);
+  text-align: right;
+}
+
+/* 背景 / CG 缩略图一排:7 张一屏,名字压在图的下沿;选中 = 白框 + 墨线托住,横着滚(设计稿 .pl-thumbs / .pl-thumb) */
+.dw-game .dw-thumbstrip {
+  display: flex;
+  gap: 8px;
+  flex: none;
+  padding: 4px 4px 7px;
+  margin: -4px -4px -7px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: var(--av-faint) transparent;
+}
+.dw-game .dw-thumbstrip button {
+  position: relative;
+  flex: none;
+  display: block;
+  width: calc(100cqi / 7 - 7px);
+  aspect-ratio: 16 / 9;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--av-paper-3);
+  box-shadow: 0 0 0 1px var(--av-hair);
+  cursor: pointer;
+  transition:
+    box-shadow var(--av-t-fast),
+    transform var(--av-t-fast);
+}
+.dw-game .dw-thumbstrip-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 0;
+  box-shadow: none;
+}
+.dw-game .dw-thumbstrip .lb {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 10px 6px 4px;
+  background: linear-gradient(transparent, rgba(10, 10, 20, 0.66));
+  color: #fff;
+  font: 500 12px/13.2px var(--av-sans);
+  letter-spacing: 0.04em;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dw-game .dw-thumbstrip button:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 0 0 1px var(--av-faint),
+    0 6px 14px rgba(30, 24, 48, 0.16);
+}
+.dw-game .dw-thumbstrip button.cur {
+  box-shadow:
+    0 0 0 2px #fff,
+    0 0 0 3.5px rgba(16, 18, 32, 0.62),
+    0 6px 14px rgba(30, 24, 48, 0.18);
+}
+.dw-game .dw-thumbstrip button.cur .lb {
+  font-weight: 600;
+}
+
+/* 下拉框:纸面细边 + 小 V(组件库 .av-select,32 高) */
+.vn-embed .dw-game .set-ctl select.text-input,
+.vn-embed .dw-game .set-ctl select.select {
+  height: 32px;
+  padding: 0 28px 0 10px;
+  border: 1px solid var(--av-hair);
+  border-radius: var(--av-r-btn);
+  -webkit-appearance: none;
+  appearance: none;
+  background-color: var(--av-paper);
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--pl-dim) 50%),
+    linear-gradient(135deg, var(--pl-dim) 50%, transparent 50%);
+  background-position:
+    calc(100% - 15px) 50%,
+    calc(100% - 10px) 50%;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+  color: var(--av-ink);
+  font: 13px/30px var(--av-sans);
+}
+
+/* BGM:曲目表 */
+.dw-game .dw-tracks {
+  border-radius: var(--av-r-panel);
+  background: color-mix(in srgb, var(--av-paper-2) 60%, transparent);
+  box-shadow: inset 0 0 0 1px var(--av-hair-2);
+}
+.dw-game .dw-tracks-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 12px 16px 8px;
+}
+.dw-game .dw-tracks-head .zh {
+  font: 600 13px/1 var(--av-serif);
+  letter-spacing: 0.2em;
+}
+.dw-game .dw-tracks-head .en {
+  font: italic 500 12px/1 var(--av-latin);
+  letter-spacing: 0.1em;
+  color: var(--pl-dim);
+}
+.dw-game .dw-tracks-head .dw-mono {
+  margin-left: auto;
+  font-family: var(--av-sans);
+}
+.dw-game .dw-tracks ul {
+  margin: 0;
+  padding: 0 0 6px;
+  list-style: none;
+}
+.dw-game .dw-tracks li {
+  display: grid;
+  grid-template-columns: 16px 140px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 9px 16px;
+  border-top: 1px solid var(--av-hair-2);
+}
+.dw-game .dw-tracks .dw-ic {
+  color: var(--pl-dim);
+}
+.dw-game .dw-tracks .lb {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 600 14px/1.3 var(--av-serif);
+  letter-spacing: 0.06em;
+}
+.dw-game .dw-tracks .tt {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--pl-dim);
+  font: 13px/1.3 var(--av-sans);
+}
+
+/* 没有素材时中间那块(CG、BGM) */
+.dw-game .dw-blank {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 180px;
+  border-radius: var(--av-r-panel);
+  box-shadow: inset 0 0 0 1px var(--av-hair);
+  color: var(--pl-dim);
+  font: 600 14px/1 var(--av-serif);
+  letter-spacing: 0.08em;
+}

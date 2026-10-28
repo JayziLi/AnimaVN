@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import type { PackSprite } from '../../lib/api';
 import type { AssemblyResult } from '../../lib/assembler';
 import type { TavernCard } from '../../lib/cardParser';
 import type { PresetOrderEntry, TavernPreset } from '../../lib/presetParser';
@@ -6,6 +7,7 @@ import { Icon } from '../icons';
 import { CardFieldsView } from './CardFieldsView';
 import { fieldStates, isUnsent, tocOrder } from './fieldStatus';
 import { PersonaView, type PersonaPageProps } from './PersonaView';
+import { ProfileHer } from './ProfileHer';
 import { ProfileSide, type ProfileBinding } from './ProfileSide';
 import { ProfileToc } from './ProfileToc';
 import { otherToc, personaState, presetToc, promptToc, type ProfileKey } from './tocRows';
@@ -51,6 +53,20 @@ export interface ProfileTabProps {
   personaPage: PersonaPageProps;
   /** 预设那一页(P3);不给就先占个位 */
   renderPreset?: () => ReactNode;
+  /** 「从这条开始新故事」:不给就不显示这个按钮(菜单「角色」页、卡编辑器资料页都给了) */
+  onStartGreeting?: (index: number) => void;
+  /**
+   * 局内菜单「角色」页(设计稿 kit/cardedit.js 的 AV.cardPage):目录不放头像,创作者注释、标签 / 元数据排到主区最后,
+   * 右栏换成她的资料 + 绑定(ProfileHer);目录「预设」那一行去菜单的预设页。不给 = 卡编辑器的资料页,照旧
+   */
+  menu?: {
+    /** 按脸裁的头像(卡面头像读不出来时用) */
+    faceSrc: string | null;
+    /** 表情差分 */
+    sprites: readonly PackSprite[];
+    /** 目录「预设」那一行:换到菜单的「预设」页 */
+    onOpenPreset: () => void;
+  };
 }
 
 /** 目录跳转后多久没再滚动就算停稳了:停稳之前滚动联动不抢目录的高亮 */
@@ -81,10 +97,14 @@ export function ProfileTab(props: ProfileTabProps) {
     [props.persona.description, preset, order, result],
   );
   const bookRows = result.worldInfo?.rows ?? [];
-  const prompt = promptToc(fields, { ...persona, name: props.persona.name }, {
-    placed: bookRows.filter((r) => r.placed).length,
-    total: card.character_book?.entries.length ?? 0,
-  });
+  const prompt = promptToc(
+    fields,
+    { ...persona, name: props.persona.name },
+    {
+      placed: bookRows.filter((r) => r.placed).length,
+      total: card.character_book?.entries.length ?? 0,
+    },
+  );
   const other = otherToc(1 + card.alternate_greetings.length);
   const presetRow = presetToc(props.presetName, order);
 
@@ -159,6 +179,18 @@ export function ProfileTab(props: ProfileTabProps) {
     el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
+  // 菜单「角色」页一打开先停在「角色描述」那一节(设计稿 AV.cardPage 第一次打开也是它);只滚主区自己,不碰外面的菜单
+  const menuPage = Boolean(props.menu);
+  useEffect(() => {
+    if (!menuPage || window.matchMedia(NARROW).matches) return;
+    const main = mainRef.current;
+    const el = sections.current.get('description');
+    if (!main || !el) return;
+    window.clearTimeout(settling.current);
+    settling.current = window.setTimeout(() => (settling.current = undefined), SETTLE_MS * 3);
+    main.scrollTop += el.getBoundingClientRect().top - main.getBoundingClientRect().top - 2;
+  }, [menuPage]);
+
   // 从人设 / 预设那一页点回卡的某一节:先换回角色卡,画出来以后再滚过去
   const pendingJump = useRef<ProfileKey | null>(null);
   useEffect(() => {
@@ -173,6 +205,10 @@ export function ProfileTab(props: ProfileTabProps) {
   }, [view]);
 
   const jump = (key: ProfileKey) => {
+    if (key === 'preset' && props.menu) {
+      props.menu.onOpenPreset();
+      return;
+    }
     if (key === 'persona' || key === 'preset') {
       setView(key);
       return;
@@ -200,6 +236,7 @@ export function ProfileTab(props: ProfileTabProps) {
         active={tocActive}
         totalTokens={totalTokens}
         warnCount={warnCount}
+        identity={!props.menu}
         onJump={jump}
         onChangeName={(name) => props.onChange({ name })}
         onPickAvatar={props.onPickAvatar}
@@ -219,17 +256,38 @@ export function ProfileTab(props: ProfileTabProps) {
             onChange={props.onChange}
             onExport={props.onExport}
             onExportBundle={props.onExportBundle}
-            onDuplicate={props.onDuplicate}
+            avatarUrl={props.avatarUrl}
+            onPickAvatar={props.onPickAvatar}
+            onStartGreeting={props.onStartGreeting}
+            menu={Boolean(props.menu)}
           />
-          <ProfileSide
-            binding={props.binding}
-            report={result.budget}
-            budget={props.budget}
-            canBudget={preset !== null}
-            onChangeBudget={props.onChangeBudget}
-            busy={props.busy}
-            onDelete={props.onDelete}
-          />
+          {props.menu ? (
+            <ProfileHer
+              card={card}
+              avatarUrl={props.avatarUrl}
+              faceSrc={props.menu.faceSrc}
+              sprites={props.menu.sprites}
+              binding={props.binding}
+              busy={props.busy}
+              onChangeName={(name) => props.onChange({ name })}
+              onPickAvatar={props.onPickAvatar}
+              onExport={props.onExport}
+              onExportBundle={props.onExportBundle}
+              onDuplicate={props.onDuplicate}
+              onDelete={props.onDelete}
+            />
+          ) : (
+            <ProfileSide
+              binding={props.binding}
+              report={result.budget}
+              budget={props.budget}
+              canBudget={preset !== null}
+              onChangeBudget={props.onChangeBudget}
+              busy={props.busy}
+              onDuplicate={props.onDuplicate}
+              onDelete={props.onDelete}
+            />
+          )}
         </>
       )}
       {view === 'persona' && <PersonaView {...props.personaPage} />}

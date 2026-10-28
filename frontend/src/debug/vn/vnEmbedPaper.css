@@ -1,0 +1,161 @@
+/* ══════════ 菜单面板 / 游戏小窗口里嵌进来的调试台页(历史、角色、预设、模型、插件、素材)换成纸面 ══════════
+   局内菜单 10-23 起是一大块浮起的纸(白 / 黑 / 玻璃跟设置里的「主题」),vn.css 里 .vn-embed 那套还是旧的深色玻璃配色,
+   压在纸上一片灰。这里把调试台的颜色变量换成纸面的 --av-*(跟着 .av-day / .av-night / .is-glass 走),结构一行不改。
+   选中不跟角色色(规矩):调试台的 --accent 在这里是墨色。调试台本身(网页)不受影响。 */
+
+:is(.vn-menu, .vn-pw-win) .vn-embed {
+  --bg: var(--av-paper-2);
+  --bg-panel: transparent;
+  --bg-raised: var(--av-paper-2);
+  --bg-hover: var(--av-hair-2);
+  --border: var(--av-hair-2);
+  --border-strong: var(--av-hair);
+  --text: var(--av-ink);
+  --text-body: var(--av-ink-2);
+  --text-dim: var(--av-dim);
+  --text-faint: var(--av-faint);
+  --accent: var(--av-ink);
+  --accent-dim: var(--av-hair);
+  --role-system: var(--av-dim);
+  --role-user: var(--av-ink-2);
+  --role-assistant: var(--av-ink);
+  --warn: var(--av-ink);
+  --danger: var(--av-bad-ink, #b4483c);
+  /* 嵌进来的页里还在用的视觉小说变量也换成纸面的 */
+  --vn-text: var(--av-ink);
+  --vn-text-dim: var(--av-dim);
+  --vn-border: var(--av-hair);
+  color: var(--av-ink);
+  font-family: var(--av-sans);
+}
+:is(.vn-menu, .vn-pw-win) .vn-embed > .panel,
+:is(.vn-menu, .vn-pw-win) :is(.vn-model-embed, .vn-plugin-embed) .conn-drawer {
+  background: transparent;
+  border-radius: 0;
+}
+:is(.vn-menu, .vn-pw-win) .vn-embed :is(.select, .text-input, .card-textarea, .card-name-input, .conn-textarea) {
+  border-radius: 7px;
+  background: var(--av-paper);
+  border-color: var(--av-hair);
+  color: var(--av-ink);
+}
+:is(.vn-menu, .vn-pw-win) .vn-embed .btn {
+  border-radius: 7px;
+}
+:is(.vn-menu, .vn-pw-win) .vn-embed .block-row {
+  border-bottom-color: var(--av-hair-2);
+}
+:is(.vn-menu, .vn-pw-win) .vn-embed .select option {
+  background: var(--av-paper);
+  color: var(--av-ink);
+}
+:is(.vn-menu, .vn-pw-win) .vn-plugin-embed .sp-nav {
+  background: var(--av-paper-2);
+}
+:is(.vn-menu, .vn-pw-win) .vn-plugin-embed .sp-nav-item.active {
+  color: var(--av-ink);
+}
+/* 页头里的「显示原文」这类小开关:纸上用墨色字 */
+:is(.vn-menu, .vn-pw-win) .vn-switch {
+  color: var(--av-ink);
+}
+:is(.vn-menu, .vn-pw-win) .vn-switch input {
+  accent-color: var(--av-ctl, var(--av-ink));
+}
+
+/* ---- 菜单纸上的页内小按钮、说明字(原来是给深色玻璃配的白字和胶囊) ---- */
+.vn-menu .vn-page-note {
+  color: var(--av-dim);
+}
+.vn-menu .vn-pill {
+  border-radius: var(--av-r-btn, 7px);
+  border-color: var(--av-hair);
+  background: var(--av-paper);
+  color: var(--av-ink);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.vn-menu .vn-pill:hover:not(:disabled) {
+  background: var(--av-paper-2);
+}
+.vn-menu .vn-pill.accent {
+  background: var(--av-ink);
+  color: var(--av-paper);
+}
+.vn-menu .vn-pill:focus-visible {
+  outline-color: var(--av-ctl, var(--av-ink));
+}
+/* 历史页头 / 历史小窗口顶上的「显示原文」(设计稿 .mnH-tog):字在前、「?」、开关在最后(40×22) */
+.vn-raw-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font: 500 13px/1 var(--av-sans);
+  letter-spacing: 0.04em;
+  color: var(--av-ink-2);
+  cursor: default;
+}
+.vn-raw-toggle > .av-switch {
+  order: 2;
+  margin-left: 4px;
+}
+.vn-raw-toggle > .av-switch.sm {
+  width: 40px;
+  height: 22px;
+}
+.vn-raw-toggle > .av-switch.sm span::after {
+  width: 16px;
+  height: 16px;
+}
+.vn-raw-toggle > .av-switch.sm input:checked + span::after {
+  transform: translateX(18px);
+}
+/* 说明收成一个「?」,指到 / 聚焦时在下面浮出(设计稿那句说明) */
+.vn-raw-toggle > .vn-page-note {
+  order: 1;
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px var(--av-faint);
+  font-size: 0;
+  color: transparent;
+  cursor: help;
+}
+.vn-raw-toggle > .vn-page-note::before {
+  content: '?';
+  font: 600 12px/1 var(--av-latin);
+  color: var(--av-dim);
+}
+.vn-raw-toggle > .vn-page-note::after {
+  content: '模型回来的原样文字:表情标签、宏都露出来。点一条就能改,只改这一条';
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 8px);
+  right: -8px;
+  width: max-content;
+  max-width: 260px;
+  padding: 8px 11px;
+  border-radius: var(--av-r-btn);
+  background: #2a2a33;
+  color: #fbfaf8;
+  font: 12px/1.65 var(--av-sans);
+  letter-spacing: 0.02em;
+  box-shadow: var(--av-shadow-card);
+  pointer-events: none;
+  opacity: 0;
+  translate: 0 4px;
+  transition: opacity 0.12s, translate 0.12s;
+}
+.vn-raw-toggle > .vn-page-note:hover::after {
+  opacity: 1;
+  translate: 0 0;
+}
+
+/* 角色页(卡编辑器嵌进菜单):中间那栏不另垫一层灰,和设计稿一样直接是纸,左右各一道细线分栏 */
+.vn-menu .vn-card-embed .st-main {
+  background: transparent;
+  border-left: 1px solid var(--av-hair-2);
+}

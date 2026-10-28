@@ -48,6 +48,23 @@ const PATHS = {
       <path d="M6.6 18.4a6.2 6.2 0 0 1 10.8 0" />
     </>
   ),
+  /** 卡编辑器顶栏页签「资料」:一张证件卡(设计稿 kit/icons.js 的 profile) */
+  profile: (
+    <>
+      <rect x="3.5" y="5" width="17" height="14" rx="2" />
+      <circle cx="9" cy="10.4" r="2" />
+      <path d="M5.9 16c.6-1.6 1.7-2.5 3.1-2.5s2.5.9 3.1 2.5" />
+      <path d="M14.5 10h3M14.5 13.5h3" />
+    </>
+  ),
+  /** 卡编辑器顶栏页签「素材」:三层叠起来(设计稿 kit/icons.js 的 assets) */
+  assets: (
+    <>
+      <path d="M12 4 3.5 8.2 12 12.4l8.5-4.2z" />
+      <path d="M3.5 12.2 12 16.4l8.5-4.2" />
+      <path d="M3.5 16.2 12 20.4l8.5-4.2" />
+    </>
+  ),
   check: <path d="M5 12.5l4.2 4.2L19 7" />,
   check_circle: (
     <>
@@ -134,6 +151,45 @@ const PATHS = {
     </>
   ),
   star: <path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.8L12 16.8l-5.2 2.8 1-5.8-4.3-4.1 5.9-.8z" />,
+  // 局内菜单左边那列(插件 / 历史 / 存档 / 设置 / 开发者),U13 加
+  plug: (
+    <>
+      <path d="M9 2v6M15 2v6" />
+      <path d="M6 8h12v4a6 6 0 0 1-12 0z" />
+      <path d="M12 18v4" />
+    </>
+  ),
+  clock: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3.5 2" />
+    </>
+  ),
+  save: (
+    <>
+      <path d="M5 4h11l3 3v13H5z" />
+      <path d="M8 4v5h7V4" />
+      <path d="M8 13h8v7H8z" />
+    </>
+  ),
+  gear: (
+    <>
+      <circle cx="12" cy="12" r="3.2" />
+      <path d="M12 3v2.2M12 18.8V21M4.6 7.2l1.9 1.1M17.5 15.7l1.9 1.1M3 12h2.2M18.8 12H21M4.6 16.8l1.9-1.1M17.5 8.3l1.9-1.1M7.2 4.6l1.1 1.9M15.7 17.5l1.1 1.9" />
+    </>
+  ),
+  terminal: (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M7 9l3 3-3 3M13 15h4" />
+    </>
+  ),
+  exit: (
+    <>
+      <path d="M9 4H6a1.5 1.5 0 0 0-1.5 1.5v13A1.5 1.5 0 0 0 6 20h3" />
+      <path d="M20 12H10m0 0l4-4m-4 4l4 4" />
+    </>
+  ),
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof PATHS;

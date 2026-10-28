@@ -34,9 +34,12 @@ import type { SpriteStage } from '../plugins/spriteLayout';
 import { Icon, type IconName } from '../studio/icons';
 import { PanelRail, PanelResizer } from '../studio/panelParts';
 import { DEFAULT_PANELS, InspectorCollapse, useSidePanels, type SidePanelOptions } from '../studio/sidePanels';
+import { LayerSkin } from '../studio/layerSkin';
 import { Btn, ConfirmDialog, IconBtn, Inspector, PromptDialog } from '../studio/ui';
 import type { ImportNotice, Notify, PackSync, SlotKey } from '../studio/types';
 import { describeClean } from '../vn/dataTab';
+import { popThemeClass } from '../vn/ui/logic';
+import { currentPaperTheme } from '../vn/vnSettings';
 import { BindDialog, type BindResult, type LibraryCard } from './BindDialog';
 import { ImportJobs } from './ImportJobs';
 import { LibraryAside } from './LibraryAside';
@@ -55,6 +58,7 @@ import {
   deleteNotes,
   duplicateGroups,
   filterChips,
+  filterChipsForActiveCard,
   filterItems,
   sortItems,
   sortOptions,
@@ -71,6 +75,10 @@ import { newVoiceName } from './voiceCreate';
 import { VoiceImportDialog } from './VoiceImportDialog';
 import '../studio/studio.css';
 import './library.css';
+import './libraryPaper.css';
+import './libraryPaperVoice.css';
+import './libraryPaperScene.css';
+import './libraryPaperJobs.css';
 
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -96,10 +104,15 @@ function renameApi(kind: LibraryKind, id: string, name: string): Promise<unknown
 }
 
 /**
- * 游戏菜单里:两栏的宽、收没收起另记一份;右栏默认收起(菜单里地方小)。
- * 菜单左栏 208 + 内容区左右边距 24×2 不归这一页(vn.css 的 .vn-menu、.vn-menu-body)
+ * 游戏菜单里:两栏的宽、收没收起另记一份。菜单面板内容区约 1206 宽(设计稿整合版 DIMS_MENU),左栏 256 + 右栏 300 + 中间 650 正好是三栏;
+ * 窗口窄到装不下(窄于 1280)时右栏默认收起,要用点竖条。
+ * 菜单左栏(96)+ 内容区左右边距不归这一页(vn.css 的 .vn-menu、.vn-menu-body):reserved 是它们占掉的宽
  */
-const MENU_PANELS: SidePanelOptions = { defaults: { ...DEFAULT_PANELS, rightOpen: false }, reserved: 208 + 48 };
+const MENU_RESERVED = 196;
+const menuPanels = (): SidePanelOptions => ({
+  defaults: { ...DEFAULT_PANELS, left: 256, right: 300, rightOpen: window.innerWidth >= 1280 },
+  reserved: MENU_RESERVED,
+});
 
 /** 浮在上面、自己管 Esc 的东西(「?」、「⋯」、确认框)开着时,Esc 交给它们 */
 const OWN_LAYERS = '.st-layer';
@@ -129,6 +142,11 @@ export interface AssetLibraryProps {
   onClose?: () => void;
   /** 嵌在游戏菜单的「素材」页里:没有「←」和标题、不是对话框、不管 Esc,尺寸跟着菜单内容区 */
   embedded?: boolean;
+  /**
+   * 游戏里现在这张卡(10-26「给她用」/「在用」筛选要用);只有 embedded 给。立绘 / 声音 / CG 整个替换,
+   * 背景 / BGM 各管各的(bg 只换背景那一栏,bgm 只换 BGM 那一栏);都是「一次只用一个,换了就整个替掉旧的」
+   */
+  activeCard?: { id: string; name: string } | null;
   /** 全部角色卡(绑定框、卡名) */
   cards: readonly LibraryCard[];
   /** 所有角色共用的构图(useSpriteLayout 的 stage) */
@@ -163,7 +181,7 @@ export function AssetLibrary(props: AssetLibraryProps) {
   const embedded = props.embedded ?? false;
   const writer = props.bindings ?? directBindings;
   const kind: LibraryKind | null = route.tab === 'jobs' ? null : route.tab;
-  const panels = useSidePanels(embedded ? 'library.menu.panels' : 'library.panels', embedded ? MENU_PANELS : undefined);
+  const panels = useSidePanels(embedded ? 'library.menu.panels' : 'library.panels', embedded ? menuPanels() : undefined);
   const { toggle: togglePanel } = panels;
   const collapseRight = useCallback(() => togglePanel('right'), [togglePanel]);
 
@@ -286,14 +304,19 @@ export function AssetLibrary(props: AssetLibraryProps) {
   }, [kind, searching, sprites]);
 
   const all = kind ? (lists[kind] ?? null) : null;
-  const chips = useMemo(() => (kind && all ? filterChips(kind, all) : []), [kind, all]);
+  const activeCardId = props.activeCard?.id ?? null;
+  // 菜单「素材」页(embedded + 有当前卡):全部 / 在用 这更简单那套;调试台的素材管理页照旧全部 / 已绑定 / 未绑定
+  const chips = useMemo(
+    () => (kind && all ? (activeCardId ? filterChipsForActiveCard(all, activeCardId) : filterChips(kind, all)) : []),
+    [kind, all, activeCardId],
+  );
   const wantedFilter = kind ? (filters[kind] ?? 'all') : 'all';
   // 那个筛选没了(重复的删光了)就回到全部
   const filter: LibraryFilter = chips.some((c) => c.key === wantedFilter) ? wantedFilter : 'all';
   const sort: SortBy = kind ? (sorts[kind] ?? sortOptions(kind)[0]) : 'name';
   const visible = useMemo(
-    () => (all ? sortItems(filterItems(all, filter, query, { cardNames, labels }), sort) : []),
-    [all, filter, query, cardNames, labels, sort],
+    () => (all ? sortItems(filterItems(all, filter, query, { cardNames, labels, activeCardId }), sort) : []),
+    [all, filter, query, cardNames, labels, sort, activeCardId],
   );
   const selected = (route.id ? all?.find((i) => i.id === route.id) : undefined) ?? visible[0] ?? null;
   const groups = useMemo(() => (all ? duplicateGroups(all) : []), [all]);
@@ -374,6 +397,34 @@ export function AssetLibrary(props: AssetLibraryProps) {
       notify('error', `有 ${result.failed.length} 张卡没改成:${result.failed.map((f) => `「${f.name}」${f.error}`).join(';')}`);
     } else if (result.changed.length > 0) {
       notify('ok', `已改好 ${result.changed.length} 张卡的绑定`);
+    }
+  };
+
+  /**
+   * 菜单「素材」页头「给「她」用」(10-26):每样只用一个,换了就把游戏里现在这张卡这一样整个替换成选中的这个包 ——
+   * 立绘 / 声音 / CG 整个换掉;背景、BGM 各自只换自己那一栏(另一栏先读一遍现在的,原样带回去)。
+   * 用的是已有的整组替换 PUT,不是另一个接口;声音换了不留备用(extras 清空)
+   */
+  const [usingForActive, setUsingForActive] = useState(false);
+  const giveToActive = async (k: LibraryKind, item: LibraryItem) => {
+    const active = props.activeCard;
+    if (!active || usingForActive) return;
+    setUsingForActive(true);
+    try {
+      if (k === 'sprite') await writer.sprite(active.id, [item.id]);
+      else if (k === 'voice') await writer.voice(active.id, { main: item.id, extras: [] });
+      else if (k === 'cg') await writer.cg(active.id, [item.id]);
+      else {
+        const now = await debugApi.getCardScenePacks(active.id);
+        await writer.scene(active.id, k === 'bg' ? { bg: [item.id], bgm: now.bgm } : { bg: now.bg, bgm: [item.id] });
+      }
+      forgetCardBackgrounds([active.id]);
+      reloadAfterChange(k);
+      notify('ok', `「${active.name}」现在用「${item.name}」了`);
+    } catch (e) {
+      notify('error', `换失败: ${errText(e)}`);
+    } finally {
+      setUsingForActive(false);
     }
   };
 
@@ -603,6 +654,7 @@ export function AssetLibrary(props: AssetLibraryProps) {
           cleaning={cleaning}
           onClean={() => setDialog({ kind: 'clean' })}
           onCollapse={() => togglePanel('left')}
+          embedded={embedded}
           actions={kind === 'voice' ? voiceActions : undefined}
         />
         {/* 收起的那栏换成竖条;分隔线浮在栏和中间的交界上(都只在宽屏有,library.css) */}
@@ -632,6 +684,11 @@ export function AssetLibrary(props: AssetLibraryProps) {
                     onSelect={select}
                     onOpenJob={(jobId) => onRoute({ tab: 'jobs', id: jobId })}
                     menu={menu}
+                    active={props.activeCard ?? null}
+                    activeBound={props.activeCard ? selected.card_ids.includes(props.activeCard.id) : false}
+                    usingActive={usingForActive}
+                    onUseForActive={() => void giveToActive(kind, selected)}
+                    embedded={embedded}
                   />
                 }
               />
@@ -670,7 +727,9 @@ export function AssetLibrary(props: AssetLibraryProps) {
                 </main>
                 <Inspector label={info.pack}>
                   <p className="st-inspector-hint">
-                    这里按包列出库里所有的{info.pack},不管绑在哪张卡上。选一个直接在中间改;「绑定到角色卡…」决定哪些卡用它。
+                    {embedded
+                      ? `这里按包列出库里所有的${info.pack},不管谁在用。选一个直接在中间改;点「给她用」就把她现在用的整个换成它。`
+                      : `这里按包列出库里所有的${info.pack},不管绑在哪张卡上。选一个直接在中间改;「绑定到角色卡…」决定哪些卡用它。`}
                   </p>
                 </Inspector>
               </>
@@ -688,47 +747,52 @@ export function AssetLibrary(props: AssetLibraryProps) {
     );
   }
 
+  // 游戏菜单里:挂到 body 上的浮层(说明、「⋯」菜单、弹窗)也要是纸,带上菜单现在的主题(studio/ui.tsx 的 LayerSkin)
+  const skin = embedded ? `st-paper ${popThemeClass(currentPaperTheme())}` : '';
+
   return (
-    <div
-      ref={root}
-      className={`st-root lib-root${embedded ? ' lib-embedded' : ''}${kind ? ` st-panels${panels.leftOpen ? '' : ' left-collapsed'}${panels.rightOpen ? '' : ' right-collapsed'}` : ''}`}
-      style={kind ? panels.style : undefined}
-      role={embedded ? undefined : 'dialog'}
-      aria-modal={embedded ? undefined : true}
-      aria-label={embedded ? undefined : '素材管理'}
-      tabIndex={embedded ? undefined : -1}
-    >
-      {header}
-      {props.notice && (
-        <ImportBanner notice={props.notice} onClose={() => props.onNoticeClose?.()} onClassify={classify} />
-      )}
-      <div className="st-body">{body}</div>
-      {kind && dialog && renderDialog(kind)}
-      {dialog?.kind === 'voiceImport' && (
-        <VoiceImportDialog
-          connections={ttsConns}
-          names={voiceNames}
-          onDone={(p) => void voiceImported(p)}
-          onCancel={() => setDialog(null)}
-        />
-      )}
-      {dialog?.kind === 'clean' && (
-        <ConfirmDialog
-          title="清理没人用的文件?"
-          confirmLabel="清理"
-          body={
-            <>
-              <p className="st-dialog-p">
-                删掉包、差分以后,文件还留在仓库里。清理会把没有任何包、卡和备份用到的文件挪进回收区,30 天后才真删;刚放进来不到一天的先留着。
-              </p>
-              <p className="st-dialog-p">要把整个库过一遍,可能要等一会儿。</p>
-            </>
-          }
-          onConfirm={() => void clean()}
-          onCancel={() => setDialog(null)}
-        />
-      )}
-    </div>
+    <LayerSkin.Provider value={skin}>
+      <div
+        ref={root}
+        className={`st-root lib-root${embedded ? ' lib-embedded' : ''}${kind ? ` st-panels${panels.leftOpen ? '' : ' left-collapsed'}${panels.rightOpen ? '' : ' right-collapsed'}` : ''}`}
+        style={kind ? panels.style : undefined}
+        role={embedded ? undefined : 'dialog'}
+        aria-modal={embedded ? undefined : true}
+        aria-label={embedded ? undefined : '素材管理'}
+        tabIndex={embedded ? undefined : -1}
+      >
+        {header}
+        {props.notice && (
+          <ImportBanner notice={props.notice} onClose={() => props.onNoticeClose?.()} onClassify={classify} />
+        )}
+        <div className="st-body">{body}</div>
+        {kind && dialog && renderDialog(kind)}
+        {dialog?.kind === 'voiceImport' && (
+          <VoiceImportDialog
+            connections={ttsConns}
+            names={voiceNames}
+            onDone={(p) => void voiceImported(p)}
+            onCancel={() => setDialog(null)}
+          />
+        )}
+        {dialog?.kind === 'clean' && (
+          <ConfirmDialog
+            title="清理没人用的文件?"
+            confirmLabel="清理"
+            body={
+              <>
+                <p className="st-dialog-p">
+                  删掉包、差分以后,文件还留在仓库里。清理会把没有任何包、卡和备份用到的文件挪进回收区,30 天后才真删;刚放进来不到一天的先留着。
+                </p>
+                <p className="st-dialog-p">要把整个库过一遍,可能要等一会儿。</p>
+              </>
+            }
+            onConfirm={() => void clean()}
+            onCancel={() => setDialog(null)}
+          />
+        )}
+      </div>
+    </LayerSkin.Provider>
   );
 
   function renderDialog(k: LibraryKind) {

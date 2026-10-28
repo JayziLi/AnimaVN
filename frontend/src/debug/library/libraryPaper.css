@@ -1,0 +1,897 @@
+/* ══════════ 局内菜单里的「素材」页换成纸面三栏(界面统一 U27 / U28,设计稿 docs/design/unify/tools.html #a、kit/creator.css) ══════════
+   只管 embedded(.lib-embedded,AssetLibrary 嵌在菜单面板里)和挂到 body 上的浮层(.st-paper:说明、「⋯」菜单、弹窗,studio/ui.tsx 的 LayerSkin):
+   调试台网页里的素材管理页不带这两个类,一点不变。
+   10-27 起卡编辑器(全屏,studio.css)也照设计稿 studio.html C 换纸面:它的根上挂 .st-studio,这里的规则对它一样生效。
+   和卡编辑器共用的编辑器(studio/editors、studio.css)只在这里换皮:结构、类名都不动。
+   规矩(用户 10-25 定的):
+     纸跟设置里的「主题」(白 / 黑 / 玻璃,--av-paper / --av-ink / --av-dim / --av-hair 这套,见 vn/theme.css);
+     选中不跟角色色:纸上一块白纸浮起 + 墨色细线;不胶囊、不发光、不装饰数字;
+     差分入场动效叫「动作 / 漫符 / 音效」。
+   颜色变量 vnEmbedPaper.css 已经把 .vn-embed 里的调试台变量换成纸面的,这里把它们再校准一次(淡字用 --av-dim 66%、选中用墨色),
+   并补上 studio.css / voiceEditor.css / cgPackEditor.css 里写死的白色半透明、红色、阴影。 */
+
+/* ── 颜色变量:菜单里的页 + 挂到 body 上的浮层(它们不在 .vn-embed 里,要自己带一份) ── */
+
+.vn-embed .st-root.lib-embedded,
+.st-root.st-studio,
+.st-paper {
+  --bg: var(--av-paper);
+  --bg-panel: transparent;
+  --bg-raised: var(--av-paper);
+  --bg-hover: var(--av-hair-2);
+  --border: var(--av-hair);
+  --border-strong: color-mix(in srgb, var(--av-ink) 24%, transparent);
+  --text: var(--av-ink);
+  --text-body: var(--av-ink-2);
+  --text-dim: var(--av-ink-2);
+  --text-faint: var(--av-dim);
+  /* 选中 / 主按钮 / 开关:墨色(.vn-library-embed 原来给的是 #e8e8e8,白纸上看不见) */
+  --accent: var(--av-ink);
+  --accent-dim: var(--av-hair);
+  --danger: var(--av-bad-ink, #b4483c);
+  --st-amber: var(--av-warn-ink, #8d6219);
+  --mono: var(--av-mono, monospace);
+  /* 白纸浮起:白天是纯白,夜纸 / 玻璃是比纸亮一档的那格 */
+  --lib-lift: #fff;
+  --lib-lift-shadow: 0 1px 3px rgba(30, 24, 48, 0.1), 0 0 0 1px var(--av-hair-2);
+  /* 墨底上的字 / 圆钮:纸色(玻璃的纸是半透明的,当字色看不见,换实心的深色) */
+  --lib-on-ink: var(--av-paper);
+  color: var(--av-ink);
+  font-family: var(--av-sans);
+}
+.is-glass .st-root.lib-embedded,
+.st-paper.is-glass {
+  --lib-on-ink: var(--av-solid, rgb(24, 26, 38));
+}
+.av-night .st-root.lib-embedded,
+.st-paper.av-night {
+  --lib-lift: var(--av-paper-3);
+  --lib-lift-shadow: 0 1px 3px rgba(0, 0, 0, 0.28), 0 0 0 1px var(--av-hair-2);
+}
+/* 挂到 body 上的浮层:纸本身(白天白、黑夜深、玻璃实心) */
+.st-paper {
+  --bg: var(--av-paper);
+  --bg-raised: var(--av-paper-2);
+}
+.st-paper.is-glass {
+  --bg: var(--av-solid, rgb(24, 26, 38));
+  --bg-raised: var(--av-solid, rgb(24, 26, 38));
+}
+
+/* ── 外壳:铺满面板的内容区,不是一块灰底卡 ── */
+
+.vn-embed .lib-embedded {
+  border-radius: 0;
+  background: transparent;
+  font-size: 13px;
+  /* 立绘页的实机预览缩到 460 宽(16:9 → 高 259),下面的差分格子才放得下 */
+  --st-stage-max-h: 259px;
+}
+/* 设计稿 .tl-atop:44 高 + 8 空,页签那条自己带一道细线(只到最后一个页签),下面三栏顶上再一道 */
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-header {
+  height: 52px;
+  gap: 10px;
+  align-items: flex-end;
+  padding: 0 0 8px;
+  border-bottom: 1px solid var(--av-hair);
+  background: transparent;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-header > :is(.lib-search, .lib-import) {
+  margin-bottom: 6px;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-body {
+  background: transparent;
+}
+
+/* 页签:纸上的字 + 一条墨色下划线,不是圆角块 */
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-tabs {
+  align-self: flex-end;
+  height: 37px;
+  gap: 24px;
+  margin-left: 0;
+  border-bottom: 1px solid var(--av-hair);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-tab {
+  gap: 7px;
+  align-items: center;
+  padding: 0;
+  color: var(--av-dim);
+  font-family: var(--av-serif);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-tab > .st-icon {
+  width: 17px;
+  height: 17px;
+  margin-right: -1px;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-tab:hover,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-tab[aria-current='page'] {
+  color: var(--av-ink);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-tab[aria-current='page'] {
+  font-weight: 600;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-tab[aria-current='page']::after {
+  bottom: -1px;
+  height: 2px;
+  background: var(--av-ink);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-tab > .st-icon,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-tab[aria-current='page'] > .st-icon {
+  color: inherit;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-tab-count {
+  position: relative;
+  top: 2px;
+  color: var(--av-dim);
+  font: 500 12px/1 var(--av-latin);
+  font-variant-numeric: lining-nums tabular-nums;
+  letter-spacing: 0;
+}
+
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-search {
+  width: 240px;
+  border-radius: var(--av-r-btn, 7px);
+  border-color: var(--av-hair);
+  background: var(--av-paper);
+  color: var(--av-dim);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-search:focus-within {
+  border-color: var(--av-ink-2);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-search > input {
+  color: var(--av-ink);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-search > input::placeholder {
+  color: var(--av-dim);
+}
+/* 「导入」是普通的纸色按钮(设计稿 .tl-import),墨色主按钮留给页头「给她用」 */
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-import .st-btn.st-btn-primary {
+  border-color: var(--av-hair);
+  background: var(--av-paper);
+  color: var(--av-ink);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-import .st-btn.st-btn-primary:hover:not(:disabled) {
+  background: var(--av-paper-2);
+}
+
+/* ── 按钮:墨色主按钮、纸色次按钮;不胶囊、不发光 ── */
+
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-btn,
+.st-paper .st-btn {
+  border-radius: var(--av-r-btn, 7px);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-btn-primary,
+.st-paper .st-btn-primary {
+  border-color: var(--av-ink);
+  background: var(--av-ink);
+  color: var(--lib-on-ink);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-btn-primary:hover:not(:disabled),
+.st-paper .st-btn-primary:hover:not(:disabled) {
+  background: var(--av-ink-2);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-btn-secondary,
+.st-paper .st-btn-secondary {
+  border-color: var(--av-hair);
+  background: var(--av-paper);
+  color: var(--av-ink);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-btn-secondary:hover:not(:disabled),
+.st-paper .st-btn-secondary:hover:not(:disabled) {
+  background: var(--av-paper-2);
+  border-color: var(--border-strong);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-btn-ghost:hover:not(:disabled),
+.st-paper .st-btn-ghost:hover:not(:disabled) {
+  background: var(--av-hair-2);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-btn-danger:hover:not(:disabled),
+.st-paper .st-btn-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--av-bad) 10%, transparent);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-btn-danger.armed,
+.st-paper .st-btn.st-btn-danger-solid {
+  border-color: color-mix(in srgb, var(--av-bad) 45%, transparent);
+  background: color-mix(in srgb, var(--av-bad) 12%, transparent);
+}
+.st-paper .st-btn.st-btn-danger-solid:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--av-bad) 20%, transparent);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-btn:focus-visible,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-iconbtn:focus-visible,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-tab:focus-visible,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-link:focus-visible,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-row:focus-visible,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-face-tile:focus-visible,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-face-add:focus-visible,
+.st-paper .st-btn:focus-visible,
+.st-paper .st-menu-item:focus-visible {
+  outline: 1.5px solid var(--av-ctl, var(--av-ink));
+  outline-offset: 2px;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-iconbtn,
+.st-paper .st-iconbtn {
+  border-radius: var(--av-r-btn, 7px);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-iconbtn.filled {
+  border-color: var(--av-hair);
+  background: var(--av-paper);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-iconbtn:hover:not(:disabled) {
+  background: var(--av-hair-2);
+  color: var(--av-ink);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-link {
+  text-decoration-color: var(--av-faint);
+}
+
+/* ── 左栏:包列表 ── */
+
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-aside {
+  border-right: 1px solid var(--av-hair);
+  background: transparent;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-aside-head {
+  gap: 8px;
+  min-height: 30px;
+  margin-top: 12px;
+  padding: 0 12px 0 4px;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-aside-title {
+  font: 700 14.5px/1.2 var(--av-serif);
+  letter-spacing: 0.18em;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-aside-count {
+  font: 500 12px/1 var(--av-latin);
+  font-variant-numeric: lining-nums tabular-nums;
+  color: var(--av-dim);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-sort {
+  height: 32px;
+  border-radius: var(--av-r-btn, 7px);
+  color: var(--av-ink-2);
+}
+/* 设计稿的三栏没有收起键(左右栏宽是定的);拖宽的分隔线还在 */
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-panel-collapse {
+  display: none;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-sort:hover,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-sort:focus-within {
+  background: var(--av-hair-2);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-sort > .st-icon {
+  color: var(--av-dim);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-aside-actions {
+  padding: 0 10px 10px 0;
+}
+
+/* 筛选:一小条分段开关,选中的是浮起的白纸,不是胶囊 */
+/* 筛选:组件库 .av-seg(纸色底 + 一圈淡线,选中的是浮起的白纸) */
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-chips {
+  align-self: flex-start;
+  flex-wrap: nowrap;
+  gap: 2px;
+  margin: 6px 0 8px;
+  padding: 3px;
+  border-radius: var(--av-r-btn, 7px);
+  background: var(--av-paper-2);
+  box-shadow: inset 0 0 0 1px var(--av-hair-2);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-chip {
+  height: 26px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 5px;
+  color: var(--av-dim);
+  font: 500 12px/26px var(--av-sans);
+  letter-spacing: 0.04em;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-chip:hover {
+  color: var(--av-ink);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-chip[aria-pressed='true'] {
+  background: var(--lib-lift);
+  box-shadow: var(--lib-lift-shadow);
+  color: var(--av-ink);
+}
+
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-list {
+  padding: 0 12px 0 0;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-row {
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: var(--av-r-btn, 7px);
+  color: var(--av-ink);
+  transition:
+    background var(--av-t-fast, 0.16s),
+    box-shadow var(--av-t-fast, 0.16s);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-row:hover {
+  background: var(--av-hair-2);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-row.selected {
+  background: var(--lib-lift);
+  box-shadow: var(--lib-lift-shadow);
+  color: var(--av-ink);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-row.selected::before {
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--av-ink);
+}
+/* 行首:按脸裁的圆头像(设计稿 .tl-face 40px,白边 + 一点影子);背景 / CG 的缩略图还是方的 */
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-row-thumb {
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  background: var(--av-paper-3);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-row-thumb.sprite {
+  border-radius: 50%;
+  object-fit: cover;
+  object-position: 50% 6%;
+  box-shadow:
+    0 0 0 1.5px #fff,
+    0 1px 4px rgba(30, 24, 48, 0.2);
+}
+.av-night .lib-embedded .lib-row-thumb.sprite {
+  box-shadow:
+    0 0 0 1.5px rgba(255, 255, 255, 0.5),
+    0 1px 4px rgba(0, 0, 0, 0.3);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-row-text {
+  gap: 2px;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-row-title {
+  font: 600 13px/1.3 var(--av-serif);
+  letter-spacing: 0.04em;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-row-sub {
+  font: 12px/13.2px var(--av-sans);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-row-bound {
+  font: 12px/1 var(--av-sans);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-row-sub,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-row-bound,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-list-empty {
+  color: var(--av-dim);
+}
+/* 没绑任何卡的:警告墨色字,和设计稿的「未绑定」一样 */
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-row-bound.none {
+  color: var(--av-warn-ink);
+}
+
+/* 底部占用空间(设计稿 .tl-lfoot):「占用空间」宋体小字、总数、一条 6px 的条(这一类用控件色)、一行小字 */
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-foot {
+  gap: 0;
+  margin-right: 12px;
+  padding: 10px 4px 2px;
+  border-top: 1px solid var(--av-hair);
+  color: var(--av-ink);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-foot-row:first-child > span:first-child {
+  font: 600 12px/1 var(--av-serif);
+  letter-spacing: 0.14em;
+  color: var(--av-dim);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-foot-total {
+  color: var(--av-ink);
+  font-size: 14px;
+  font-weight: 600;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-bar {
+  margin: 8px 0 7px;
+  border-radius: 3px;
+  background: var(--av-hair);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-bar > span {
+  background: var(--av-ctl);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-foot-row:last-child {
+  font-size: 11.5px;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-foot-key {
+  display: none;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-foot-note {
+  color: var(--av-ink);
+}
+
+/* ── 中间:选中的包 ── */
+
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-main {
+  gap: 10px;
+  padding: 14px 18px 12px;
+  background: transparent;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-head {
+  min-height: 34px;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-head > .st-iconbtn,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-head .st-more > .st-iconbtn {
+  width: 32px;
+  height: 32px;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-head-name {
+  font-family: var(--av-serif);
+  font-size: 20px;
+  letter-spacing: 0.12em;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-head-sub {
+  color: var(--av-dim);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-link.lib-card-link {
+  color: var(--av-ink-2);
+  font-size: 12px;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-link.lib-card-link:hover {
+  color: var(--av-ink);
+}
+/* 页头「给她用」已经在用:不填色、墨字,和设计稿 .tl-inuse 一样 */
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-head .st-btn-secondary:disabled {
+  opacity: 1;
+  background: transparent;
+  border-color: var(--av-hair);
+  color: var(--av-ink);
+  cursor: default;
+}
+
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-grid-head {
+  align-items: baseline;
+  margin-top: 2px;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-grid-title {
+  font: 700 14.5px/1.2 var(--av-serif);
+  letter-spacing: 0.2em;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-grid-note {
+  color: var(--av-dim);
+}
+
+/* 实机预览舞台:靠左(设计稿 .tl-stage),小牌子是方角小块(不胶囊),样子在 vn/ui/stage.css */
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-stage {
+  margin-inline: 0;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) :is(.st-stage-pill, .st-stage-chip, .st-stage-toggles, .st-stage-bgm) {
+  border-radius: 6px;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-stage-toggle {
+  border-radius: 4px;
+}
+
+/* ── 表情差分格子:白纸小块,选中 = 墨色细线 + 浮起;能拖动排序 ── */
+
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-faces {
+  grid-template-columns: repeat(auto-fill, minmax(68px, 1fr));
+  gap: 6px;
+  padding-bottom: 14px;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-face-tile {
+  gap: 3px;
+  padding: 4px 3px 5px;
+  border-radius: var(--av-r-btn, 7px);
+  background: var(--av-paper);
+  box-shadow: 0 0 0 1px var(--av-hair);
+  color: var(--av-ink-2);
+  font: 500 11.5px/1.2 var(--av-sans);
+  transition:
+    box-shadow var(--av-t-fast, 0.16s),
+    opacity var(--av-t-fast, 0.16s);
+}
+.av-night .lib-embedded .st-face-tile {
+  background: var(--av-paper-2);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-face-tile:hover {
+  background: var(--av-paper);
+  box-shadow: 0 0 0 1px var(--av-faint);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-face-tile.selected {
+  background: var(--lib-lift);
+  box-shadow:
+    0 0 0 2px var(--av-sel, var(--av-ink)),
+    0 4px 12px rgba(30, 24, 48, 0.14);
+  color: var(--av-ink);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-face-label {
+  font: inherit;
+  line-height: 1.2;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-face-tile.selected .st-face-label {
+  font-weight: 700;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-face-56 {
+  width: 58px;
+  height: 58px;
+  border-radius: 5px;
+  background: var(--av-paper-3);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-face {
+  background: var(--av-paper-3);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-face-tile.drop-before::after,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-face-tile.drop-after::after {
+  background: var(--av-ink);
+}
+/* 角标(设计稿 .tl-tile .bd):纸色小方块 + 一圈细线;默认差分 ★ 在右上(墨色),入场动效 ✦ 在左上(控件色) */
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-face-badge {
+  right: 6px;
+  top: 6px;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  background: var(--av-paper);
+  box-shadow: 0 0 0 1px var(--av-hair);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-face-badge.star {
+  color: var(--av-ink);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-face-badge.fx {
+  left: 6px;
+  right: auto;
+  color: var(--av-ctl);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-face-off {
+  top: 26px;
+  border-radius: 3px;
+  background: var(--av-ink);
+  color: var(--lib-on-ink);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-face-tile.uploading.fail {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--av-bad) 55%, transparent);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-face-progress {
+  top: 16px;
+  border-radius: 4px;
+  background: var(--av-paper);
+  box-shadow: 0 0 0 1px var(--av-hair);
+  color: var(--av-ink);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-face-add {
+  min-height: 84px;
+  border: 1px solid var(--av-faint);
+  border-radius: var(--av-r-btn, 7px);
+  color: var(--av-dim);
+  font-size: 11.5px;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-face-add:hover {
+  border-color: var(--av-ink-2);
+  color: var(--av-ink);
+}
+
+/* ── 右栏:改这一张 ── */
+
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-inspector {
+  border-left: 1px solid var(--av-hair);
+  background: transparent;
+}
+/* 右栏(设计稿 .tl-icol / .tl-ih / .tl-isc):左边一道细线,页头下一道细线,段落之间不再画线 */
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-inspector-head {
+  margin: 14px 0 0 18px;
+  padding: 0 0 12px;
+  border-bottom: 1px solid var(--av-hair);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-inspector-body {
+  padding: 0 10px 12px 18px;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-inspector-foot {
+  margin-left: 18px;
+  padding: 10px 0 0;
+  border-top: 1px solid var(--av-hair);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-ihead-title {
+  font-family: var(--av-serif);
+  font-size: 19px;
+  letter-spacing: 0.16em;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-ihead-media,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-face.st-ihead-media {
+  border-radius: 6px;
+  background: var(--av-paper-3);
+  box-shadow: 0 0 0 1px var(--av-hair);
+}
+/* 差分页头:按脸裁的圆头像 56(白边 + 一点影子) */
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-face.st-ihead-media {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 1.5px #fff,
+    0 1px 4px rgba(30, 24, 48, 0.2);
+}
+.av-night .lib-embedded .st-face.st-ihead-media {
+  box-shadow:
+    0 0 0 1.5px rgba(255, 255, 255, 0.5),
+    0 1px 4px rgba(0, 0, 0, 0.3);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-ihead-badge {
+  color: var(--av-dim);
+  font-size: 11.5px;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-section,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-section.first {
+  min-height: 30px;
+  margin: 12px 0 6px;
+  padding: 0;
+  border-top: 0;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-section-title {
+  font: 700 14.5px/1.2 var(--av-serif);
+  letter-spacing: 0.2em;
+}
+/* 字段名(设计稿 .tl-fl):宋体 600 13px 墨色 */
+:is(.vn-embed .lib-embedded, .st-root.st-studio) :is(.st-label, .st-row-label, .st-switch-label) {
+  font: 600 13px/1.3 var(--av-serif);
+  letter-spacing: 0.08em;
+  color: var(--av-ink);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-row-label {
+  width: 58px;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-row {
+  gap: 6px;
+  margin-bottom: 6px;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-inspector-body .st-textarea {
+  min-height: 60px;
+}
+/* 「?」照组件库 .av-help:一圈淡线、拉丁数字字体 */
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-help {
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--av-faint);
+  font: 600 12px/1 var(--av-latin);
+  color: var(--av-dim);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-ihead-input {
+  border-radius: var(--av-r-btn, 7px);
+  border-color: var(--av-ink-2);
+  background: var(--av-paper);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-ihead-name:hover {
+  text-decoration-color: var(--av-faint);
+}
+
+/* 收起的竖条、拖宽的分隔线 */
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-rail {
+  color: var(--av-dim);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-rail:hover {
+  color: var(--av-ink);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-rail.left,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-rail.right {
+  border-color: var(--av-hair);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-resizer:hover::after,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-resizer.dragging::after {
+  background: var(--av-hair);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-panel-collapse {
+  border-radius: var(--av-r-btn, 7px);
+  color: var(--av-dim);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-panel-collapse:hover {
+  background: var(--av-hair-2);
+  color: var(--av-ink);
+}
+
+/* ── 输入、下拉、开关、滑块、小标签 ── */
+
+:is(.vn-embed .lib-embedded, .st-root.st-studio) :is(.st-textarea, .st-input, .st-tag-input, .st-num, .st-select),
+.st-paper :is(.st-textarea, .st-input, .st-tag-input, .st-num, .st-select) {
+  border-color: var(--av-hair);
+  border-radius: var(--av-r-btn, 7px);
+  background: var(--av-paper);
+  color: var(--av-ink);
+}
+.st-paper.is-glass :is(.st-textarea, .st-input, .st-tag-input, .st-num, .st-select) {
+  background: var(--av-hair-2);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) :is(.st-textarea, .st-input, .st-tag-input, .st-num):focus,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-select:focus-within,
+.st-paper :is(.st-textarea, .st-input, .st-tag-input, .st-num):focus {
+  border-color: var(--av-ink-2);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-select:hover {
+  border-color: var(--border-strong);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-select option,
+.st-paper .st-select option {
+  background: var(--av-paper);
+  color: var(--av-ink);
+}
+/* 别名小签(设计稿 .av-chip):22 高、纸色底、圆角 4 */
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-tag {
+  height: 22px;
+  border-radius: 4px;
+  background: var(--av-paper-2);
+  box-shadow: inset 0 0 0 1px var(--av-hair-2);
+  font: 500 12px/1 var(--av-sans);
+  letter-spacing: 0.04em;
+  color: var(--av-ink-2);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-tag-x {
+  width: 16px;
+  height: 16px;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-tag-x:hover {
+  background: var(--av-hair);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) :is(.st-tag-add, .st-tag-input) {
+  height: 22px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-tag-add {
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--av-hair);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-chip,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-type {
+  border-radius: 5px;
+  background: var(--av-hair-2);
+  color: var(--av-ink-2);
+}
+/* 「默认差分」这类强调小签:组件库 .av-chip.acc(控件色字 + 浅底,不带图标) */
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-chip.strong {
+  height: 19px;
+  padding: 0 8px;
+  border-radius: 4px;
+  background: var(--av-acc-soft, var(--av-hair));
+  color: var(--av-acc-deep, var(--av-ink));
+  font: 500 12px/1 var(--av-sans);
+  letter-spacing: 0.04em;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-chip.strong > .st-icon {
+  display: none;
+}
+/* 开关:组件库 .av-switch(40×22、圆角方框、开着是控件色,白色方钮) */
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-switch {
+  width: 40px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--av-paper-3);
+  box-shadow: inset 0 0 0 1px var(--av-hair);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-switch.on {
+  background: var(--av-ctl);
+  box-shadow: none;
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-switch-knob,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-switch.on .st-switch-knob {
+  left: 3px;
+  top: 3px;
+  border-radius: 4px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(20, 20, 40, 0.25);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-switch.on .st-switch-knob {
+  transform: translateX(18px);
+}
+
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-range::-webkit-slider-thumb {
+  border-color: var(--lib-on-ink);
+  background: var(--av-ink);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-range::-moz-range-thumb {
+  border-color: var(--lib-on-ink);
+  background: var(--av-ink);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-range::-webkit-slider-runnable-track {
+  background: linear-gradient(to right, var(--av-ink-2) var(--pct), var(--border-strong) var(--pct));
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-empty,
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-pending {
+  border-radius: var(--av-r-panel, 8px);
+  border-color: var(--av-hair);
+}
+:is(.vn-embed .lib-embedded, .st-root.st-studio) .st-empty-icon {
+  border-radius: var(--av-r-btn, 7px);
+  background: var(--av-hair-2);
+}
+
+/* ── 挂到 body 上的浮层:「?」说明、「⋯」菜单、弹窗 ── */
+
+.st-paper.st-tip {
+  border-color: var(--av-hair);
+  background: var(--av-paper-3, var(--av-paper));
+  box-shadow: var(--av-shadow-card, 0 8px 24px rgba(60, 50, 70, 0.18));
+  color: var(--av-ink);
+}
+.st-paper.is-glass.st-tip {
+  background: var(--av-solid, rgb(24, 26, 38));
+}
+.st-paper.st-menu {
+  border-color: var(--av-hair);
+  border-radius: var(--av-r-panel, 8px);
+  background: var(--av-paper);
+  box-shadow: var(--av-shadow-float, 0 18px 48px rgba(30, 24, 48, 0.22));
+  color: var(--av-ink);
+}
+.st-paper.is-glass.st-menu {
+  background: var(--av-solid, rgb(24, 26, 38));
+}
+.st-paper .st-menu-item {
+  border-radius: 5px;
+  color: var(--av-ink);
+}
+.st-paper .st-menu-item:hover:not(:disabled),
+.st-paper .st-menu-item:focus-visible {
+  background: var(--av-hair-2);
+}
+.st-paper .st-menu-item.danger {
+  color: var(--av-bad-ink);
+}
+.st-paper .st-menu-sep {
+  background: var(--av-hair);
+}
+.st-paper.st-modal-backdrop {
+  background: rgba(20, 18, 30, 0.42);
+}
+.st-paper .st-modal {
+  border-color: var(--av-hair);
+  border-radius: var(--av-r-panel, 8px);
+  background: var(--av-paper);
+  box-shadow: var(--av-shadow-float, 0 18px 48px rgba(30, 24, 48, 0.22));
+  color: var(--av-ink);
+}
+.st-paper.is-glass .st-modal {
+  background: var(--av-solid, rgb(24, 26, 38));
+}
+.st-paper .st-modal-title {
+  font-family: var(--av-serif);
+  letter-spacing: 0.08em;
+}
+.st-paper .st-modal-foot,
+.st-paper .st-modal-head {
+  border-color: var(--av-hair);
+}
+
+/* 窄屏(< 900px):三栏上下排,列表一排横着滚;纸上的小卡 */
+@media (max-width: 899px) {
+  /* 顶栏高度交给内容(library.css 的窄屏:页签另起一行占满) */
+  :is(.vn-embed .lib-embedded, .st-root.st-studio) .st-header {
+    height: auto;
+    min-height: 46px;
+    padding: 0 0 0 0;
+  }
+  :is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-tabs {
+    gap: 14px;
+    margin: 0;
+    padding: 0;
+    border-top-color: var(--av-hair);
+  }
+  :is(.vn-embed .lib-embedded, .st-root.st-studio) .st-main {
+    padding: 12px 0;
+  }
+  :is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-aside-head {
+    padding-left: 0;
+  }
+  :is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-row {
+    background: var(--av-paper);
+    box-shadow: 0 0 0 1px var(--av-hair);
+  }
+  :is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-row.selected {
+    background: var(--lib-lift);
+    box-shadow: 0 0 0 1.5px var(--av-ink);
+  }
+  :is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-aside {
+    border-bottom: 1px solid var(--av-hair);
+  }
+  :is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-aside-head,
+  :is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-list,
+  :is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-aside-actions {
+    padding-right: 0;
+  }
+  :is(.vn-embed .lib-embedded, .st-root.st-studio) .lib-chips {
+    margin-left: 0;
+  }
+}

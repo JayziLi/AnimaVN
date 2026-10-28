@@ -17,3 +17,41 @@
   font-weight: 200 900;
   font-display: swap;
 }
+
+/* 宋体(标题、菜单、名字;对话框文字默认也是宋体)和斜体英文小标(Config、Save 这种)。
+   宋体 Noto Serif SC v2.003、英文 Cormorant Garamond v4.001,都从 google/fonts 拿(SIL OFL 1.1,
+   许可证在 public/vn/fonts/LICENSE-*.txt),可变字体取子集(脚本 frontend/scripts/build-serif-font.py),粗细在 CSS 里定:
+     nss-core  —— GB2312 一级 + 界面上用到的字 + 标点、假名、拉丁(约 1.5 MB)
+     nss-extra —— GB2312 二级 + 日文汉字(JIS 第一水准里 GB2312 没有的,気 話 髪 这类)(约 1.6 MB)
+   和圆体一样先用 core,core 里没有的字才去下 extra:封面、菜单只下 core,台词里碰到才下 extra。
+   nss-core 在 debug.html 的 head 里预载(打开页面就开始下,不等它);改文件名时那边一起改。 */
+@font-face {
+  font-family: 'AnimaSerif';
+  src: url('/vn/fonts/nss-extra.woff2') format('woff2');
+  font-weight: 200 900;
+  font-display: swap;
+  unicode-range: U+4E00-9FFF;
+}
+@font-face {
+  font-family: 'AnimaSerif';
+  src: url('/vn/fonts/nss-core.woff2') format('woff2');
+  font-weight: 200 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'AnimaLatin';
+  src: url('/vn/fonts/cormorant.woff2') format('woff2');
+  font-weight: 300 700;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2116, U+2122,
+    U+2190-2193, U+2212, U+2215;
+}
+@font-face {
+  font-family: 'AnimaLatin';
+  src: url('/vn/fonts/cormorant-italic.woff2') format('woff2');
+  font-weight: 300 700;
+  font-style: italic;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2116, U+2122,
+    U+2190-2193, U+2212, U+2215;
+}

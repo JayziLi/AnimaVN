@@ -1,0 +1,644 @@
+/* ══════════ 设置页(VNSettingsPage.tsx)的纸面板 ══════════
+   照设计稿 pages/whole.js / whole.css 的设置页:纸、页头(设置 Config + 这页恢复默认)、顶上一排页签(宋体 + 斜体英文,
+   选中 = 字变深 + 一道墨色细线,「进阶」后面是数据和卡带加的分页)、设置行(settings/settingRow.css)。
+   菜单外壳现在还是旧的深色(第 3 段才换),所以这一页自己带一张纸铺满右边;外壳换成纸面板以后这张纸就是面板本身。
+   纸跟设置 · 外观 · 主题:白 = .av-day、黑 = .av-night、玻璃 = .av-night.is-glass(popThemeClass)。 */
+
+/* 在局内菜单里:页头(设置 Config)是菜单外壳画的(VNMenu),这里只管页签、预览和设置行;内容区左右各让 36(设计稿 .mn-content) */
+.vn-menu-page.page-config .vn-menu-body {
+  position: static;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0 calc(env(safe-area-inset-right) + 36px) 0 36px;
+}
+
+.vn-sp {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  max-width: 1180px;
+  display: flex;
+  flex-direction: column;
+  padding: 24px 32px 0 32px;
+  border-radius: 8px 8px 46px 8px;
+  border: 1px solid var(--av-glass-edge);
+  background: var(--av-paper);
+  color: var(--av-ink);
+  box-shadow: 0 18px 48px rgba(20, 16, 40, 0.28);
+  overflow: hidden;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.vn-sp.is-glass {
+  background: rgba(var(--gl-base), 0.82);
+  border-color: var(--gl-edge);
+}
+
+.vn-sp .av-title-zh {
+  font: 700 24px/1.1 var(--av-serif);
+  letter-spacing: 0.26em;
+}
+.vn-sp .av-title-en {
+  font: italic 500 15px/1 var(--av-latin);
+  letter-spacing: 0.14em;
+  color: var(--av-dim);
+}
+.vn-sp .av-num {
+  font: 500 13px/1 var(--av-latin);
+  letter-spacing: 0.06em;
+  font-variant-numeric: lining-nums tabular-nums;
+  color: var(--av-ink-2);
+}
+.vn-sp .av-select {
+  height: 32px;
+  padding: 0 28px 0 10px;
+  border-radius: var(--av-r-btn);
+  border: 1px solid var(--av-hair);
+  background-color: var(--av-paper-2);
+  background-image: linear-gradient(45deg, transparent 50%, var(--av-dim) 50%),
+    linear-gradient(135deg, var(--av-dim) 50%, transparent 50%);
+  background-position: calc(100% - 15px) 50%, calc(100% - 10px) 50%;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+  color: var(--av-ink);
+  font: 13px/30px var(--av-sans);
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+  transition: border-color 0.16s, box-shadow 0.16s;
+}
+.vn-sp .av-select:focus {
+  border-color: var(--av-ctl);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--av-acc) 35%, transparent);
+}
+.vn-sp .av-select option {
+  background: var(--av-paper);
+  color: var(--av-ink);
+}
+.vn-sp.is-glass .av-select option {
+  background: var(--gl-solid);
+}
+
+.vn-sp-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-height: 34px;
+  margin-bottom: 14px;
+}
+.vn-sp-title {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+}
+.vn-sp-head-r {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* 横向页签:宋体 + 斜体英文;选中 = 字变深 + 下面一道墨色细线(选中不跟角色色) */
+.vn-sp-tabs {
+  flex: none;
+  display: flex;
+  align-items: flex-end;
+  gap: 22px;
+  margin: -2px 0 12px;
+  border-bottom: 1px solid var(--av-hair);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.vn-sp-tabs::-webkit-scrollbar {
+  display: none;
+}
+.vn-sp-tabs > button {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 9px 0 10px;
+  border: 0;
+  background: none;
+  color: var(--av-dim);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.2s;
+}
+.vn-sp-tabs > button::before {
+  content: '';
+  position: absolute;
+  inset: min(0px, calc(50% - var(--av-hit) / 2));
+}
+.vn-sp-tabs > button .zh {
+  font: 600 15px/1 var(--av-serif);
+  letter-spacing: 0.16em;
+}
+.vn-sp-tabs > button.adv .zh {
+  font-size: 13.5px;
+}
+.vn-sp-tabs > button .en {
+  display: none;
+  font: italic 500 12px/1 var(--av-latin);
+  letter-spacing: 0.1em;
+}
+.vn-sp-tabs > button:hover {
+  color: var(--av-ink-2);
+}
+.vn-sp-tabs > button.on {
+  color: var(--av-ink);
+}
+.vn-sp-tabs > button.on::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--av-sel, var(--av-ink));
+}
+.vn-sp-tabs .av-chip.beta {
+  align-self: center;
+  height: 16px;
+}
+.vn-sp-sep {
+  align-self: center;
+  margin: 1px -6px 0 2px;
+  padding-left: 16px;
+  border-left: 1px solid var(--av-hair);
+  font: 600 12px/1 var(--av-serif);
+  letter-spacing: 0.2em;
+  color: var(--av-dim);
+  white-space: nowrap;
+}
+
+/* 页头场景横幅(设计稿 kit/banner.css 的 .av-pbanner,设置页 150 高):纸顶上一张场景图,往下渐隐进纸,
+   左上压一层渐变垫白字;标题改白色,「这页恢复默认」换成纸底;页签落在干净的纸上。只动透明度,换图 0.2s 交叉淡入 */
+.vn-sp-banner {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 150px;
+  overflow: hidden;
+  border-radius: 8px 8px 0 0;
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(180deg, #000 50%, transparent);
+  mask-image: linear-gradient(180deg, #000 50%, transparent);
+}
+.vn-sp-banner img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 42%;
+  animation: av-fade var(--av-t-diff, 0.2s) ease both;
+}
+/* 垫白字的渐变只铺上半截(标题那一段),下半截只剩图自己渐隐 —— 不然深色图淡进白纸那段会发灰 */
+.vn-sp-banner::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 128px;
+  background: linear-gradient(90deg, rgba(14, 14, 26, 0.66) 0, rgba(14, 14, 26, 0.42) 30%, rgba(14, 14, 26, 0.1) 64%, rgba(14, 14, 26, 0)),
+    linear-gradient(180deg, rgba(14, 14, 26, 0.28), rgba(14, 14, 26, 0) 70%);
+  -webkit-mask-image: linear-gradient(180deg, #000 55%, transparent);
+  mask-image: linear-gradient(180deg, #000 55%, transparent);
+}
+.vn-sp.is-glass .vn-sp-banner {
+  -webkit-mask-image: linear-gradient(180deg, #000 34%, rgba(0, 0, 0, 0.55) 62%, transparent);
+  mask-image: linear-gradient(180deg, #000 34%, rgba(0, 0, 0, 0.55) 62%, transparent);
+}
+.vn-sp-head,
+.vn-sp-tabs,
+.vn-sp-page {
+  position: relative;
+}
+.vn-sp.has-banner .vn-sp-head {
+  margin-bottom: 68px;
+}
+.vn-sp.has-banner .vn-sp-head .av-title-zh {
+  color: #fff;
+}
+.vn-sp.has-banner .vn-sp-head .av-title-en {
+  color: rgba(255, 255, 255, 0.94);
+}
+.vn-sp.has-banner .vn-sp-head .av-btn.ghost {
+  background: var(--av-paper);
+  border-color: var(--av-hair);
+  color: var(--av-ink);
+}
+.vn-sp.has-banner.is-glass .vn-sp-head .av-btn.ghost {
+  background: var(--gl-btn);
+}
+.vn-sp.has-banner .vn-sp-head .av-btn.ghost:disabled {
+  opacity: 0.85;
+}
+
+/* 每页自己滚;换页 0.16s 淡入。底部留白用一块空元素(不用 padding),生图的费用条能贴住真正的底边 */
+.vn-sp-page {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--av-faint) transparent;
+  margin: 0 -12px 0 -16px;
+  padding: 4px 12px 0 16px;
+  animation: av-fade var(--av-t-fast, 0.16s) ease both;
+}
+.vn-sp-page::after {
+  content: '';
+  display: block;
+  height: var(--st-pb, 44px);
+}
+.vn-sp-page::-webkit-scrollbar {
+  width: 8px;
+}
+.vn-sp-page::-webkit-scrollbar-thumb {
+  background: var(--av-faint);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+/* U18:生图卡带的行、组标题、分段(Row / Group / Seg)10-25 起换成了内核的行组件,和设置页其余几栏一个样子;
+   卡带里没换的几样(下拉框、输入框、按钮、开关、相册、费用条)还是它自己 imagegen.css 那套深色底写法,
+   纸上先把它们的字色、底色换成墨色 */
+.vn-sp .ig-settings {
+  --vn-text: var(--av-ink);
+  --vn-text-dim: var(--av-dim);
+  --vn-text-faint: var(--av-dim);
+  --vn-border: var(--av-hair);
+  --vn-accent: var(--av-ctl);
+  --vn-accent-ink: var(--av-paper);
+  --vn-miss: var(--av-bad-ink);
+  color: var(--av-ink);
+}
+/* 生图里面再分的小页(画面 / 角色 / 自动出图……):嵌在内容区里,不是页顶那一排,去掉顶层页签的负外边距 */
+.vn-sp .ig-subtabs-paper {
+  margin: 0 0 14px;
+}
+/* 下拉框、输入框、按钮、下拉选项:照旧是黑底半透明(配深色玻璃写的),纸上先换成和旁边 .av-select / .av-btn 一样的浅底深字 */
+.vn-sp .ig-settings :is(.vn-set-select, .ig-input) {
+  background: var(--av-paper-2);
+  border-color: var(--av-hair);
+}
+.vn-sp .ig-settings .vn-pill {
+  background: var(--av-paper-2);
+  border-color: var(--av-hair);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.vn-sp .ig-settings .vn-pill:hover:not(:disabled) {
+  background: var(--av-paper-3);
+}
+.vn-sp .ig-settings select option {
+  background: var(--av-paper);
+  color: var(--av-ink);
+}
+
+@media (max-width: 760px) {
+  .vn-sp {
+    padding: 18px 16px 0;
+    border-radius: 8px;
+  }
+  .vn-sp-page {
+    margin: 0 -4px 0 -4px;
+    padding: 4px 4px 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vn-sp-page {
+    animation: none;
+  }
+}
+
+/* 完整游戏画面等比缩小到右栏,设置列表单独滚动,预览始终可见。 */
+.vn-sp-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.vn-sp-pv {
+  position: relative;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 0;
+  gap: 14px;
+  margin-bottom: 4px;
+}
+.vn-sp-pvh {
+  position: relative;
+  z-index: 2;
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 6px;
+  background: rgba(16, 17, 28, 0.55);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  color: #ecebf2;
+  font: 500 12px/1 var(--av-sans);
+  letter-spacing: 0.04em;
+  pointer-events: none;
+}
+.vn-sp-pvh::before {
+  content: '';
+  width: 10px;
+  height: 10px;
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-10 -10 20 20'%3E%3Cpath d='M0-10C1.1-2.6 2.6-1.1 10 0 2.6 1.1 1.1 2.6 0 10-1.1 2.6-2.6 1.1-10 0-2.6-1.1-1.1-2.6 0-10Z'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-10 -10 20 20'%3E%3Cpath d='M0-10C1.1-2.6 2.6-1.1 10 0 2.6 1.1 1.1 2.6 0 10-1.1 2.6-2.6 1.1-10 0-2.6-1.1-1.1-2.6 0-10Z'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+.vn-sp-pvh .en {
+  display: none;
+}
+.vn-sp-pvh::after {
+  content: '· 改动实时显示';
+}
+.vn-menu.is-glass .vn-sp-pvh {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: rgba(14, 14, 24, 0.66);
+}
+.vn-sp-pvbox {
+  position: relative;
+  flex: none;
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 6px;
+  background: #000;
+  box-shadow:
+    0 0 0 1px var(--av-hair),
+    0 8px 22px rgba(30, 24, 48, 0.16);
+}
+/* 里面是一块真的 1440×810 游戏画面,整块缩小(字按真实比例缩小) */
+.vn-sp-pvbox .vn-live-root {
+  position: absolute;
+  left: 0;
+  top: 0;
+  inset: 0 auto auto 0;
+  z-index: 0;
+  margin: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+.vn-live-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.vn-sp-pvbtns {
+  flex: none;
+  display: flex;
+  gap: 8px;
+}
+/* 「改了马上变」写在左上那枚小牌里了 */
+.vn-sp-pvcap {
+  margin: 0;
+  color: var(--av-dim);
+  font: 12px/1.7 var(--av-sans);
+}
+.vn-sp-content {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  gap: 28px;
+}
+.vn-sp-content > .vn-sp-page {
+  flex: 1;
+  min-width: 0;
+  container-type: inline-size;
+}
+.vn-sp-content > .vn-sp-pv {
+  flex: 0 0 38%;
+  max-width: 420px;
+  align-self: flex-start;
+  padding: 8px 0 20px;
+}
+@media (min-width: 641px) and (max-width: 1000px) {
+  .vn-sp-content { gap: 18px; }
+  .vn-sp-content > .vn-sp-pv { flex-basis: 34%; }
+  .vn-sp-pvbtns { flex-wrap: wrap; }
+}
+@container (max-width: 520px) {
+  .vn-sp .st-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: 4px;
+  }
+  .vn-sp .st-k { grid-column: 1; grid-row: 1; }
+  .vn-sp .st-t { grid-column: 2; grid-row: 1; }
+  .vn-sp .st-c { grid-column: 1 / -1; grid-row: 2; }
+}
+
+/* ---- 在局内菜单的纸面板里:面板已经是纸,也有页头「设置」,这里不再套一张纸卡、不再写一遍标题 ---- */
+.vn-menu .vn-sp {
+  max-width: none;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.vn-menu .vn-sp-title {
+  display: none;
+}
+/* 「这页恢复默认」放在页头右边,和「返回游戏」一行(设计稿 .mn-head-r;页头右边距 164 = 36 + 关闭键那 128) */
+.vn-menu .vn-sp {
+  position: static;
+}
+.vn-menu .vn-sp-head {
+  position: absolute;
+  z-index: 2;
+  top: calc(env(safe-area-inset-top) + 46px);
+  right: calc(env(safe-area-inset-right) + 164px);
+  height: 34px;
+  min-height: 0;
+  margin: 0;
+}
+/* 压在横幅上:透明底换成纸底 */
+.vn-menu-pagein:has(.vn-menu-banner) .vn-sp-head .av-btn.ghost {
+  background: var(--av-paper);
+  border-color: var(--av-hair);
+  color: var(--av-ink);
+}
+.vn-menu.is-glass .vn-menu-pagein:has(.vn-menu-banner) .vn-sp-head .av-btn.ghost {
+  background: var(--gl-btn, var(--gl-solid));
+}
+.vn-menu-pagein:has(.vn-menu-banner) .vn-sp-head .av-btn.ghost:disabled {
+  opacity: 0.85;
+}
+.vn-menu .vn-sp-page {
+  --st-pb: 24px;
+}
+
+/* ══════════ 手机竖屏(≤640px;第 9 段 U35,设计稿 settings.js 的 renderPhoneA / settings.css 的 .ph-*)══════════
+   整屏纸:局内菜单在手机上已经是从下面升起来的一张纸(vn.css 的 640px 段),这一页不再自己画纸、不留左右边,
+   纸面跟「外观 · 主题」(菜单外壳带着同一个主题 class,白 / 黑 / 玻璃)。顶上是菜单的页签,往下依次是:设置页自己的页签(横滑,右边淡出提示还能滑)
+   → 收成一条的实机预览 → 设置行(名字在上、控件在下,settings/settingRow.css)。页头的「这页恢复默认」搬到页尾(VNSettingsPage 的 .vn-sp-foot)。
+   手机上没有悬停:「?」点一下在名字下面展开(SettingRow 里 Help 的 tap 模式)。电脑(>640px)不受影响。 */
+@media (max-width: 640px) {
+  .vn-menu-page.page-config .vn-menu-body {
+    padding: 0 0 env(safe-area-inset-bottom);
+  }
+  .vn-menu .vn-sp-head {
+    display: none;
+  }
+
+  /* 页签:横排可滑,滚动条藏起来;选中 = 字变深 + 一道墨色细线(不跟角色色)。点击区 ≥ 44 高 */
+  .vn-menu .vn-sp-tabs {
+    gap: 20px;
+    margin: 4px 0 0;
+    padding: 0 40px 0 18px;
+    scroll-padding-inline: 20px 52px;
+    border-bottom: 0;
+    box-shadow: inset 0 -1px 0 var(--av-hair);
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 14px, #000 calc(100% - 44px), transparent);
+    mask-image: linear-gradient(to right, transparent, #000 14px, #000 calc(100% - 44px), transparent);
+  }
+  .vn-menu .vn-sp-tabs > button {
+    flex: none;
+    min-height: 44px;
+    padding: 12px 0;
+    align-items: center;
+  }
+  .vn-menu .vn-sp-tabs > button.on::after {
+    bottom: 0;
+  }
+  .vn-menu .vn-sp-tabs .av-chip.beta {
+    font-size: 12px;
+  }
+  .vn-menu .vn-sp-tabs > button .en {
+    display: inline;
+  }
+  /* 手机上的按钮:手指点得到(设计稿手机设置行的按钮 38 高) */
+  .vn-menu .vn-sp .st-ctl .av-btn.sm {
+    height: 38px;
+    padding: 0 14px;
+    font-size: 13.5px;
+  }
+  .vn-menu .vn-sp-sep {
+    flex: none;
+  }
+
+  /* 实机预览:一条(她的圆头像 + 「实机预览」+ 正在播的那句 + 展开),点开是一小块游戏画面 */
+  .vn-sp-pvm {
+    flex: none;
+    margin: 10px 16px 0;
+    border-radius: var(--av-r-bar, 8px);
+    background: var(--av-paper-2);
+    box-shadow: inset 0 0 0 1px var(--av-hair-2);
+  }
+  .vn-sp-pvm-head {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    height: 46px;
+    padding: 0 12px 0 8px;
+    border: 0;
+    background: none;
+    color: var(--av-ink);
+    text-align: left;
+    cursor: pointer;
+  }
+  .vn-sp-pvm-head .av-face {
+    flex: none;
+  }
+  .vn-sp-pvm-head .lb {
+    flex: none;
+    font: 600 12.5px/1 var(--av-serif);
+    letter-spacing: 0.12em;
+  }
+  .vn-sp-pvm-head .ln {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font: 12.5px/1.2 var(--av-serif);
+    color: var(--av-dim);
+  }
+  .vn-sp-pvm-head .tg {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font: 500 12px/1 var(--av-sans);
+    color: var(--av-ink-2);
+  }
+  .vn-sp-pvm-head .tg::after {
+    content: '';
+    width: 5px;
+    height: 5px;
+    border-right: 1.3px solid currentColor;
+    border-bottom: 1.3px solid currentColor;
+    transform: translateY(-2px) rotate(45deg);
+    transition: transform 0.2s var(--av-ease);
+  }
+  .vn-sp-pvm.open .vn-sp-pvm-head .tg::after {
+    transform: translateY(1px) rotate(-135deg);
+  }
+  .vn-sp-pvm-body {
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    transition: grid-template-rows 0.22s var(--av-ease), opacity 0.2s ease;
+  }
+  .vn-sp-pvm.open .vn-sp-pvm-body {
+    grid-template-rows: 1fr;
+    opacity: 1;
+  }
+  .vn-sp-pvm-in {
+    min-height: 0;
+    overflow: hidden;
+  }
+  .vn-sp-pvm.open .vn-sp-pvm-in {
+    border-radius: 0 0 var(--av-r-bar, 8px) var(--av-r-bar, 8px);
+  }
+  .vn-sp-pvm .vn-sp-pvbox {
+    width: min(100%, calc(200px * var(--vn-preview-aspect, 1.7778)));
+    margin-inline: auto;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  /* 设置行:名字在上、控件在下(行的排法在 settings/settingRow.css) */
+  .vn-menu .vn-sp-page {
+    margin: 4px 0 0;
+    padding: 6px 16px 0 22px;
+    --st-pb: 40px;
+  }
+  .vn-sp-foot {
+    display: flex;
+    justify-content: flex-end;
+    padding-top: 18px;
+  }
+}
+
+@media (max-width: 640px) and (prefers-reduced-motion: reduce) {
+  .vn-sp-pvm-body,
+  .vn-sp-pvm-head .tg::after {
+    transition: none;
+  }
+}

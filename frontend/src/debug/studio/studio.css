@@ -214,7 +214,7 @@
   overflow-y: auto;
 }
 
-/* 主区顶上那一行:类型小牌子 + 包页签 + 右边的「⋯」 */
+/* 主区顶上那一行:类型小牌子 + 用哪个包的下拉框 + 右边的「⋯」 */
 .st-slot-bar {
   display: flex;
   align-items: center;
@@ -1075,100 +1075,22 @@ button.st-drop-hint:hover {
   cursor: help;
 }
 
-/* ── 主区顶上:包页签、类型小牌子 ── */
+/* ── 主区顶上:用哪个包的下拉框、类型小牌子 ── */
 
-.st-packtabs {
+.st-swap {
   min-width: 0;
+  flex: 0 1 440px;
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px;
-  border: 1px solid var(--border);
-  border-radius: 13px;
-  background: var(--bg-panel);
-  overflow-x: auto;
-  scrollbar-width: none;
+  gap: 8px;
 }
-.st-packtabs::-webkit-scrollbar {
-  display: none;
-}
-.st-packtab {
-  height: 42px;
+.st-swap-label {
   flex: none;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 0 14px 0 5px;
-  border: 0;
-  border-radius: 10px;
-  background: transparent;
   color: var(--text-dim);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
+  font-size: 12.5px;
 }
-.st-packtab:hover {
-  background: rgba(255, 255, 255, 0.04);
-}
-.st-packtab.selected {
-  background: var(--bg-hover);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-  color: var(--text);
-}
-.st-packtab-thumb {
-  width: 32px;
-  height: 32px;
-  flex: none;
-  border-radius: 8px;
-  object-fit: cover;
-  opacity: 0.75;
-}
-.st-packtab.selected .st-packtab-thumb {
-  opacity: 1;
-}
-.st-packtab-icon {
-  width: 32px;
-  height: 32px;
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--text);
-}
-.st-packtab-text {
-  display: flex;
-  flex-direction: column;
-  line-height: 1.3;
-  white-space: nowrap;
-}
-.st-packtab-name {
-  font-size: 13px;
-}
-.st-packtab.selected .st-packtab-name {
-  font-weight: 500;
-}
-.st-packtab-sub {
-  font-size: 11.5px;
-  color: var(--text-faint);
-}
-.st-packtab-add {
-  width: 42px;
-  height: 42px;
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1.5px dashed var(--border-strong);
-  border-radius: 10px;
-  background: transparent;
-  color: var(--text-dim);
-  cursor: pointer;
-}
-.st-packtab-add:hover {
-  color: var(--text);
-  border-color: var(--text-faint);
+.st-swap > .st-select {
+  height: 36px;
 }
 
 .st-type {
@@ -1260,8 +1182,6 @@ button.st-drop-hint:hover {
 .st-iconbtn:focus-visible,
 .st-tab:focus-visible,
 .st-slotrow:focus-visible,
-.st-packtab:focus-visible,
-.st-packtab-add:focus-visible,
 .st-link:focus-visible,
 .st-menu-item:focus-visible {
   outline: 1.5px solid var(--text-dim);
@@ -1464,26 +1384,6 @@ button.st-drop-hint:hover {
 .st-face.st-ihead-media {
   box-shadow: 0 0 0 1.5px var(--accent);
 }
-/* 包页签里的 32px 小头像 */
-.st-packtab-media {
-  width: 32px;
-  height: 32px;
-  flex: none;
-  display: inline-flex;
-  border-radius: 8px;
-  overflow: hidden;
-  opacity: 0.75;
-}
-.st-packtab.selected .st-packtab-media {
-  opacity: 1;
-}
-/* 包页签、「从素材库选」里:小头像填满外面那个方块 */
-.st-packtab-media > .st-face,
-.st-picker-media > .st-face {
-  width: 100%;
-  height: 100%;
-}
-
 /* 表情差分网格:每格 56px 头像 + 名字,最后一格「添加差分」 */
 .st-faces {
   display: grid;
@@ -1763,18 +1663,7 @@ button.st-drop-hint:hover {
   outline-offset: 1px;
 }
 
-/* 「从素材库选」弹窗 */
-.st-modal.st-picker {
-  width: min(520px, 100%);
-  height: min(620px, calc(100dvh - 32px));
-}
-.st-picker .st-modal-body {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding-bottom: 12px;
-}
+/* 绑定框里的搜索框 */
 .st-picker-search {
   position: relative;
   display: block;
@@ -1792,93 +1681,10 @@ button.st-drop-hint:hover {
   height: 34px;
   padding-left: 32px;
 }
-.st-picker-list {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin: 0 -8px;
-  overflow-y: auto;
-}
-.st-picker-row {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  padding: 7px 10px 7px 8px;
-  border: 0;
-  border-radius: 10px;
-  background: transparent;
-  color: var(--text-faint);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.st-picker-row:hover:not(:disabled) {
-  background: var(--bg-hover);
-  color: var(--text);
-}
-.st-picker-row:focus-visible {
-  outline: 1.5px solid var(--text-dim);
-  outline-offset: -1.5px;
-}
-.st-picker-row.bound {
-  cursor: default;
-  opacity: 0.55;
-}
-.st-picker-media {
-  width: 40px;
-  height: 40px;
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 9px;
-  overflow: hidden;
-  background: var(--bg-hover);
-  color: var(--text-faint);
-}
-.st-picker-text {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-.st-picker-name {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  min-width: 0;
-}
-.st-picker-name .st-chip {
-  height: 20px;
-  padding: 0 7px;
-  font-size: 11px;
-}
-.st-picker-title {
-  min-width: 0;
-  color: var(--text);
-  font-size: 13.5px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.st-picker-sub {
-  color: var(--text-faint);
-  font-size: 12px;
-}
-.st-picker-state {
-  flex: none;
-  font-size: 12px;
-}
 .st-picker-empty {
   padding: 32px 8px;
   color: var(--text-faint);
   text-align: center;
-}
-.st-picker .st-modal-foot {
-  align-items: center;
 }
 
 /* ══════════ 背景栏、BGM 栏(slots/BackgroundSlot、BgmSlot,editors/BackgroundPackEditor、BgmPackEditor) ══════════ */
@@ -1895,12 +1701,6 @@ button.st-drop-hint:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-/* 「从素材库选」里背景包的缩略图:填满 40px 方块 */
-.st-picker-thumb {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
 }
 /* 右栏头:还没传图的背景 */
 .st-ihead-blank {
@@ -2525,12 +2325,12 @@ button.st-drop-hint:hover {
     overflow: visible;
     padding: 12px;
   }
-  /* 类型小牌子和「⋯」一行,包页签另起一行占满 */
+  /* 类型小牌子和「⋯」一行,下拉框另起一行占满 */
   .st-slot-bar {
     flex-wrap: wrap;
     row-gap: 8px;
   }
-  .st-slot-bar > .st-packtabs {
+  .st-slot-bar > .st-swap {
     order: 1;
     flex-basis: 100%;
   }

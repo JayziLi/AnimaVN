@@ -21,7 +21,11 @@
 import { useEffect, useState } from 'react';
 import { debugApi, type ClassifyKind, type ImportApplyBody, type ImportDecision, type ImportPlan, type TtsConnection } from '../lib/api';
 import { Icon, type IconName } from '../studio/icons';
+import { inGame } from '../components/export/inGame';
+import { LayerSkin } from '../studio/layerSkin';
 import { Btn, Modal } from '../studio/ui';
+import { popThemeClass } from '../vn/ui/logic';
+import { currentPaperTheme } from '../vn/vnSettings';
 import type { ImportTarget } from './dropTarget';
 import { ImportBundle } from './ImportBundle';
 import {
@@ -68,7 +72,18 @@ interface Props {
   onConfirm: (body: ImportApplyBody) => void;
 }
 
-export function ImportConfirm({ plan, target, sprites, busy, error, source = null, onCancel, onConfirm }: Props) {
+/** 游戏开着时(画面上有 .vn-root)框是纸(跟设置里的「主题」),和游戏菜单里素材页的弹窗一样(studio/layerSkin);调试台里照旧深色 */
+export function ImportConfirm(props: Props) {
+  const [skin] = useState(() => (inGame() ? `st-paper ${popThemeClass(currentPaperTheme(), true)}` : ''));
+  if (!skin) return <ConfirmBody {...props} />;
+  return (
+    <LayerSkin.Provider value={skin}>
+      <ConfirmBody {...props} />
+    </LayerSkin.Provider>
+  );
+}
+
+function ConfirmBody({ plan, target, sprites, busy, error, source = null, onCancel, onConfirm }: Props) {
   const [decisions, setDecisions] = useState<Record<string, ImportDecision>>(() => defaultDecisions(plan));
   const [classify, setClassify] = useState<Record<string, ClassifyKind | null>>({});
   const [makeCurrent, setMakeCurrent] = useState(false);

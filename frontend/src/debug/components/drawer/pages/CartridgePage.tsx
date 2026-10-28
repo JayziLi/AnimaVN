@@ -7,7 +7,8 @@
 import type { VoiceProfile } from '../../../lib/api';
 import type { CartridgePanel } from '../../../plugins/cartridges';
 import type { DrawerCardFacts } from '../cardView';
-import { PageFooter, PageHead } from '../frame';
+import { PageFooter, PageHead, PageShell } from '../frame';
+import { useDrawerSkin } from '../skinContext';
 import { inUseOf, type PageLinks } from './pageModel';
 
 export function CartridgePage(p: {
@@ -19,20 +20,26 @@ export function CartridgePage(p: {
 }) {
   const { panel, facts, card } = p;
   const name = card?.name || '这张卡';
+  const { game } = useDrawerSkin();
   const studio = panel.studio;
+  // 游戏皮:中间 = 页头 + 卡带自己画的那块;右栏只有底部跳转(设计稿声线分档那页右栏也是空的)
   return (
-    <>
-      <PageHead
-        title={panel.title}
-        beta={panel.beta}
-        tip={panel.tip}
-        inUse={panel.inUse && facts ? inUseOf(name, panel.inUse(facts)) : null}
-        tags={[]}
-      />
-      <div className="dw-cart">
-        {panel.render({ profiles: p.profiles, card, mainVoice: facts?.mainVoice ?? null })}
-      </div>
-      {studio && <PageFooter links={[{ text: `卡编辑器 · ${name}的${studio.label}`, onClick: () => p.links.studio(studio.slot) }]} />}
-    </>
+    <PageShell
+      title={panel.title}
+      head={
+        <PageHead
+          title={panel.title}
+          beta={panel.beta}
+          tip={panel.tip}
+          inUse={panel.inUse && facts ? inUseOf(name, panel.inUse(facts)) : null}
+          tags={[]}
+        />
+      }
+      preview={<div className="dw-cart">{panel.render({ profiles: p.profiles, card, mainVoice: facts?.mainVoice ?? null, game })}</div>}
+      common={null}
+      footer={
+        studio ? <PageFooter links={[{ text: `卡编辑器 · ${name}的${studio.label}`, onClick: () => p.links.studio(studio.slot) }]} /> : null
+      }
+    />
   );
 }

@@ -11,14 +11,20 @@ import { langStatus, type LangStatus, type SendView } from '../../../core/sendPl
 import { textDiff } from '../../../core/textDiff';
 import type { JaHideControls } from '../../../plugins/jaHide';
 import { DEFAULT_LANG_BLOCK_PROMPT, DEFAULT_LANG_BLOCK_PROMPT_JEV, isJaLang, type LangPluginConfig } from '../../../plugins/lang';
+import { useMemo } from 'react';
+import { sceneImageUrl, spriteImageUrl } from '../../../lib/api';
+import { facesByCanvas, type SpriteStage } from '../../../plugins/spriteLayout';
+import { Stage } from '../../../vn/ui/Stage';
 import { SettingRow } from '../../settings/SettingRow';
 import { headTags } from '../cardView';
-import { Advanced, PageFooter, PageHead, Section } from '../frame';
+import { Advanced, PageFooter, PageHead, PageShell, Section } from '../frame';
+import { useDrawerSkin } from '../skinContext';
 import { Tip } from '../Tip';
 import { TIPS } from '../tips';
 import type { CardView } from '../useCardView';
 import { inUseOf, type AdvOpen, type PageLinks } from './pageModel';
 import { TabTitle } from './shared';
+import { usePackLayout } from './stageData';
 import './sendPages.css';
 
 const STATUS_TEXT = { send: '这次发', short: '这次发 · 精简版', skip: '这次不发' } as const;
@@ -57,7 +63,9 @@ function SentText({ status, lang }: { status: LangStatus; lang: SendView['lang']
   if (status.state === 'send') return <div className="dw-send-text">{lang.full}</div>;
   return (
     <div className="dw-send-text">
-      {textDiff(lang.full, lang.short).map((part, i) => (part.kept ? <span key={i}>{part.text}</span> : <Struck key={i} text={part.text} />))}
+      {textDiff(lang.full, lang.short).map((part, i) =>
+        part.kept ? <span key={i}>{part.text}</span> : <Struck key={i} text={part.text} />,
+      )}
     </div>
   );
 }
@@ -90,6 +98,33 @@ function JaHideRow({ jaHide }: { jaHide: JaHideControls }) {
   );
 }
 
+/** 舞台上念的那句(设计稿外语页的示例句):日语原文 + 中文;字幕选「只显示中文」时日语那行不画 */
+const SAMPLE = { ja: 'おかえり。今日も一日、お疲れさま。', zh: '欢迎回来。今天也辛苦啦。' };
+
+/** 游戏皮:实机预览一句台词在游戏里的样子(日中双语 / 只显示中文),背景、立绘用这张卡的第一张 */
+function LangStage({ view, name, stage, showJa }: { view: CardView; name: string; stage: SpriteStage; showJa: boolean }) {
+  const faces = useMemo(() => facesByCanvas(view.sprites), [view.sprites]);
+  const layout = usePackLayout(view.spritePack?.id ?? null);
+  const spr = view.sprites[0] ?? null;
+  const src = spr ? spriteImageUrl(spr) : null;
+  const bg = view.bgs[0] ?? null;
+  const bgSrc = bg ? sceneImageUrl(bg) : null;
+  return (
+    <div className="dw-stagebox">
+      <Stage
+        background={bgSrc ? { src: bgSrc, focus: bg?.focus_x ?? 50 } : null}
+        sprite={src && spr ? { src, face: faces.get(spr.id) ?? null, layout, stage } : null}
+        line={{ speaker: name, text: `「${SAMPLE.zh}」`, ja: showJa ? `「${SAMPLE.ja}」` : undefined }}
+        label={
+          <>
+            实机预览 · <em>{showJa ? '日中双语' : '只显示中文'}</em>
+          </>
+        }
+      />
+    </div>
+  );
+}
+
 export function LangPage(p: {
   view: CardView;
   card: { id: string; name: string } | null;
@@ -101,7 +136,10 @@ export function LangPage(p: {
   jaHide?: JaHideControls;
   links: PageLinks;
   advOpen: AdvOpen;
+  /** 所有角色共用的构图(游戏皮的舞台用) */
+  stage: SpriteStage;
 }) {
+  const { game } = useDrawerSkin();
   const { view, card, config, onChangeConfig, send } = p;
   const facts = view.facts;
   const name = card?.name || '这张卡';
@@ -111,97 +149,113 @@ export function LangPage(p: {
   // 看的就是当前聊天这张卡:照这次的发送计划写
   const current = send !== undefined && send.card !== null && card !== null && send.card.id === card.id;
   const status = current ? langStatus(send.plan, { hasPreset: send.presetName !== null, mainVoiceLang: send.mainVoiceLang }) : null;
-  const inUse = status
-    ? { on: status.state !== 'skip', text: STATUS_TEXT[status.state] }
-    : facts
-      ? inUseOf(name, ja)
-      : null;
+  const inUse = status ? { on: status.state !== 'skip', text: STATUS_TEXT[status.state] } : facts ? inUseOf(name, ja) : null;
 
-  return (
-    <>
-      <PageHead title="外语" inUse={inUse} tags={facts ? headTags('lang', facts, []) : []} tagTip="lang_auto" />
-
-      {send && (
-        <Section
-          title="这次发出去的"
-          tip="preview_lang"
-          right={status && status.state !== 'skip' && status.auto ? <span className="dw-chip">自动补</span> : undefined}
-        >
-          <div className="dw-send-body">
-            {status ? (
-              <SentText status={status} lang={send.lang} />
+  const head = <PageHead title="外语" inUse={inUse} tags={facts ? headTags('lang', facts, []) : []} tagTip="lang_auto" />;
+  const sentBody = (
+    <div className="dw-send-body">
+      {status && send ? (
+        <SentText status={status} lang={send.lang} />
+      ) : (
+        <div className="dw-muted">只看得到当前聊天这张卡{send?.card ? `(${send.card.name})` : ''}的。</div>
+      )}
+    </div>
+  );
+  // 调试台:「这次发出去的」一块放在常用上面;游戏皮(设计稿):中间是舞台,它挪进「高级」第一个页签
+  const sent =
+    send && !game ? (
+      <Section
+        title="这次发出去的"
+        tip="preview_lang"
+        right={status && status.state !== 'skip' && status.auto ? <span className="dw-chip">自动补</span> : undefined}
+      >
+        {sentBody}
+      </Section>
+    ) : null;
+  const common = (
+    <Section title="常用" en="Common">
+      <SettingRow
+        label="字幕"
+        tip="subtitle"
+        control={{
+          kind: 'segmented',
+          options: [
+            { value: 'both', label: '日中双语' },
+            { value: 'zh', label: '只显示中文' },
+          ],
+        }}
+        value={config.showJa ? 'both' : 'zh'}
+        default="both"
+        onChange={(v) => onChangeConfig({ ...config, showJa: v === 'both' })}
+      />
+      {p.jaHide && <JaHideRow jaHide={p.jaHide} />}
+    </Section>
+  );
+  const tabs = [
+    ...(game && send ? [{ id: 'sent', name: '这次发出去的' }] : []),
+    { id: 'block', name: '块的原文', badge: changed ? '改过' : undefined },
+    { id: 'short', name: '精简版原文' },
+  ];
+  const advanced = (
+    <Advanced
+      pageId="lang"
+      open={p.advOpen}
+      tabs={tabs}
+      render={(tab) =>
+        tab === 'sent' ? (
+          <div className="dw-tab-stack">
+            <TabTitle
+              title="这次发出去的"
+              tip="preview_lang"
+              right={status ? <span className="dw-chip">{STATUS_TEXT[status.state]}</span> : undefined}
+            />
+            {sentBody}
+          </div>
+        ) : tab === 'block' ? (
+          <div id="pl-prompt-lang" className="dw-tab-stack">
+            <TabTitle
+              title="「外语指令 · 插件」块的正文"
+              right={
+                <button
+                  type="button"
+                  className="btn small"
+                  disabled={!changed}
+                  onClick={() => onChangeConfig({ ...config, blockPrompt: DEFAULT_LANG_BLOCK_PROMPT })}
+                >
+                  恢复默认模板
+                </button>
+              }
+            />
+            <textarea
+              className="text-input pl-wide pl-textarea"
+              rows={12}
+              value={config.blockPrompt}
+              spellCheck={false}
+              aria-label="外语块的正文"
+              onChange={(e) => onChangeConfig({ ...config, blockPrompt: e.target.value })}
+            />
+          </div>
+        ) : (
+          <div className="dw-tab-stack">
+            <TabTitle title="标签交给 Jev 时发的精简版" tip="lang_short" />
+            {/* 改过的模板:去掉单独一行的标签和讲标签的句子(plugins/jev.ts 的 jevLangPrompt) */}
+            {changed && !send ? (
+              <div className="dw-muted">改过的模板去掉单独一行的标签和讲标签的句子,别的照原文发。</div>
             ) : (
-              <div className="dw-muted">只看得到当前聊天这张卡{send.card ? `(${send.card.name})` : ''}的。</div>
+              <pre className="pl-preview">{changed && send ? send.lang.short : DEFAULT_LANG_BLOCK_PROMPT_JEV}</pre>
             )}
           </div>
-        </Section>
-      )}
-
-      <Section title="常用">
-        <SettingRow
-          label="字幕"
-          tip="subtitle"
-          control={{
-            kind: 'segmented',
-            options: [
-              { value: 'both', label: '日中双语' },
-              { value: 'zh', label: '只显示中文' },
-            ],
-          }}
-          value={config.showJa ? 'both' : 'zh'}
-          default="both"
-          onChange={(v) => onChangeConfig({ ...config, showJa: v === 'both' })}
-        />
-        {p.jaHide && <JaHideRow jaHide={p.jaHide} />}
-      </Section>
-
-      <Advanced
-        pageId="lang"
-        open={p.advOpen}
-        tabs={[
-          { id: 'block', name: '块的原文', badge: changed ? '改过' : undefined },
-          { id: 'short', name: '精简版原文' },
-        ]}
-        render={(tab) =>
-          tab === 'block' ? (
-            <div id="pl-prompt-lang" className="dw-tab-stack">
-              <TabTitle
-                title="「外语指令 · 插件」块的正文"
-                right={
-                  <button
-                    type="button"
-                    className="btn small"
-                    disabled={!changed}
-                    onClick={() => onChangeConfig({ ...config, blockPrompt: DEFAULT_LANG_BLOCK_PROMPT })}
-                  >
-                    恢复默认模板
-                  </button>
-                }
-              />
-              <textarea
-                className="text-input pl-wide pl-textarea"
-                rows={12}
-                value={config.blockPrompt}
-                spellCheck={false}
-                aria-label="外语块的正文"
-                onChange={(e) => onChangeConfig({ ...config, blockPrompt: e.target.value })}
-              />
-            </div>
-          ) : (
-            <div className="dw-tab-stack">
-              <TabTitle title="标签交给 Jev 时发的精简版" tip="lang_short" />
-              {/* 改过的模板:去掉单独一行的标签和讲标签的句子(plugins/jev.ts 的 jevLangPrompt) */}
-              {changed && !send ? (
-                <div className="dw-muted">改过的模板去掉单独一行的标签和讲标签的句子,别的照原文发。</div>
-              ) : (
-                <pre className="pl-preview">{changed && send ? send.lang.short : DEFAULT_LANG_BLOCK_PROMPT_JEV}</pre>
-              )}
-            </div>
-          )
-        }
-      />
-
-      <PageFooter links={[{ text: `卡编辑器 · ${name}的声音`, onClick: () => p.links.studio('voice') }]} />
-    </>
+        )
+      }
+    />
+  );
+  return (
+    <PageShell
+      head={head}
+      preview={game ? <LangStage view={view} name={name} stage={p.stage} showJa={config.showJa} /> : sent}
+      common={common}
+      advanced={advanced}
+      footer={<PageFooter links={[{ text: `卡编辑器 · ${name}的声音`, onClick: () => p.links.studio('voice') }]} />}
+    />
   );
 }

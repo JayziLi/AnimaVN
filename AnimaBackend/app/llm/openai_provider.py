@@ -5,7 +5,7 @@ import openai
 from openai import AsyncOpenAI
 
 from app.llm.base import ChatMessage, LLMProvider, StreamChunk
-from app.llm.errors import LLMError
+from app.llm.errors import LLMError, status_message
 from app.llm.http_client import make_http_client
 from app.llm.thinking import openai_params
 
@@ -13,6 +13,8 @@ from app.llm.thinking import openai_params
 # reasoning_content, OpenRouter uses reasoning, and relays copy whichever they
 # fronted first — so read both rather than betting on one
 REASONING_FIELDS = ("reasoning_content", "reasoning")
+
+DEFAULT_ENDPOINT = "https://api.openai.com/v1"
 
 
 def _reasoning_of(delta: Any) -> str:
@@ -60,32 +62,23 @@ class OpenAICompatibleProvider(LLMProvider):
 
     def _web_page_message(self, status: int) -> str:
         base = (self._base_url or "").rstrip("/")
-        head = f"Base URL 不对：{base or '这个地址'} 返回的是网页，不是 API 接口 ({status})。"
-        if base and not base.endswith("/v1"):
-            return f"{head}OpenAI 兼容类型的地址一般要以 /v1 结尾，试试 {base}/v1"
-        return f"{head}对照服务商文档检查地址"
+        return f"Got a web page instead of an API response from {base or DEFAULT_ENDPOINT} (HTTP {status})"
 
     def _map_error(self, e: Exception) -> LLMError:
-        endpoint = self._base_url or "OpenAI 官方端点"
+        endpoint = self._base_url or DEFAULT_ENDPOINT
+        # 报错只写上游原话和事实,不写建议(界面上直接给用户看)
         # order matters: specific status errors subclass APIStatusError,
         # and APITimeoutError subclasses APIConnectionError
         if isinstance(e, openai.APIStatusError) and _is_web_page(e):
             return LLMError(self._web_page_message(e.status_code), explained=True)
-        if isinstance(e, openai.AuthenticationError):
-            return LLMError("API 密钥无效或已过期 (401)")
-        if isinstance(e, openai.PermissionDeniedError):
-            return LLMError("该密钥没有权限访问此模型 (403)")
-        if isinstance(e, openai.NotFoundError):
-            return LLMError("模型不存在或端点路径不对 (404)——检查模型名，以及 base URL 是否需要以 /v1 结尾")
-        if isinstance(e, openai.RateLimitError):
-            return LLMError("请求被限流 (429)，稍后重试或检查余额")
         if isinstance(e, openai.APIStatusError):
-            return LLMError(f"服务返回错误 {e.status_code}：{e.message}")
+            return LLMError(status_message(e.status_code, e.body if e.body is not None else e.message))
         if isinstance(e, openai.APITimeoutError):
-            return LLMError(f"请求 {endpoint} 超时——服务可能过载或网络不通")
+            return LLMError(f"Request to {endpoint} timed out")
         if isinstance(e, openai.APIConnectionError):
-            return LLMError(f"无法连接到 {endpoint}——检查地址拼写和网络")
-        return LLMError(f"调用失败：{e}")
+            cause = f": {e.__cause__}" if e.__cause__ else ""
+            return LLMError(f"Cannot connect to {endpoint}{cause}")
+        return LLMError(f"Request failed: {e}")
 
     async def complete(self, messages: list[ChatMessage], model: str) -> str:
         try:
@@ -97,7 +90,7 @@ class OpenAICompatibleProvider(LLMProvider):
         except Exception as e:
             raise self._map_error(e) from e
         if not response.choices:
-            raise LLMError("服务返回了空响应（无 choices）——中转站可能出错了")
+            raise LLMError("Empty response: no choices")
         return response.choices[0].message.content or ""
 
     async def stream(

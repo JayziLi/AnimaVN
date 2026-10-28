@@ -1,0 +1,508 @@
+/* 局内菜单「相册」页(MenuAlbum.tsx)。照设计稿 kit/scene.css 的 .al-* 写:
+   一行四格(窄的地方三 / 两格),格子 16:9 的图 + 下面一条纸写标题、几点 · 第几句;左上「手动 / 自动 / 换一张」小签,
+   右上 ☆(指到才出,收藏了常亮)。纸、墨、细线全走 --av-*(跟设置里的「主题」),选中 / 悬停不用角色色:悬停只上浮 2px + 细线加深。
+   看大图铺满整个画面:场景糊开垫底压暗,正中一张,底下一条纸写标题、说明、哪一句;大图本身是一整屏照片,深色不跟主题。 */
+
+.ma {
+  position: relative;
+  min-width: 0;
+  color: var(--av-ink);
+  font-family: var(--av-sans);
+}
+.ma-flex {
+  flex: 1;
+  min-width: 0;
+}
+.ma-dim {
+  font-size: 12px;
+  color: var(--av-dim);
+}
+.ma-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+.ma-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--av-dim);
+}
+/* 在局内菜单里(设计稿 AV.menuAlbum 的 .al-head):两个分段放在页头右边,和「返回游戏」一行;「?」挨着分段,
+   「☆ 收藏进 … CG 包」那句收进「?」的说明里(说明本来就写了) */
+.page-album .vn-menu-body {
+  position: static;
+}
+.vn-menu .ma {
+  position: static;
+}
+.vn-menu .ma-bar {
+  position: absolute;
+  z-index: 2;
+  top: calc(env(safe-area-inset-top) + 46px);
+  right: calc(env(safe-area-inset-right) + 164px);
+  height: 34px;
+  flex-wrap: nowrap;
+  gap: 10px;
+}
+.vn-menu .ma-bar > .ma-flex {
+  display: none;
+}
+.vn-menu .ma-note {
+  order: -1;
+  font-size: 0;
+}
+
+/* ---------- 分组 ---------- */
+.ma-ghead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0 8px;
+}
+.ma-ghead .ma-dim {
+  flex: none;
+  white-space: nowrap;
+}
+.ma-th {
+  flex: none;
+  width: 46px;
+  height: 26px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--av-paper-3);
+  box-shadow: 0 0 0 1px var(--av-hair);
+}
+.ma-th img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.ma-ghead b {
+  min-width: 0;
+  overflow: hidden;
+  font: 700 14.5px/1.3 var(--av-serif);
+  letter-spacing: 0.14em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ma-tlink {
+  position: relative;
+  flex: none;
+  padding: 0 0 2px;
+  border: 0;
+  border-bottom: 1px solid var(--av-hair);
+  background: none;
+  font: 12.5px/1 var(--av-sans);
+  color: var(--av-ink-2);
+  cursor: pointer;
+}
+.ma-tlink::before {
+  content: '';
+  position: absolute;
+  inset: min(0px, calc(50% - var(--av-hit, 32px) / 2));
+}
+.ma-tlink:hover {
+  color: var(--av-ink);
+  border-bottom-color: var(--av-ink-2);
+}
+.ma-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+/* ---------- 一格 ---------- */
+.ma-tile {
+  position: relative;
+  border-radius: 7px;
+  overflow: hidden;
+  background: var(--av-paper);
+  box-shadow: 0 0 0 1px var(--av-hair);
+  transition:
+    box-shadow 0.16s,
+    transform 0.16s;
+}
+.av-night .ma-tile {
+  background: var(--av-paper-2);
+}
+.ma-tile:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 0 0 1px var(--av-faint),
+    0 10px 22px rgba(0, 0, 0, 0.18);
+}
+.ma-open {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: zoom-in;
+}
+.ma-open:focus-visible,
+.ma-star:focus-visible,
+.ma-tlink:focus-visible,
+.ma-back:focus-visible,
+.ma-nav:focus-visible {
+  outline: 2px solid var(--av-ink);
+  outline-offset: -2px;
+}
+.ma-viewer :is(.ma-back, .ma-nav):focus-visible {
+  outline-color: #fff;
+}
+.ma-pic {
+  position: relative;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+  background: #0b0b12;
+  color: rgba(236, 234, 242, 0.5);
+}
+.ma-pic img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.ma-tx {
+  display: block;
+  min-width: 0;
+  padding: 7px 9px 8px;
+}
+.ma-tx b {
+  display: block;
+  overflow: hidden;
+  font: 600 13px/1.3 var(--av-serif);
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ma-tx small {
+  display: block;
+  min-height: 16px;
+  margin-top: 3px;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--av-dim);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ma-tr {
+  position: absolute;
+  left: 6px;
+  top: 6px;
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: rgba(16, 17, 28, 0.62);
+  color: #eceaf2;
+  font: 500 12px/1 var(--av-sans);
+  pointer-events: none;
+}
+/* ☆ 收藏:32 的点击区,画出来 26 的圆;收藏了的星是实心白,不用角色色 */
+.ma-star {
+  position: absolute;
+  right: 3px;
+  top: 3px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: #fff;
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 0.16s;
+}
+.ma-star::before {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: rgba(16, 17, 28, 0.58);
+}
+.ma-star .st-icon {
+  position: relative;
+}
+.ma-tile:is(:hover, :focus-within) .ma-star,
+.ma-star.on {
+  opacity: 1;
+}
+.ma-star.on {
+  cursor: default;
+}
+.ma-empty {
+  max-width: 320px;
+  margin: 70px auto;
+  text-align: center;
+  font-size: 12.5px;
+  line-height: 1.8;
+  color: var(--av-dim);
+}
+.ma-empty b {
+  display: block;
+  font: 600 15px/1.4 var(--av-serif);
+  letter-spacing: 0.12em;
+  color: var(--av-ink-2);
+}
+
+@media (max-width: 1100px) {
+  .ma-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 760px) {
+  .ma-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  /* 触屏没有「指到」:☆ 一直在 */
+  .ma-star {
+    opacity: 1;
+  }
+}
+
+/* ---------- 看大图:盖住整个菜单(连左边导航) ---------- */
+.ma-viewer {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  /* 垫一层实心深色:糊开的图四周会透,别让后面的菜单透出来 */
+  background: #0c0c15;
+  color: #eceaf2;
+  animation: av-fade 0.16s ease both;
+}
+.ma-viewer:focus {
+  outline: none;
+}
+.ma-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: blur(26px) saturate(0.9);
+  transform: scale(1.12);
+}
+.ma-veil {
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 10, 18, 0.62);
+}
+.ma-vtop {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 26px 0 22px;
+}
+.ma-back {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  white-space: nowrap;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: rgba(236, 234, 242, 0.88);
+  font: 500 13px/1 var(--av-sans);
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+.ma-back:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+.ma-back .av-kbd {
+  color: rgba(236, 234, 242, 0.8);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.3);
+}
+.ma-cnt {
+  min-width: 0;
+  overflow: hidden;
+  font: 500 13px/1 var(--av-latin);
+  letter-spacing: 0.06em;
+  color: rgba(236, 234, 242, 0.74);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ma-vstage {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+  place-items: center;
+  padding: 14px 92px;
+}
+.ma-big {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 6px;
+  object-fit: contain;
+  box-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(255, 255, 255, 0.08);
+  animation: av-fade 0.16s ease both;
+}
+.ma-big.none {
+  display: grid;
+  place-items: center;
+  width: min(640px, 100%);
+  aspect-ratio: 16 / 9;
+  background: #0b0b12;
+  color: rgba(236, 234, 242, 0.5);
+}
+.ma-nav {
+  position: absolute;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(16, 17, 28, 0.55);
+  color: #fff;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+  translate: 0 -50%;
+  cursor: pointer;
+  transition:
+    background 0.16s,
+    opacity 0.16s;
+}
+.ma-nav:hover:not(:disabled) {
+  background: rgba(16, 17, 28, 0.8);
+}
+.ma-nav:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+.ma-nav.l {
+  left: 22px;
+}
+.ma-nav.r {
+  right: 22px;
+}
+.ma-nav .flip {
+  transform: scaleX(-1);
+}
+.ma-sheet {
+  position: relative;
+  z-index: 1;
+  width: min(940px, calc(100% - 48px));
+  margin: 0 auto 26px;
+  padding: 14px 18px 14px 20px;
+  border-radius: 8px 8px 30px 8px;
+  background: var(--av-paper);
+  color: var(--av-ink);
+  box-shadow: var(--av-shadow-float, 0 10px 30px rgba(0, 0, 0, 0.35));
+}
+.ma-hd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+}
+.ma-hd b {
+  font: 700 18px/1.2 var(--av-serif);
+  letter-spacing: 0.16em;
+}
+.ma-sheet p {
+  margin: 8px 0 10px;
+  font: 13.5px/1.6 var(--av-serif);
+  color: var(--av-ink-2);
+}
+.ma-ft {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.ma-sheet p + .ma-ft {
+  margin-top: 0;
+}
+.ma-where {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 12px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--av-dim);
+}
+.ma-sheet .av-btn svg {
+  fill: none;
+}
+.ma-sheet .av-btn.on {
+  cursor: default;
+}
+.ma-sheet .av-btn.on svg {
+  fill: currentColor;
+}
+.ma-sheet .av-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+@media (max-width: 760px) {
+  .ma-vstage {
+    padding: 10px 12px;
+  }
+  .ma-nav {
+    width: 40px;
+    height: 40px;
+  }
+  .ma-nav.l {
+    left: 6px;
+  }
+  .ma-nav.r {
+    right: 6px;
+  }
+  .ma-sheet {
+    width: calc(100% - 24px);
+    margin-bottom: 12px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ma-viewer,
+  .ma-big,
+  .ma-tile {
+    animation: none;
+    transition: none;
+  }
+}
+
+/* 手机(局内菜单是升起来的整张纸):分段回到页里第一行,居中(设计稿手机相册页) */
+@media (max-width: 640px) {
+  .vn-menu .ma-bar {
+    position: static;
+    height: auto;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+}

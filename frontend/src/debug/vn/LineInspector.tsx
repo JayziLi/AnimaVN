@@ -507,7 +507,7 @@ export function LineInspector({
     push(
       '要的情绪',
       plan.emotion ??
-        (fixedEmotion ? '不传(插件设置里语音情绪选了不变,用默认情绪)' : '不传(不是主声音,用它的默认情绪)'),
+        (fixedEmotion ? '不传(插件设置里语音情绪选了不变,用默认情绪)' : '不传(不是音色,用它的默认情绪)'),
     );
     if (voicePairs && plan.emotion !== null) {
       const rowLabel =

@@ -70,6 +70,31 @@ describe('asset urls', () => {
     expect(api.sceneThumbUrl({ ...bg, data_sha: null }, 64)?.endsWith('/assets/a1/file?v=9&w=64')).toBe(true);
     expect(api.spriteImageUrl({ ...sprite, has_image: false, image_sha: sha })).toBeNull();
   });
+
+  it('rounds small sizes up to a thumbnail step, never 96 or 160 (title colour picking uses those)', () => {
+    vi.stubGlobal('window', { devicePixelRatio: 1 });
+    expect(api.thumbWidth(26)).toBe(128);
+    expect(api.thumbWidth(56)).toBe(128);
+    expect(api.thumbWidth(129)).toBe(240);
+    expect(api.thumbWidth(640)).toBe(640);
+    expect(api.thumbWidth(641)).toBeNull();
+    for (let w = 1; w <= 640; w++) expect([96, 160]).not.toContain(api.thumbWidth(w));
+  });
+
+  it('counts the screen pixel ratio', () => {
+    vi.stubGlobal('window', { devicePixelRatio: 2 });
+    expect(api.thumbWidth(56)).toBe(128);
+    expect(api.thumbWidth(100)).toBe(240);
+    expect(api.thumbWidth(400)).toBeNull();
+  });
+
+  it('gives a small sprite address, or the full one when the box is too big for any step', () => {
+    vi.stubGlobal('window', { devicePixelRatio: 1 });
+    expect(api.spriteThumbUrl({ ...sprite, image_sha: sha }, 56)?.endsWith(`/api/blobs/${sha}?w=128`)).toBe(true);
+    expect(api.spriteThumbUrl(sprite, 300)?.endsWith('/api/sprite-packs/p1/sprites/s1/image?v=7&w=320')).toBe(true);
+    expect(api.spriteThumbUrl({ ...sprite, image_sha: sha }, 2000)).toBe(api.spriteImageUrl({ ...sprite, image_sha: sha }));
+    expect(api.spriteThumbUrl({ ...sprite, has_image: false }, 56)).toBeNull();
+  });
 });
 
 describe('exportPackUrl', () => {

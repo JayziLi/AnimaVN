@@ -16,6 +16,10 @@ export interface VNSettings {
   boxOpacity: number;
   /** 对白字号倍率 */
   textScale: number;
+  /** 相对当前默认位置上移的设计像素;负值向下 */
+  dialogueOffset: number;
+  /** 对话区增加的高度(设计像素),0 保持默认 */
+  dialogueHeight: number;
   /** 对话框里显示思考过程(思考中的计时块、回复第一句上的「已思考」) */
   showThinking: boolean;
   /** 右上角显示当前模型 */
@@ -24,7 +28,7 @@ export interface VNSettings {
   showVoice: boolean;
   /** 进视觉小说先看标题画面;关掉就直接接着上次的对话(Beta) */
   titleScreen: boolean;
-  /** 标题画面的样式:纸面 / 明亮(10-04 定稿的两种);海报、电影是之前的版本(Beta) */
+  /** 标题画面的样式:纸面 / 明亮(10-04 定稿的两种);海报、电影 10-26 起设置里不给选了,存着的会换成纸面 */
   titleStyle: TitleStyle;
   /** 对话框皮肤:经典 = 原来的;黑玻璃 / 白玻璃 = 10-04 定稿(名牌压框沿、输入在框里、轮到你正中弹输入条) */
   boxSkin: BoxSkin;
@@ -45,19 +49,46 @@ export interface VNSettings {
   /** 跳字音效:逐字显示旁白时每隔一个字响一声;'off' = 不要。id 见 vn/typeSound.ts 的 TYPE_SOUNDS */
   typeSound: string;
   typeSoundVolume: number;
+  /** 纸面主题:白 / 黑 / 玻璃。管封面、选角色、菜单、设置这些纸面和提示条、确认框、报错纸卡、右键小菜单;游戏画面不跟(10-24 定,默认白) */
+  theme: PaperTheme;
+  /** 对话框画法:细线(对话区 A:不用框,一层压暗 + 一条细线,vnLine.css)/ 经典(玻璃框 + 名牌,底色看 boxSkin) */
+  dlgStyle: DialogStyle;
 }
 
 import { VN_ACCENTS, type VNAccent } from './accent';
 import { TYPE_SOUNDS } from './typeSound';
+import type { PopTheme } from './ui/logic';
+
+/** 纸面主题(和弹层的纸同一组值) */
+export type PaperTheme = PopTheme;
+
+export const PAPER_THEMES: { value: PaperTheme; name: string }[] = [
+  { value: 'white', name: '白' },
+  { value: 'black', name: '黑' },
+  { value: 'glass', name: '玻璃' },
+];
+
+export type DialogStyle = 'line' | 'classic';
+
+export const DIALOG_STYLES: { value: DialogStyle; name: string }[] = [
+  { value: 'line', name: '细线' },
+  { value: 'classic', name: '经典' },
+];
 
 export type TitleStyle = 'paper' | 'bright' | 'poster' | 'cinema';
 
+/** 设置里能选的封面样式。海报、电影是之前的版本,10-26 用户定了去掉(VNTitle 里的画法暂时还在,没人再选得到) */
 export const TITLE_STYLES: { value: TitleStyle; name: string }[] = [
   { value: 'paper', name: '纸面' },
   { value: 'bright', name: '明亮' },
-  { value: 'poster', name: '海报(旧)' },
-  { value: 'cinema', name: '电影(旧)' },
 ];
+
+/** 存下来的封面样式 → 现在能用的:以前选了海报 / 电影的,自动换成纸面 */
+export function normalizeTitleStyle(raw: unknown, fallback: TitleStyle): TitleStyle {
+  if (raw === 'paper' || raw === 'bright') return raw;
+  if (raw === 'poster' || raw === 'cinema') return 'paper';
+  return fallback;
+}
 
 export type BoxSkin = 'classic' | 'glass-dark' | 'glass-light';
 
@@ -70,9 +101,10 @@ export const TEXT_FONTS: { value: TextFont; name: string }[] = [
   { value: 'kai', name: '楷体' },
 ];
 
-/** 宋体 / 黑体 / 楷体用系统字体(Windows / macOS 的名字都写上);圆体是打包进游戏的资源圆体(vnFonts.css) */
+/** 宋体是打包进游戏的思源宋体子集、圆体是打包进游戏的资源圆体(都在 vnFonts.css);黑体 / 楷体用系统字体(Windows / macOS 的名字都写上) */
 export const TEXT_FONT_STACKS: Record<TextFont, string> = {
-  serif: "'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', 'SimSun', serif",
+  // 宋体就是界面统一的底稿变量(theme.css 的 --av-serif:打包的 AnimaSerif 在最前面)
+  serif: 'var(--av-serif)',
   sans: "'Noto Sans SC', 'Source Han Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif",
   round: "'AnimaRound', 'Yuanti SC', 'YouYuan', 'Microsoft YaHei', sans-serif",
   kai: "'Kaiti SC', 'STKaiti', 'KaiTi', '楷体', serif",
@@ -95,6 +127,8 @@ export const DEFAULT_VN_SETTINGS: VNSettings = {
   autoSpeed: 1,
   boxOpacity: 0.72,
   textScale: 1,
+  dialogueOffset: 0,
+  dialogueHeight: 0,
   showThinking: true,
   showModel: true,
   showVoice: true,
@@ -110,6 +144,8 @@ export const DEFAULT_VN_SETTINGS: VNSettings = {
   spriteFxVolume: 0.8,
   typeSound: TYPE_SOUND_OFF,
   typeSoundVolume: 0.5,
+  theme: 'white',
+  dlgStyle: 'line',
 };
 
 export const TEXT_SPEEDS: { value: number; name: string }[] = [
@@ -164,15 +200,15 @@ export function loadVNSettings(): VNSettings {
     autoSpeed: AUTO_SPEEDS.some((a) => a.value === raw.autoSpeed) ? (raw.autoSpeed as number) : d.autoSpeed,
     boxOpacity: num(raw.boxOpacity, OPACITY_MIN, 1, d.boxOpacity),
     textScale: num(raw.textScale, SCALE_MIN, SCALE_MAX, d.textScale),
+    dialogueOffset: num(raw.dialogueOffset, -40, 160, d.dialogueOffset),
+    dialogueHeight: num(raw.dialogueHeight, 0, 160, d.dialogueHeight),
     showThinking: bool(raw.showThinking, d.showThinking),
     showModel: bool(raw.showModel, d.showModel),
     showVoice: bool(raw.showVoice, d.showVoice),
     titleScreen: bool(raw.titleScreen, d.titleScreen),
-    // 还没有 boxSkin 的旧存档 = 10-04 新外观之前存的:封面也换到新的默认,不留在旧海报上
-    titleStyle:
-      raw.boxSkin !== undefined && TITLE_STYLES.some((t) => t.value === raw.titleStyle)
-        ? (raw.titleStyle as TitleStyle)
-        : d.titleStyle,
+    // 还没有 boxSkin 的旧存档 = 10-04 新外观之前存的:封面也换到新的默认,不留在旧海报上;
+    // 存着海报 / 电影的(10-26 起设置里没有了)换成纸面
+    titleStyle: raw.boxSkin !== undefined ? normalizeTitleStyle(raw.titleStyle, d.titleStyle) : d.titleStyle,
     boxSkin: BOX_SKINS.some((t) => t.value === raw.boxSkin) ? (raw.boxSkin as BoxSkin) : d.boxSkin,
     textFont: TEXT_FONTS.some((t) => t.value === raw.textFont) ? (raw.textFont as TextFont) : d.textFont,
     voiceInterrupt: bool(raw.voiceInterrupt, d.voiceInterrupt),
@@ -186,13 +222,49 @@ export function loadVNSettings(): VNSettings {
         ? (raw.typeSound as string)
         : d.typeSound,
     typeSoundVolume: num(raw.typeSoundVolume, 0, 1, d.typeSoundVolume),
+    theme: PAPER_THEMES.some((t) => t.value === raw.theme) ? (raw.theme as PaperTheme) : d.theme,
+    dlgStyle: DIALOG_STYLES.some((t) => t.value === raw.dlgStyle) ? (raw.dlgStyle as DialogStyle) : d.dlgStyle,
   };
 }
 
+// 游戏之外(DebugApp 里的确认框)也要跟主题:存设置时通知订阅的人,别的标签页改了走 storage 事件
+const listeners = new Set<() => void>();
+const notify = () => listeners.forEach((f) => f());
+let memTheme: PaperTheme | null = null;
+
 export function saveVNSettings(s: VNSettings): void {
+  memTheme = s.theme;
   try {
     window.localStorage.setItem(KEY, JSON.stringify(s));
   } catch {
     // 隐私模式等写不进去:这次会话里照样生效,只是不记住
   }
+  notify();
+}
+
+/** 现在的纸面主题:读 localStorage;写不进去的环境(隐私模式)用这次会话里存过的 */
+export function currentPaperTheme(): PaperTheme {
+  try {
+    const raw = window.localStorage.getItem(KEY);
+    if (raw !== null) return loadVNSettings().theme;
+  } catch {
+    // 读不了就看这次会话里存过的
+  }
+  return memTheme ?? DEFAULT_VN_SETTINGS.theme;
+}
+
+export function subscribePaperTheme(cb: () => void): () => void {
+  listeners.add(cb);
+  const onStorage = (e: StorageEvent) => {
+    if (e.key === KEY || e.key === null) cb();
+  };
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('storage', onStorage);
+  }
+  return () => {
+    listeners.delete(cb);
+    if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
+      window.removeEventListener('storage', onStorage);
+    }
+  };
 }

@@ -56,6 +56,8 @@ export interface LibraryAsideProps {
   onClean: () => void;
   /** 收起左栏(sidePanels.tsx);不给就没有收起按钮 */
   onCollapse?: () => void;
+  /** 游戏菜单里的素材页:行尾不说「未绑定」 */
+  embedded?: boolean;
   /** 标题下面、筛选上面的一排按钮(声音页的「新建声音」「导入 refs.json」);不给就没有这一排 */
   actions?: ReactNode;
 }
@@ -77,6 +79,7 @@ export function LibraryAside({
   cleaning,
   onClean,
   onCollapse,
+  embedded,
   actions,
 }: LibraryAsideProps) {
   const info = KIND_INFO[kind];
@@ -154,7 +157,7 @@ export function LibraryAside({
                 </span>
                 <span className="lib-row-sub">{itemSub(kind, it)}</span>
               </span>
-              <span className={`lib-row-bound${it.card_ids.length ? '' : ' none'}`}>{boundLabel(it)}</span>
+              <span className={`lib-row-bound${it.card_ids.length ? '' : ' none'}`}>{boundLabel(it, embedded)}</span>
             </button>
           );
         })}

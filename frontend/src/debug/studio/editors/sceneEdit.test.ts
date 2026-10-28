@@ -13,6 +13,7 @@ import {
   formatDuration,
   sharedDeleteNote,
   sideCount,
+  replaceSide,
   unbindSide,
   withKindOrder,
 } from './sceneEdit';
@@ -124,9 +125,9 @@ describe('bgmTag', () => {
     expect(bgmTag(asset('x', 'bg'), choices)).toEqual({ state: 'none', text: '不换', choice: null });
   });
 
-  it('a disabled track or one from a pack the card did not bind does not play (same as the game)', () => {
+  it('a disabled track or one from a pack the card did not use does not play (same as the game)', () => {
     expect(bgmTag(asset('x', 'bg', { bgm_id: 'a-m2' }), choices)).toMatchObject({ state: 'off', text: '伤感' });
-    expect(bgmTag(listA[1], choices)).toEqual({ state: 'foreign', text: '没绑的曲子', choice: null });
+    expect(bgmTag(listA[1], choices)).toEqual({ state: 'foreign', text: '没用的曲子', choice: null });
   });
 
   it('a track without a file does not play either', () => {
@@ -164,6 +165,23 @@ describe('coverTrack', () => {
     expect(coverTrack(tracks, 'm1')).toEqual({ id: 'm2', explicit: false });
     expect(coverTrack(tracks, 'gone')).toEqual({ id: 'm2', explicit: false });
     expect(coverTrack([tracks[0]], null)).toBeNull();
+  });
+});
+
+describe('replaceSide', () => {
+  const b = { bg: ['A', 'B'], bgm: ['A'] };
+
+  it('swaps one side for the single pack and leaves the other side alone', () => {
+    expect(replaceSide(b, 'bg', 'C')).toEqual({ bg: ['C'], bgm: ['A'] });
+    expect(replaceSide(b, 'bgm', 'B')).toEqual({ bg: ['A', 'B'], bgm: ['B'] });
+  });
+
+  it('cleans up the extra packs an old card still has, even when the pick is one of them', () => {
+    expect(replaceSide(b, 'bg', 'A')).toEqual({ bg: ['A'], bgm: ['A'] });
+  });
+
+  it('returns the same object when that side is already just this pack', () => {
+    expect(replaceSide(b, 'bgm', 'A')).toBe(b);
   });
 });
 

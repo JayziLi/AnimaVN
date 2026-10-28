@@ -3,19 +3,26 @@
  *   AI 写  输一个表情词 →「试一下」:名字 / 别名对上、认词记录里记过就直接给;都没有时可以「让小模型猜」(只看结果,不记下)
  *   Jev 标 输一句台词 →「问 Jev」:只问谁说的和表情(带这张卡的表情名单和改过的问法);点一次问一次
  * 试的结果只放在这里:不写进对话、不改设置、不写认词记录。
+ *
+ * 两种画法,试的逻辑是同一份(useSpriteTry):
+ *   SpritePreview       调试台 / 卡编辑器里「快速预览」那一块:输入框 + 结果一行
+ *   SpriteStagePreview  游戏菜单里(U25):一块实机预览舞台 → 一排表情差分(点一张舞台换一张,播入场动效)→ 试一下;
+ *                       试出来的表情也摆到舞台上
  */
 
-import { useMemo, useState } from 'react';
-import { debugApi, type PackSprite, type WordRecordOut } from '../../../lib/api';
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { debugApi, sceneImageUrl, spriteImageUrl, type PackSprite, type SceneAsset, type WordRecordOut } from '../../../lib/api';
 import type { TagMode } from '../../../plugins/common';
 import { emotionCandidates, toRequestCandidate } from '../../../plugins/emotionMatch';
-import { facesByCanvas } from '../../../plugins/spriteLayout';
+import { facesByCanvas, type SpriteStage } from '../../../plugins/spriteLayout';
 import { FaceThumb } from '../../../studio/FaceThumb';
+import { Stage } from '../../../vn/ui/Stage';
 import type { JevControls } from '../../JevSettings';
 import { errText } from '../../pluginRunner';
 import { askRequest } from '../jevAsk';
 import { resolveWordLocally } from '../previewModel';
 import { Tip } from '../Tip';
+import { usePackLayout } from './stageData';
 import { TryLine } from './shared';
 
 type AiResult =
@@ -27,19 +34,7 @@ type JevResult = { line: string; emotion: string | null; sprite: PackSprite | nu
 
 const SPEAKER_TEXT: Record<string, string> = { user: '玩家说的', other: '别的角色说的', none: '不是在说话' };
 
-export function SpritePreview({
-  mode,
-  card,
-  sprites,
-  listRef,
-  recentLines,
-  recentWords,
-  jev,
-  prompt,
-  userName,
-  speakerThreshold,
-  onEditRecord,
-}: {
+interface TryProps {
   mode: TagMode;
   card: { id: string; name: string };
   /** 启用的立绘 */
@@ -56,8 +51,11 @@ export function SpritePreview({
   speakerThreshold: number;
   /** 「改这条记录」:打开高级 · 认词记录,选中这个词 */
   onEditRecord: (word: string) => void;
-}) {
-  const faces = useMemo(() => facesByCanvas(sprites), [sprites]);
+}
+
+/** 试一下的状态和动作(两种画法共用) */
+function useSpriteTry(p: TryProps) {
+  const { mode, card, sprites, listRef, recentLines, recentWords, jev, prompt, userName, speakerThreshold } = p;
   const [word, setWord] = useState(recentWords[0] ?? '');
   const [line, setLine] = useState(recentLines[0] ?? '');
   const [busy, setBusy] = useState(false);
@@ -128,23 +126,30 @@ export function SpritePreview({
       });
     });
 
-  if (sprites.length === 0) {
-    return <div className="dw-line">{card.name}还没有立绘,先绑一套再试。</div>;
-  }
+  /** 这次试出来的那张立绘(游戏皮把它摆到舞台上) */
+  const found: PackSprite | null = mode === 'ai' ? (ai && ai.kind !== 'miss' ? ai.sprite : null) : (jevResult?.sprite ?? null);
 
-  const face = (s: PackSprite | null) => <FaceThumb sprite={s} face={s ? (faces.get(s.id) ?? null) : null} className="dw-face-44" />;
+  return { word, setWord, line, setLine, busy, error, ai, jevResult, noKey, tryWord, guess, askJev, found };
+}
 
+type Tried = ReturnType<typeof useSpriteTry>;
+
+/** 输入框 + 试一下 + 结果一行(两种画法共用;face 画结果旁的小头像) */
+function TryPanel({ p, t, face }: { p: TryProps; t: Tried; face: (s: PackSprite | null) => ReactNode }) {
+  const { mode, jev, recentLines, recentWords, onEditRecord } = p;
+  const { ai, jevResult, busy, error, noKey } = t;
   if (mode === 'ai') {
     return (
-      <div className="dw-preview">
+      <>
         <TryLine
-          value={word}
-          onChange={setWord}
+          value={t.word}
+          onChange={t.setWord}
           placeholder="AI 可能写的表情词,比如 才不是"
           button={busy ? '查找中…' : '试一下'}
-          disabled={busy || !word.trim()}
-          onTry={() => void tryWord()}
+          disabled={busy || !t.word.trim()}
+          onTry={() => void t.tryWord()}
           recent={recentWords}
+          tip="sprite_preview_ai"
         />
         {error && <div className="dw-bad">{error}</div>}
         {ai && (
@@ -165,7 +170,7 @@ export function SpritePreview({
                 {ai.kind === 'guess' && <span className="dw-chip">小模型猜的 · 相似度 {ai.score.toFixed(2)}</span>}
                 {ai.kind === 'miss' && (
                   <>
-                    <button type="button" className="btn small" disabled={busy} onClick={() => void guess(ai.word)}>
+                    <button type="button" className="btn small" disabled={busy} onClick={() => void t.guess(ai.word)}>
                       让小模型猜
                     </button>
                     <Tip k="guess_button" />
@@ -180,20 +185,21 @@ export function SpritePreview({
             )}
           </div>
         )}
-      </div>
+      </>
     );
   }
 
   return (
-    <div className="dw-preview">
+    <>
       <TryLine
-        value={line}
-        onChange={setLine}
+        value={t.line}
+        onChange={t.setLine}
         placeholder="输入一句台词"
         button={busy ? '问 Jev 中…' : '问 Jev'}
-        disabled={busy || noKey || !line.trim()}
-        onTry={() => void askJev()}
+        disabled={busy || noKey || !t.line.trim()}
+        onTry={() => void t.askJev()}
         recent={recentLines}
+        tip="sprite_preview_jev"
         right={
           noKey && jev.openPage ? (
             <button type="button" className="dw-inline-link" onClick={jev.openPage}>
@@ -217,6 +223,104 @@ export function SpritePreview({
           {jevResult.conf !== null && <span className="dw-mono">把握 {jevResult.conf.toFixed(2)}</span>}
         </div>
       )}
+    </>
+  );
+}
+
+export function SpritePreview(p: TryProps) {
+  const t = useSpriteTry(p);
+  const faces = useMemo(() => facesByCanvas(p.sprites), [p.sprites]);
+  if (p.sprites.length === 0) {
+    return <div className="dw-line">{p.card.name}还没有立绘,先绑一套再试。</div>;
+  }
+  const face = (s: PackSprite | null) => <FaceThumb sprite={s} face={s ? (faces.get(s.id) ?? null) : null} className="dw-face-44" />;
+  return (
+    <div className="dw-preview">
+      <TryPanel p={p} t={t} face={face} />
+    </div>
+  );
+}
+
+/** 一排表情差分:圆头像 + 名字,选中的白圈 + 墨线托住;点一张舞台换一张 */
+export function FaceStrip({
+  sprites,
+  current,
+  onPick,
+  label,
+}: {
+  sprites: readonly PackSprite[];
+  current: string | null;
+  onPick: (s: PackSprite) => void;
+  label: string;
+}) {
+  const faces = useMemo(() => facesByCanvas(sprites), [sprites]);
+  return (
+    <div className="dw-strip" role="group" aria-label={label} style={{ '--n': Math.max(1, sprites.length) } as CSSProperties}>
+      {sprites.map((s) => (
+        <button
+          key={s.id}
+          type="button"
+          className={s.id === current ? 'cur' : ''}
+          aria-pressed={s.id === current}
+          title={s.description || s.label}
+          onClick={() => onPick(s)}
+        >
+          <FaceThumb sprite={s} face={faces.get(s.id) ?? null} className="dw-face-round" />
+          <span className="lb">{s.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export function SpriteStagePreview(
+  p: TryProps & {
+    packId: string | null;
+    /** 所有角色共用的构图:人物大小、头的高度(右边「常用」的两根滑条) */
+    stage: SpriteStage;
+    /** 舞台后面那张背景:这张卡的第一张背景;没有就是黑底 */
+    background: SceneAsset | null;
+  },
+) {
+  const { sprites, card, stage } = p;
+  const t = useSpriteTry(p);
+  const faces = useMemo(() => facesByCanvas(sprites), [sprites]);
+  const layout = usePackLayout(p.packId);
+  // 舞台上摆的那张:默认是排第一的(默认表情);点差分 / 试出结果就换,并播一次入场动效
+  const [cur, setCur] = useState<{ id: string; key: number } | null>(null);
+  const shown = sprites.find((s) => s.id === cur?.id) ?? sprites[0] ?? null;
+  const pick = (s: PackSprite) => setCur((c) => ({ id: s.id, key: (c?.key ?? 0) + 1 }));
+  const foundId = t.found?.id ?? null;
+  const foundNonce = t.ai ?? t.jevResult;
+  useEffect(() => {
+    if (foundId) setCur((c) => ({ id: foundId, key: (c?.key ?? 0) + 1 }));
+  }, [foundId, foundNonce]);
+
+  if (sprites.length === 0 || !shown) {
+    return <div className="dw-line">{card.name}还没有立绘,先绑一套再试。</div>;
+  }
+  const src = spriteImageUrl(shown);
+  const bgSrc = p.background ? sceneImageUrl(p.background) : null;
+  // 台词:最近一句;没有就拿这张差分的说明当台词
+  const text = p.recentLines[0] || shown.description || '';
+  const face = (s: PackSprite | null) => <FaceThumb sprite={s} face={s ? (faces.get(s.id) ?? null) : null} className="dw-face-44" />;
+  return (
+    <div className="dw-stagebox">
+      <Stage
+        background={bgSrc ? { src: bgSrc, focus: p.background?.focus_x ?? 50 } : null}
+        sprite={src ? { src, face: faces.get(shown.id) ?? null, layout, stage, effect: shown.effect, playKey: cur?.key } : null}
+        line={text ? { speaker: card.name, text } : null}
+        label={
+          <>
+            实机预览{p.background ? ` · ${p.background.label}` : ''} · <em>{shown.label}</em>
+          </>
+        }
+        guide={{ faceTop: stage.faceTop, text: `头的高度 ${stage.faceTop.toFixed(2)}` }}
+      />
+      <FaceStrip sprites={sprites} current={shown.id} onPick={pick} label={`表情差分 · ${sprites.length} 张`} />
+      <div className="dw-stage-try">
+        <TryPanel p={p} t={t} face={face} />
+      </div>
     </div>
   );
 }

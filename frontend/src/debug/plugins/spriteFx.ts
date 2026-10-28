@@ -174,3 +174,21 @@ export function fxStep(
   if (!cue || cue.id === played || shownKey !== cue.target) return 'wait';
   return covered ? 'skip' : 'play';
 }
+
+/**
+ * 换到 nextKey 这张时要不要直接换、不淡入(VNScreen 的 SpriteLayer 用):
+ * 平时新表情叠在旧表情上 .2s 淡入;可这次要是带动作或气泡,动作一开始新图还半透明、旧图还在底下,
+ * 两张一起跳 —— 看着像上一张没走、下一张的动画就来了。所以带动作 / 气泡的这次直接换上,再放特效。
+ * 只有音效、这句被 CG 盖着、已经放过、或者换的不是它要的那张:照常淡入。减少动态时动作不放,只看气泡
+ */
+export function fxSwapsInstantly(
+  cue: { id: number; target: string; effect: { motion?: string | null; bubble?: string | null } } | null,
+  played: number,
+  nextKey: string,
+  covered: boolean,
+  reduceMotion: boolean,
+): boolean {
+  if (!cue || cue.id === played || cue.target !== nextKey || covered) return false;
+  const motion = Boolean(cue.effect.motion && MOTION_FRAMES[cue.effect.motion]) && !reduceMotion;
+  return motion || Boolean(cue.effect.bubble);
+}

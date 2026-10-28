@@ -70,7 +70,7 @@ export function SpriteInspector(props: SpriteInspectorProps) {
   const { sprite: s, layout, total, cardCount = 0 } = props;
   const fx = normalizeEffect(s.effect) ?? EMPTY_FX;
   const hasFx = Boolean(fx.motion || fx.bubble || fx.sound);
-  const shared = `整组 ${total} 张差分共用${cardCount >= 2 ? ` · 绑定此立绘的 ${cardCount} 张卡同步生效` : ''}`;
+  const shared = `整组 ${total} 张差分共用${cardCount >= 2 ? ` · 用这套立绘的 ${cardCount} 张卡同步生效` : ''}`;
 
   return (
     <Inspector

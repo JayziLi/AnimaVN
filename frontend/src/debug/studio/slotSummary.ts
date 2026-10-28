@@ -1,9 +1,9 @@
 /**
- * 卡编辑器素材页左栏「已绑定素材」每一行的副标题:看一眼就知道这张卡每一栏挂了什么。
+ * 卡编辑器素材页左栏「在用的素材」每一行的副标题:看一眼就知道这张卡每一栏用了什么。
  * 输入是 DebugApp 手上现成的数据(各个按卡的 hook),这里只做拼字。
  *
  *   立绘「2 套服装 · 玉衡星」(当前那套的服装名)
- *   声音「刻晴(中文) · 12 种情绪」(有备用加「+1」)
+ *   声音「刻晴(中文) · 12 种情绪」(一张卡只用一个音色,存着的备用声音不显示)
  *   背景「原神 · 璃月 · 16 张」/ BGM「原神 · 璃月 · 7 首」(几个包用「、」连)
  *   CG「2 个包 · 43 个构图」(只数导入的;AI 生成的包归「AI 生成」那一栏)
  *   AI 生成「相册 7 张 · 收藏 2」(没装生图卡带就没有这一行)
@@ -50,7 +50,7 @@ export interface SlotSummaryInput {
   ai?: { name: string; counts: { total: number; kept: number } | null } | null;
 }
 
-const UNBOUND = '未绑定';
+const UNBOUND = '还没有';
 /** 绑着但列表里还没有(刚开机、刚建的包)时的名字 */
 const PENDING = '…';
 
@@ -77,14 +77,9 @@ function spriteRow({ packs, bound, current }: SlotSummaryInput['sprite']): SlotR
 }
 
 function voiceRow({ profiles, binding }: SlotSummaryInput['voice']): SlotRow {
-  if (!binding.main) {
-    return binding.extras.length > 0
-      ? row('voice', `${binding.extras.length} 个备用声音`, true)
-      : row('voice', UNBOUND, false);
-  }
+  if (!binding.main) return row('voice', UNBOUND, false);
   const main = profiles.find((p) => p.id === binding.main);
-  const extra = binding.extras.length > 0 ? ` +${binding.extras.length}` : '';
-  return row('voice', `${main?.name ?? PENDING}${extra} · ${main?.emotions.length ?? 0} 种情绪`, true);
+  return row('voice', `${main?.name ?? PENDING} · ${main?.emotions.length ?? 0} 种情绪`, true);
 }
 
 function sceneRow(kind: 'bg' | 'bgm', { packs, binding, lists }: SlotSummaryInput['scene']): SlotRow {

@@ -1,0 +1,482 @@
+/* ══════════ 历史页:一句一行的纸面列表(设计稿 kit/scene.css 的 .mnH*,class 换成 vh-)══════════
+   颜色全走 theme.css 的 --av-*,套在白纸 / 夜纸 / 玻璃里自动换;选中不跟角色色(墨色细线),只有她的名字用角色色(--av-ctl)。
+   不用胶囊、不发光、不加装饰数字。
+   菜单里的历史页是大面板,游戏上的小窗口(.vn-pw-hist)里是同一份:外面只负责给它一个能撑满的高度。 */
+.vh {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  color: var(--av-ink);
+  font-family: var(--av-sans);
+}
+.vh-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  /* 右边留给滚动条,别贴纸边 */
+  margin-right: -12px;
+  padding-right: 12px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--av-faint) transparent;
+  -webkit-overflow-scrolling: touch;
+}
+.vn-pw-hist .vh-scroll {
+  margin-right: -18px;
+  padding-right: 14px;
+}
+.vh-list {
+  display: flex;
+  flex-direction: column;
+  max-width: 1010px;
+  padding: 4px 0 18px;
+}
+.vh-top,
+.vh-empty {
+  padding: 8px 0 10px;
+  text-align: center;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  color: var(--av-dim);
+}
+.vh-empty {
+  padding: 48px 0;
+  font-size: 13px;
+}
+
+/* 屏幕外的回复先按估计高度占位、不排版(auto = 排过一次就记住真实高度);最后几条一直照常排:
+   打开时停在最底下,底部的高度一开始就是真的 */
+.vh-entry {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 150px;
+}
+.vh-entry.near {
+  content-visibility: visible;
+}
+
+/* ---------- 一行 ---------- */
+.vh-ln {
+  position: relative;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  column-gap: 14px;
+  align-items: start;
+  padding: 11px 12px;
+  border-radius: 8px;
+  transition: background 0.16s;
+}
+.vh-ln:is(:hover, :focus-within) {
+  background: var(--av-hair-2);
+}
+/* 现在停在这句:左边一道墨色细线 + 名字后面「现在」(夜纸上墨色就是浅色) */
+.vh-ln.cur {
+  background: color-mix(in srgb, var(--av-ink) 4%, transparent);
+}
+.vh-ln.cur::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 12px;
+  bottom: 12px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--av-sel, var(--av-ink));
+}
+.vh-ln.cur:is(:hover, :focus-within) {
+  background: var(--av-hair-2);
+}
+.vh-ln.editing,
+.vh-ln.editing:is(:hover, :focus-within) {
+  background: none;
+}
+
+/* ---------- 左边:头像 / 名字章 / 旁白小菱形 ---------- */
+.vh-av {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+}
+.vh-ln.narr .vh-av {
+  height: 26px;
+}
+.vh-face {
+  display: block;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--av-paper-3);
+  box-shadow: 0 0 0 1.5px var(--av-paper), 0 1px 5px rgba(20, 20, 40, 0.2);
+}
+.vh-stamp {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px var(--av-faint);
+  font: 600 15px/1 var(--av-serif);
+  color: var(--av-ink-2);
+}
+.vh-dia {
+  width: 7px;
+  height: 7px;
+  border-radius: 1px;
+  transform: rotate(45deg);
+  box-shadow: inset 0 0 0 1px var(--av-dim);
+}
+
+/* ---------- 中间:名字 / 日语 / 中文 ---------- */
+.vh-tx {
+  min-width: 0;
+}
+.vh-who {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 3px;
+  font: 600 12.5px/1.4 var(--av-serif);
+  letter-spacing: 0.16em;
+  color: var(--av-ctl);
+}
+.vh-ln:is(.user, .player) .vh-who {
+  color: var(--av-ink-2);
+}
+.vh-who em {
+  font: 400 12px/1 var(--av-sans);
+  font-style: normal;
+  letter-spacing: 0.06em;
+  color: var(--av-ink-2);
+}
+.vh-ja {
+  margin: 0 0 3px;
+  font: 400 13px/1.7 var(--av-serif);
+  letter-spacing: 0.02em;
+  color: var(--av-dim);
+}
+.vh-zh {
+  margin: 0;
+  font: 500 16px/1.75 var(--av-serif);
+  letter-spacing: 0.04em;
+  color: var(--av-ink);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.vh-ln.narr .vh-zh {
+  font-weight: 400;
+  font-size: 15px;
+  color: var(--av-ink-2);
+}
+/* 你的话:左边一道细线 */
+.vh-ln:is(.user, .player) .vh-zh {
+  padding-left: 12px;
+  font-weight: 400;
+  font-size: 15px;
+  color: var(--av-ink-2);
+  box-shadow: inset 1px 0 0 var(--av-hair);
+}
+
+/* ---------- 右边:原文 · 改 / 重听 · 回到这里(位置固定,哪句没有哪个按钮就空着,别的不挪) ---------- */
+.vh-acts {
+  display: grid;
+  grid-template-columns: 30px 62px auto;
+  align-items: center;
+  column-gap: 2px;
+  min-width: 170px;
+  margin-top: -2px;
+}
+.vh-act {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 28px;
+  min-width: 28px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  font: 500 12px/1 var(--av-sans);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  color: var(--av-ink-2);
+  cursor: pointer;
+  opacity: 0.6;
+  transition:
+    color 0.16s,
+    background 0.16s,
+    box-shadow 0.16s,
+    opacity 0.16s;
+}
+.vh-act::before {
+  /* 点击区比 --av-hit 再多 2px:列表滚到一半时最上面那句被裁掉一点也还够 */
+  content: '';
+  position: absolute;
+  inset: min(0px, calc(50% - var(--av-hit) / 2 - 1px));
+}
+.vh-act.raw {
+  grid-column: 1;
+}
+.vh-act.ed {
+  grid-column: 2;
+  justify-self: start;
+}
+.vh-act.back {
+  grid-column: 3;
+  justify-self: start;
+  margin-left: 6px;
+  padding: 0 9px 0 7px;
+  background: var(--av-paper);
+  box-shadow: 0 0 0 1px var(--av-hair);
+  opacity: 0;
+  pointer-events: none;
+}
+.vh-ln:is(:hover, :focus-within) .vh-act {
+  opacity: 1;
+}
+.vh-ln:is(:hover, :focus-within) .vh-act.back {
+  pointer-events: auto;
+}
+.vh-act:hover {
+  color: var(--av-ink);
+  background: var(--av-hair-2);
+}
+.vh-act.back:hover {
+  background: var(--av-paper);
+  box-shadow: 0 0 0 1px var(--av-ink);
+}
+.vh-act:focus-visible,
+.vh-raw:focus-visible {
+  outline: 2px solid var(--av-ctl);
+  outline-offset: 2px;
+}
+/* 这条的原文开着:按钮外一圈墨色细线 */
+.vh-act.raw.on {
+  opacity: 1;
+  color: var(--av-ink);
+  box-shadow: inset 0 0 0 1px var(--av-ink);
+}
+
+/* 语音按钮(VoiceButtons,对话框里也用,颜色在 vn.css 是给深色玻璃配的):纸上换成墨色,状态不跟角色色 */
+.vh-acts .vn-voice-ctl {
+  grid-column: 2;
+  justify-self: start;
+  gap: 2px;
+}
+.vh-acts .vn-voice-ctl button {
+  width: 30px;
+  height: 28px;
+  border-radius: 7px;
+  color: var(--av-ink-2);
+}
+.vh-acts .vn-voice-ctl button:hover:not(:disabled) {
+  color: var(--av-ink);
+  background: var(--av-hair-2);
+}
+.vh-acts .vn-voice-ctl.speaking button:first-child {
+  color: var(--av-sel, var(--av-ink));
+}
+.vh-acts .vn-voice-ctl.error button:first-child {
+  color: var(--av-bad-ink);
+}
+.vh-ln:not(:hover):not(:focus-within) .vn-voice-ctl:not(.speaking):not(.busy):not(.error) {
+  opacity: 0.6;
+}
+
+/* ---------- 看原文:一整块,标签和宏是浅色小字;点一下变成打字框 ---------- */
+.vh-raw,
+.vh-edit {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  margin: 2px 0 0;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 8px;
+  font: 400 14px/1.8 var(--av-sans);
+  letter-spacing: 0.02em;
+  color: var(--av-ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.vh-raw {
+  background: var(--av-hair-2);
+  user-select: text;
+  transition:
+    box-shadow 0.16s,
+    background 0.16s;
+}
+.vh-raw.can {
+  cursor: text;
+}
+.vh-raw.can:hover {
+  box-shadow: inset 0 0 0 1px var(--av-hair);
+}
+.vh-tag {
+  font: 12px/1 var(--av-mono);
+  letter-spacing: 0;
+  color: var(--av-dim);
+}
+/* 在改的那条:一个框(墨色细线),上面打字、下面一排 保存 / 取消,都在框里面 */
+.vh-ebox {
+  margin: 2px 0 0;
+  border: 1.5px solid var(--av-sel, var(--av-ink));
+  border-radius: 8px;
+  background: var(--av-paper);
+  box-shadow: 0 2px 10px rgba(20, 20, 40, 0.08);
+}
+.vh-edit {
+  min-height: 80px;
+  margin: 0;
+  border-radius: 6.5px 6.5px 0 0;
+  resize: none;
+  overflow: hidden;
+  outline: none;
+  background: transparent;
+  user-select: text;
+  caret-color: var(--av-ink);
+}
+/* 保存 / 取消:框里最下面一排;回复很长时贴住列表底边(还在框里),一直够得着 */
+.vh-eacts {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--av-hair);
+  border-radius: 0 0 6.5px 6.5px;
+  background: var(--av-solid, var(--av-paper));
+}
+.vh-eacts .av-kbd {
+  margin-left: 6px;
+}
+.vh-eerr {
+  font-size: 12.5px;
+  color: var(--av-bad-ink);
+}
+.vh-note {
+  margin: 6px 0 0;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--av-dim);
+}
+
+/* ---------- 窄屏:按钮挪到文字下面一排 ---------- */
+@media (max-width: 720px) {
+  .vh-ln {
+    grid-template-columns: 34px minmax(0, 1fr);
+    column-gap: 10px;
+  }
+  .vh-av,
+  .vh-face,
+  .vh-stamp {
+    width: 34px;
+    height: 34px;
+  }
+  .vh-acts {
+    grid-column: 2;
+    min-width: 0;
+    justify-content: start;
+    margin-top: 2px;
+  }
+  .vh-zh {
+    font-size: 15px;
+    line-height: 1.7;
+  }
+  .vh-ln:is(.narr, .user, .player) .vh-zh {
+    font-size: 14px;
+  }
+}
+/* ---------- 手机(设计稿 phone.css 的 .pf-hist):没有悬停,点一句才出 原文 / 重听 / 回到这里(字写出来),在改的那条一直有 ---------- */
+@media (max-width: 640px) {
+  .vh-ln {
+    margin: 0 -8px;
+    padding: 10px 8px;
+    cursor: pointer;
+  }
+  .vh-ln:is(:hover, :focus-within):not(.open):not(.cur) {
+    background: none;
+  }
+  .vh-ln.open {
+    background: var(--av-hair-2);
+  }
+  .vh-ln.narr .vh-av {
+    height: 24px;
+  }
+  .vh-ja {
+    font-size: 12.5px;
+  }
+  .vh-acts {
+    display: none;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 8px 0 0;
+  }
+  .vh-ln:is(.open, .editing) .vh-acts {
+    display: flex;
+    animation: av-pop-in 0.18s var(--av-ease) backwards;
+  }
+  .vh-act,
+  .vh-act.back,
+  .vh-acts .vn-voice-ctl button {
+    height: 40px;
+    min-width: 40px;
+    margin: 0;
+    padding: 0 12px 0 10px;
+    gap: 6px;
+    border-radius: var(--av-r-btn);
+    background: var(--av-paper);
+    box-shadow: inset 0 0 0 1px var(--av-hair);
+    font-size: 13px;
+    color: var(--av-ink);
+    opacity: 1 !important;
+    pointer-events: auto;
+  }
+  .vh-act.raw::after {
+    content: '原文';
+  }
+  .vh-act.raw.on::after {
+    content: '收起原文';
+  }
+  .vh-act.ed::after {
+    content: '改原文';
+  }
+  /* 改原文那个框下面的 保存 / 取消:手机上 40 高、至少 72 宽,不放键盘提示(设计稿 .pf-hist .mnH-eacts、.pf-phone .av-kbd) */
+  .vh-eacts {
+    padding: 8px 12px calc(env(safe-area-inset-bottom) + 8px);
+  }
+  .vh-eacts .av-btn {
+    height: 40px;
+    min-width: 72px;
+    padding: 0 14px;
+    justify-content: center;
+    font-size: 13.5px;
+  }
+  .vh-eacts .av-kbd {
+    display: none;
+  }
+}
+@media (hover: none) {
+  .vh-act,
+  .vh-acts .vn-voice-ctl {
+    opacity: 1 !important;
+  }
+  .vh-act.back {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vh-ln,
+  .vh-act,
+  .vh-raw {
+    transition: none;
+  }
+}

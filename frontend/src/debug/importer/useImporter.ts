@@ -11,6 +11,8 @@
  *       (没有卡就打开素材管理页、选中新建的包,提示条在那边)
  *
  * 提示条里认领没认出来的文件走 classify。一次只导一批:上一批没完时再拖进来只提示。
+ * 游戏开着时导不进来(上传失败、什么都没认出来、计划没了)不是一行提示,而是一张「导入失败」纸卡
+ * (设计稿 kit/transfer.js 的 error:文件名 + 报错原文,「好的」「重新导入」);调试台里照旧提示一句。
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -33,6 +35,7 @@ import {
   spritesToCheck,
   type TargetSprites,
 } from './importModel';
+import { inGame } from '../components/export/inGame';
 import type { ImportPhase } from './ImportProgress';
 
 export interface ImportDone {
@@ -88,6 +91,7 @@ export function useImporter(deps: Deps) {
   const busyRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const pickRef = useRef<(target?: ImportTarget) => void>(() => {});
 
   const setBusy = (on: boolean) => {
     busyRef.current = on;
@@ -99,6 +103,16 @@ export function useImporter(deps: Deps) {
     setPhase(IDLE);
     setConfirm(null);
   };
+
+  /** 导不进来:游戏里弹「导入失败」纸卡(重新导入 = 再选一次文件,给同一张卡),调试台里提示一句 */
+  const fail = (message: string, file: string, target: ImportTarget) => {
+    if (!inGame()) {
+      latest.current.notify('error', message);
+      return;
+    }
+    setPhase({ step: 'failed', file, message, retry: () => pickRef.current(target) });
+  };
+  const batchName = (files: ImportUpload[]) => (files.length === 1 ? fileName(files[0].path) : `${files.length} 个文件`);
 
   /** 不导这一批了:暂存的文件让后端马上删掉;删不掉(已经不在、已经执行过)也无妨,过 7 天会清 */
   const discard = (plan: ImportPlan) => {
@@ -125,8 +139,8 @@ export function useImporter(deps: Deps) {
     } catch (e) {
       const status = (e as { status?: unknown }).status;
       if (status === 404 || status === 409) {
-        latest.current.notify('error', importErrorText(e));
         finish();
+        fail(importErrorText(e), asked?.source ?? '这一批', target);
         return;
       }
       // 库里什么都没改,拖进来的文件还在:框留着(没弹过就弹出来),写上原因,能再试一次
@@ -163,15 +177,15 @@ export function useImporter(deps: Deps) {
           setPhase(sent >= total ? { step: 'plan' } : { step: 'upload', sent, total, files: files.length }),
       );
     } catch (e) {
-      if (isAbort(e)) notify('ok', '已取消导入');
-      else notify('error', importErrorText(e));
       finish();
+      if (isAbort(e)) notify('ok', '已取消导入');
+      else fail(importErrorText(e), batchName(files), target);
       return;
     }
     if (nothingToImport(plan)) {
-      notify('error', ['没认出能导入的东西', ...plan.skipped].join(';'));
       discard(plan);
       finish();
+      fail(['没认出能导入的东西', ...plan.skipped].join(';'), batchName(files), target);
       return;
     }
     if (!shouldConfirm(plan)) {
@@ -219,6 +233,9 @@ export function useImporter(deps: Deps) {
     el.click();
   }, []);
   useEffect(() => () => inputRef.current?.remove(), []);
+  useEffect(() => {
+    pickRef.current = pick;
+  }, [pick]);
 
   const confirmApply = useCallback((body: ImportApplyBody) => {
     const c = confirmRef.current;
@@ -237,7 +254,11 @@ export function useImporter(deps: Deps) {
     setConfirmState(null);
   }, []);
 
-  const cancelUpload = useCallback(() => abortRef.current?.abort(), []);
+  /** 上传中:取消上传;「导入失败」那张开着:关上它(ImportProgress 的「取消」「好的」都走这里) */
+  const cancelUpload = useCallback(() => {
+    if (abortRef.current) abortRef.current.abort();
+    else setPhase((p) => (p.step === 'failed' ? IDLE : p));
+  }, []);
 
   /** 提示条里认领一个文件;失败提示一句、返回 null */
   const classify = useCallback(async (jobId: string, path: string, kind: ClassifyKind) => {

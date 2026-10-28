@@ -158,7 +158,7 @@ export interface MatchBadge {
 /**
  * 表头右边的匹配小牌子:当前服装的差分名在这个声音的情绪名 / 别名里找不找得到。
  * spriteLabels 为空 = 这张卡没立绘,AI 写的表情会落到内置基础表情上,拿它们对照;
- * null = 没有可对照的(素材管理页不带卡,备用声音只用默认情绪),不出小牌子
+ * null = 没有可对照的(素材管理页不带卡),不出小牌子
  */
 export function matchBadge(spriteLabels: readonly string[] | null, profile: VoiceProfile): MatchBadge | null {
   if (spriteLabels === null) return null;

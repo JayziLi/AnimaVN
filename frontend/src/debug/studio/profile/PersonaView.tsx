@@ -7,6 +7,7 @@ import { TERMS } from '../terms';
 import type { Notify } from '../types';
 import { Btn, Chip, FieldLabel, Inspector, Section, SwitchRow } from '../ui';
 import { ArmedBtn } from './ArmedBtn';
+import { useConfirm } from '../../vn/ui/confirm';
 
 /**
  * 资料页 · 玩家人设(目录点「玩家人设」):主区是人设列表 + 选中那个的编辑,右栏是绑定和说明。
@@ -62,14 +63,24 @@ export function PersonaView(props: PersonaPageProps) {
 
   const dirty = editing !== null && (form.name.trim() !== editing.name || form.description !== editing.description);
   const unsaved = dirty || (creating && (form.name.trim() !== '' || form.description.trim() !== ''));
-  const confirmDiscard = () => !unsaved || window.confirm('人设的改动还没保存,放弃这些改动?');
+  const confirm = useConfirm();
+  const confirmDiscard = async () =>
+    !unsaved ||
+    (await confirm({
+      title: '放弃这些改动?',
+      body: '人设的改动还没保存',
+      en: 'Unsaved',
+      del: '放弃改动',
+      keep: '继续改',
+      message: '人设的改动还没保存,放弃这些改动?',
+    }));
 
   const fail = (e: unknown) => notify('error', e instanceof Error ? e.message : String(e));
 
   /** 点一行 = 启用它 + 装进表单(选身份和看详情是同一个动作,和人设抽屉一样) */
   const pick = async (p: DebugPersona) => {
     if (p.id !== editing?.id) {
-      if (!confirmDiscard()) return;
+      if (!(await confirmDiscard())) return;
       setCreating(false);
       setSelId(p.id);
       setForm(formOf(p));
@@ -86,14 +97,14 @@ export function PersonaView(props: PersonaPageProps) {
     }
   };
 
-  const startNew = () => {
-    if (!confirmDiscard()) return;
+  const startNew = async () => {
+    if (!(await confirmDiscard())) return;
     setCreating(true);
     setForm(formOf(null));
   };
 
-  const cancelNew = () => {
-    if (!confirmDiscard()) return;
+  const cancelNew = async () => {
+    if (!(await confirmDiscard())) return;
     setCreating(false);
   };
 

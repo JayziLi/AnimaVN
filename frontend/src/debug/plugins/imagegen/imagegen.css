@@ -52,7 +52,9 @@
   background: var(--vn-accent);
   animation: ig-breathe 1.2s ease-in-out infinite;
 }
-/* 左上角:状态标签 + 图上的操作(右上角是语音和模型标签) */
+/* 状态和图上的操作:一块,里面一条或两条细条(上面进度、下面操作)。
+   对话区 A(.ga)里照四角细条(vnLine.css .vn-strip)的样子,放在右下角「画笔 · 语音 · 重来 · 隐藏」那条正上方,
+   右边对齐、隔 10,电脑上和四角一起按窗口等比缩放(--ga-k);老样子的经典框里还在左上角 */
 .ig-corner {
   position: absolute;
   top: calc(env(safe-area-inset-top) + 10px);
@@ -63,19 +65,165 @@
   gap: 6px;
   max-width: calc(100vw - 2 * var(--vn-gutter));
 }
-.vn-chip.ig-status {
-  display: inline-flex;
+.vn-root.ga .ig-corner {
+  top: auto;
+  left: auto;
+  right: calc(env(safe-area-inset-right) + var(--vn-corner) * var(--ga-k, 1));
+  bottom: calc(env(safe-area-inset-bottom) + (var(--vn-corner) + var(--vn-strip-h) + 10px) * var(--ga-k, 1));
+  align-items: flex-end;
+  gap: 10px;
+  max-width: none;
+  scale: var(--ga-k, 1);
+  transform-origin: 100% 100%;
+}
+/* 平时只有一颗小按钮(插图图标;正在画时右上一个呼吸的小点),鼠标指上去 / 点一下才展开整条:
+   电脑上往左展开(按钮在最右,贴着下面那条的右边),手机上往右展开(按钮在最左) */
+.ig-bar > .ig-toggle.on {
+  background: rgba(255, 255, 255, 0.12);
+}
+.ig-toggle.busy::after {
+  content: '';
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #fff;
+  animation: ig-breathe 1.2s ease-in-out infinite;
+}
+.ig-tools.is-open > :not(.ig-toggle),
+.ig-corner.is-open > .ig-status {
+  animation: ig-unfold 0.16s ease both;
+}
+@keyframes ig-unfold {
+  from {
+    opacity: 0;
+    translate: 6px 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ig-toggle.busy::after,
+  .ig-tools.is-open > :not(.ig-toggle),
+  .ig-corner.is-open > .ig-status {
+    animation: none;
+  }
+}
+
+/* 手机:右下那排已经挤满(说点什么 + 四格),这块放到左上角「模型」下面那一行(和右边「历史」同一行),
+   左对齐、往右展开、进度条在下面;收着时只有一颗 44 的小方块 */
+@media (max-width: 640px) {
+  .vn-root.ga .ig-corner {
+    top: calc(env(safe-area-inset-top) + 58px);
+    left: var(--vn-corner);
+    right: auto;
+    bottom: auto;
+    flex-direction: column-reverse;
+    align-items: flex-start;
+    gap: 8px;
+    scale: none;
+  }
+  .ig-tools > .ig-toggle {
+    order: -1;
+  }
+  .ig-tools > .ig-toggle::before {
+    content: none;
+  }
+  /* 按钮挪到最前面以后,原来排第一的那格补上它左边那道竖线 */
+  .ig-tools.is-open > :first-child::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 13px;
+    bottom: 13px;
+    width: 1px;
+    background: rgba(255, 255, 255, 0.22);
+    pointer-events: none;
+  }
+  @keyframes ig-unfold {
+    from {
+      opacity: 0;
+      translate: -6px 0;
+    }
+  }
+  /* 标题这一格最多 110 宽(连内边距),「手动 / 自动」不写:整条不碰右边的「历史」 */
+  .ig-cap {
+    max-width: 110px;
+    padding: 0 12px 0 14px;
+  }
+  .ig-cap small {
+    display: none;
+  }
+}
+/* 这块里的细条排成一列,不各自绝对定位、不再单独缩放(外面整块缩过了;
+   比 vnLine.css 的 .vn-root.ga .vn-strip 多一层,不然两边一样重、后加载的那条赢,缩两遍) */
+.vn-root .ig-corner > .vn-strip.ig-bar {
+  position: relative;
+  scale: none;
   align-items: center;
-  gap: 6px;
-  color: var(--vn-text);
+  white-space: nowrap;
+}
+.ig-bar > button {
+  min-width: 44px;
+  padding: 0 11px;
+}
+.ig-bar > button.on::after {
+  display: none;
+}
+/* 左边一格:这张图的标题 + 怎么来的(手动 / 自动 / 换一张),只是字,不能点 */
+.ig-cap {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  max-width: 240px;
+  padding: 0 14px 0 16px;
+}
+.ig-cap b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font: 600 13px/1 var(--av-serif);
+  letter-spacing: 0.12em;
+  color: rgba(255, 255, 255, 0.92);
+}
+.ig-cap small {
+  flex: none;
+  font: 400 11.5px/1 var(--av-sans);
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.72);
+}
+/* 进度:● 现在这步(白)› 下一步(淡)几秒 | 等待 N */
+.ig-step {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 16px;
+  font: 500 13px/1 var(--av-sans);
+  letter-spacing: 0.06em;
   font-variant-numeric: tabular-nums;
-  pointer-events: auto;
+}
+.ig-step b {
+  font-weight: 500;
+  color: #fff;
+}
+.ig-next,
+.ig-later {
+  color: rgba(255, 255, 255, 0.6);
+}
+.ig-secs {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.78);
+}
+.ig-queue {
+  padding: 0 16px;
+  font: 400 12px/1 var(--av-sans);
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.8);
 }
 .ig-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--vn-accent);
+  background: #fff;
   animation: ig-breathe 1.2s ease-in-out infinite;
 }
 @keyframes ig-breathe {
@@ -83,15 +231,10 @@
     opacity: 0.35;
   }
 }
-.ig-tools {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  pointer-events: auto;
-}
-.ig-tools .vn-pill {
-  font-size: 12px;
-  padding: 4px 11px;
+/* 老样子的经典框:还是左上角那一列,细条换成它自己的玻璃底 */
+.vn-root:not(.ga) .ig-corner > .vn-strip.ig-bar.ig-bar {
+  background: var(--vn-glass, rgba(20, 20, 32, 0.62));
+  --vn-strip-h: 36px;
 }
 
 /* 「画这一幕」小面板和提示词详情:默认在左上角,不挡站在中间的人、不压对话框。
@@ -517,4 +660,147 @@
 .vn-set-label > .dw-tip {
   margin-left: 6px;
   vertical-align: middle;
+}
+
+/* 对话区 A 的右下细条里:正在画的小点用白色(选中、状态不跟角色色) */
+.vn-root.ga .ig-btn.busy::after {
+  top: 9px;
+  right: 9px;
+  background: #fff;
+}
+
+/* 对话区 A 里「画这一幕」和「这张图」两个面板:电脑上从右下那条细条上方弹出(和插图那条同一个角),不压左上角的模型 */
+@media (min-width: 641px) {
+  .vn-root.ga .ig-panel {
+    top: auto;
+    left: auto;
+    right: calc(env(safe-area-inset-right) + var(--vn-corner) * var(--ga-k, 1));
+    bottom: calc(env(safe-area-inset-bottom) + (var(--vn-corner) + var(--vn-strip-h) + 10px) * var(--ga-k, 1));
+    max-height: calc(100% - (var(--vn-corner) + var(--vn-strip-h) + 10px) * var(--ga-k, 1) - 90px);
+  }
+}
+
+/* ── 插图那条细条:鼠标指到图标上出一张纸面小说明(设计稿「收藏以后 · 悬停提示」);第一行是名字,下面一行淡一点。
+   手机上没有悬停,不出 ── */
+@media (hover: hover) {
+  .ig-bar > button[data-tip]:hover::after,
+  .ig-bar > button[data-tip]:focus-visible::after {
+    content: attr(data-tip);
+    display: block;
+    position: absolute;
+    z-index: 3;
+    right: 0;
+    left: auto;
+    bottom: calc(100% + 10px);
+    width: max-content;
+    max-width: 240px;
+    height: auto;
+    margin: 0;
+    padding: 9px 12px 10px;
+    border-radius: 6px;
+    background: #fbfaf7;
+    box-shadow: 0 0 0 1px rgba(42, 42, 51, 0.1), 0 8px 22px rgba(10, 10, 30, 0.3);
+    color: rgba(42, 42, 51, 0.86);
+    font: 400 12px/1.55 var(--av-sans);
+    letter-spacing: 0.02em;
+    text-align: left;
+    white-space: pre-line;
+    text-shadow: none;
+    pointer-events: none;
+    animation: ig-tip 0.14s ease both;
+  }
+}
+@keyframes ig-tip {
+  from {
+    opacity: 0;
+    translate: 0 4px;
+  }
+}
+
+/* ── 「画这一幕」和「这张图」两个面板:对话区 A 里换成纸卡(av-pcard + 主题,和语音面板、右键菜单同一种纸) ── */
+.ig-panel.av-pcard {
+  background: var(--av-paper);
+  color: var(--av-ink);
+  border: 1px solid var(--av-hair);
+  box-shadow: 0 10px 30px rgba(20, 16, 40, 0.24), 0 1px 3px rgba(20, 16, 40, 0.08);
+  --vn-text: var(--av-ink);
+  --vn-text-dim: var(--av-ink-2);
+  --vn-border: var(--av-hair);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  border-radius: 7px;
+  padding: 16px 18px;
+  gap: 12px;
+  font: 400 13px/1.5 var(--av-sans);
+}
+.ig-panel.av-pcard .ig-title {
+  font: 600 16px/1.2 var(--av-serif);
+  letter-spacing: 0.12em;
+}
+.ig-panel.av-pcard .ig-beta {
+  color: var(--av-dim);
+}
+/* 胶囊按钮 → 组件库的纸按钮(方角 6、细边;主按钮墨底纸字) */
+.ig-panel.av-pcard .vn-pill {
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--av-hair);
+  background: var(--av-paper);
+  color: var(--av-ink);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  font: 500 12.5px/1.2 var(--av-sans);
+  letter-spacing: 0.04em;
+}
+.ig-panel.av-pcard .vn-pill:hover:not(:disabled) {
+  background: var(--av-paper-2);
+}
+.ig-panel.av-pcard .vn-pill.accent {
+  border-color: var(--av-ink);
+  background: var(--av-ink);
+  color: var(--av-paper);
+}
+.ig-panel.av-pcard .vn-pill.accent:hover:not(:disabled) {
+  background: var(--av-ink-2);
+}
+.ig-panel.av-pcard .vn-pill:disabled {
+  opacity: 0.5;
+}
+.ig-panel.av-pcard .ig-input {
+  border-radius: 6px;
+  border-color: var(--av-hair);
+  background: var(--av-paper-2);
+  color: var(--av-ink);
+}
+.ig-panel.av-pcard .ig-input:focus {
+  border-color: var(--av-ink-2);
+}
+.ig-panel.av-pcard .ig-code {
+  border-radius: 6px;
+  background: var(--av-paper-2);
+  color: var(--av-ink);
+}
+.ig-panel.av-pcard .vn-seg {
+  border-radius: 6px;
+  border-color: var(--av-hair);
+  background: var(--av-paper-2);
+}
+.ig-panel.av-pcard .vn-seg button {
+  color: var(--av-ink-2);
+}
+/* 选中:白纸浮起 + 墨字,不铺角色色 */
+.ig-panel.av-pcard .vn-seg button.on {
+  background: var(--av-paper);
+  color: var(--av-ink);
+  box-shadow: 0 1px 2px rgba(20, 16, 40, 0.14);
+}
+.ig-panel.av-pcard .ig-note,
+.ig-panel.av-pcard .ig-code-label,
+.ig-panel.av-pcard .ig-label,
+.ig-panel.av-pcard .ig-check,
+.ig-panel.av-pcard .ig-field {
+  color: var(--av-ink-2);
+}
+.ig-panel.av-pcard .ig-check input {
+  accent-color: var(--av-ink);
 }

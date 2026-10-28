@@ -4,9 +4,9 @@
  * 每格的缩略图是那个对话停在最后一句时游戏里的画面(背景、立绘、CG,和视觉小说读同一份时间线,core/timeline.ts),再配上角色最后一句,帮人想起是哪一段。
  * 算缩略图要读整段对话:当前这个直接用内存里的,别的按需拉一次,按「id + 更新时间」缓存。
  *
- * 10-04 定稿样式(画布「存档 / 读档」):页面底是存档那一刻的场景虚化,鼠标移到哪格换哪格的;
  * 每格上半是场景 + 地点,下半是压在接缝上的圆头像 + 名字 · 时间 + 她最后一句;第一格是「在这里存档」。
- * 有立绘时左边站着她,移到哪格换成那格结尾的表情。
+ * 10-23 起菜单是一块纸(局内菜单 A):格子直接摆在纸上,页头是一条场景横幅(VNMenu 画);
+ * 不放立绘、页里不再另糊一层场景(菜单背后已经糊了一层,一屏只糊一层)。
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -15,7 +15,6 @@ import { buildTimeline, stateAtEnd, type TimelineCtx } from '../core/timeline';
 import {
   debugApi,
   sceneImageUrl,
-  spriteImageUrl,
   type PackSprite,
   type ChatSummary,
   type SceneAsset,
@@ -30,14 +29,17 @@ import { jevText } from '../plugins/jevNotes';
 import { parseBilingual } from '../plugins/lang';
 import type { FormsState } from '../plugins/cartridges';
 import { cgFrameFromPairs } from '../plugins/pairings';
-import { facesByCanvas, type SpriteStage } from '../plugins/spriteLayout';
+import type { SpriteStage } from '../plugins/spriteLayout';
 import { FALLBACK_BACKGROUND } from './fallbacks';
-import { titleSpriteStyle } from './titleArt';
 import type { TagKind } from './script';
 import { useEmotionMatches } from './useEmotionMatches';
 import { usePairings } from './usePairings';
 import { useTimelineEngine } from './useTimelineEngine';
 import { useWordRecords } from './useWordRecords';
+import { chatLabel } from './menuLabel';
+import { ConfirmHere } from './ui/ConfirmHere';
+import type { ConfirmReason } from './ui/logic';
+import { MOTION, prefersReducedMotion } from './ui/motion';
 import './vnSaves.css';
 
 interface Props {
@@ -64,6 +66,8 @@ interface Props {
   busy: boolean;
   canSave: boolean;
   onSaveHere: () => void;
+  /** 从封面「读档」进来:只能挑一个读,没有「在这里存档」那一格(没有当前对话可存) */
+  loadOnly?: boolean;
   onLoad: (id: string) => void;
   onNewStory: () => void;
   onRename: (id: string, name: string) => void | Promise<void>;
@@ -113,9 +117,11 @@ function lastLineOf(entries: readonly ChatEntry[], kinds: TagKind[], charName: s
   return lines[lines.length - 1]?.text ?? '';
 }
 
-/** 上半:存档那一刻的场景(停在 CG 上就是那张 CG)+ 地点 */
-function Thumb({ preview }: { preview: Preview | null }) {
-  if (!preview) return <div className="vn-slot-thumb loading" />;
+/** 上半:存档那一刻的场景(停在 CG 上就是那张 CG)+ 地点;正在玩的那格右上一枚「正在玩」 */
+function Thumb({ preview, now, last }: { preview: Preview | null; now: boolean; last?: boolean }) {
+  // 从封面读档时那一格是「上次玩的」(设计稿读档页)
+  const badge = now && <span className="vn-slot-badge">{last ? '上次玩的' : '正在玩'}</span>;
+  if (!preview) return <div className="vn-slot-thumb loading">{badge}</div>;
   return (
     <div className="vn-slot-thumb">
       <img
@@ -126,6 +132,7 @@ function Thumb({ preview }: { preview: Preview | null }) {
         style={preview.cg ? undefined : { objectPosition: `${preview.bg?.focus_x ?? 50}% 50%` }}
       />
       {preview.bg?.label && !preview.cg && <span className="vn-slot-place">{preview.bg.label}</span>}
+      {badge}
     </div>
   );
 }
@@ -142,8 +149,6 @@ function SlotFace({ src, name }: { src: string | null; name: string }) {
     </span>
   );
 }
-
-const SIDE_POSE = { faceSize: 0.19, faceTop: 0.12, cx: 0.5 };
 
 export function VNSaves({
   cardId,
@@ -162,6 +167,7 @@ export function VNSaves({
   busy,
   canSave,
   onSaveHere,
+  loadOnly,
   onLoad,
   onNewStory,
   onRename,
@@ -170,7 +176,41 @@ export function VNSaves({
   // 别的对话的消息:拉到一个放一个,拉完这一轮才会触发一次重算
   const [loaded, setLoaded] = useState<Map<string, ChatEntry[]>>(() => new Map());
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
-  const [armedDelete, setArmedDelete] = useState<string | null>(null);
+  // 每格左上的「⋯」:点开一个小菜单(重命名 / 删除);点别处收起
+  const [moreFor, setMoreFor] = useState<string | null>(null);
+  useEffect(() => {
+    if (!moreFor) return;
+    const off = (e: Event) => {
+      const t = e.target as Element | null;
+      if (!t?.closest?.('.vn-slot-pop, .vn-slot-more')) setMoreFor(null);
+    };
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      // 只收小菜单,别连菜单一起关(VNScreen 认 defaultPrevented)
+      e.preventDefault();
+      setMoreFor(null);
+    };
+    document.addEventListener('pointerdown', off, true);
+    document.addEventListener('keydown', esc, true);
+    return () => {
+      document.removeEventListener('pointerdown', off, true);
+      document.removeEventListener('keydown', esc, true);
+    };
+  }, [moreFor]);
+  // 删存档:就在那一格上翻出「删除 / 留着」(leaving = 正在淡出,格子上的淡化已经撤了)
+  const [asking, setAsking] = useState<{ id: string; leaving: boolean } | null>(null);
+  const slotsRef = useRef<HTMLDivElement>(null);
+  const closeAsk = (reason: ConfirmReason) => {
+    const cur = asking;
+    if (!cur || cur.leaving) return;
+    setAsking({ id: cur.id, leaving: true });
+    window.setTimeout(() => setAsking((a) => (a?.id === cur.id ? null : a)), prefersReducedMotion() ? 0 : MOTION.popOut + 10);
+    if (reason === 'delete') void onDelete(cur.id);
+  };
+  // 问的那个存档没了(别处删掉了、换了角色):确认也跟着收
+  useEffect(() => {
+    if (asking && !chats.some((c) => c.id === asking.id)) setAsking(null);
+  }, [asking, chats]);
 
   useEffect(() => {
     let alive = true;
@@ -277,17 +317,10 @@ export function VNSaves({
     return out;
   }, [saves, base, formsLensFor, sprites, tagKinds, charName, macros]);
 
-  const faces = useMemo(() => facesByCanvas(sprites), [sprites]);
-  // spriteStage / spriteLayout 是游戏里的构图;左边那列按脸单独摆,用不上
+  // spriteStage / spriteLayout 是游戏里的构图;格子里的缩略图自己摆,用不上
   void spriteStage;
   void spriteLayout;
 
-  // 鼠标在哪格:底图虚化、左边的表情跟着换;不在任何一格上时用当前对话的
-  const [hot, setHot] = useState<string | null>(null);
-  const focusId = hot ?? currentChatId ?? chats[0]?.id ?? null;
-  const focus = focusId ? (previews.get(focusId) ?? null) : null;
-  const side = focus?.sprite ?? sprites[0] ?? null;
-  const sideSrc = side ? spriteImageUrl(side) : null;
   const faceSrc = cardId ? cardFaceUrl(cardId, 96, sprites[0]?.pack_id) : null;
 
   // 回车 / Esc 之后输入框被卸掉,有的浏览器还会补一个 blur:那次不能再提交(Esc 是放弃)
@@ -300,133 +333,145 @@ export function VNSaves({
     if (name) void onRename(renaming.id, name);
   };
 
-  return (
-    <div className={`vn-saves${sideSrc ? ' with-side' : ''}`}>
-      <img key={sceneOf(focus)} className="vn-saves-blur" src={sceneOf(focus)} alt="" draggable={false} />
-      <div className="vn-saves-veil" />
+  const plus = (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" aria-hidden="true">
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  );
 
-      {sideSrc && side && (
-        <div className="vn-saves-side" aria-hidden="true">
-          <img
-            key={side.id}
-            className="vn-saves-spr"
-            src={sideSrc}
-            alt=""
-            draggable={false}
-            style={titleSpriteStyle(faces.get(side.id) ?? null, side.face_scan?.height ?? null, SIDE_POSE, 0)}
-          />
+  return (
+    <div className="vn-saves">
+      {/* 页头右边(和「返回游戏」一行):新的故事(设计稿 .mn-head-r);从封面读档时封面上本来就有「新的故事」,这里不放 */}
+      {!loadOnly && (
+        <div className="vn-saves-acts">
+          <button type="button" className="av-btn sm" onClick={onNewStory} disabled={busy}>
+            新的故事
+          </button>
         </div>
       )}
 
-      <div className="vn-saves-main">
-        <div className="vn-page-bar">
-          <span className="vn-page-note">一个对话一格,点开就是读档。「重来」出的几个版本不算存档,在历史里切</span>
-          <div className="vn-page-actions">
-            <button className="vn-pill" onClick={onNewStory} disabled={busy}>
-              新的故事
-            </button>
-          </div>
-        </div>
-
-        <div className="vn-slots">
+      <div
+        ref={slotsRef}
+        className={`vn-slots${asking && !asking.leaving ? ' av-dimrest' : ''}`}
+      >
+        {!loadOnly && (
           <button
+            type="button"
             className="vn-slot vn-slot-new"
             onClick={onSaveHere}
             disabled={busy || !canSave}
             title="把到当前这条消息为止的对话另存一份,你留在现在这个对话里接着玩"
           >
-            <span className="plus">+</span>
-            <span className="t">{busy ? '处理中…' : '在这里存档'}</span>
-            <span className="s">{canSave ? '存到当前这一句为止' : '还没有可以存的对话'}</span>
+            <span className="plus">{plus}</span>
+            <span className="tx">
+              <b className="t">{busy ? '处理中…' : '在这里存档'}</b>
+              <small className="s">{canSave ? '存到当前这一句为止' : '还没有可以存的对话'}</small>
+            </span>
           </button>
-          {chats.map((c) => {
-            const current = c.id === currentChatId;
-            const preview = previews.get(c.id) ?? null;
-            const editing = renaming?.id === c.id;
-            return (
-              <div
-                key={c.id}
-                className={`vn-slot${current ? ' current' : ''}`}
-                onPointerEnter={() => setHot(c.id)}
-                onPointerLeave={() => setHot((h) => (h === c.id ? null : h))}
+        )}
+        {chats.map((c) => {
+          const current = c.id === currentChatId;
+          const preview = previews.get(c.id) ?? null;
+          const editing = renaming?.id === c.id;
+          const count = current ? currentEntries.length : c.message_count;
+          return (
+            <div
+              key={c.id}
+              className={`vn-slot${current ? ' current' : ''}${asking?.id === c.id && !asking.leaving ? ' is-asking' : ''}${editing ? ' is-renaming' : ''}`}
+            >
+              <button
+                type="button"
+                className="vn-slot-open"
+                onClick={() => (current ? undefined : onLoad(c.id))}
+                disabled={busy}
+                title={current ? (loadOnly ? '上次玩的就是这个' : '正在玩的就是这个') : '读档'}
               >
-                <button
-                  className="vn-slot-open"
-                  onClick={() => (current ? undefined : onLoad(c.id))}
-                  onFocus={() => setHot(c.id)}
-                  onBlur={() => setHot((h) => (h === c.id ? null : h))}
-                  disabled={busy}
-                  title={current ? '正在玩的就是这个' : '读档'}
-                >
-                  <Thumb preview={preview} />
-                  {current && <span className="vn-slot-badge">当前</span>}
-                  <span className="vn-slot-body">
+                <Thumb preview={preview} now={current} last={loadOnly} />
+                <span className="vn-slot-body">
+                  <span className="vn-slot-title">
                     <SlotFace src={faceSrc} name={charName} />
-                    <span className="vn-slot-title">
-                      <span className="vn-slot-name">{c.name || '未命名'}</span>
-                      {/* 和调试台的对话历史一样:「N 条 · 时间」;当前对话以内存为准,列表里的条数是上次拉列表时的 */}
-                      <span className="vn-slot-time">
-                        {current ? currentEntries.length : c.message_count} 条 · {relTime(c.updated_at)}
-                      </span>
-                    </span>
-                    <span className="vn-slot-line">{preview?.line || c.last_message || '……'}</span>
+                    <b className="vn-slot-name" title={c.name}>
+                      {chatLabel(c.name, charName) || '未命名'}
+                    </b>
+                    <span className="vn-slot-time">· {relTime(c.updated_at)}</span>
+                    {/* 和调试台的对话历史一样有条数;当前对话以内存为准,列表里的条数是上次拉列表时的 */}
+                    <i className="vn-slot-count">{count} 条</i>
                   </span>
-                </button>
-                <div className="vn-slot-actions">
-                  {editing ? (
-                    <input
-                      className="vn-slot-rename"
-                      autoFocus
-                      value={renaming.name}
-                      maxLength={80}
-                      onChange={(e) => setRenaming({ id: c.id, name: e.target.value })}
-                      onBlur={commitRename}
-                      onKeyDown={(e) => {
-                        // 输入法选字的回车不算
-                        if (e.key === 'Enter' && !e.nativeEvent.isComposing) commitRename();
-                        if (e.key === 'Escape') {
-                          // 只放弃改名,别连菜单一起关(VNScreen 认 defaultPrevented)
-                          e.preventDefault();
-                          renameClosed.current = true;
-                          setRenaming(null);
-                        }
-                      }}
-                    />
-                  ) : (
-                    <>
-                      <button
-                        onClick={() => {
-                          renameClosed.current = false;
-                          setRenaming({ id: c.id, name: c.name });
-                        }}
-                      >
-                        重命名
-                      </button>
-                      <button
-                        className={armedDelete === c.id ? 'danger' : ''}
-                        onClick={(e) => {
-                          if (armedDelete !== c.id) {
-                            setArmedDelete(c.id);
-                            return;
-                          }
-                          // 双击的第二下不算确认:要看到「再点一次删除」再点
-                          if (e.detail > 1) return;
-                          setArmedDelete(null);
-                          void onDelete(c.id);
-                        }}
-                        onBlur={() => setArmedDelete((a) => (a === c.id ? null : a))}
-                      >
-                        {armedDelete === c.id ? '再点一次删除' : '删除'}
-                      </button>
-                    </>
-                  )}
+                  <span className="vn-slot-line">{preview?.line || c.last_message || '……'}</span>
+                </span>
+              </button>
+              {editing && (
+                <input
+                  className="vn-slot-rename"
+                  autoFocus
+                  aria-label="存档名字"
+                  value={renaming.name}
+                  maxLength={80}
+                  onChange={(e) => setRenaming({ id: c.id, name: e.target.value })}
+                  onBlur={commitRename}
+                  onKeyDown={(e) => {
+                    // 输入法选字的回车不算
+                    if (e.key === 'Enter' && !e.nativeEvent.isComposing) commitRename();
+                    if (e.key === 'Escape') {
+                      // 只放弃改名,别连菜单一起关(VNScreen 认 defaultPrevented)
+                      e.preventDefault();
+                      renameClosed.current = true;
+                      setRenaming(null);
+                    }
+                  }}
+                />
+              )}
+              <button
+                type="button"
+                className={`vn-slot-more${moreFor === c.id ? ' on' : ''}`}
+                aria-label="重命名 / 删除"
+                aria-haspopup="menu"
+                aria-expanded={moreFor === c.id}
+                title="重命名 / 删除"
+                onClick={() => setMoreFor((m) => (m === c.id ? null : c.id))}
+              >
+                ⋯
+              </button>
+              {moreFor === c.id && (
+                <div className="vn-slot-pop" role="menu">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMoreFor(null);
+                      renameClosed.current = false;
+                      setRenaming({ id: c.id, name: c.name });
+                    }}
+                  >
+                    重命名
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="bad"
+                    onClick={() => {
+                      setMoreFor(null);
+                      setAsking({ id: c.id, leaving: false });
+                    }}
+                  >
+                    删除
+                  </button>
                 </div>
-              </div>
-            );
-          })}
-        </div>
-        {chats.length === 0 && <p className="vn-page-empty">这个角色还没有对话</p>}
+              )}
+              {asking?.id === c.id && (
+                <ConfirmHere
+                  title="删掉以后找不回来"
+                  body={`这 ${count} 条对话一起删`}
+                  scope={slotsRef}
+                  leaving={asking.leaving}
+                  onClose={closeAsk}
+                />
+              )}
+            </div>
+          );
+        })}
       </div>
+      {chats.length === 0 && <p className="vn-page-empty">这个角色还没有对话</p>}
     </div>
   );
 }

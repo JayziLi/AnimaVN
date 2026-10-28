@@ -1,0 +1,881 @@
+/* ══════════ 卡编辑器 · 纸面皮(设计稿 docs/design/unify/studio.html 的 C「照现在的两页换皮」,10-25 用户定的) ══════════
+   结构和类名都不动,只换皮:根上挂 .st-studio。
+   颜色变量和编辑器(立绘 / 声音 / 背景 / BGM / CG)的纸面画法和游戏菜单里的素材页同一份(library/libraryPaper*.css,
+   那边的规则同时认 .st-root.st-studio);这里只管卡编辑器自己的外壳:顶栏 60(返回 Esc | 卡编辑器 Card Studio | 头像 + 卡名 |
+   带图标的两个页签 …… 已自动保存 · 开始)、左栏 232(角色信息 + 已绑定素材 + 拖入框)、右边检查器。
+   规矩:纸和墨、细线;选中 = 白纸浮起 + 一道墨色细线,不跟角色色;不胶囊、不发光。 */
+
+:root .st-root.st-studio {
+  background: var(--av-paper);
+  color: var(--av-ink);
+  font-family: var(--av-sans);
+  /* 设计稿的纸面:左栏、检查器宽(studio.css 的 .st-panels 也读这两个) */
+  --st-left: 232px;
+  --st-right: 352px;
+}
+
+/* ── 顶栏 ── */
+:root .st-root.st-studio .st-header {
+  height: 60px;
+  gap: 12px;
+  padding: 0 22px 0 14px;
+  border-bottom: 1px solid var(--av-hair);
+  background: var(--av-paper);
+}
+:root .st-root.st-studio .st-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 34px;
+  padding: 0 10px 0 6px;
+  border: 0;
+  border-radius: var(--av-r-btn);
+  background: none;
+  color: var(--av-ink-2);
+  font: 500 13.5px/1 var(--av-sans);
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition:
+    background var(--av-t-fast),
+    color var(--av-t-fast);
+}
+:root .st-root.st-studio .st-back:hover {
+  background: var(--av-hair-2);
+  color: var(--av-ink);
+}
+:root .st-root.st-studio .st-back kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 26px;
+  height: 18px;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 4px;
+  box-shadow:
+    inset 0 0 0 1px var(--av-hair),
+    0 1px 0 var(--av-hair);
+  font: 600 12px/1 var(--av-sans);
+  color: var(--av-ink-2);
+}
+:root .st-root.st-studio .st-ttl {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding-left: 18px;
+  border-left: 1px solid var(--av-hair);
+  white-space: nowrap;
+}
+:root .st-root.st-studio .st-ttl .zh {
+  font: 700 22px/1 var(--av-serif);
+  letter-spacing: 0.24em;
+}
+:root .st-root.st-studio .st-ttl .en {
+  font: italic 500 14px/1 var(--av-latin);
+  letter-spacing: 0.14em;
+  color: var(--av-dim);
+}
+:root .st-root.st-studio .st-who {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 0 8px 0 18px;
+  border-left: 1px solid var(--av-hair);
+}
+:root .st-root.st-studio .st-who > div {
+  min-width: 0;
+}
+:root .st-root.st-studio .st-header-avatar {
+  width: 30px;
+  height: 30px;
+  box-shadow:
+    0 0 0 1.5px #fff,
+    0 1px 4px rgba(30, 24, 48, 0.2);
+}
+:root .st-root.st-studio .st-header-name {
+  display: block;
+  max-width: 200px;
+  font: 700 15px/1.1 var(--av-serif);
+  letter-spacing: 0.18em;
+}
+:root .st-root.st-studio .st-who span {
+  display: block;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--av-dim);
+}
+
+/* 页签:图标 + 宋体 + 斜体英文;选中 = 白纸浮起 + 底边一道墨色细线 */
+:root .st-root.st-studio .st-tabs {
+  align-self: center;
+  height: 60px;
+  align-items: center;
+  gap: 6px;
+  margin-left: 14px;
+}
+:root .st-root.st-studio .st-tab {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 40px;
+  padding: 0 14px 0 12px;
+  border-radius: var(--av-r-btn);
+  color: var(--av-dim);
+  transition:
+    color var(--av-t-fast),
+    background var(--av-t-fast),
+    box-shadow var(--av-t-fast);
+}
+:root .st-root.st-studio .st-tab .zh {
+  font: 600 15px/1 var(--av-serif);
+  letter-spacing: 0.16em;
+}
+:root .st-root.st-studio .st-tab .en {
+  position: relative;
+  top: 1px;
+  font: italic 500 12px/1 var(--av-latin);
+  letter-spacing: 0.1em;
+}
+:root .st-root.st-studio .st-tab:hover {
+  color: var(--av-ink-2);
+}
+:root .st-root.st-studio .st-tab:not([aria-current='page']):hover {
+  background: var(--av-hair-2);
+}
+:root .st-root.st-studio .st-tab[aria-current='page'] {
+  color: var(--av-ink);
+  font-weight: 400;
+  background: var(--av-paper);
+  box-shadow:
+    0 1px 3px rgba(30, 24, 48, 0.1),
+    0 0 0 1px var(--av-hair-2);
+}
+:root .st-root.st-studio .st-tab[aria-current='page']::after {
+  left: 12px;
+  right: 14px;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--av-ink);
+}
+:root .st-root.st-studio .st-save {
+  gap: 5px;
+  margin-right: 4px;
+  color: var(--av-dim);
+  font-size: 12px;
+}
+:root .st-root.st-studio .st-header .st-btn-primary {
+  gap: 7px;
+  height: 32px;
+  padding: 0 16px;
+  border: 1px solid var(--av-ink);
+  border-radius: var(--av-r-btn);
+  background: var(--av-ink);
+  color: var(--av-paper);
+  font: 600 13px/1 var(--av-serif);
+  letter-spacing: 0.16em;
+}
+:root .st-root.st-studio .st-header .st-btn-primary:hover:not(:disabled) {
+  background: var(--av-ink);
+  box-shadow: 0 4px 12px rgba(30, 24, 48, 0.2);
+}
+
+/* ── 导入提示条 ── */
+:root .st-root.st-studio .st-notice {
+  border-bottom-color: var(--av-hair);
+  background: var(--av-paper-2);
+}
+
+/* ── 左栏(素材页):角色信息 + 已绑定素材 + 拖入框;浅纸底(设计稿 .sd-cleft / .sd-aside / .sd-slot) ── */
+:root .st-root.st-studio .st-aside {
+  width: 232px;
+  padding: 12px 12px 14px;
+  border-right: 1px solid var(--av-hair);
+  background: color-mix(in srgb, var(--av-paper-2) 60%, transparent);
+  scrollbar-width: none;
+}
+:root .st-root.st-studio .st-card {
+  gap: 0;
+  padding: 6px 8px 12px;
+  border-bottom: 1px solid var(--av-hair-2);
+}
+:root .st-root.st-studio .st-card-avatar {
+  width: 64px;
+  height: 64px;
+  background: var(--av-paper-3);
+  box-shadow:
+    0 0 0 2px #fff,
+    0 2px 8px rgba(30, 24, 48, 0.2);
+}
+:root .st-root.st-studio .st-card-title {
+  margin-top: 8px;
+}
+:root .st-root.st-studio .st-card-name {
+  font: 700 19px/1.2 var(--av-serif);
+  letter-spacing: 0.2em;
+}
+:root .st-root.st-studio .st-card-spec {
+  color: var(--av-dim);
+  font-size: 12px;
+}
+:root .st-root.st-studio .st-card-blurb {
+  margin: 6px 0 8px;
+  color: var(--av-ink-2);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+:root .st-root.st-studio .st-card-tags {
+  gap: 5px;
+}
+:root .st-root.st-studio .st-card-tags > * {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--av-r-tag);
+  background: var(--av-paper-2);
+  box-shadow: inset 0 0 0 1px var(--av-hair-2);
+  color: var(--av-ink-2);
+  font: 500 11px/1 var(--av-sans);
+  letter-spacing: 0.04em;
+}
+:root .st-root.st-studio .st-card-stats {
+  gap: 4px;
+  margin-top: 10px;
+  font-size: 11.5px;
+  color: var(--av-dim);
+}
+:root .st-root.st-studio .st-card-stats b {
+  margin: 0 2px;
+  color: var(--av-ink);
+  font: 600 12px/1 var(--av-latin);
+}
+:root .st-root.st-studio .st-link {
+  color: var(--av-ink-2);
+  font-size: 12px;
+  text-decoration: none;
+  border-bottom: 1px solid var(--av-hair);
+  padding-bottom: 2px;
+}
+:root .st-root.st-studio .st-link:hover {
+  color: var(--av-ink);
+  border-bottom-color: var(--av-ctl);
+}
+:root .st-root.st-studio .st-aside-head {
+  margin-top: 8px;
+  padding: 6px 8px 5px 10px;
+  border-top: 0;
+  font: 600 11.5px/1 var(--av-serif);
+  letter-spacing: 0.24em;
+  color: var(--av-dim);
+}
+:root .st-root.st-studio .st-slots {
+  gap: 0;
+  padding: 0;
+}
+:root .st-root.st-studio .st-slotrow {
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--av-r-btn);
+  color: var(--av-ink-2);
+}
+:root .st-root.st-studio .st-slotrow:hover {
+  background: var(--av-hair-2);
+}
+:root .st-root.st-studio .st-slotrow[aria-current='true'] {
+  background: var(--av-paper);
+  color: var(--av-ink);
+  box-shadow:
+    0 1px 3px rgba(30, 24, 48, 0.1),
+    0 0 0 1px var(--av-hair-2),
+    inset 2px 0 0 var(--av-ink);
+}
+:root .st-root.st-studio .st-slotrow[aria-current='true']::before {
+  display: none;
+}
+:root .st-root.st-studio .st-slotrow-icon {
+  width: 16px;
+  height: 16px;
+  border-radius: 0;
+  background: none;
+  color: var(--av-dim);
+}
+:root .st-root.st-studio .st-slotrow-icon .st-icon {
+  width: 16px;
+  height: 16px;
+}
+:root .st-root.st-studio .st-slotrow[aria-current='true'] .st-slotrow-icon {
+  color: var(--av-ink);
+}
+:root .st-root.st-studio .st-slotrow-name {
+  font: 600 13.5px/1.2 var(--av-serif);
+  letter-spacing: 0.1em;
+}
+:root .st-root.st-studio .st-slotrow-sub {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--av-dim);
+}
+:root .st-root.st-studio .st-slot-status {
+  width: auto;
+  height: auto;
+}
+:root .st-root.st-studio .st-slot-status.ok {
+  background: none;
+  color: var(--av-ctl);
+}
+:root .st-root.st-studio .st-slot-status.empty {
+  width: 14px;
+  height: 14px;
+  border: 1.5px dashed var(--av-faint);
+  color: var(--av-faint);
+}
+:root .st-root.st-studio .st-drop-hint {
+  margin: 0;
+  padding: 11px 12px;
+  border: 1px dashed var(--av-faint);
+  border-radius: var(--av-r-panel);
+  color: var(--av-dim);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+:root .st-root:root .st-root.st-studio button.st-drop-hint:hover {
+  border-color: var(--av-dim);
+  color: var(--av-ink-2);
+}
+
+/* ── 右边检查器 ── */
+:root .st-root.st-studio .st-inspector {
+  border-left: 1px solid var(--av-hair);
+  background: transparent;
+}
+
+/* ── 检查器的小节标题:宋体 + 斜体英文 + 下面一道细线(设计稿 .sd-sec-h) ── */
+:root .st-root.st-studio .st-inspector {
+  width: 352px;
+}
+:root .st-root.st-studio .st-section {
+  align-items: baseline;
+  gap: 9px;
+  margin: 14px 0 9px;
+  padding: 0 0 8px;
+  border-top: 0;
+  border-bottom: 1px solid var(--av-hair);
+}
+:root .st-root.st-studio .st-section.first {
+  margin-top: 6px;
+}
+:root .st-root.st-studio .st-section-title {
+  font: 700 14.5px/1 var(--av-serif);
+  letter-spacing: 0.2em;
+  white-space: nowrap;
+}
+:root .st-root.st-studio .st-section-en {
+  font: italic 500 12px/1 var(--av-latin);
+  letter-spacing: 0.12em;
+  color: var(--av-dim);
+}
+:root .st-root.st-studio .st-section > :not(.st-section-title, .st-section-en) {
+  align-self: center;
+}
+
+/* 开关:圆角方框 + 角色色(组件库 .av-switch,不是胶囊) */
+:root .st-root.st-studio .st-switch {
+  width: 40px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--av-paper-3);
+  box-shadow: inset 0 0 0 1px var(--av-hair);
+}
+:root .st-root.st-studio .st-switch.on {
+  background: var(--av-ctl);
+  box-shadow: none;
+}
+:root .st-root.st-studio .st-switch-knob,
+:root .st-root.st-studio .st-switch.on .st-switch-knob {
+  left: 3px;
+  top: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(20, 20, 40, 0.25);
+}
+:root .st-root.st-studio .st-switch.on .st-switch-knob {
+  transform: translateX(18px);
+}
+
+/* 滑块:细轨 + 角色色填充 + 白圆钮(组件库 .av-range) */
+:root .st-root.st-studio .st-range::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 2px;
+  background: linear-gradient(to right, var(--av-ctl) var(--pct), var(--av-hair) var(--pct));
+}
+:root .st-root.st-studio .st-range::-webkit-slider-thumb {
+  width: 14px;
+  height: 14px;
+  margin-top: -5.5px;
+  border: 1px solid var(--av-faint);
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(20, 20, 40, 0.22);
+}
+:root .st-root.st-studio .st-range::-moz-range-thumb {
+  border: 1px solid var(--av-faint);
+  background: #fff;
+}
+:root .st-root.st-studio .st-range::-moz-range-progress {
+  background: var(--av-ctl);
+}
+
+/* ══════════ 资料页(profile/):左栏目录 232、中间一块块字段、右栏绑定 / Token 分布 / 上下文预算(设计稿 .sd-cleft / .sd-field / .sd-insp) ══════════ */
+:root .st-root.st-studio .pf-toc {
+  width: 232px;
+  padding: 12px 12px 14px;
+  border-right: 1px solid var(--av-hair);
+  background: color-mix(in srgb, var(--av-paper-2) 60%, transparent);
+}
+:root .st-root.st-studio .pf-id {
+  gap: 10px;
+  margin-bottom: 4px;
+  padding: 4px 8px 12px;
+  border-bottom: 1px solid var(--av-hair-2);
+  background: transparent;
+}
+:root .st-root.st-studio .pf-avatar {
+  width: 40px;
+  height: 40px;
+  background: var(--av-paper-3);
+  box-shadow:
+    0 0 0 1.5px #fff,
+    0 1px 4px rgba(30, 24, 48, 0.2);
+}
+:root .st-root.st-studio .pf-avatar-badge {
+  width: 18px;
+  height: 18px;
+  border-color: var(--av-hair);
+  background: var(--av-paper);
+  color: var(--av-dim);
+}
+:root .st-root.st-studio .pf-name {
+  height: 24px;
+  font: 700 16px/1.2 var(--av-serif);
+  letter-spacing: 0.18em;
+  color: var(--av-ink);
+}
+:root .st-root.st-studio .pf-name:focus {
+  border-color: var(--av-hair);
+  background: var(--av-paper);
+}
+:root .st-root.st-studio .pf-spec {
+  font-size: 11px;
+  color: var(--av-dim);
+}
+:root .st-root.st-studio .pf-nav {
+  padding: 0;
+  scrollbar-width: none;
+}
+:root .st-root.st-studio .pf-group {
+  margin-top: 8px;
+  padding: 6px 8px 5px 10px;
+  font: 600 11.5px/1 var(--av-serif);
+  letter-spacing: 0.24em;
+  color: var(--av-dim);
+}
+:root .st-root.st-studio .pf-row {
+  height: 30px;
+  gap: 9px;
+  padding: 0 10px 0 12px;
+  border-radius: var(--av-r-btn);
+  color: var(--av-ink-2);
+  font: 600 13px/1 var(--av-serif);
+  letter-spacing: 0.08em;
+}
+:root .st-root.st-studio .pf-row:hover {
+  background: var(--av-hair-2);
+  color: var(--av-ink);
+}
+:root .st-root.st-studio .pf-row[aria-current='true'] {
+  background: var(--av-paper);
+  color: var(--av-ink);
+  font-weight: 600;
+  box-shadow:
+    0 1px 3px rgba(30, 24, 48, 0.1),
+    0 0 0 1px var(--av-hair-2);
+}
+:root .st-root.st-studio .pf-row[aria-current='true']::before {
+  left: 0;
+  top: 9px;
+  bottom: 9px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--av-ink);
+}
+:root .st-root.st-studio .pf-row-badge {
+  font: 500 11.5px/1 var(--av-latin);
+  color: var(--av-dim);
+  font-variant-numeric: lining-nums tabular-nums;
+}
+:root .st-root.st-studio .pf-row-badge.warn {
+  color: var(--av-warn-ink);
+}
+:root .st-root.st-studio .pf-toc-foot {
+  margin-top: auto;
+  padding: 10px 8px 0;
+  border-top: 1px solid var(--av-hair);
+  background: transparent;
+  color: var(--av-dim);
+}
+:root .st-root.st-studio .pf-toc-tok {
+  font: 500 12px/1 var(--av-latin);
+  color: var(--av-ink-2);
+}
+:root .st-root.st-studio .pf-toc-warn {
+  color: var(--av-warn-ink);
+}
+
+/* 中间:页头 + 一块块字段(白纸卡、细线框);空的、没填的淡一些 */
+:root .st-root.st-studio .st-main.pf-main {
+  gap: 14px;
+  padding: 16px 26px 24px;
+}
+:root .st-root.st-studio .pf-title-row {
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--av-hair);
+}
+:root .st-root.st-studio .pf-title {
+  font: 700 17px/1 var(--av-serif);
+  letter-spacing: 0.22em;
+  color: var(--av-ink);
+}
+:root .st-root.st-studio .pf-title-note {
+  color: var(--av-dim);
+  font-size: 12px;
+}
+:root .st-root.st-studio .pf-sec {
+  padding: 12px 14px 10px;
+  border: 0;
+  border-radius: var(--av-r-panel);
+  background: var(--av-paper);
+  box-shadow:
+    0 0 0 1px var(--av-hair),
+    0 6px 16px rgba(30, 24, 48, 0.04);
+  transition: box-shadow 0.2s;
+}
+:root .st-root.st-studio .pf-sec.active {
+  box-shadow:
+    0 0 0 1px var(--av-ink-2),
+    0 6px 16px rgba(30, 24, 48, 0.06);
+}
+:root .st-root.st-studio .pf-sec-title {
+  font: 700 14px/1.2 var(--av-serif);
+  letter-spacing: 0.1em;
+  color: var(--av-ink);
+}
+:root .st-root.st-studio .pf-seq {
+  font: 500 11px/1 var(--av-mono);
+  color: var(--av-ctl);
+}
+:root .st-root.st-studio .pf-badge {
+  height: 19px;
+  padding: 0 6px;
+  border-radius: var(--av-r-tag);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--av-hair);
+  font: 10.5px/1 var(--av-mono);
+  color: var(--av-dim);
+}
+:root .st-root.st-studio .pf-sec-tok {
+  font: 500 12px/1 var(--av-latin);
+  color: var(--av-dim);
+  font-variant-numeric: lining-nums tabular-nums;
+}
+:root .st-root.st-studio .pf-sec-note {
+  color: var(--av-dim);
+}
+:root .st-root.st-studio .pf-warn {
+  color: var(--av-warn-ink);
+  font-size: 12px;
+}
+:root .st-root.st-studio .pf-textarea {
+  border-color: var(--av-hair);
+  border-radius: var(--av-r-btn);
+  background: var(--av-paper);
+  color: var(--av-ink-2);
+  font: 13px/1.75 var(--av-sans);
+}
+:root .st-root.st-studio .pf-textarea:focus {
+  border-color: var(--av-ctl);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--av-acc) 35%, transparent);
+}
+:root .st-root.st-studio .pf-wrap {
+  color: var(--av-dim);
+}
+:root .st-root.st-studio .pf-wrap code {
+  padding: 0;
+  background: none;
+  color: var(--av-ink-2);
+  font: 11px/1 var(--av-mono);
+}
+:root .st-root.st-studio .pf-preview {
+  border-color: var(--av-hair);
+}
+:root .st-root.st-studio .pf-preview-role {
+  border-color: var(--av-hair);
+  background: var(--av-paper-2);
+  color: var(--av-dim);
+}
+:root .st-root.st-studio .pf-preview-body {
+  color: var(--av-ink-2);
+}
+:root .st-root.st-studio .pf-divider {
+  border-top-color: var(--av-hair);
+  color: var(--av-dim);
+}
+:root .st-root.st-studio .pf-divider b {
+  font: 700 17px/1 var(--av-serif);
+  letter-spacing: 0.22em;
+  color: var(--av-ink);
+}
+
+/* 右栏:Token 分布用角色色深浅分几段(设计稿 .sd-share),上下文预算一条细进度 */
+:root .st-root.st-studio .pf-side-total {
+  font: 500 12px/1 var(--av-latin);
+  color: var(--av-dim);
+}
+:root .st-root.st-studio .pf-share-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--av-hair);
+}
+:root .st-root.st-studio .pf-share-seg.card,
+:root .st-root.st-studio .pf-share-swatch.card {
+  background: color-mix(in srgb, var(--av-ctl) 95%, var(--av-paper-3));
+}
+:root .st-root.st-studio .pf-share-seg.preset,
+:root .st-root.st-studio .pf-share-swatch.preset {
+  background: color-mix(in srgb, var(--av-ctl) 81%, var(--av-paper-3));
+}
+:root .st-root.st-studio .pf-share-seg.worldInfo,
+:root .st-root.st-studio .pf-share-swatch.worldInfo {
+  background: color-mix(in srgb, var(--av-ctl) 67%, var(--av-paper-3));
+}
+:root .st-root.st-studio .pf-share-seg.examples,
+:root .st-root.st-studio .pf-share-swatch.examples {
+  background: color-mix(in srgb, var(--av-ctl) 53%, var(--av-paper-3));
+}
+:root .st-root.st-studio .pf-share-seg.history,
+:root .st-root.st-studio .pf-share-swatch.history {
+  background: color-mix(in srgb, var(--av-ctl) 39%, var(--av-paper-3));
+}
+:root .st-root.st-studio .pf-share-seg.persona,
+:root .st-root.st-studio .pf-share-swatch.persona {
+  background: color-mix(in srgb, var(--av-ctl) 25%, var(--av-paper-3));
+}
+:root .st-root.st-studio .pf-share-swatch {
+  width: 8px;
+  height: 8px;
+}
+:root .st-root.st-studio .pf-legend-row {
+  height: 24px;
+  font-size: 12px;
+}
+:root .st-root.st-studio .pf-legend-name {
+  color: var(--av-ink-2);
+}
+:root .st-root.st-studio .pf-legend-tok {
+  font: 500 13px/1 var(--av-latin);
+  letter-spacing: 0.06em;
+  color: var(--av-ink-2);
+  font-variant-numeric: lining-nums tabular-nums;
+}
+:root .st-root.st-studio .pf-budget-input {
+  border-color: var(--av-hair);
+  border-radius: var(--av-r-btn);
+  background: var(--av-paper);
+  color: var(--av-ink);
+  font: 500 13px/1 var(--av-latin);
+}
+:root .st-root.st-studio .pf-budget-text {
+  color: var(--av-dim);
+  font-size: 12px;
+}
+:root .st-root.st-studio .pf-budget-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--av-hair);
+}
+:root .st-root.st-studio .pf-budget-fill {
+  background: var(--av-ctl);
+}
+
+/* 素材页的实机预览:设计稿主区 800 宽、舞台 800 × 450(1440 × 810 时),下面的差分格子跟着往下排、主区自己滚 */
+:root .st-root.st-studio .st-stage {
+  --st-stage-default-h: max(240px, calc(100dvh - 360px));
+  border-radius: var(--av-r-panel);
+}
+
+/* 资料页页头(设计稿 .sd-doc-h)、空字段收成一行(.sd-field.empty)、顶栏里的「导出」 */
+:root .st-root.st-studio .pf-title-en {
+  font: italic 500 13px/1 var(--av-latin);
+  letter-spacing: 0.12em;
+  color: var(--av-dim);
+}
+:root .st-root.st-studio .pf-title-tok {
+  font: 500 13px/1 var(--av-latin);
+  letter-spacing: 0.06em;
+  color: var(--av-ink-2);
+}
+:root .st-root.st-studio .pf-sec-title em {
+  font: italic 500 12.5px/1 var(--av-latin);
+  letter-spacing: 0.06em;
+  color: var(--av-dim);
+}
+:root .st-root.st-studio .pf-sec.empty {
+  padding: 9px 14px;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--av-hair-2);
+}
+:root .st-root.st-studio .pf-sec.empty.active {
+  box-shadow: inset 0 0 0 1px var(--av-ink-2);
+}
+:root .st-root.st-studio .pf-sec.empty .pf-sec-title {
+  color: var(--av-ink-2);
+}
+:root .st-root.st-studio .pf-warn-inline {
+  color: var(--av-warn-ink);
+}
+:root .st-root.st-studio .pf-fill {
+  color: var(--av-dim);
+}
+:root .st-root.st-studio .pf-fill:hover {
+  background: var(--av-hair-2);
+  color: var(--av-ink);
+}
+:root .st-root.st-studio .st-header-slot {
+  display: contents;
+}
+:root .st-root.st-studio .st-header-slot .st-btn {
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--av-hair);
+  border-radius: var(--av-r-btn);
+  background: var(--av-paper);
+  color: var(--av-ink);
+  font: 500 12px/1 var(--av-sans);
+  letter-spacing: 0.06em;
+}
+:root .st-root.st-studio .st-inspector-body,
+:root .st-root.st-studio .st-inspector-head,
+:root .st-root.st-studio .st-inspector-foot {
+  padding-right: 22px;
+}
+
+/* 最上面一块基本信息 */
+:root .st-root.st-studio .pf-hero {
+  border-bottom-color: var(--av-hair);
+}
+:root .st-root.st-studio .pf-hero-img {
+  background: var(--av-paper-3);
+}
+:root .st-root.st-studio .pf-hero-avatar i {
+  background: var(--av-paper);
+  color: var(--av-ctl);
+}
+:root .st-root.st-studio .pf-hero-name {
+  color: var(--av-ink);
+}
+:root .st-root.st-studio .pf-hero-name:focus {
+  background: var(--av-hair-2);
+}
+:root .st-root.st-studio .pf-hero-spec,
+:root .st-root.st-studio .pf-hero-meta label span,
+:root .st-root.st-studio .pf-hero-cap {
+  color: var(--av-dim);
+}
+:root .st-root.st-studio .pf-hero-notes .pf-textarea {
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+/* ── 窄屏(手机):顶栏只留 返回 · 头像 · 两个页签 · 开始;左栏收成一排横着滚的栏目标签;检查器排到下面 ── */
+@media (max-width: 899px) {
+  :root .st-root.st-studio .st-header {
+    height: 52px;
+    gap: 6px;
+    padding: 0 10px 0 4px;
+  }
+  :root .st-root.st-studio .st-back {
+    padding: 0 6px 0 4px;
+  }
+  :root .st-root.st-studio .st-back kbd,
+  :root .st-root.st-studio .st-ttl,
+  :root .st-root.st-studio .st-who > div,
+  :root .st-root.st-studio .st-tab .en {
+    display: none;
+  }
+  :root .st-root.st-studio .st-who {
+    display: none;
+  }
+  :root .st-root.st-studio .st-back {
+    flex: none;
+    width: 32px;
+    justify-content: center;
+    padding: 0;
+    font-size: 0;
+  }
+  /* 资料页最上面那块已经有头像和卡名,目录条上面不再重复 */
+  :root .st-root.st-studio .pf-id {
+    display: none;
+  }
+  :root .st-root.st-studio .st-header-slot .st-btn {
+    padding: 0 8px;
+  }
+  :root .st-root.st-studio .st-tabs {
+    height: 52px;
+    gap: 2px;
+    margin-left: 0;
+  }
+  :root .st-root.st-studio .st-tab {
+    height: 36px;
+    gap: 5px;
+    padding: 0 9px;
+  }
+  :root .st-root.st-studio .st-header .st-btn-primary {
+    padding: 0 12px;
+  }
+  :root .st-root.st-studio .st-inspector {
+    width: auto;
+    border-left: 0;
+    border-top: 1px solid var(--av-hair);
+  }
+  :root .st-root.st-studio .st-aside {
+    width: auto;
+    padding: 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--av-hair);
+  }
+  :root .st-root.st-studio .st-slots {
+    gap: 6px;
+    padding: 8px 12px;
+  }
+  :root .st-root.st-studio .st-slotrow {
+    padding: 6px 12px 6px 10px;
+    background: var(--av-paper-2);
+    box-shadow: inset 0 0 0 1px var(--av-hair-2);
+  }
+  :root .st-root.st-studio .st-slotrow[aria-current='true'] {
+    background: var(--av-paper);
+    box-shadow:
+      0 1px 3px rgba(30, 24, 48, 0.1),
+      inset 0 0 0 1px var(--av-ink-2);
+  }
+  :root .st-root.st-studio .st-main.pf-main {
+    padding: 12px;
+  }
+}

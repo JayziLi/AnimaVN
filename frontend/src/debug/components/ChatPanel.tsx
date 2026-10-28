@@ -175,6 +175,9 @@ function Welcome({
 
 const seconds = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
 
+/** 用户自己在滚 / 点 / 按键:历史页打开后的「跟几帧贴底」就此撒手 */
+const USER_SCROLL_EVENTS = ['wheel', 'touchstart', 'pointerdown', 'keydown'] as const;
+
 /**
  * 思维链 —— 和正文分开渲染,因为它本来就是分开存的
  * (酒馆把它放在 extra.reasoning,从不混进 mes)。
@@ -610,6 +613,35 @@ export function ChatPanel({
     setAtBottom(true);
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
+    // 视觉小说的历史页:消息行是 content-visibility: auto(vn.css),屏幕外的行按估计高度占位、不排版 ——
+    // 第一次打开不用把几十条消息的字全排一遍。代价是滚到底以后底部那几行才真正排出来,总高度会变:
+    // 接下来几帧继续贴底,高度连着两帧不变就停;用户自己动了滚轮 / 键盘 / 手指就撒手
+    if (!backlog || !el) return;
+    let raf = 0;
+    let last = -1;
+    let still = 0;
+    let frames = 0;
+    let user = false;
+    const stop = () => {
+      user = true;
+    };
+    const pin = () => {
+      if (user) return;
+      const h = el.scrollHeight;
+      el.scrollTop = h;
+      still = h === last ? still + 1 : 0;
+      last = h;
+      if (still < 2 && ++frames < 60) raf = requestAnimationFrame(pin);
+    };
+    const opts = { passive: true } as const;
+    for (const t of USER_SCROLL_EVENTS) el.addEventListener(t, stop, opts);
+    raf = requestAnimationFrame(pin);
+    return () => {
+      cancelAnimationFrame(raf);
+      for (const t of USER_SCROLL_EVENTS) el.removeEventListener(t, stop);
+    };
+    // backlog 是 variant 定的,一个 ChatPanel 用法不会变
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatKey]);
 
   const windowStart = Math.max(0, entries.length - visibleCount);

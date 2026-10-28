@@ -919,21 +919,21 @@ export function ImageGenSettings({ store, place }: { store: ImageGenStore; place
           </div>
         )}
         {place === 'game' && (
-          <p className="vn-set-note ig-intro">
+          <p className="st-note ig-intro">
             点对话框里发送右边的画笔,指导模型读剧情写这一幕画什么,NovelAI 画出来,在那一句像 CG 一样淡入;右键画笔先设置再画。
           </p>
         )}
-        <div className="ig-subtabs" role="tablist">
+        <div className={place === 'game' ? 'vn-sp-tabs ig-subtabs-paper' : 'ig-subtabs'} role="tablist">
           {PAGES.map((p) => (
             <button
               key={p.key}
               type="button"
               role="tab"
               aria-selected={page === p.key}
-              className={`ig-subtab${page === p.key ? ' active' : ''}`}
+              className={place === 'game' ? (page === p.key ? 'on' : '') : `ig-subtab${page === p.key ? ' active' : ''}`}
               onClick={() => setPage(p.key)}
             >
-              {p.name}
+              {place === 'game' ? <span className="zh">{p.name}</span> : p.name}
             </button>
           ))}
         </div>

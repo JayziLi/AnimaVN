@@ -3,10 +3,13 @@
  * 「从素材库选」(40)都用它,大小由外面的类名定。没认出脸的对着图的上半截;没图画个人形图标。
  */
 
-import { spriteImageUrl, type PackSprite } from '../lib/api';
+import { spriteThumbUrl, type PackSprite } from '../lib/api';
 import type { FaceBox } from '../plugins/spriteLayout';
 import { faceCrop } from './faceCrop';
 import { Icon } from './icons';
+
+/** 用到这个组件的方框里最大的一个(.st-face-56) */
+const BOX_MAX = 56;
 
 export function FaceThumb({
   sprite,
@@ -21,8 +24,9 @@ export function FaceThumb({
   /** 换个地址(上传中的本地预览);不给用 sprite 的图 */
   src?: string | null;
 }) {
-  const url = src ?? (sprite ? spriteImageUrl(sprite) : null);
   const crop = faceCrop(face, sprite?.face_scan?.width ?? null, sprite?.face_scan?.height ?? null);
+  // 方框最大 56px(差分网格);裁脸时 <img> 放大到方框的 crop.width%,要这么宽的小图就够,不用游戏里 1280 宽那张
+  const url = src ?? (sprite ? spriteThumbUrl(sprite, (BOX_MAX * (crop?.width ?? 100)) / 100) : null);
   const cls = `st-face${className ? ` ${className}` : ''}`;
   if (!url) {
     return (

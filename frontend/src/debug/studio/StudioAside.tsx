@@ -1,6 +1,6 @@
 /**
  * 卡编辑器「素材」页的左栏:上面是角色信息(头像、名字、简介、标签、开场白 / 世界书条数),
- * 下面是「已绑定素材」—— 每一栏一行,副标题由 slotSummary.ts 算好传进来。
+ * 下面是「在用的素材」—— 每一栏一行,副标题由 slotSummary.ts 算好传进来。
  * 窄屏时只剩那一排栏目,横着滚(studio.css)。
  *
  * 整栏是拖放落点(给这张卡加素材,先问一句);立绘 / 背景 / BGM / CG 那几行 = 都按这一类导入;
@@ -71,7 +71,7 @@ export function StudioAside({ cardId, card, avatars, slots, active, onSlot, onEd
   const hint = (
     <>
       <Icon name="upload" size={18} />
-      <span>拖入素材文件,确认后绑定到此角色</span>
+      <span>拖入素材文件,确认后给此角色用</span>
     </>
   );
   return (
@@ -109,8 +109,8 @@ export function StudioAside({ cardId, card, avatars, slots, active, onSlot, onEd
         </div>
       </div>
 
-      <div className="st-aside-head">已绑定素材</div>
-      <nav className="st-slots" aria-label="已绑定素材">
+      <div className="st-aside-head">在用的素材</div>
+      <nav className="st-slots" aria-label="在用的素材">
         {slots.map((s) => (
           <button
             key={s.key}
@@ -129,7 +129,7 @@ export function StudioAside({ cardId, card, avatars, slots, active, onSlot, onEd
                 {s.sub}
               </span>
             </span>
-            <span className={`st-slot-status ${s.state}`} title={s.state === 'ok' ? '已绑定' : '还没有'}>
+            <span className={`st-slot-status ${s.state}`} title={s.state === 'ok' ? '在用' : '还没有'}>
               <Icon name={s.state === 'ok' ? 'check' : 'plus'} size={s.state === 'ok' ? 12 : 10} strokeWidth={2.4} />
             </span>
           </button>

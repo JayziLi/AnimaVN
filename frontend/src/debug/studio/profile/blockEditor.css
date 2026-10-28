@@ -65,6 +65,14 @@
   color: var(--text-faint);
 }
 
+/* 插件块:就这一句 + 「去插件页」,不摆正常的字段编辑 */
+.bes-plugin-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .bes-foot {
   flex: none;
   display: flex;

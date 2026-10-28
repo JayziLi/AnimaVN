@@ -19,6 +19,7 @@ import type {
   CartridgePanelProps,
   IllustrationsInput,
   IllustrationsState,
+  MenuAlbumIllustrations,
   StudioIllustrations,
   VnIllustrationContext,
   VnIllustrations,
@@ -69,6 +70,7 @@ import {
   withNote,
   type ShowLog,
 } from './marks';
+import { MenuAlbum } from './MenuAlbum';
 import { StudioAlbum } from './StudioAlbum';
 import { albumSummary } from './studioAlbumModel';
 import { IgButton, IgStage } from './VnControls';
@@ -371,7 +373,7 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
     if (!cardId || p.look.trim() || usesReference(c, p) || lookAsked.current.has(cardId)) return p;
     lookAsked.current.add(cardId);
     try {
-      const r = await track('写外貌', () =>
+      const r = await track('记住她的样子', () =>
         imagegenApi.look({ card_id: cardId, connection_id: writerConnection(), thinking: c.writer.thinking }),
       );
       const next = withLook(p, r);
@@ -452,7 +454,7 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
         camera: camera ?? c.camera,
       };
       try {
-        const r = await track('想画面', () => imagegenApi.plan(req));
+        const r = await track('构思画面', () => imagegenApi.plan(req));
         // 指导模型按给它的那一段编号:换成这条回复里的句号
         return { ...r, until: typeof r.until === 'number' ? from + r.until : null };
       } catch (e) {
@@ -474,7 +476,7 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
       const swipe = target.entry.swipeIndex;
       let img: GeneratedImage;
       try {
-        img = await track('画画中', () =>
+        img = await track('Drawing', () =>
           imagegenApi.generate({
             card_id: cardId,
             chat_id: chatAtStart,
@@ -572,7 +574,7 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
           (a) => a && { ...a, images: a.images.map((x) => (x.id === imageId ? { ...x, kept_asset_id: k.asset_id } : x)) },
         );
         latest.current.onKept?.();
-        notify('ok', `收藏进 CG 包「${k.pack_name}」,名字叫「${k.label}」(游戏里 AI / Jev 能选它了)`);
+        notify('ok', `收藏好了 · 放进「${k.pack_name}」CG 包,叫「${k.label}」,以后 AI 能直接选它`);
         return k;
       } catch (e) {
         notify('error', `收藏失败: ${errText(e)}`);
@@ -585,7 +587,7 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
   const askLook = useCallback(async () => {
     if (!cardId) return;
     try {
-      const r = await track('写外貌', () =>
+      const r = await track('记住她的样子', () =>
         imagegenApi.look({ card_id: cardId, connection_id: writerConnection(), thinking: latest.current.config.writer.thinking }),
       );
       changePrefs(withLook(latest.current.prefs, r));
@@ -657,7 +659,7 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
         };
         let r: PlanResult;
         try {
-          r = await track('导演在看', () => imagegenApi.plan(req));
+          r = await track('构思画面', () => imagegenApi.plan(req));
         } catch (e) {
           notify('error', `自动出图:指导模型出错了: ${errText(e)}`);
           return;
@@ -762,7 +764,7 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
       ...IMAGEGEN_PANEL,
       inUse: imagegenInUse,
       // 抽屉里看的是另一张卡时,「这张卡」那几项读写那张卡(ConsoleSettings)
-      render: (p: CartridgePanelProps) => <ConsoleSettings store={store} card={p.card} />,
+      render: (p: CartridgePanelProps) => <ConsoleSettings store={store} card={p.card} place={p.game ? 'game' : 'console'} />,
     }),
     [store],
   );
@@ -774,6 +776,12 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
       summary: (kept) => albumSummary(store.album, kept),
       render: (ctx) => <StudioAlbum key={ctx.cardId} store={store} {...ctx} />,
     }),
+    [store],
+  );
+
+  // 局内菜单的「相册」页:按存档分组的画过的图(MenuAlbum.tsx),收藏、删除和卡编辑器那一栏是同一份
+  const menuAlbum: MenuAlbumIllustrations = useMemo(
+    () => ({ render: (ctx) => <MenuAlbum key={ctx.cardId} store={store} {...ctx} /> }),
     [store],
   );
 
@@ -789,8 +797,9 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
       settingsName: 'AI 生图',
       onReplyDone: (entry, lines, place) => void onReplyDone(entry, lines, place),
       studio,
+      album: menuAlbum,
     }),
-    [store, onReplyDone, studio],
+    [store, onReplyDone, studio, menuAlbum],
   );
 
   return useMemo(() => ({ panel, vn }), [panel, vn]);

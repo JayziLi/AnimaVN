@@ -5,6 +5,7 @@ import type { MarkerSource } from '../lib/cardFields';
 import type { TavernCard } from '../lib/cardParser';
 import type { MacroContext } from '../lib/macros';
 import type { PresetPrompt } from '../lib/presetParser';
+import { useConfirm } from '../vn/ui/confirm';
 import { BlockEditorPane } from '../studio/profile/BlockEditorPane';
 import {
   blockPatchOf,
@@ -66,11 +67,24 @@ export function BlockEditorModal({
 
   // Esc / ✕ / 点背景:改过东西就先问一句 —— 顺手按的 Esc、在正文里拖选文字拖到弹窗外松手,
   // 都会把整块草稿丢掉。「取消」按钮是明说要丢的,不问
+  const confirm = useConfirm();
   const dirtyRef = useRef(dirty);
   dirtyRef.current = dirty;
   const requestClose = useRef(() => {});
-  requestClose.current = () => {
-    if (!dirtyRef.current || window.confirm('这个块改过了还没确定,放弃这些改动?')) onCancel();
+  requestClose.current = async () => {
+    if (
+      dirtyRef.current &&
+      !(await confirm({
+        title: '放弃这些改动?',
+        body: '这个块改过了,还没点确定',
+        en: 'Unsaved',
+        del: '放弃改动',
+        keep: '继续改',
+        message: '这个块改过了还没确定,放弃这些改动?',
+      }))
+    )
+      return;
+    onCancel();
   };
   // 点背景要按下和松开都在背景上才算:从正文里拖选出来松手也会在背景上触发 click
   const downOnBackdrop = useRef(false);

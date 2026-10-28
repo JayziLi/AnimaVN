@@ -1,0 +1,1750 @@
+/* ══════════ 第 5 段 游戏画面:四角按钮 + 对话区 A(细线)+ 经典玻璃框 + 输入 + 语音面板 + 发出去那句 ══════════
+   设计稿 docs/design/unify/kit/scene.js 的 AV.gameF → mountA,样式照 kit/scene.css「游戏画面 · 对话区 A」「经典对话框」
+   「手机竖屏 · 对话区 A」那几节逐项搬过来(class 也照设计稿叫 ga-),数值是设计稿 1440×810 画布上的:
+   位置换成画面的百分比(1440×810 下和设计稿像素对齐),字号按设计值、窄窗口再收(cqw = 画面宽的 1%,.vn-root.ga 是查询容器,
+   设置页的实机预览是一块缩小的 1440 画面,字照样按 1440 算)。
+   四角按钮、输入、语音面板、发出去那句两种对话框一样;.dlg-classic 是经典(玻璃框 + 名牌,框里只糊背景)。
+   设置里「对话框」= 经典且「玻璃框底色」= 经典的老样子不走这里(vn.css / vnSkins.css)。 */
+
+.vn-root {
+  /* 四角细条的底:半透明深色,白天夜里一样 */
+  --vn-strip: rgba(12, 14, 26, 0.34);
+  --vn-strip-h: 44px;
+  --vn-corner: 22px;
+  --vn-red: #ff7a70;
+  --vn-line-sh: 0 1px 2px rgba(0, 0, 0, 0.5), 0 0 10px rgba(0, 0, 0, 0.22);
+}
+
+/* ---------- 四角:半透明深色细条(.ga-strip:44 高、一格至少 48 宽、圆角 8、格子之间一道淡竖线) ---------- */
+.vn-corners {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  transition: opacity 0.25s;
+}
+.vn-root.ui-hidden .vn-corners {
+  opacity: 0;
+}
+.vn-root.ui-hidden .vn-corners * {
+  pointer-events: none !important;
+}
+.vn-strip {
+  position: absolute;
+  display: flex;
+  height: var(--vn-strip-h);
+  border-radius: 8px;
+  background: var(--vn-strip);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  pointer-events: auto;
+  color: #fff;
+}
+.vn-strip > button,
+.vn-strip .vn-vq-btn,
+.vn-strip .ig-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 48px;
+  height: var(--vn-strip-h);
+  padding: 0 12px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: background 0.16s, opacity 0.16s, color 0.16s;
+}
+/* 格子之间一道淡竖线 */
+.vn-strip > * + *::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 13px;
+  bottom: 13px;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.22);
+  pointer-events: none;
+}
+.vn-strip > *,
+.vn-strip .vn-vq {
+  position: relative;
+}
+/* 语音那格外面一层是 display: contents(vn.css .vn-vq):它的竖线会画到整条最左边,挪到里面的按钮上 */
+.vn-strip > .vn-vq::before {
+  content: none;
+}
+.vn-strip > * + .vn-vq > .vn-vq-btn::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 13px;
+  bottom: 13px;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.22);
+  pointer-events: none;
+}
+.vn-strip > button:hover:not(:disabled),
+.vn-strip .vn-vq-btn:hover,
+.vn-strip .ig-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+.vn-strip > button:disabled {
+  opacity: 0.36;
+  cursor: default;
+}
+.vn-strip .av-ic {
+  flex: none;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.35));
+}
+.vn-strip button:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: -3px;
+}
+/* 开着(自动 / 跳过 / 语音面板):图标下面一道白色短线 —— 不用角色色(选中不跟角色色) */
+.vn-strip > button.on::after,
+.vn-strip .vn-vq-btn.on::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 5px;
+  width: 16px;
+  height: 2px;
+  margin-left: -8px;
+  border-radius: 1px;
+  background: #fff;
+}
+/* 右上 倍速 · 跳过 · ≡:top 20、right 22 */
+.vn-strip-top {
+  top: calc(env(safe-area-inset-top) + var(--vn-corner) - 2px);
+  right: calc(env(safe-area-inset-right) + var(--vn-corner));
+}
+.vn-auto .sp {
+  font: 600 14px/1 var(--av-sans);
+  letter-spacing: 0.02em;
+  font-variant-numeric: lining-nums tabular-nums;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+.vn-strip > .vn-auto.on {
+  padding-left: 14px;
+}
+.vn-strip > .vn-auto.on::after {
+  left: auto;
+  right: 16px;
+  margin-left: 0;
+}
+/* 历史:右上那排下面单独一格(top 74),靠右对齐 */
+.vn-strip-hist {
+  top: calc(env(safe-area-inset-top) + var(--vn-corner) - 2px + var(--vn-strip-h) + 10px);
+  right: calc(env(safe-area-inset-right) + var(--vn-corner));
+}
+/* 左上「模型」:和右上那排同一个边距、同一个高度,左右对称 */
+.vn-strip-model {
+  top: calc(env(safe-area-inset-top) + var(--vn-corner) - 2px);
+  left: calc(env(safe-area-inset-left) + var(--vn-corner));
+}
+/* 右下 画笔 · 语音 · 重来 · 隐藏:bottom 22,一格 44 宽 */
+.vn-strip-tools {
+  right: calc(env(safe-area-inset-right) + var(--vn-corner));
+  bottom: calc(env(safe-area-inset-bottom) + var(--vn-corner));
+}
+.vn-strip-tools > button,
+.vn-strip-tools .vn-vq-btn,
+.vn-strip-tools .ig-btn {
+  min-width: 44px;
+  padding: 0 11px;
+}
+/* 插图卡带自己画的按钮装进细条:只留图标,底和边去掉 */
+.vn-strip .vn-illus-btn {
+  display: flex;
+}
+.vn-strip .ig-btn {
+  box-shadow: none;
+  border: none;
+}
+.vn-strip .ig-btn svg {
+  width: 22px;
+  height: 22px;
+}
+
+/* 语音:念的时候声波一下一下动;合成中图标淡淡呼吸;关了变暗;断了变红(不弹提示,原因写在面板顶上) */
+.vn-vq-btn .av-ic path:nth-child(2),
+.vn-vq-btn .av-ic path:nth-child(3) {
+  transition: opacity 0.2s;
+}
+.vn-vq-btn.speaking .av-ic path:nth-child(2) {
+  animation: vn-wave-blink 0.9s ease-in-out infinite;
+}
+.vn-vq-btn.speaking .av-ic path:nth-child(3) {
+  animation: vn-wave-blink 0.9s ease-in-out 0.18s infinite;
+}
+@keyframes vn-wave-blink {
+  50% {
+    opacity: 0.2;
+  }
+}
+.vn-vq-btn.busy .av-ic {
+  animation: vn-busy 0.9s ease-in-out infinite;
+}
+@keyframes vn-busy {
+  50% {
+    opacity: 0.4;
+  }
+}
+.vn-vq-btn.off {
+  opacity: 0.6;
+}
+.vn-vq-btn.off .av-ic path:nth-child(2),
+.vn-vq-btn.off .av-ic path:nth-child(3) {
+  opacity: 0;
+}
+.vn-strip .vn-vq-btn.fail {
+  color: var(--vn-red);
+}
+.vn-strip .vn-vq-btn.fail .av-ic {
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.5));
+}
+.vn-strip .vn-vq-btn.fail.on::after {
+  background: var(--vn-red);
+}
+
+/* 右上原来的标签条(跳过中、形态切换)让到那排细条左边 */
+.vn-root .vn-topbar {
+  top: calc(env(safe-area-inset-top) + var(--vn-corner) + 6px);
+  right: calc(env(safe-area-inset-right) + var(--vn-corner) + 170px);
+}
+
+/* 左上「模型」旁边的模型名(设置 · 显示 · 模型标签) */
+.vn-model-name {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+/* ---------- 语音面板(.ga-vq):右下「语音」上方弹出,纸卡跟主题;宽 316,离底 76(细条上面 10) ---------- */
+.ga-vq {
+  position: absolute;
+  z-index: 6;
+  right: 0;
+  bottom: calc(100% + 10px);
+  width: 316px;
+  padding: 14px 16px;
+  font: 400 13px/1.6 var(--av-sans);
+  text-align: left;
+  text-shadow: none;
+  cursor: auto;
+  opacity: 0;
+  visibility: hidden;
+  translate: 0 6px;
+  transition: opacity 0.18s ease, translate 0.18s var(--av-ease), visibility 0s linear 0.18s;
+}
+.ga-vq.on {
+  opacity: 1;
+  visibility: visible;
+  translate: 0 0;
+  transition: opacity 0.22s ease, translate 0.26s var(--av-ease), visibility 0s;
+}
+.ga-vq-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--av-hair);
+}
+.ga-vq-h .zh {
+  font: 700 15px/1 var(--av-serif);
+  letter-spacing: 0.22em;
+}
+.ga-vq-h .en {
+  font: italic 500 13px/1 var(--av-latin);
+  letter-spacing: 0.14em;
+  color: var(--av-ink-2);
+}
+.ga-vq-h .st {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--av-ink-2);
+  white-space: nowrap;
+}
+.ga-vq-h .av-dot.good {
+  background: var(--av-good);
+}
+.ga-vq-re {
+  background: transparent;
+}
+.ga-vq-err {
+  margin: 8px 0 0;
+  font: 12px/1.55 var(--av-sans);
+  color: var(--av-bad);
+  overflow-wrap: anywhere;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.ga-vq.av-night .ga-vq-err,
+.ga-vq.verr.av-night .ga-vq-h .st {
+  color: #ff9a90;
+}
+.ga-vq.verr .ga-vq-h .st {
+  color: var(--av-bad);
+}
+.ga-vq.verr .ga-vq-h .av-dot {
+  background: var(--av-bad);
+}
+.ga-vq-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--av-hair);
+}
+.ga-vq-line .k,
+.ga-vq-row .k {
+  width: 52px;
+  flex: none;
+  font: 600 13px/1 var(--av-serif);
+  letter-spacing: 0.12em;
+}
+.ga-vq-line .av-btn {
+  flex: 1;
+  gap: 5px;
+  padding: 0 8px;
+  background: transparent;
+}
+.ga-vq-line .av-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.ga-vq-dl {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 6px 0;
+  margin: 10px 0 4px;
+}
+.ga-vq-dl dt {
+  font: 600 12.5px/1.5 var(--av-serif);
+  letter-spacing: 0.12em;
+  color: var(--av-ink-2);
+}
+.ga-vq-dl dd {
+  margin: 0;
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ga-vq-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+}
+.ga-vq-row .av-switch {
+  margin-left: auto;
+}
+.ga-vq-row .av-range {
+  flex: 1;
+  min-width: 0;
+}
+/* 音量的百分比:点一下静音 / 取消静音 */
+.ga-vq-mute {
+  flex: none;
+  width: 38px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: right;
+  color: var(--av-ink-2);
+  font-variant-numeric: lining-nums tabular-nums;
+  cursor: pointer;
+}
+.ga-vq-mute.on {
+  color: var(--av-bad);
+}
+.ga-vq.voice-off .ga-vq-vol {
+  opacity: 0.4;
+  pointer-events: none;
+}
+.ga-vq-foot {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+  padding-top: 12px;
+  border-top: 1px solid var(--av-hair);
+}
+.ga-vq-foot .av-btn {
+  flex: 1;
+  background: transparent;
+}
+.ga-vq .av-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, currentColor 7%, transparent);
+}
+/* 最上面一行「音色」:现在用的名字(宋体 16)+ 语言小签 + ▾;点开在面板里就地展开一张短列表 */
+.ga-vq-tone {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--av-hair);
+}
+.ga-vq-pick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 42px;
+  padding: 0 10px 0 12px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  box-shadow: inset 0 0 0 1px var(--av-hair);
+  cursor: pointer;
+  transition: background 0.16s, box-shadow 0.16s;
+}
+.ga-vq-pick:hover {
+  background: color-mix(in srgb, currentColor 6%, transparent);
+}
+.ga-vq-pick:focus-visible {
+  outline: 2px solid var(--av-ctl);
+  outline-offset: 1px;
+}
+.ga-vq-pick .k {
+  flex: none;
+  font: 600 13px/1 var(--av-serif);
+  letter-spacing: 0.12em;
+  color: var(--av-ink-2);
+}
+.ga-vq-pick .nm {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 700 16px/1.25 var(--av-serif);
+  letter-spacing: 0.06em;
+}
+.ga-vq-pick > .av-ic {
+  flex: none;
+  opacity: 0.7;
+  transition: rotate 0.2s var(--av-ease);
+}
+.ga-vq.vlist-on .ga-vq-pick {
+  box-shadow: inset 0 0 0 1.5px var(--av-sel, var(--av-ink));
+}
+.ga-vq.vlist-on .ga-vq-pick > .av-ic {
+  rotate: 180deg;
+}
+.ga-vq-lg {
+  flex: none;
+  height: 20px;
+  padding: 0 6px;
+}
+/* 短列表:收着时高 0、看不见也点不到;展开 0.2s(收起 0.16s) */
+.ga-vq-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 0;
+  margin-top: 0;
+  padding: 0 4px;
+  overflow: hidden auto;
+  border-radius: 7px;
+  background: var(--av-paper-2);
+  opacity: 0;
+  visibility: hidden;
+  transition: max-height 0.16s ease, margin 0.16s ease, padding 0.16s ease, opacity 0.12s ease, visibility 0s linear 0.16s;
+}
+.ga-vq.vlist-on .ga-vq-list {
+  max-height: 222px;
+  margin-top: 6px;
+  padding: 4px;
+  opacity: 1;
+  visibility: visible;
+  transition: max-height 0.2s var(--av-ease), margin 0.2s var(--av-ease), padding 0.2s var(--av-ease), opacity 0.16s ease, visibility 0s;
+}
+.ga-vq-opt {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 8px 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  text-align: left;
+  color: inherit;
+  font: 500 13.5px/1.2 var(--av-sans);
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: background 0.14s, box-shadow 0.14s;
+}
+.ga-vq-opt:hover {
+  background: var(--av-hair-2);
+}
+.ga-vq-opt:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1.5px var(--av-ctl);
+}
+.ga-vq-opt.on {
+  background: var(--av-paper);
+  box-shadow: inset 0 0 0 1.5px var(--av-sel, var(--av-ink));
+}
+.ga-vq-opt .nm {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- 发出去的那句(.ga-echo):画面中间偏上浮一下,两头渐隐的深色带 + 上下两条细线 ---------- */
+.ga-echo {
+  position: absolute;
+  left: 50%;
+  top: 40%;
+  z-index: 3;
+  width: max-content;
+  max-width: min(760px, calc(100% - 32px));
+  margin: 0;
+  padding: 14px 64px;
+  transform: translateX(-50%);
+  font: 500 20px/1.6 var(--av-serif);
+  letter-spacing: 0.04em;
+  color: #fff;
+  text-align: center;
+  white-space: pre-wrap;
+  background: linear-gradient(90deg, transparent, rgba(12, 13, 22, 0.5) 20%, rgba(12, 13, 22, 0.5) 80%, transparent);
+  cursor: pointer;
+  animation: vn-echo-in 0.32s var(--av-ease, ease) both;
+}
+.ga-echo::before,
+.ga-echo::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55) 22%, rgba(255, 255, 255, 0.55) 78%, transparent);
+}
+.ga-echo::before {
+  top: 0;
+}
+.ga-echo::after {
+  bottom: 0;
+}
+.ga-echo.leaving {
+  animation: vn-echo-out 0.3s ease both;
+  pointer-events: none;
+}
+@keyframes vn-echo-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 6px);
+  }
+}
+@keyframes vn-echo-out {
+  to {
+    opacity: 0;
+    transform: translate(-50%, 6px);
+  }
+}
+.vn-root.ui-hidden .ga-echo {
+  opacity: 0;
+}
+
+/* ══════════ 对话区 A(.ga) ══════════ */
+.vn-root.ga {
+  /* 字号按画面宽收:cqw = 这块画面宽的 1%(1440 宽 = 14.4px) */
+  container-type: size;
+  --ga-ink: #fff;
+  --ga-ink-2: rgba(255, 255, 255, 0.84);
+  --ga-sh: 0 1px 2px rgba(0, 0, 0, 0.5), 0 0 10px rgba(0, 0, 0, 0.22);
+  --ga-strip: rgba(12, 14, 26, 0.34);
+  /* 设置里「台词后面的压暗」(boxOpacity,0.2–1,默认 0.72 = 设计稿的样子);--ga-sk = 按默认值算的倍数 */
+  --ga-sk: calc(var(--vn-box-alpha, 0.72) / 0.72);
+  /* 对话区那块下面留给输入那行的高(.ga-zone 的底边):设计稿最下面那行淡字离底 22、高 36,再留 8 */
+  --ga-zb: calc(env(safe-area-inset-bottom) + 66px);
+}
+/* 白天背景亮:日语小字、旁白提亮一点 */
+.vn-root.ga.is-day {
+  --ga-ink-2: rgba(255, 255, 255, 0.92);
+}
+
+/* 底部很淡的压暗(只为字看得清):设计稿 top 420 / 810;出 CG 时从 450 开始,CG 上半截一点不暗 */
+.ga-shade {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  top: 51.852%;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(8, 9, 18, 0) 0%,
+    rgba(8, 9, 18, min(1, calc(0.3 * var(--ga-sk)))) 36%,
+    rgba(8, 9, 18, min(1, calc(0.52 * var(--ga-sk)))) 66%,
+    rgba(8, 9, 18, min(1, calc(0.6 * var(--ga-sk)))) 100%
+  );
+  transition: opacity 0.4s ease, top 0.4s var(--av-ease);
+}
+.ga.is-day .ga-shade {
+  background: linear-gradient(
+    180deg,
+    rgba(14, 14, 26, 0) 0%,
+    rgba(14, 14, 26, min(1, calc(0.36 * var(--ga-sk)))) 36%,
+    rgba(14, 14, 26, min(1, calc(0.6 * var(--ga-sk)))) 66%,
+    rgba(14, 14, 26, min(1, calc(0.66 * var(--ga-sk)))) 100%
+  );
+}
+.ga.cg-on .ga-shade {
+  top: 55.556%;
+}
+.vn-root.ui-hidden .ga-shade {
+  opacity: 0;
+}
+
+/* 对话区的位置:设计稿 .ga-say left 250、宽 820、top 554(1440×810)。外面这层 .ga-zone 从画面顶到输入那行上面,
+   前面垫一段 68.4% 画面高的空(::before),字多了放不下时这段空先缩 —— 上沿平时钉住,不随台词长短上下挪,
+   长句子也不会压到最下面那行输入 */
+.ga-zone {
+  position: absolute;
+  z-index: 2;
+  left: 17.361%;
+  width: 56.944%;
+  /* 整块上移,上/下边一起挪,保留原来的排版高度和毛玻璃背景对齐。 */
+  top: calc(-24px - var(--vn-dialogue-offset, 0px));
+  bottom: calc(var(--ga-zb) + 24px + var(--vn-dialogue-offset, 0px));
+  display: flex;
+  flex-direction: column;
+  pointer-events: none;
+  transition: opacity 0.22s ease;
+}
+.ga-zone::before {
+  content: '';
+  flex: 0 1 auto;
+  min-height: 0;
+  height: calc((100% + var(--ga-zb)) * 0.68395 - var(--vn-dialogue-height, 0px));
+}
+.vn-root.ui-hidden :is(.ga-zone, .ga-input) {
+  opacity: 0;
+}
+.vn-root.ui-hidden :is(.ga-zone, .ga-input) * {
+  pointer-events: none !important;
+}
+.ga-say {
+  position: relative;
+  flex: none;
+  pointer-events: auto;
+  color: var(--ga-ink);
+  text-shadow: var(--ga-sh);
+  cursor: pointer;
+  -webkit-touch-callout: none;
+}
+/* 细线模式同样预留增加的高度,底边仍给输入栏留出空间。 */
+.ga:not(.dlg-classic) .ga-body {
+  padding-bottom: var(--vn-dialogue-height, 0px);
+}
+.ga-head {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  height: 44px;
+  padding-bottom: 9px;
+}
+/* 声波名字:名字是一个按钮 = 声波 + 名字 + 悬停时才出来的「重听」。名字的字和细线左端、台词对齐,
+   声波挂在这一列的左外侧;按钮 32px 高、往下伸 7px,名字的中线不动 */
+.ga-name {
+  --ga-wv: 22px;
+  --ga-pad: 5px;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  height: 32px;
+  margin: 0 0 -7px calc(-1 * (var(--ga-pad) + var(--ga-wv)));
+  padding: 0 6px 0 var(--ga-pad);
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font: 700 calc(clamp(16px, 1.25cqw, 18px) * var(--vn-text-scale, 1)) / 1 var(--av-serif);
+  letter-spacing: 0.26em;
+  white-space: nowrap;
+  color: var(--ga-ink);
+  text-shadow: var(--ga-sh);
+  cursor: inherit;
+  transition: opacity 0.2s, background 0.16s;
+}
+.ga-name .nm {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ga.narr .ga-name {
+  opacity: 0;
+  pointer-events: none;
+}
+.ga.can-replay .ga-name {
+  cursor: pointer;
+}
+/* 悬停:垫一块和四角细条同色的半透明深底(白底在白天亮墙上会把字冲淡) */
+.ga.can-replay .ga-name:hover {
+  background: var(--ga-strip);
+}
+.ga-name:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 0;
+}
+.ga-name .hint {
+  flex: none;
+  margin-left: 2px;
+  font: 400 13px/1 var(--av-sans);
+  letter-spacing: 0.08em;
+  color: #fff;
+  opacity: 0;
+  transition: opacity 0.16s;
+}
+.ga.can-replay .ga-name:is(:hover, :focus-visible) .hint {
+  opacity: 1;
+}
+.ga-wave {
+  flex: none;
+  position: relative;
+  top: 1.5px; /* 宋体的字在行框里偏下一点:声波跟字的中线对齐 */
+  overflow: visible;
+  opacity: 0;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.45));
+  transition: opacity 0.2s;
+}
+.ga.can-replay .ga-wave {
+  opacity: 0.8;
+}
+.ga.can-replay.speaking .ga-wave,
+.ga.can-replay .ga-name:hover .ga-wave {
+  opacity: 1;
+}
+/* 每根以自己的中点上下伸缩;各有各的高低和快慢,跳起来不会齐成一排 */
+.ga-wave path {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  vector-effect: non-scaling-stroke;
+}
+.ga-wave .b1 {
+  --lo: 0.5;
+  --hi: 1.7;
+  --t: 0.58s;
+  --d: -0.31s;
+}
+.ga-wave .b2 {
+  --lo: 0.42;
+  --hi: 1.12;
+  --t: 0.74s;
+  --d: -0.12s;
+}
+.ga-wave .b3 {
+  --lo: 0.45;
+  --hi: 1.55;
+  --t: 0.5s;
+  --d: -0.44s;
+}
+.ga-wave .b4 {
+  --lo: 0.7;
+  --hi: 2.5;
+  --t: 0.66s;
+  --d: -0.2s;
+}
+.ga.can-replay.speaking .ga-wave path {
+  animation: ga-bar var(--t) ease-in-out var(--d) infinite alternate;
+}
+@keyframes ga-bar {
+  from {
+    transform: scaleY(var(--lo));
+  }
+  to {
+    transform: scaleY(var(--hi));
+  }
+}
+/* 思考:线上方右边一行小字「已思考 N 秒 · 展开」 */
+.ga-think {
+  position: relative;
+  flex: none;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  margin-bottom: -7px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font: 400 13px/1 var(--av-sans);
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.92);
+  text-shadow: var(--ga-sh);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background 0.16s, color 0.16s;
+}
+.ga-think:disabled {
+  cursor: inherit;
+}
+/* 你说话时没有「已思考」(思考是她回你那条的) */
+.ga.you .ga-think {
+  visibility: hidden;
+}
+.ga-think .more {
+  color: var(--ga-ink);
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 255, 255, 0.4);
+  text-underline-offset: 3px;
+}
+.ga-think:hover:not(:disabled) {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+}
+.ga-think:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 0;
+}
+.ga-think .av-ic {
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.4));
+}
+/* 思考展开:一块贴在线上方,不撑高对话区 */
+.ga-thinkbody {
+  position: absolute;
+  z-index: 1;
+  right: 0;
+  top: -6px;
+  translate: 0 -100%;
+  width: min(560px, 100%);
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  border-radius: 8px;
+  background: rgba(12, 14, 24, 0.66);
+  text-shadow: none;
+  cursor: auto;
+  transition: opacity 0.2s ease, max-height 0.24s var(--av-ease);
+}
+.ga.think-on .ga-thinkbody {
+  max-height: 160px;
+  overflow-y: auto;
+  opacity: 1;
+}
+.ga-thinkbody p {
+  margin: 0;
+  padding: 12px 16px;
+  font: 400 13px/1.75 var(--av-sans);
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.9);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+  -webkit-user-select: text;
+}
+/* 分界线:左端 56px 白线,往右渐隐;旁白时左端那段收掉 */
+.ga-rule {
+  position: relative;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.56), rgba(255, 255, 255, 0.24) 55%, rgba(255, 255, 255, 0));
+}
+.ga-rule::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: -0.5px;
+  width: 56px;
+  height: 2px;
+  border-radius: 1px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  transition: opacity 0.2s;
+}
+.ga.narr .ga-rule::before {
+  opacity: 0;
+}
+.ga.cg-on .ga-rule {
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0) 60%);
+}
+/* 台词:日语 15 / 1.6、中文 24 / 1.55(宋体,跟设置里「对话框文字」);白字 + 淡阴影;旁白淡一点 */
+.ga-body {
+  position: relative;
+  padding-top: 12px;
+}
+.ga-ja {
+  margin: 0 0 4px;
+  font: 400 calc(clamp(13px, 1.0417cqw, 15px) * var(--vn-text-scale, 1)) / 1.6 var(--vn-dialog-font, var(--av-serif));
+  letter-spacing: 0.04em;
+  color: var(--ga-ink-2);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+.ga-zh {
+  margin: 0;
+  font: 500 calc(clamp(18px, 1.6667cqw, 24px) * var(--vn-text-scale, 1)) / 1.55 var(--vn-dialog-font, var(--av-serif));
+  letter-spacing: 0.05em;
+  color: var(--ga-ink);
+  text-wrap: pretty;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+.ga.narr .ga-zh {
+  color: var(--ga-ink-2);
+}
+/* 带「」时括号挂在左边外面,折行后和正文对齐 */
+.ga-zh.say,
+.ga-ja.say {
+  text-indent: -1em;
+  margin-left: -1em;
+  padding-left: 1em;
+}
+/* ▼ 下一句 / ■ 读完了:跟在句尾 */
+.ga-mark {
+  display: inline-block;
+  margin-left: 10px;
+  font-size: 13px;
+  line-height: 1;
+  vertical-align: 0.25em;
+  text-indent: 0;
+  color: #fff;
+}
+.ga-mark.next {
+  animation: ga-bob 1.2s ease-in-out infinite;
+}
+.ga-mark.end {
+  font-size: 12px;
+}
+@keyframes ga-bob {
+  50% {
+    translate: 0 3px;
+  }
+}
+/* 打字光标、等语音的小圈:白色(不用角色色) */
+.ga .ga-zh .vn-caret {
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+.ga .ga-zh .vn-voice-spin {
+  border-color: rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+}
+.ga .ga-zh .vn-empty {
+  color: var(--ga-ink-2);
+}
+/* 正在写:线下面一行「正在写 ···」+ 停止,替换台词那一行 */
+.ga-gen {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  font: 400 15px/1 var(--av-serif);
+  letter-spacing: 0.16em;
+  color: var(--ga-ink);
+}
+.ga-gen .dots {
+  display: inline-flex;
+  gap: 5px;
+}
+.ga-gen .dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: ga-dot 1.2s ease-in-out infinite;
+}
+.ga-gen .dots i:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.ga-gen .dots i:nth-child(3) {
+  animation-delay: 0.4s;
+}
+@keyframes ga-dot {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  40% {
+    opacity: 1;
+  }
+}
+.ga-stop {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 32px;
+  margin-left: 8px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  font: 500 13px/1 var(--av-sans);
+  letter-spacing: 0.08em;
+  color: #fff;
+  background: var(--ga-strip);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.32);
+  text-shadow: none;
+  cursor: pointer;
+  transition: background 0.16s;
+}
+.ga-stop:hover {
+  background: rgba(12, 14, 26, 0.5);
+}
+.ga-stop:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+/* 模型报错的纸卡:贴在对话区上方 */
+.ga-say > .vn-err {
+  position: absolute;
+  left: -22px;
+  bottom: calc(100% + 12px);
+  z-index: 6;
+  width: min(580px, 100%);
+  padding: 16px 22px;
+  cursor: auto;
+  text-shadow: none;
+  text-align: left;
+}
+
+/* ---------- 输入(.ga-input):平时一行带下划线的淡字,轮到你 / 点开插话时整条浮上来 ---------- */
+.ga-input {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 0;
+  z-index: 4;
+  transition: opacity 0.22s ease;
+}
+.ga-ghost {
+  position: absolute;
+  left: 0;
+  bottom: calc(env(safe-area-inset-bottom) + 22px);
+  translate: -50% 0;
+  height: 36px;
+  padding: 0 20px;
+  border: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.36);
+  border-radius: 0;
+  background: none;
+  white-space: nowrap;
+  font: 400 13px/36px var(--av-sans);
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.9);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+  cursor: pointer;
+  transition: opacity 0.2s ease, color 0.16s, border-color 0.16s;
+}
+.ga-ghost:hover:not(:disabled) {
+  color: #fff;
+  border-bottom-color: rgba(255, 255, 255, 0.7);
+}
+.ga-ghost:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+.ga-ghost:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+/* 和对话区同一种画法:不要底、不要框,字直接写在画面上,底下一条两头淡出的细线(宽 640、高 50,离底 22) */
+.ga-bar {
+  position: absolute;
+  left: 0;
+  bottom: calc(env(safe-area-inset-bottom) + 22px);
+  /* 窄窗口:两边各让出右下那条细条的宽(176 + 22 + 8),不压到它 */
+  width: min(640px, 100cqw - 412px);
+  min-height: 50px;
+  margin: 0;
+  translate: -50% 6px;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  padding: 0 2px 6px;
+  color: #fff;
+  text-shadow: var(--ga-sh);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.18s ease, translate 0.18s var(--av-ease), visibility 0s linear 0.18s;
+}
+.ga.bar-on .ga-bar {
+  opacity: 1;
+  visibility: visible;
+  translate: -50% 0;
+  transition: opacity 0.22s ease, translate 0.26s var(--av-ease), visibility 0s;
+}
+.ga.bar-on .ga-ghost {
+  opacity: 0;
+  pointer-events: none;
+}
+.ga-bar::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.5) 18%, rgba(255, 255, 255, 0.5) 82%, rgba(255, 255, 255, 0));
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  transition: background 0.16s;
+  pointer-events: none;
+}
+/* 点进去写字时线变亮,不另画框 */
+.ga-bar:focus-within::after {
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0), #fff 18%, #fff 82%, rgba(255, 255, 255, 0));
+}
+.ga-form {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+}
+.ga-form textarea {
+  flex: 1;
+  min-width: 0;
+  display: block;
+  height: 40px;
+  max-height: 132px;
+  margin-bottom: -1px;
+  padding: 8px 8px;
+  border: 0;
+  outline: none;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  caret-color: #fff;
+  text-shadow: inherit;
+  font: 500 18px/24px var(--av-serif);
+  letter-spacing: 0.05em;
+  resize: none;
+  overflow-y: auto;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.ga-form textarea::placeholder {
+  color: rgba(255, 255, 255, 0.66);
+  opacity: 1;
+}
+.ga-form textarea:disabled {
+  opacity: 0.6;
+}
+.ga-x,
+.ga-send {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  transition: background 0.16s, color 0.16s;
+}
+.ga-bar .av-ic {
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
+}
+.ga-x .av-ic {
+  opacity: 0.6;
+}
+.ga-send .av-ic {
+  opacity: 0.55;
+  transition: opacity 0.16s;
+}
+.ga-bar.has .ga-send .av-ic,
+.ga-send.stop .av-ic,
+.ga-send:hover:not(:disabled) .av-ic,
+.ga-x:hover .av-ic {
+  opacity: 1;
+}
+.ga-x:hover,
+.ga-send:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+}
+.ga-send:disabled {
+  cursor: default;
+}
+.ga-bar :focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: -2px;
+}
+.ga-bar textarea:focus-visible {
+  outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ga.can-replay.speaking .ga-wave path,
+  .vn-vq-btn.speaking .av-ic path,
+  .vn-vq-btn.busy .av-ic,
+  .ga-mark.next {
+    animation: none;
+  }
+  .ga-echo,
+  .ga-echo.leaving {
+    animation-name: vn-fade-in;
+  }
+  .ga-vq-list,
+  .ga-vq.vlist-on .ga-vq-list {
+    transition: opacity 0.12s, visibility 0s;
+  }
+}
+
+/* ══════════ 经典对话框(.dlg-classic;设置 · 外观 · 对话框 = 经典,玻璃框底色 = 黑玻璃 / 白玻璃) ══════════
+   设计稿 scene.css 末尾「经典对话框」那节:玻璃框 + 名牌,框里只糊背景(垫一张对齐好的模糊图,出 CG 时垫 CG);
+   台词那一栏几乎和细线时同一个位置(框左 212、宽 880,左右各留 38),框贴着输入那行上面(下沿离底 84),字多了往上长;
+   名牌:实心角色色、白字宋体,压在框上沿;声波在名牌左边;你说话时名牌是纸 / 墨色;旁白没有名牌。底部压暗、细分界线不要。
+   黑玻璃 = 设计稿夜里那块,白玻璃 = 白天那块(玩家在设置里选;玻璃的浓淡跟「对话框透明度」) */
+.ga.dlg-classic .ga-rule {
+  display: none;
+}
+.ga.dlg-classic {
+  --ga-zb: calc(env(safe-area-inset-bottom) + 84px);
+}
+.ga.dlg-classic .ga-zone {
+  left: 14.722%;
+  width: 61.111%;
+}
+/* 框贴着下沿,字多了往上长 */
+.ga.dlg-classic .ga-zone::before {
+  flex: 1 1 0;
+  height: auto;
+}
+.ga.dlg-classic .ga-say {
+  --ga-ink: #f2f1f6;
+  --ga-ink-2: rgba(242, 241, 246, 0.8);
+  --ga-sh: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --cl-soft: rgba(242, 241, 246, 0.86);
+  --av-frost-tint: rgba(16, 17, 28, calc(var(--vn-box-alpha, 0.72) * 0.86));
+  isolation: isolate;
+  min-height: calc(188px + var(--vn-dialogue-height, 0px));
+  padding: 20px 38px 24px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.32);
+}
+.vn-root[data-skin='glass-light'].dlg-classic .ga-say {
+  --ga-ink: #2a2a33;
+  --ga-ink-2: rgba(42, 42, 51, 0.76);
+  --ga-sh: none;
+  --cl-soft: rgba(42, 42, 51, 0.74);
+  --av-frost-tint: rgba(252, 251, 249, min(1, calc(var(--vn-box-alpha, 0.72) * 1.11)));
+  border-color: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 8px 24px rgba(60, 50, 70, 0.18);
+}
+/* 名字那行只剩右边的「已思考」;名字挪到名牌上(压在框上沿) */
+.ga.dlg-classic .ga-head {
+  position: static;
+  height: 30px;
+  padding-bottom: 2px;
+}
+.ga.dlg-classic .ga-name {
+  position: absolute;
+  left: 14px;
+  top: -17px;
+  height: 34px;
+  margin: 0;
+  padding: 0 4px 0 0;
+  gap: 4px;
+  border-radius: 4px;
+  text-shadow: none;
+  letter-spacing: 0;
+}
+.ga.dlg-classic.narr .ga-name {
+  visibility: hidden;
+}
+.ga.dlg-classic.can-replay .ga-name:hover {
+  background: none;
+}
+.ga.dlg-classic .ga-name .nm {
+  display: inline-flex;
+  align-items: center;
+  height: 34px;
+  padding: 0 18px;
+  border-radius: 4px;
+  background: var(--av-acc, var(--vn-accent));
+  color: var(--av-name-ink, #fff);
+  font: 700 17px/1 var(--av-serif);
+  letter-spacing: 0.22em;
+  text-shadow: 0 1px 2px rgba(10, 10, 30, 0.18);
+  box-shadow: 0 3px 8px rgba(10, 10, 30, 0.22);
+  transition: filter 0.16s;
+}
+.ga.dlg-classic.can-replay .ga-name:hover .nm {
+  filter: brightness(1.06);
+}
+/* 你说话:名牌不用她的颜色 —— 黑玻璃白纸墨字、白玻璃墨底白字 */
+.ga.dlg-classic.you .ga-name .nm {
+  background: #fbfaf8;
+  color: #2a2a33;
+  text-shadow: none;
+}
+.vn-root[data-skin='glass-light'].dlg-classic.you .ga-name .nm {
+  background: #2a2a33;
+  color: #fff;
+}
+/* 声波:名牌左边,压在框沿上;黑玻璃白、白玻璃墨色 */
+.ga.dlg-classic .ga-wave {
+  top: 0;
+}
+.vn-root[data-skin='glass-light'].dlg-classic .ga-wave {
+  color: #2a2a33;
+  filter: drop-shadow(0 0 1.5px rgba(255, 255, 255, 0.85));
+}
+.ga.dlg-classic .ga-name .hint {
+  margin-left: 2px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: rgba(12, 14, 26, 0.66);
+  font-size: 12.5px;
+}
+.vn-root[data-skin='glass-light'].dlg-classic .ga-name:focus-visible {
+  outline-color: #2a2a33;
+}
+/* 已思考:框里右上一行小字 */
+.ga.dlg-classic .ga-think {
+  margin-bottom: 0;
+  color: var(--cl-soft);
+}
+.ga.dlg-classic .ga-think .more {
+  text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+}
+.ga.dlg-classic .ga-think:hover:not(:disabled) {
+  color: var(--ga-ink);
+  background: color-mix(in srgb, currentColor 8%, transparent);
+}
+.vn-root[data-skin='glass-light'].dlg-classic .ga-think .av-ic {
+  filter: none;
+}
+.vn-root[data-skin='glass-light'].dlg-classic .ga-think:focus-visible {
+  outline-color: #2a2a33;
+}
+.ga.dlg-classic .ga-body {
+  padding-top: 2px;
+}
+/* ▼ / ■:角色色那一小点(白玻璃用深一格) */
+.ga.dlg-classic .ga-mark {
+  color: var(--av-acc, var(--vn-accent));
+}
+.vn-root[data-skin='glass-light'].dlg-classic .ga-mark {
+  color: var(--av-acc-deep, var(--vn-accent));
+}
+.ga.dlg-classic .ga-zh .vn-caret {
+  background: var(--av-acc, var(--vn-accent));
+  box-shadow: none;
+}
+/* 「正在写」的停止:白玻璃上墨色细边 */
+.vn-root[data-skin='glass-light'].dlg-classic .ga-stop {
+  color: #2a2a33;
+  background: rgba(42, 42, 51, 0.06);
+  box-shadow: inset 0 0 0 1px rgba(42, 42, 51, 0.24);
+}
+/* 思考展开:贴在框上方,和框右边对齐 */
+.ga.dlg-classic .ga-thinkbody {
+  top: -10px;
+}
+/* 报错纸卡:让开压在框上沿的名牌 */
+.ga.dlg-classic .ga-say > .vn-err {
+  left: 0;
+  bottom: calc(100% + 28px);
+}
+
+/* 老样子的经典框(玻璃框底色 = 经典):电脑上左右让开右下那条细条 */
+@media (min-width: 641px) {
+  .vn-root[data-dlg='classic'] .vn-window {
+    width: min(1100px, calc(100% - 2 * (var(--vn-corner) + 150px)));
+  }
+}
+
+/* ══════════ 第 9 段 手机竖屏(≤ 640px;设计稿 kit/scene.css「手机竖屏 · 对话区 A」.ga-ph,按 390×844 画的)══════════
+   和电脑同一种对话区 A:细线、声波名字、四角细条都照电脑那份,这里只按竖屏重排位置、字号、点击区(手指点的地方 ≥ 40px)。
+   排法:右上 倍速 · 跳过 · ≡(状态栏下面),≡ 下面历史;左上「模型」;右下 画笔 · 语音 · 重来 · 隐藏,和左边那行「说点什么」同一排(最下面);
+   台词在那一排上面(名字 + 细线 + 日语 + 中文,上沿在 506 / 844);点开输入框:一条细线升到那一排上面,台词往上让 54px。
+   经典对话框:玻璃框贴在最下面那排上面,左右各留 10,字多了往上长。 */
+@media (max-width: 640px) {
+  .vn-root {
+    --vn-corner: 12px;
+    --vn-strip-h: 44px;
+    --vn-gutter: 18px;
+    /* 最下面那一排离底边的空(设计稿 --sab + 8) */
+    --vn-ph-sab: calc(env(safe-area-inset-bottom) + 8px);
+  }
+
+  /* ---------- 四角:一格至少 44 × 44 ---------- */
+  .vn-strip > button,
+  .vn-strip .vn-vq-btn,
+  .vn-strip .ig-btn {
+    min-width: 44px;
+    padding: 0 10px;
+  }
+  .vn-strip-top,
+  .vn-strip-model {
+    top: calc(env(safe-area-inset-top) + 6px);
+  }
+  .vn-strip-hist {
+    top: calc(env(safe-area-inset-top) + 58px);
+  }
+  .vn-strip-tools {
+    bottom: var(--vn-ph-sab);
+  }
+  .vn-strip-tools > button,
+  .vn-strip-tools .vn-vq-btn,
+  .vn-strip-tools .ig-btn {
+    min-width: 42px;
+    padding: 0 9px;
+  }
+  .vn-strip > .vn-auto.on {
+    padding-left: 12px;
+  }
+  /* 模型名(设置 · 显示 · 模型标签)窄一点,别顶到右上那排 */
+  .vn-model-name {
+    max-width: 96px;
+  }
+  /* 语音面板:右下那排上面(离底 sab + 60),贴右边,几乎整宽;按钮 40 高 */
+  .ga-vq {
+    bottom: calc(100% + 8px);
+    width: min(330px, calc(100vw - 24px));
+    padding: 12px 14px;
+  }
+  .ga-vq .av-btn {
+    height: 40px;
+  }
+  .ga-vq-h {
+    min-height: 40px;
+    padding-bottom: 8px;
+  }
+  .ga-vq-line {
+    padding: 8px 0;
+  }
+  .ga-vq-row {
+    min-height: 42px;
+  }
+  .ga-vq-opt {
+    min-height: 40px;
+  }
+  .ga-vq-pick {
+    min-height: 44px;
+  }
+  /* 跳过中 / 形态切换的小签:让到「历史」下面,不跟左上「模型」挤 */
+  .vn-root .vn-topbar {
+    top: calc(env(safe-area-inset-top) + 110px);
+    right: calc(env(safe-area-inset-right) + var(--vn-corner));
+  }
+
+  /* ---------- 发出去那句:top 36%,字小一点 ---------- */
+  .ga-echo {
+    top: 36%;
+    max-width: calc(100% - 32px);
+    padding: 12px 32px;
+    font-size: 17px;
+  }
+
+  /* ---------- 底部压暗:竖屏台词占得高,从 340 / 844 开始;出 CG 时从 440 ---------- */
+  .ga-shade {
+    top: 40.284%;
+    background: linear-gradient(
+      180deg,
+      rgba(8, 9, 18, 0) 0%,
+      rgba(8, 9, 18, min(1, calc(0.34 * var(--ga-sk)))) 30%,
+      rgba(8, 9, 18, min(1, calc(0.58 * var(--ga-sk)))) 52%,
+      rgba(8, 9, 18, min(1, calc(0.64 * var(--ga-sk)))) 100%
+    );
+  }
+  .ga.is-day .ga-shade {
+    background: linear-gradient(
+      180deg,
+      rgba(14, 14, 26, 0) 0%,
+      rgba(14, 14, 26, min(1, calc(0.4 * var(--ga-sk)))) 30%,
+      rgba(14, 14, 26, min(1, calc(0.64 * var(--ga-sk)))) 52%,
+      rgba(14, 14, 26, min(1, calc(0.7 * var(--ga-sk)))) 100%
+    );
+  }
+  .ga.cg-on .ga-shade {
+    top: 52.133%;
+  }
+
+  /* ---------- 细线:台词在最下面那排上面;左边让出 36(声波挂在名字左外侧),右边 20 ---------- */
+  .vn-root.ga {
+    /* 对话区那块的底边 = 最下面那排(44)的上面再留 10 */
+    --ga-zb: calc(var(--vn-ph-sab) + 54px);
+  }
+  .ga-zone {
+    left: 36px;
+    right: 20px;
+    width: auto;
+    top: calc(-16px - var(--vn-dialogue-offset, 0px));
+    bottom: calc(var(--ga-zb) + 16px + var(--vn-dialogue-offset, 0px));
+  }
+  .ga-zone::before {
+    height: calc((100% + var(--ga-zb)) * 0.59953 - var(--vn-dialogue-height, 0px));
+  }
+  .ga-say {
+    transition: translate 0.26s var(--av-ease);
+  }
+  .ga.bar-on .ga-say {
+    translate: 0 -54px;
+  }
+  .ga-head {
+    height: 42px;
+    gap: 8px;
+    padding-bottom: 8px;
+  }
+  .ga-name {
+    --ga-wv: 20px;
+    height: 40px;
+    margin-bottom: -12px;
+    font-size: calc(16px * var(--vn-text-scale, 1));
+    letter-spacing: 0.22em;
+  }
+  .ga-name .hint {
+    font-size: 12px;
+  }
+  .ga-think {
+    height: 40px;
+    margin-bottom: -12px;
+    padding: 0 4px;
+    font-size: 12.5px;
+    color: #fff;
+  }
+  .ga-thinkbody {
+    left: 0;
+    width: auto;
+  }
+  .ga.think-on .ga-thinkbody {
+    max-height: 210px;
+  }
+  .ga-thinkbody p {
+    padding: 10px 12px;
+    font-size: 12.5px;
+  }
+  .ga-rule::before {
+    width: 40px;
+  }
+  .ga-body {
+    padding-top: 10px;
+  }
+  .ga-ja {
+    margin-bottom: 3px;
+    font-size: calc(12.5px * var(--vn-text-scale, 1));
+    line-height: 1.6;
+  }
+  .ga-zh {
+    font-size: calc(18px * var(--vn-text-scale, 1));
+    line-height: 1.6;
+  }
+  .ga-mark {
+    margin-left: 8px;
+    font-size: 12px;
+  }
+  .ga-gen {
+    font-size: 14px;
+  }
+  .ga-stop {
+    height: 40px;
+  }
+
+  /* 最下面一排:左边「说点什么 · 随时可以插话」(一行带下划线的淡字),右边那几个按钮 */
+  .ga-input {
+    left: 0;
+    right: 0;
+    width: auto;
+  }
+  .ga-ghost {
+    left: 18px;
+    bottom: var(--vn-ph-sab);
+    translate: none;
+    max-width: calc(100% - 18px - 12px - 176px - 10px);
+    height: 44px;
+    padding: 0 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 13px;
+    line-height: 43px;
+    letter-spacing: 0.04em;
+  }
+  /* 点开:一条细线升到那一排上面(和电脑一样不要底、不要框);那排按钮留着(轮到你时还能「重来」) */
+  .ga-bar {
+    left: 14px;
+    right: 14px;
+    width: auto;
+    bottom: calc(var(--vn-ph-sab) + 54px);
+    min-height: 48px;
+    padding-bottom: 3px;
+    translate: 0 6px;
+  }
+  .ga.bar-on .ga-bar {
+    translate: 0 0;
+  }
+  .ga-form textarea {
+    height: 44px;
+    padding: 10px 6px;
+    font-size: 16px; /* 不小于 16:iOS 点进去才不会把整页放大 */
+  }
+  .ga-x,
+  .ga-send {
+    width: 42px;
+    height: 42px;
+  }
+
+  /* ---------- 经典对话框:玻璃框左右各留 10,贴在最下面那排(「说点什么」+ 四个按钮)上面,字多了往上长 ---------- */
+  .ga.dlg-classic {
+    --ga-zb: calc(var(--vn-ph-sab) + 54px);
+  }
+  .ga.dlg-classic .ga-zone {
+    left: 10px;
+    right: 10px;
+    width: auto;
+  }
+  .ga.dlg-classic .ga-say {
+    min-height: calc(168px + var(--vn-dialogue-height, 0px));
+    padding: 18px 18px 16px 22px;
+  }
+  .ga.dlg-classic .ga-name {
+    left: 6px;
+    top: -16px;
+    height: 32px;
+    margin: 0;
+  }
+  .ga.dlg-classic .ga-name .nm {
+    height: 32px;
+    padding: 0 14px;
+    font-size: 15px;
+  }
+  .ga.dlg-classic .ga-think {
+    height: 32px;
+  }
+
+  /* 老样子的经典框(玻璃框底色 = 经典):宽度铺满 */
+  .vn-root[data-dlg='classic'] .vn-window {
+    width: calc(100% - 2 * var(--vn-gutter));
+  }
+
+  /* 选项 / 当时的回复:整层让到对话框上面(对话框的高是 VNScreen 量出来的 --vn-window-h) */
+  .vn-choice-layer {
+    bottom: calc(var(--vn-window-h, 32vh) + 12px);
+  }
+
+  /* ---------- 对着台词长按的小菜单:每一项 44 高(开在手指上方,见 LineMenu) ---------- */
+  .vn-ctx {
+    min-width: 188px;
+  }
+  .vn-ctx > button {
+    height: 44px;
+    font-size: 14px;
+  }
+}
+
+/* 长按台词出小菜单(VNScreen 自己数 0.5s):别让 iOS 先弹系统的拷贝 / 查询菜单 */
+.vn-box {
+  -webkit-touch-callout: none;
+}
+
+/* 手机:对话区贴着屏边,报错纸卡不往左探出去 */
+@media (max-width: 640px) {
+  .ga-say > .vn-err {
+    left: 0;
+    width: 100%;
+  }
+}
+
+/* ══════════ 电脑上照设计稿整块等比缩放 ══════════
+   设计稿是一张 1440×810 的画,窗口多大就整张按 min(宽/1440, 高/810) 放大缩小:字号、名字、细线、离底距离、四角细条都跟着变。
+   原来只有位置按百分比走、字和框是死的 px —— 1920×1080 上台词还是 24px、框还是 44 高,看着又小又往上缩。
+   .ga-stage 里是对话区 + 下面输入那行,宽 1440 的设计稿坐标(里面的 px 就是设计稿的 px),底边贴住画面、水平居中,
+   再整块 scale(--ga-k);窗口比 16:9 高时这块往上加高(对话区离底的距离不变),比 16:9 宽时两边留空(和设计稿一样左右居中)。
+   --ga-k 由 VNScreen 的 ResizeObserver 写在 .vn-root 上;手机(≤640)不缩,照原来的竖屏排法。 */
+.ga-stage {
+  display: contents;
+}
+@media (min-width: 641px) {
+  .vn-root.ga .ga-stage {
+    display: block;
+    position: absolute;
+    left: 50%;
+    bottom: 0;
+    z-index: 3;
+    width: 1440px;
+    height: calc(100% / var(--ga-k, 1));
+    transform: translateX(-50%) scale(var(--ga-k, 1));
+    transform-origin: 50% 100%;
+    pointer-events: none;
+  }
+  /* pointer-events 会继承:整块不接点击(底下的画面照常点),输入那行要接回来(对话区自己在 .ga-say 上接) */
+  .vn-root.ga .ga-stage > .ga-input {
+    pointer-events: auto;
+  }
+  /* 对话区上沿:离画面底 256(设计稿 top 554 / 810),窗口再高也钉在底部这一截,不按比例往上跑 */
+  .vn-root.ga .ga-stage > .ga-zone::before {
+    height: calc(100% + var(--ga-zb) - 256px - var(--vn-dialogue-height, 0px));
+  }
+  /* 输入那条在缩放的这块里:宽度按设计稿的 640 算,不再按真实窗口宽扣右下细条(细条也一起缩了,不会压到) */
+  .vn-root.ga .ga-stage .ga-bar {
+    width: 640px;
+  }
+  /* 四角细条:每条从自己那个角整条缩放,离边的距离一起缩 */
+  .vn-root.ga .vn-strip {
+    scale: var(--ga-k, 1);
+  }
+  .vn-root.ga .vn-strip-top,
+  .vn-root.ga .vn-strip-hist {
+    transform-origin: 100% 0;
+  }
+  .vn-root.ga .vn-strip-model {
+    transform-origin: 0 0;
+  }
+  .vn-root.ga .vn-strip-tools {
+    transform-origin: 100% 100%;
+  }
+  .vn-root.ga .vn-strip-top,
+  .vn-root.ga .vn-strip-model {
+    top: calc(env(safe-area-inset-top) + (var(--vn-corner) - 2px) * var(--ga-k, 1));
+  }
+  .vn-root.ga .vn-strip-hist {
+    top: calc(env(safe-area-inset-top) + (var(--vn-corner) - 2px + var(--vn-strip-h) + 10px) * var(--ga-k, 1));
+  }
+  .vn-root.ga .vn-strip-top,
+  .vn-root.ga .vn-strip-hist,
+  .vn-root.ga .vn-strip-tools {
+    right: calc(env(safe-area-inset-right) + var(--vn-corner) * var(--ga-k, 1));
+  }
+  .vn-root.ga .vn-strip-model {
+    left: calc(env(safe-area-inset-left) + var(--vn-corner) * var(--ga-k, 1));
+  }
+  .vn-root.ga .vn-strip-tools {
+    bottom: calc(env(safe-area-inset-bottom) + var(--vn-corner) * var(--ga-k, 1));
+  }
+  /* 缩放的这块里字号就用设计稿的值(原来按真实窗口宽 cqw 收,再缩一次就小两回) */
+  .vn-root.ga .ga-stage .ga-name {
+    font-size: calc(18px * var(--vn-text-scale, 1));
+  }
+  .vn-root.ga .ga-stage .ga-ja {
+    font-size: calc(15px * var(--vn-text-scale, 1));
+  }
+  .vn-root.ga .ga-stage .ga-zh {
+    font-size: calc(24px * var(--vn-text-scale, 1));
+  }
+  /* 发出去那句:从上沿正中缩放(translateX(-50%) 不受影响) */
+  .vn-root.ga .ga-echo {
+    scale: var(--ga-k, 1);
+    transform-origin: 0 0;
+  }
+}
+
+/* 卡带的那一层(插图的细条、悬停说明、「画这一幕」面板)压在对话区上面:对话区那块(.ga-stage)也是 3、排在后面,会盖住面板 */
+.vn-root.ga .vn-illus {
+  z-index: 4;
+}

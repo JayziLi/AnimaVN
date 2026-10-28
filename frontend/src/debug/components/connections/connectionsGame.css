@@ -1,0 +1,519 @@
+/* ══════════ 局内菜单「模型」页的三栏(U30)══════════
+   左 已保存的连接 + Jev / 中 表单 / 右 测试。纸跟设置里的「主题」(--av-*),照设计稿 kit/creator.css 的 .tl-model;
+   选中不跟角色色:白纸浮起 + 墨色细线(同左上「模型」小窗口的 .vn-mw-conn.on)。不胶囊、不发光、不装饰数字。
+   全部挂在 .vn-cn 下面,调试台网页里的 API 设置抽屉(.conn-drawer)不受影响。 */
+
+.vn-cn {
+  --vn-cn-sel: var(--av-sel, var(--av-ink));
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 256px minmax(0, 1fr) 330px;
+  grid-template-rows: minmax(0, 1fr);
+  color: var(--av-ink);
+  font-family: var(--av-sans);
+}
+.vn-cn > * {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* ---- 列头(设计稿 .tl-lh / .tl-sh):宋体名 + 拉丁小字,靠左排 ---- */
+.vn-cn-lh {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding-left: 4px;
+}
+.vn-cn-en {
+  font: italic 500 12px/1 var(--av-latin);
+  letter-spacing: 0.12em;
+  color: var(--av-dim);
+  white-space: nowrap;
+}
+.vn-cn-zh {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: 700 14.5px/1.2 var(--av-serif);
+  letter-spacing: 0.18em;
+}
+.vn-cn-n {
+  font: 500 12px/1 var(--av-latin);
+  font-variant-numeric: lining-nums tabular-nums;
+  color: var(--av-dim);
+}
+
+/* ---- 左:连接(设计稿 .tl-list / .tl-lrow:行不带框,选中 = 白纸浮起 + 左边一道墨色细线) ---- */
+.vn-cn-list {
+  display: flex;
+  flex-direction: column;
+  padding: 12px 12px 14px 0;
+  border-right: 1px solid var(--av-hair);
+}
+.vn-cn-rows {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+.vn-cn-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: var(--av-r-btn, 7px);
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: var(--av-ink);
+  cursor: pointer;
+  transition: background 0.16s, box-shadow 0.16s;
+}
+.vn-cn-row:hover:not(:disabled) {
+  background: var(--av-hair-2);
+}
+.vn-cn-row:disabled {
+  cursor: default;
+}
+.vn-cn-row.on {
+  background: var(--av-paper);
+  box-shadow:
+    0 1px 3px rgba(30, 24, 48, 0.1),
+    0 0 0 1px var(--av-hair-2);
+}
+.vn-cn-row.on::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--vn-cn-sel);
+}
+.av-night .vn-cn-row.on {
+  background: var(--av-paper-3);
+}
+.vn-cn-row.draft,
+.vn-cn-row.draft:hover {
+  cursor: default;
+  background: var(--av-paper);
+}
+.av-night .vn-cn-row.draft,
+.av-night .vn-cn-row.draft:hover {
+  background: var(--av-paper-2);
+}
+.vn-cn-ic {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: var(--av-paper-3);
+  font: 700 12px/1 var(--av-latin);
+  letter-spacing: 0.06em;
+  color: var(--av-ink-2);
+}
+.vn-cn-row .tx {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.vn-cn-row b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 600 13px/1.3 var(--av-serif);
+  letter-spacing: 0.04em;
+}
+.vn-cn-row small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 12px/13.2px var(--av-sans);
+  color: var(--av-dim);
+}
+.vn-cn-now {
+  flex: none;
+  font: 12px/1 var(--av-sans);
+  color: var(--av-dim);
+  white-space: nowrap;
+}
+/* 页头「当前启用」:组件库 .av-chip.acc */
+.vn-cn-chip {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: var(--av-r-tag, 4px);
+  background: var(--av-acc-soft);
+  color: var(--av-acc-deep);
+  font: 500 12px/1 var(--av-sans);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.vn-cn-new {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border: 1px dashed var(--av-faint);
+  border-radius: 7px;
+  background: none;
+  font: 12.5px/1 var(--av-sans);
+  color: var(--av-ink-2);
+  cursor: pointer;
+}
+.vn-cn-new:hover:not(:disabled) {
+  background: var(--av-hair-2);
+  color: var(--av-ink);
+}
+.vn-cn-new:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* 底部 Jev(设计稿 .tl-lfoot + .tl-jev) */
+.vn-cn-foot {
+  padding: 10px 4px 2px;
+  border-top: 1px solid var(--av-hair);
+}
+.vn-cn-jev {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 12px;
+}
+.vn-cn-jevst {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--av-ink);
+}
+.vn-cn-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--av-faint);
+  flex: none;
+}
+.vn-cn-dot.ok {
+  background: var(--av-good);
+}
+.vn-cn-dot.missing {
+  background: var(--av-warn);
+}
+/* 「去设置 →」:组件库 .av-link */
+.vn-cn-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 0 2px;
+  border: 0;
+  border-bottom: 1px solid var(--av-hair);
+  background: none;
+  font: 500 12.5px/1 var(--av-sans);
+  letter-spacing: 0.04em;
+  color: var(--av-ink-2);
+  cursor: pointer;
+}
+.vn-cn-link::after {
+  content: '→';
+  font-family: var(--av-latin);
+}
+.vn-cn-link:hover {
+  color: var(--av-ink);
+  border-bottom-color: var(--av-acc-deep);
+}
+
+/* ---- 中:表单 ---- */
+.vn-cn-form {
+  padding: 16px 22px 14px;
+}
+.vn-cn-ph {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+}
+/* 页头下面一行:这条连接 · 同一份数据(设计稿 .tl-pmeta) */
+.vn-cn-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 2px 0 16px;
+  font: 12px/1.4 var(--av-sans);
+  color: var(--av-dim);
+}
+.vn-cn-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--av-ink-2);
+}
+.vn-cn-live::after {
+  content: '·';
+  margin-left: 4px;
+  color: var(--av-dim);
+}
+.vn-cn-h1 {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 700 20px/1.2 var(--av-serif);
+  letter-spacing: 0.12em;
+}
+.vn-cn-flex {
+  flex: 1;
+}
+.vn-cn-dim {
+  font: 12px/1.5 var(--av-sans);
+  color: var(--av-dim);
+}
+.vn-cn-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 20px;
+  row-gap: 16px;
+  max-width: 760px;
+}
+.vn-cn-grid > .span {
+  grid-column: 1 / -1;
+}
+.vn-cn-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.vn-cn-fl {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: 600 13px/1.3 var(--av-serif);
+  letter-spacing: 0.08em;
+  color: var(--av-ink);
+  white-space: nowrap;
+}
+.vn-cn-note {
+  font: 11.5px/1.6 var(--av-sans);
+  color: var(--av-dim);
+}
+.vn-cn-opt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 34px;
+}
+.vn-cn-inrow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.vn-cn-inrow > :first-child:not(button) {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 嵌在菜单里时 vn.css 把输入框一律放到 16px(防 iOS 放大);三栏里电脑上用正常字号,触屏仍是 16px */
+.vn-model-embed .vn-cn :is(.text-input, .select, .conn-textarea) {
+  font-size: 13px;
+  width: 100%;
+  max-width: none;
+}
+.vn-model-embed .vn-cn :is(.text-input, .select).mono {
+  font-family: var(--av-mono);
+  font-size: 12.5px;
+}
+.vn-model-embed .vn-cn .conn-textarea {
+  resize: vertical;
+  line-height: 1.6;
+}
+/* 输入框、下拉照组件库 .av-input / .av-select:32 高、圆角 7、一圈淡线,下拉是画出来的小折角 */
+.vn-model-embed .vn-cn :is(.text-input, .select) {
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--av-hair);
+  border-radius: var(--av-r-btn, 7px);
+  background-color: var(--av-paper);
+  color: var(--av-ink);
+}
+/* select.select:压过 vn 那边菜单里「:is(.vn-menu, …) .vn-embed .select」的 background 简写 */
+.vn-model-embed .vn-cn select.select {
+  padding-right: 28px;
+  -webkit-appearance: none;
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--av-dim) 50%),
+    linear-gradient(135deg, var(--av-dim) 50%, transparent 50%);
+  background-position:
+    calc(100% - 15px) 50%,
+    calc(100% - 10px) 50%;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+}
+.vn-model-embed .vn-cn .conn-textarea {
+  min-height: 80px;
+  padding: 8px 10px;
+  border: 1px solid var(--av-hair);
+  border-radius: var(--av-r-btn, 7px);
+  background: var(--av-paper);
+  color: var(--av-ink);
+}
+.vn-model-embed .vn-cn :is(.text-input, .select, .conn-textarea):focus {
+  border-color: var(--av-ctl);
+  outline: none;
+}
+/* 「删除」是红字,不带框(设计稿 .tl-del);点第一下变红底「确认删除?」 */
+.vn-cn-ph .av-btn.danger:not(.is-armed) {
+  border-color: transparent;
+  background: transparent;
+}
+.vn-cn-ph .av-btn.danger:not(.is-armed):hover:not(:disabled) {
+  background: color-mix(in srgb, var(--av-bad) 8%, transparent);
+}
+@media (hover: none) {
+  .vn-model-embed .vn-cn :is(.text-input, .select, .conn-textarea),
+  .vn-model-embed .vn-cn :is(.text-input, .select).mono {
+    font-size: 16px;
+  }
+}
+
+/* ---- 右:测试 ---- */
+.vn-cn-test {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 0 14px 20px;
+  border-left: 1px solid var(--av-hair);
+}
+.vn-cn-test .vn-cn-lh {
+  margin-bottom: -6px;
+  padding-left: 0;
+}
+.vn-cn-test .vn-cn-zh {
+  letter-spacing: 0.2em;
+}
+.vn-cn-res {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 7px;
+  background: var(--av-paper-2);
+  box-shadow: inset 0 0 0 1px var(--av-hair-2);
+  font-size: 12.5px;
+  line-height: 1.6;
+  min-width: 0;
+}
+
+.vn-cn-res.busy {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  color: var(--av-ink-2);
+}
+.vn-cn-res b {
+  font: 600 13.5px/1.3 var(--av-serif);
+  letter-spacing: 0.08em;
+}
+.vn-cn-res .vn-cn-dim {
+  font-size: 12.5px;
+}
+
+.vn-cn-res.ok b {
+  color: var(--av-good-ink);
+}
+.vn-cn-res.bad {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--av-bad) 45%, transparent);
+}
+.vn-cn-res.bad b {
+  color: var(--av-bad-ink);
+}
+/* 回复和后台报错的原文:英文照旧,长串也要折行、能选中复制 */
+.vn-cn-raw {
+  margin: 4px 0 0;
+  color: var(--av-ink-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.vn-cn-spin {
+  width: 14px;
+  height: 14px;
+  border: 1.6px solid var(--av-faint);
+  border-top-color: var(--av-ink-2);
+  border-radius: 50%;
+  animation: vn-cn-spin 0.8s linear infinite;
+}
+@keyframes vn-cn-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vn-cn-spin {
+    animation-duration: 2.4s;
+  }
+}
+
+/* ---- 窄一点(菜单面板不到 1000px):连接列表在左、表单和测试上下排在右边,整块自己滚 ---- */
+@media (max-width: 1000px) {
+  .vn-cn {
+    grid-template-columns: 220px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    align-content: start;
+    overflow-y: auto;
+  }
+  .vn-cn > * {
+    overflow: visible;
+  }
+  .vn-cn-list {
+    grid-row: 1 / 3;
+  }
+  .vn-cn-test {
+    grid-column: 2;
+    padding: 14px 0 14px 22px;
+    border-left: 0;
+    border-top: 1px solid var(--av-hair);
+  }
+}
+@media (max-width: 640px) {
+  .vn-cn {
+    display: block;
+    overflow-y: auto;
+  }
+  .vn-cn > * {
+    overflow: visible;
+  }
+  .vn-cn-list,
+  .vn-cn-test {
+    padding: 14px 0;
+    border: 0;
+    border-bottom: 1px solid var(--av-hair);
+  }
+  .vn-cn-form {
+    padding: 14px 0;
+  }
+  .vn-cn-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -3,7 +3,7 @@ import type { VoiceProfile } from '../../lib/api';
 import type { CartridgePanel } from '../../plugins/cartridges';
 import { DEFAULT_SWITCHES, type PluginSwitches } from '../../plugins/switches';
 import type { DrawerCardFacts } from './cardView';
-import { drawerNav, switchTargetOf, type NavGroup, type NavInput } from './navModel';
+import { drawerNav, gameEnd, switchTargetOf, type NavGroup, type NavInput } from './navModel';
 
 const noop = () => {};
 const render = () => null;
@@ -175,5 +175,27 @@ describe('行尾开关点了改哪一样', () => {
     expect(switchTargetOf('lang', panels)).toBeNull();
     expect(switchTargetOf('jev', panels)).toBeNull();
     expect(switchTargetOf('nope', panels)).toBeNull();
+  });
+});
+
+describe('游戏皮左栏的行尾', () => {
+  it('全局组写状态字;角色组开关开着画圆点(在用实心)', () => {
+    const nav = drawerNav(input());
+    expect(gameEnd(row(nav, 'jev')!)).toEqual({ kind: 'text', text: '已连上' });
+    expect(gameEnd(row(nav, 'engine')!)).toEqual({ kind: 'text', text: '认词记录' });
+    expect(gameEnd(row(nav, 'sprite')!)).toEqual({ kind: 'dot', on: true });
+  });
+
+  it('开关关着写「关」,不管这张卡在不在用', () => {
+    const nav = drawerNav(input({ switches: { ...DEFAULT_SWITCHES, cg: false } }));
+    expect(gameEnd(row(nav, 'cg')!)).toEqual({ kind: 'off' });
+    // 实验组的卡带自己的开关也一样
+    expect(gameEnd(row(nav, 'tone')!)).toEqual({ kind: 'off' });
+  });
+
+  it('外语行尾本来是「自动」,游戏皮只画圆点;没圆点的什么都不画', () => {
+    const nav = drawerNav(input());
+    expect(gameEnd(row(nav, 'lang')!)).toEqual({ kind: 'dot', on: true });
+    expect(gameEnd({ id: 'x', name: 'x', group: 'role', beta: false, inUse: null, end: null })).toBeNull();
   });
 });

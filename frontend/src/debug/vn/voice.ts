@@ -14,6 +14,8 @@ import { voiceKey } from '../plugins/voice';
 import { audioBus } from './audioBus';
 
 const STORE_KEY = 'anima.vn.voice';
+/** 语音音量的默认值(设置页「恢复默认」用) */
+export const DEFAULT_VOICE_VOLUME = 0.9;
 /** 内存里最多留几句 */
 const MAX_CLIPS = 40;
 /** 连续失败几句就先停用语音(这次进视觉小说期间) */
@@ -68,7 +70,7 @@ class VoicePlayer {
   private current: { key: string; source: AudioBufferSourceNode } | null = null;
   private listeners = new Set<() => void>();
   private snap: VoiceSnapshot = {
-    volume: 0.9,
+    volume: DEFAULT_VOICE_VOLUME,
     muted: false,
     speaking: null,
     clips: new Map(),

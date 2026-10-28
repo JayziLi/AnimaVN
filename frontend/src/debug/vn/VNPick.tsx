@@ -1,91 +1,117 @@
 /**
- * 选角色(10-04 定稿,画布「选角色」页 Pick-E3 / Pick-E4)。封面菜单的「角色」进来。
+ * 选角色(10-23 定的新版,设计稿 flow.html#pick / kit/pick.js;手机竖屏照 phone.html#a)。封面菜单的「角色」进来。
  *
- *   右边一块浮起的纸面板:搜索 / 排序 / 导入 + 角色卡网格。每张卡 = 默认背景 + 默认立绘(按脸摆)+ 名字;
- *   没立绘的酒馆卡退回卡面头像,头像也没有就是星空 + logo。不按作品分组。
- *   左边是选中 / 悬停的那位:大立绘、名字、最后一句、继续 / 新的故事 / 资料。
- *   她有背景 → 整页铺她的场景、面板是毛玻璃(E4);没有 → 夜空 + 纸面板(E3)。
+ *   电脑:左边一块照星海的纸面板(返回 · 角色 · 最近 / 名字 · 导入 · 搜索「名字、作者」· 3 列卡面),
+ *        中间是选中的那位站着(背后是她的场景),右边名字 + 上次停在哪 + 一条一条的素材(「更多」去菜单里改)+ 继续 / 资料。
+ *   手机:上面场景 + 大立绘 + 名字和继续 / 资料,下面一张斜切的纸放搜索和卡面;素材那几条放不下,点「资料」看。
+ *   卡面是星语式(pick/PickTile.tsx),选中是白色,不跟角色变;不写作品名、不放角色台词、没有按标签筛选那一排。
+ *   纸面跟设置里的「主题」(白 / 黑 / 玻璃,默认白):面板、右边资料、名字底下那层渐变一起换;玻璃时糊的只有垫的那张场景图。
  *   「资料」把面板换成她的卡:资料 / 开场白两页。
  *
- * 每张卡的立绘、背景、卡内容进来时按需去拉,拉过的记在模块里(pickDetail.ts),下次进来直接有。
- * 卡片是拖放落点:把文件拖到某张卡上 = 给她加素材;「导入」那一格和右上角的按钮走导入器(选文件)。
+ * 每张卡的立绘、背景、卡内容进来时按需去拉,拉过的记在模块里(pickDetail.ts),下次进来直接有;
+ * 右边那几条(包名、声音、预设、人设)每次进来另拉(pick/pickBind.ts),因为随时会在菜单里被改。
+ * 卡片是拖放落点:把文件拖到某张卡上 = 给她加素材;「导入」那一格和面板上的按钮走导入器(选文件)。
  */
 
-import { useEffect, useMemo, useState, type CSSProperties } from 'react';
-import { spriteImageUrl } from '../lib/api';
-import { relTime } from '../lib/time';
-import { dropTarget } from '../importer/dropTarget';
-import { FALLBACK_BACKGROUND } from './fallbacks';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { spriteImageUrl, spriteThumbUrl } from '../lib/api';
 import { cachedPickDetails, hasPickDetail, loadPickDetail, type PickDetail as Detail } from './pickDetail';
+import { PickIcon } from './pick/PickIcon';
+import { PickTile } from './pick/PickTile';
+import { loadPickBind, loadPickGlobals, type PickGlobals } from './pick/pickBind';
+import { hasPlayed, lastLineText, matchCard, pickRows, sortCards, type PickBind, type PickMoreKind, type PickSort } from './pick/pickLogic';
+import { boardScale, isPortrait, useBoxSize } from './pick/useBoxSize';
 import { accentOf, titleSpriteStyle, type Accent, type TitlePose } from './titleArt';
+import { popThemeClass } from './ui/logic';
+import { useSceneGlass } from './ui/useSceneGlass';
+import { usePaperTheme } from './usePaperTheme';
 import type { TitleCard } from './VNTitle';
+import './theme.css';
+import './ui/ui.css';
 import './vnPick.css';
 
 interface Props {
   cards: TitleCard[];
   currentCardId: string | null;
-  /** 当前对话的最后一句、上次玩的时间(只有当前角色有) */
-  lastLine: string | null;
+  /** 当前对话上次玩的时间(只有当前角色有) */
   lastPlayed: string | null;
   onBack: () => void;
-  /** 接着这位上次的对话 */
+  /** 接着这位上次的对话(没玩过 = 开始) */
   onContinue: (id: string) => void;
-  /** 给这位开一段新对话 */
-  onNewStory: (id: string) => void;
   onImport?: () => void;
   onWantAvatar: (cardId: string) => void;
+  /** 名字右边小号的「导出」:导出她的角色包(.animavn);不给就不画这个按钮 */
+  onExport?: (id: string) => void;
+  /** 右边每一条素材的「更多」:去菜单里能改这一样的那一页;不给就不画「更多」,那几条只读 */
+  onMore?: (kind: PickMoreKind, id: string) => void;
+  /** 刚导进来的那张(设计稿 kit/transfer.js:排在「最近」最前面、选中,格子左下一个「刚导入」小签) */
+  freshId?: string | null;
+  /** 当前这位停在哪个场景:名字下面那行「上次 · 客厅 · 3 周前 · 11 条」 */
+  currentScene?: string | null;
 }
 
-/** 卡片里:脸一样大、头在同一高度 */
-const TILE_POSE: TitlePose = { faceSize: 0.26, faceTop: 0.17, cx: 0.5 };
+/** 大立绘:电脑照设计稿 kit/pick.js 的 HERO_POSE,手机照 phone.js 的 PICK_POSE(下沿别露出半空的切边) */
 const HERO_POSE: { land: TitlePose; port: TitlePose } = {
-  land: { faceSize: 0.2, faceTop: 0.13, cx: 0.3 },
-  port: { faceSize: 0.1, faceTop: 0.09, cx: 0.5, floor: 0.5 },
+  land: { faceSize: 0.19, faceTop: 0.12, cx: 0.524 },
+  port: { faceSize: 0.12, faceTop: 0.085, cx: 0.5, floor: 0.5 },
 };
-
-const STAR = 'M0-10C1.1-2.6 2.6-1.1 10 0 2.6 1.1 1.1 2.6 0 10-1.1 2.6-2.6 1.1-10 0-2.6-1.1-1.1-2.6 0-10Z';
-const Star = ({ className, style }: { className?: string; style?: CSSProperties }) => (
-  <svg className={className} style={style} viewBox="-10 -10 20 20" aria-hidden="true">
-    <path d={STAR} />
-  </svg>
-);
 
 /** 酒馆卡里的 {{char}} / {{user}}:资料页只是给人看,简单换掉 */
 const fillMacros = (s: string, name: string) =>
   s.replace(/\{\{char\}\}/gi, name).replace(/\{\{user\}\}/gi, '你').replace(/<\/?[a-z][^>]*>/gi, '');
 
-type Sort = 'recent' | 'name';
-
-/** 不拿来展示 / 筛选的标签:本机测试卡都带,区分不了谁 */
-const NOISE_TAGS = new Set(['本地测试', '视觉小说']);
-const cleanTags = (tags: string[] | undefined) =>
-  [...new Set((tags ?? []).map((t) => t.trim()).filter((t) => t && !NOISE_TAGS.has(t)))];
+/** 换场景:新的一张叠上去淡入,淡完再摘旧的(不露底) */
+function useLayers(src: string | null): { key: number; src: string | null }[] {
+  const [layers, setLayers] = useState(() => [{ key: 0, src }]);
+  const last = layers[layers.length - 1];
+  if (last.src !== src) setLayers([...layers.slice(-1), { key: last.key + 1, src }]);
+  useEffect(() => {
+    if (layers.length < 2) return;
+    const t = window.setTimeout(() => setLayers((l) => l.slice(-1)), 340);
+    return () => window.clearTimeout(t);
+  }, [layers]);
+  return layers;
+}
 
 export function VNPick({
   cards,
   currentCardId,
-  lastLine,
   lastPlayed,
   onBack,
   onContinue,
-  onNewStory,
   onImport,
   onWantAvatar,
+  onExport,
+  onMore,
+  freshId = null,
+  currentScene = null,
 }: Props) {
   const [details, setDetails] = useState<Map<string, Detail>>(cachedPickDetails);
-  const [cur, setCur] = useState<string | null>(currentCardId ?? cards[0]?.id ?? null);
-  const [hot, setHot] = useState<string | null>(null);
+  const [cur, setCur] = useState<string | null>(
+    (freshId && cards.some((c) => c.id === freshId) ? freshId : null) ?? currentCardId ?? cards[0]?.id ?? null,
+  );
   const [query, setQuery] = useState('');
-  const [sort, setSort] = useState<Sort>('recent');
-  const [tagFilter, setTagFilter] = useState<string | null>(null);
+  const [sort, setSort] = useState<PickSort>('recent');
   const [sheet, setSheet] = useState<null | 'info' | 'greet'>(null);
-  const [portrait, setPortrait] = useState(() => window.innerWidth < window.innerHeight);
+  // 选角色开着时导进来一张(等卡列表里有了它):选中它、收起资料、清掉搜索(在列表里看得到它)
+  const [seenFresh, setSeenFresh] = useState(freshId);
+  if (freshId !== seenFresh && (!freshId || cards.some((c) => c.id === freshId))) {
+    setSeenFresh(freshId);
+    if (freshId) {
+      setCur(freshId);
+      setSheet(null);
+      setQuery('');
+    }
+  }
+  const [globals, setGlobals] = useState<PickGlobals | null>(null);
+  const [binds, setBinds] = useState<Map<string, PickBind>>(() => new Map());
 
-  useEffect(() => {
-    const fit = () => setPortrait(window.innerWidth < window.innerHeight);
-    window.addEventListener('resize', fit);
-    return () => window.removeEventListener('resize', fit);
-  }, []);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const box = useBoxSize(rootRef);
+  const portrait = isPortrait(box);
+  const k = boardScale(box);
+  const theme = usePaperTheme();
+  const paper = popThemeClass(theme);
 
   // 先拉选中的那位,再四个一批拉其他人
   useEffect(() => {
@@ -111,10 +137,42 @@ export function VNPick({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cards]);
 
+  // 右边那几条要的全局表(包名、声音名这些),进来拉一次;导进来一张(多了包、声音)再拉一次,那张的绑定重读
+  useEffect(() => {
+    let alive = true;
+    void loadPickGlobals().then((g) => {
+      if (!alive) return;
+      setGlobals(g);
+      if (freshId)
+        setBinds((m) => {
+          const next = new Map(m);
+          next.delete(freshId);
+          return next;
+        });
+    });
+    return () => {
+      alive = false;
+    };
+  }, [freshId]);
+
+  const d = cur ? details.get(cur) : undefined;
+  // 选中的那位:等她的卡读到了(要里面记的上次对话)再拉她绑着的东西
+  useEffect(() => {
+    if (!cur || !globals || !d || binds.has(cur)) return;
+    let alive = true;
+    void loadPickBind(cur, d.card?.last_chat_id ?? null, globals).then((b) => alive && setBinds((m) => new Map(m).set(cur, b)));
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cur, globals, d]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // 输入法里按 Esc 是取消候选字
       if (e.key !== 'Escape' || e.isComposing) return;
+      // 导入 / 导出的框开着:这一下归框(关框),选角色不退
+      if (document.querySelector('.tf-host, .st-modal-backdrop')) return;
       e.stopPropagation();
       if (sheet) setSheet(null);
       else onBack();
@@ -123,10 +181,9 @@ export function VNPick({
     return () => window.removeEventListener('keydown', onKey, true);
   }, [sheet, onBack]);
 
-  const shownId = sheet ? cur : (hot ?? cur);
-  const shown = cards.find((c) => c.id === shownId) ?? null;
-  const d = shownId ? details.get(shownId) : undefined;
+  const shown = cards.find((c) => c.id === cur) ?? null;
 
+  // 点缀色:只点在面板标题下那一小段细线、纸上的开关焦点框这类地方,从选中那位的立绘取(选中本身是白色)
   const [accent, setAccent] = useState<Accent | null>(null);
   const accentSrc = d?.sprite ? spriteImageUrl(d.sprite) : null;
   useEffect(() => {
@@ -138,327 +195,360 @@ export function VNPick({
     };
   }, [accentSrc]);
 
-  const tagsOf = (id: string) => cleanTags(details.get(id)?.card?.tags);
-  // 筛选用的标签:库里出现得最多的十个(只算拉到了的卡)
-  const topTags = useMemo(() => {
-    const n = new Map<string, number>();
-    for (const c of cards) for (const t of tagsOf(c.id)) n.set(t, (n.get(t) ?? 0) + 1);
-    return [...n.entries()]
-      // 只有一张卡有的筛不出什么;每张卡都有的也一样
-      .filter(([, k]) => (k > 1 || n.size <= 10) && k < cards.length)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 10)
-      .map(([t]) => t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cards, details]);
-
   const list = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const rows = cards.filter((c) => {
-      if (tagFilter && !tagsOf(c.id).includes(tagFilter)) return false;
-      if (!q) return true;
-      const card = details.get(c.id)?.card;
-      return [c.name, card?.creator ?? '', ...(card?.tags ?? [])].some((s) => s.toLowerCase().includes(q));
-    });
-    if (sort === 'name') rows.sort((a, b) => a.name.localeCompare(b.name, 'zh'));
-    else {
-      const t = (c: TitleCard) => (c.id === currentCardId ? '~' : (details.get(c.id)?.card?.updated_at ?? ''));
-      rows.sort((a, b) => (t(a) < t(b) ? 1 : t(a) > t(b) ? -1 : 0));
-    }
-    return rows;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cards, details, query, sort, currentCardId, tagFilter]);
+    const rows = cards
+      .filter((c) => matchCard(c.name, details.get(c.id)?.card?.creator, query))
+      .map((c) => ({ ...c, updatedAt: details.get(c.id)?.card?.updated_at ?? '' }));
+    const sorted = sortCards(rows, sort, currentCardId);
+    // 刚导进来的那张排在「最近」最前面
+    const at = sort === 'recent' && freshId ? sorted.findIndex((c) => c.id === freshId) : -1;
+    return at > 0 ? [sorted[at], ...sorted.slice(0, at), ...sorted.slice(at + 1)] : sorted;
+  }, [cards, details, query, sort, currentCardId, freshId]);
 
-  const scene = Boolean(d?.bg);
-  const isCurrent = shownId === currentCardId;
-  const tags = shownId ? tagsOf(shownId) : [];
-  const line = isCurrent ? lastLine : null;
-  const meta = [
-    tags[0],
-    isCurrent && lastPlayed ? `上次 ${relTime(lastPlayed)}` : shown?.hasLastChat ? '有上次的对话' : '还没开始',
-  ]
-    .filter(Boolean)
-    .join(' · ');
+  const bg = d?.bg ?? null;
+  const layers = useLayers(bg);
+  // 玻璃主题:颜色按选中这位的场景算,面板糊的是这张场景图
+  const glass = useSceneGlass(theme === 'glass', bg);
+  const isCurrent = cur === currentCardId;
+  const played = shown ? hasPlayed(isCurrent, shown.hasLastChat) : false;
+  const bind = cur ? binds.get(cur) : undefined;
+  const last = shown ? lastLineText({ isCurrent, hasLastChat: shown.hasLastChat, lastPlayed, bind, scene: currentScene }) : '';
+  const rows = pickRows(bind, d?.spriteCount ?? 0);
   const greetings = d?.card ? [d.card.first_mes, ...(d.card.alternate_greetings ?? [])].filter((g) => g.trim()) : [];
 
   const heroStyle =
     d?.sprite && spriteImageUrl(d.sprite)
-      ? titleSpriteStyle(d.face, d.sprite.face_scan?.height ?? null, HERO_POSE[portrait ? 'port' : 'land'], 0)
+      ? titleSpriteStyle(d.face, d.sprite.face_scan?.height ?? null, HERO_POSE[portrait ? 'port' : 'land'], box.h)
       : null;
 
-  const vars = { '--pk-acc': accent?.acc ?? 'var(--vn-accent)' } as CSSProperties;
+  const vars = {
+    '--u': `${k}px`,
+    '--k': k,
+    ...(accent ? { '--av-acc': accent.acc, '--av-acc-deep': accent.deep } : {}),
+    ...(theme === 'glass' && bg ? { '--gl-bg': `url("${bg}")` } : {}),
+    ...glass,
+  } as CSSProperties;
 
-  return (
-    <div className={`vn-pick${scene ? ' scene' : ' night'}${portrait ? ' portrait' : ''}`} style={vars}>
-      {/* 底:她的场景 / 夜空 */}
-      <img className="pk-sky" src="/vn/ui/sky-pick.svg" alt="" draggable={false} />
-      {d?.bg && <img key={d.bg} className="pk-scene" src={d.bg} alt="" draggable={false} />}
-      <div className="pk-shade" />
+  const go = () => shown && onContinue(shown.id);
+  const toggleSheet = () => setSheet(sheet ? null : 'info');
 
-      {/* 左:大立绘 */}
-      <div className="pk-hero">
-        {d?.sprite && heroStyle ? (
-          <img
-            key={d.sprite.id}
-            className="pk-hero-spr"
-            src={spriteImageUrl(d.sprite) ?? ''}
-            style={heroStyle}
-            alt={shown?.name ?? ''}
-            draggable={false}
+  // ---- 几块两种布局共用的零件 ----
+  const backBtn = (
+    <button type="button" className="av-btn pk-back" onClick={onBack} title="返回(Esc)" aria-label="返回封面">
+      <PickIcon name="back" size={16} />
+      {portrait ? <span>封面</span> : <kbd className="av-kbd">Esc</kbd>}
+    </button>
+  );
+  const sortSeg = (
+    <div className="av-seg pk-sort" role="radiogroup" aria-label="排序">
+      {(
+        [
+          ['recent', '最近'],
+          ['name', '名字'],
+        ] as const
+      ).map(([key, label]) => (
+        <button key={key} type="button" role="radio" aria-checked={sort === key} className={sort === key ? 'on' : ''} onClick={() => setSort(key)}>
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+  const importBtn = onImport && (
+    <button type="button" className={portrait ? 'av-btn primary pk-import' : 'av-btn sm pk-import'} onClick={onImport}>
+      <PickIcon name="plus" size={14} />
+      导入
+    </button>
+  );
+  const searchBox = (
+    <label className="pk-search">
+      {/* 放大镜只有手机竖屏有(phone.html 的 .pf-sbox);桌面照组件库 .av-input,不带图标 */}
+      {portrait && <PickIcon name="search" size={16} />}
+      <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索名字、作者" aria-label="搜索角色" />
+    </label>
+  );
+  const grid = (
+    <>
+      <div className="pk-grid">
+        {list.map((c) => (
+          <PickTile
+            key={c.id}
+            card={c}
+            detail={details.get(c.id)}
+            selected={c.id === cur}
+            current={c.id === currentCardId}
+            fresh={c.id === freshId}
+            onPick={() => setCur(c.id)}
+            onOpen={() => onContinue(c.id)}
           />
-        ) : shown?.avatar ? (
-          <div key={shown.id} className="pk-hero-av">
-            <img src={shown.avatar} alt={shown.name} draggable={false} />
-          </div>
-        ) : (
-          <img key="none" className="pk-hero-none" src="/anima-logo.svg" alt="" draggable={false} />
+        ))}
+        {onImport && !query.trim() && (
+          <button type="button" className="pk-tile add" onClick={onImport}>
+            <span className="cl">
+              <span className="art">
+                <PickIcon name="plus" size={30} />
+                <small>卡 · 立绘 · 背景</small>
+              </span>
+              <span className="cap">
+                <b>导入</b>
+              </span>
+            </span>
+          </button>
         )}
       </div>
-      <div className="pk-hero-shade" />
-
-      <header className="pk-head pk-ui">
-        <button className="pk-back" onClick={onBack} title="返回(Esc)">
-          ← <span>Esc</span>
-        </button>
-        <h2>角色</h2>
-        <span className="en">Heroine</span>
-      </header>
-
-      {shown && (
-        <div className="pk-info pk-ui" key={shown.id}>
-          {tags[0] && (
-            <div className="pk-work">
-              <Star />
-              {tags[0]}
-            </div>
-          )}
-          <div className="pk-name">{shown.name}</div>
-          {line && <p className="pk-line">「{line}」</p>}
-          <div className="pk-meta">{meta}</div>
-          {tags.length > 1 && (
-            <ul className="pk-chips" aria-label="标签">
-              {tags.slice(1, 7).map((t) => (
-                <li key={t}>{t}</li>
-              ))}
-              {tags.length > 7 && <li className="more">+{tags.length - 7}</li>}
-            </ul>
-          )}
-          <div className="pk-actions">
-            <button className="pk-primary" onClick={() => onContinue(shown.id)}>
-              <Star />
-              <span>{isCurrent || shown.hasLastChat ? '继续' : '开始'}</span>
+      {list.length === 0 && <p className="pk-empty">{query.trim() ? '没有找到' : '库里还没有角色卡'}</p>}
+    </>
+  );
+  // 「资料」:面板换成她的卡(资料 / 开场白)
+  const sheetView =
+    shown &&
+    sheet !== null ? (
+      <div className="pk-sheet-in" key={`sheet-${shown.id}`}>
+        <div className="top">
+          <button type="button" className="av-btn ghost pk-all" onClick={() => setSheet(null)}>
+            <PickIcon name="back" size={16} />
+            全部角色
+          </button>
+          <div className="pk-tabs" role="tablist">
+            <button type="button" role="tab" aria-selected={sheet === 'info'} className={sheet === 'info' ? 'on' : ''} onClick={() => setSheet('info')}>
+              <span className="zh">资料</span>
+              <span className="en">Profile</span>
             </button>
-            {(isCurrent || shown.hasLastChat) && (
-              <button className="pk-ghost" onClick={() => onNewStory(shown.id)}>
-                新的故事
-              </button>
-            )}
-            <button
-              className={`pk-ghost small${sheet ? ' on' : ''}`}
-              onClick={() => {
-                setCur(shown.id);
-                setSheet(sheet ? null : 'info');
-              }}
-            >
-              <svg viewBox="0 0 20 20" aria-hidden="true">
-                <circle cx="10" cy="10" r="7.5" />
-                <path d="M10 9v5M10 6.2v.1" />
-              </svg>
-              资料
+            <button type="button" role="tab" aria-selected={sheet === 'greet'} className={sheet === 'greet' ? 'on' : ''} onClick={() => setSheet('greet')}>
+              <span className="zh">开场白</span>
+              <span className="en">Greeting</span>
+              {greetings.length > 0 && <span className="n">{greetings.length}</span>}
             </button>
           </div>
         </div>
-      )}
-
-      {/* 右:纸面板 */}
-      <div className="pk-panel-wrap">
-        <div className="pk-panel">
-          <img className="pk-map" src="/vn/ui/map-right.svg" alt="" draggable={false} />
+        <div className="hd">
+          {shown.avatar && <img src={shown.avatar} alt="" draggable={false} />}
+          <b>{shown.name}</b>
+          {d?.card?.creator && <span className="by">by {d.card.creator}</span>}
         </div>
-      </div>
-
-      {sheet && shown ? (
-        <div className="pk-side pk-ui" key={`sheet-${shown.id}`}>
-          <div className="pk-sheet-top">
-            <button className="pk-link" onClick={() => setSheet(null)}>
-              ← 全部角色
-            </button>
-            <nav className="pk-tabs">
-              <button className={sheet === 'info' ? 'on' : ''} onClick={() => setSheet('info')}>
-                资料
-              </button>
-              <button className={sheet === 'greet' ? 'on' : ''} onClick={() => setSheet('greet')}>
-                开场白{greetings.length > 0 ? ` ${greetings.length}` : ''}
-              </button>
-            </nav>
-          </div>
-          <div className="pk-sheet-head">
-            <span className="nm">{shown.name}</span>
-            {d?.card?.creator && <span className="by">by {d.card.creator}</span>}
-            {tags.length > 0 && (
-              <div className="pk-tags">
-                {tags.slice(0, 8).map((t) => (
-                  <span key={t}>{t}</span>
-                ))}
-              </div>
-            )}
-          </div>
-          <div className="pk-sheet-body pk-scroll">
-            {!d ? (
-              <p className="pk-empty">正在读取……</p>
-            ) : !d.card ? (
-              <p className="pk-empty">没读到这张卡(网络或后端出错了),返回再进来会重试</p>
-            ) : sheet === 'info' ? (
-              <>
-                {[
-                  ['简介', d.card.creator_notes],
-                  ['描述', d.card.description],
-                  ['性格', d.card.personality],
-                  ['场景', d.card.scenario],
-                ]
-                  .filter(([, v]) => v?.trim())
-                  .map(([k, v]) => (
-                    <section key={k}>
-                      <h4>{k}</h4>
-                      <p>{fillMacros(v, shown.name)}</p>
-                    </section>
-                  ))}
-              </>
-            ) : greetings.length === 0 ? (
-              <p className="pk-empty">这张卡没有写开场白</p>
-            ) : (
-              greetings.map((g, i) => (
-                <section key={i} className="pk-greet">
-                  <h4>{i === 0 ? '默认开场白' : `备选 ${i}`}</h4>
-                  <p>{fillMacros(g, shown.name)}</p>
+        <div className="bd">
+          {!d ? (
+            <p className="pk-empty">正在读取……</p>
+          ) : !d.card ? (
+            <p className="pk-empty">没读到这张卡(网络或后端出错了),返回再进来会重试</p>
+          ) : sheet === 'info' ? (
+            [
+              ['简介', d.card.creator_notes],
+              ['描述', d.card.description],
+              ['性格', d.card.personality],
+              ['场景', d.card.scenario],
+            ]
+              .filter(([, v]) => v?.trim())
+              .map(([title, v]) => (
+                <section key={title}>
+                  <h4>{title}</h4>
+                  <p>{fillMacros(v, shown.name)}</p>
                 </section>
               ))
-            )}
+          ) : greetings.length === 0 ? (
+            <p className="pk-empty">这张卡没有写开场白</p>
+          ) : (
+            greetings.map((g, i) => (
+              <section key={i}>
+                <h4>{i === 0 ? '默认开场白' : `备选 ${i}`}</h4>
+                <p>{fillMacros(g, shown.name)}</p>
+              </section>
+            ))
+          )}
+        </div>
+      </div>
+    ) : null;
+
+  const exportBtn = shown && onExport && (
+    <button type="button" className="av-btn sm pk-export" onClick={() => onExport(shown.id)} title="导出她的角色包(.animavn):卡、绑着的立绘 / 场景 / 声音">
+      <PickIcon name="upload" size={15} />
+      导出
+    </button>
+  );
+  const playBtn = (
+    <button type="button" className="av-btn primary pk-go" onClick={go}>
+      <svg className="av-star" viewBox="-10 -10 20 20" aria-hidden="true">
+        <path d="M0-10C1.1-2.6 2.6-1.1 10 0 2.6 1.1 1.1 2.6 0 10-1.1 2.6-2.6 1.1-10 0-2.6-1.1-1.1-2.6 0-10Z" fill="currentColor" />
+      </svg>
+      {played ? '继续' : '开始'}
+    </button>
+  );
+  const infoBtn = (
+    <button type="button" className={`av-btn pk-info-btn${sheet ? ' on' : ''}`} onClick={toggleSheet} aria-pressed={sheet !== null}>
+      {portrait && <PickIcon name="info" size={15} />}
+      资料
+    </button>
+  );
+
+  const heroNode = (
+    <div className="pk-hero">
+      {d?.sprite && heroStyle ? (
+        <img key={d.sprite.id} className="av-spr pk-hero-spr" src={spriteImageUrl(d.sprite) ?? ''} style={heroStyle} alt={shown?.name ?? ''} draggable={false} />
+      ) : shown?.avatar ? (
+        // 没有立绘的卡(酒馆卡):中间放一张「相片」—— 纸边 + 卡面头像
+        <div key={shown.id} className="pk-print">
+          <div className="win">
+            <img className="bed" src={shown.avatar} alt="" draggable={false} />
+            <img className="im" src={shown.avatar} alt={shown.name} draggable={false} />
           </div>
         </div>
       ) : (
-        <div className="pk-side pk-ui" key="list">
-          <div className="pk-tools">
-            <label className="pk-search">
-              <svg viewBox="0 0 20 20" aria-hidden="true">
-                <circle cx="8.5" cy="8.5" r="5.5" />
-                <path d="M12.6 12.6 17 17" />
-              </svg>
-              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索名字、标签、作者" />
-            </label>
-            <div className="pk-sort">
-              {(
-                [
-                  ['recent', '最近'],
-                  ['name', '名字'],
-                ] as const
-              ).map(([k, label]) => (
-                <button key={k} className={sort === k ? 'on' : ''} onClick={() => setSort(k)}>
-                  {label}
-                </button>
-              ))}
-            </div>
-            {onImport && (
-              <button className="pk-import" onClick={onImport}>
-                ＋ 导入
-              </button>
-            )}
-          </div>
-          {topTags.length > 0 && (
-            <div className="pk-filter pk-scroll" role="toolbar" aria-label="按标签筛选">
-              <button className={tagFilter === null ? 'on' : ''} onClick={() => setTagFilter(null)}>
-                全部
-              </button>
-              {topTags.map((t) => (
-                <button key={t} className={tagFilter === t ? 'on' : ''} onClick={() => setTagFilter(tagFilter === t ? null : t)}>
-                  {t}
-                </button>
-              ))}
-            </div>
-          )}
-          <div className="pk-grid-wrap pk-scroll">
-            <div className="pk-grid">
-              {list.map((c) => (
-                <Tile
-                  key={c.id}
-                  card={c}
-                  detail={details.get(c.id)}
-                  selected={c.id === cur}
-                  current={c.id === currentCardId}
-                  onPick={() => setCur(c.id)}
-                  onOpen={() => onContinue(c.id)}
-                  onHover={(on) => setHot(on ? c.id : null)}
-                />
-              ))}
-              {onImport && !query && !tagFilter && (
-                <button className="pk-tile import" onClick={onImport}>
-                  <span className="pk-tile-art">
-                    <b>+</b>
-                    <small>卡 · 立绘 · 背景</small>
-                  </span>
-                  <span className="pk-tile-name">导入</span>
-                </button>
-              )}
-            </div>
-            {list.length === 0 && <p className="pk-empty">{query || tagFilter ? '没有找到' : '库里还没有角色卡'}</p>}
-          </div>
-        </div>
+        <img key="none" className="pk-hero-none" src="/anima-logo.svg" alt="" draggable={false} />
       )}
     </div>
   );
-}
-
-function Tile({
-  card,
-  detail,
-  selected,
-  current,
-  onPick,
-  onOpen,
-  onHover,
-}: {
-  card: TitleCard;
-  detail: Detail | undefined;
-  selected: boolean;
-  current: boolean;
-  onPick: () => void;
-  onOpen: () => void;
-  onHover: (on: boolean) => void;
-}) {
-  const sprite = detail?.sprite ?? null;
-  const src = sprite ? spriteImageUrl(sprite) : null;
-  const style = sprite && src ? titleSpriteStyle(detail?.face ?? null, sprite.face_scan?.height ?? null, TILE_POSE, 0) : null;
-  const tavern = detail !== undefined && !sprite;
-  return (
-    <button
-      className={`pk-tile${selected ? ' selected' : ''}`}
-      // 拖文件到这张卡上 = 给她加素材(先问一句)
-      {...dropTarget(card.id, card.name)}
-      onClick={onPick}
-      onDoubleClick={onOpen}
-      onPointerEnter={() => onHover(true)}
-      onPointerLeave={() => onHover(false)}
-      title={`${card.name}(双击直接进入)`}
-    >
-      <span className="pk-tile-art">
-        {src && style ? (
-          <>
-            <img className="bg" src={detail?.bg ?? FALLBACK_BACKGROUND} alt="" draggable={false} loading="lazy" />
-            <img className="spr" src={src} style={style} alt="" draggable={false} loading="lazy" />
-          </>
-        ) : card.avatar ? (
-          <img className="av" src={card.avatar} alt="" draggable={false} />
+  // 只有卡图、没场景(刚从酒馆导入的):卡图放大糊开垫底;立绘也没有、场景也没有的卡才是夜空
+  const bare = !bg && !d?.sprite && shown?.avatar ? shown.avatar : null;
+  const bgNode = (
+    <div className="pk-bgs">
+      {layers.map((l, i) =>
+        l.src ? (
+          <img key={l.key} className={`pk-scene${i === layers.length - 1 && layers.length > 1 ? ' in' : ''}`} src={l.src} alt="" draggable={false} />
+        ) : bare ? (
+          <div key={`bare-${shown?.id}`} className="pk-bare">
+            <img src={bare} alt="" draggable={false} />
+          </div>
         ) : (
-          <>
-            <img className="bg" src="/vn/ui/sky-pick.svg" alt="" draggable={false} />
-            <img className="logo" src="/anima-logo.svg" alt="" draggable={false} />
-          </>
+          <img key={l.key} className="pk-sky" src="/vn/ui/sky-pick.svg" alt="" draggable={false} />
+        ),
+      )}
+    </div>
+  );
+
+  if (portrait) {
+    return (
+      <div ref={rootRef} className="vn-pick portrait" style={vars}>
+        {bgNode}
+        {heroNode}
+        <div className="pk-pkshade" />
+        <div className="pk-top pk-ui">
+          {backBtn}
+          <div className="pk-ttl">
+            <span className="zh">角色</span>
+            <span className="en">Heroine</span>
+          </div>
+        </div>
+        {shown && (
+          <div className="pk-info pk-ui" key={shown.id}>
+            <div className="pk-nmrow">
+              <div className="nm">{shown.name}</div>
+              {exportBtn}
+            </div>
+            <div className="pk-last">{last}</div>
+            <div className="pk-btns">
+              {playBtn}
+              {infoBtn}
+            </div>
+          </div>
         )}
-        {tavern && <span className="tav">酒馆卡</span>}
-      </span>
-      {(selected || current) && <Star className={`pk-tile-star${selected ? ' on' : ''}`} />}
-      <span className="pk-tile-name">{card.name}</span>
-      <span className="pk-tile-work">{cleanTags(detail?.card?.tags)[0] || ' '}</span>
-    </button>
+        <div className="pk-sheetwrap pk-ui">
+          <div className={`pk-panel pk-sheet ${paper}`}>
+            <i className="cut" />
+            <div className="pk-sheetin">
+              {sheetView ?? (
+                <>
+                  <div className="pk-tools">
+                    {searchBox}
+                    {importBtn}
+                  </div>
+                  <div className="pk-chips">{sortSeg}</div>
+                  <div className="pk-list">{grid}</div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div ref={rootRef} className="vn-pick" style={vars}>
+      {bgNode}
+      <div className={`pk-veil ${paper}`} />
+      {heroNode}
+      <div className="pk-ui">
+        <section className={`pk-panel ${paper}`}>
+          <header className="pk-phead">
+            {backBtn}
+            <h2>角色</h2>
+            <span className="en">Heroine</span>
+            <span className="sp" />
+            {sheet === null && (
+              <>
+                {sortSeg}
+                {importBtn}
+                {searchBox}
+              </>
+            )}
+          </header>
+          <div className="pk-side">{sheetView ?? <div className="pk-list">{grid}</div>}</div>
+        </section>
+        {shown && (
+          <div className={`pk-info ${paper}`} key={shown.id}>
+            <div className="pk-nmrow">
+              <div className="nm">{shown.name}</div>
+              {exportBtn}
+            </div>
+            <div className="rule" />
+            <div className="pk-last">{last}</div>
+            <div className="pk-rows">
+              {rows.map((r) => {
+                const body = (
+                  <>
+                    <span className="k">
+                      <b>{r.k}</b>
+                      <i>{r.en}</i>
+                    </span>
+                    <span className="v">
+                      <span>{r.v}</span>
+                      {r.sub && <small>{r.sub}</small>}
+                      {r.kind === 'sprite' && d && d.heads.length > 0 && (
+                        <span className="pk-faces">
+                          {d.heads.map((h) => {
+                            const src = spriteThumbUrl(h.sprite, 80);
+                            return (
+                              <span key={h.sprite.id}>
+                                {src && (
+                                  <img
+                                    src={src}
+                                    style={titleSpriteStyle(h.face, h.sprite.face_scan?.height ?? null, { faceSize: 0.62, faceTop: 0.18, cx: 0.5 }, 22)}
+                                    alt=""
+                                    draggable={false}
+                                    loading="lazy"
+                                  />
+                                )}
+                              </span>
+                            );
+                          })}
+                        </span>
+                      )}
+                    </span>
+                    {onMore && (
+                      <span className="more">
+                        更多
+                        <PickIcon name="forward" size={14} />
+                      </span>
+                    )}
+                  </>
+                );
+                return onMore ? (
+                  <button key={r.kind} type="button" className="pk-row" onClick={() => onMore(r.kind, shown.id)} title={`去菜单里改${r.k}`}>
+                    {body}
+                  </button>
+                ) : (
+                  <div key={r.kind} className="pk-row">
+                    {body}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="pk-btns">
+              {playBtn}
+              {infoBtn}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

@@ -1,9 +1,9 @@
 /**
- * 卡编辑器「素材」页的背景栏(照 V4AttachBg):顶上一排这张卡背景那一边绑的场景包 +「＋」+「⋯」,
+ * 卡编辑器「素材」页的背景栏(照 V4AttachBg):顶上一行「用哪个场景包」的下拉框 +「⋯」,
  * 下面是选中那个包的背景编辑器(BackgroundPackEditor)。
  *
  * 卡相关的东西在这里算好交给编辑器:
- *   默认 BGM 下拉 = 这张卡 BGM 那一边绑的全部曲子(游戏里切背景只会换成这里面的)
+ *   默认 BGM 下拉 = 这张卡 BGM 那一边用的曲子(游戏里切背景只会换成这里面的)
  *   「叠上立绘」= 当前服装排第一的、没停用的差分(默认差分),摆法和立绘栏、游戏里一样
  */
 
@@ -43,8 +43,8 @@ export function BackgroundSlot({ cardName, scene, sprites, layout, stage, sync, 
   const choices = useMemo(() => bgmChoicesOf(binding.bgm, packs, sceneLists), [binding.bgm, packs, sceneLists]);
   const note =
     binding.bgm.length === 0
-      ? '这张卡「BGM」那一栏还没绑曲子,现在只能选「不换」'
-      : '可选「BGM」那一栏绑定的全部曲子,或「不换(沿用之前的音乐)」';
+      ? '这张卡「BGM」那一栏还没选曲子,现在只能选「不换」'
+      : '可选「BGM」那一栏用的曲子,或「不换(沿用之前的音乐)」';
 
   return (
     <ScenePackSlot

@@ -189,6 +189,12 @@ export function useScenePlugin(cardId: string | null, notify: Notify, prefs: Car
     [loadScene, loadCg, notify],
   );
 
+  // 包的列表(素材直接换的下拉框要用)不跟着卡走,打开抽屉就拉一次;没有绑定的卡本来也不会顺手刷新它
+  useEffect(() => {
+    void refreshPacks();
+    void refreshCgPacks();
+  }, [refreshPacks, refreshCgPacks]);
+
   useEffect(() => {
     cardRef.current = cardId;
     sceneSeq.current += 1;

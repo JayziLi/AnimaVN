@@ -10,6 +10,7 @@ import {
   groupCgs,
   importedCgPackIds,
   orderCgs,
+  replaceImportedCgPack,
   replaceRows,
   resolvePick,
   stageFrameOf,
@@ -61,6 +62,14 @@ describe('importedCgPackIds', () => {
     expect(importedCgPackIds(['a', 'new', 'gone'], packs)).toEqual(['a']);
     expect(importedCgPackIds(['a', 'new', 'gone'], packs, new Set(['new']))).toEqual(['a', 'new']);
     expect(generatedBoundCount(['new'], packs)).toBe(0);
+  });
+
+  it('replaceImportedCgPack swaps every imported pack for the one picked and keeps the AI-generated ones', () => {
+    expect(replaceImportedCgPack(['b', 'ai', 'a'], packs, 'new')).toEqual(['new', 'ai']);
+    expect(replaceImportedCgPack(['a', 'b'], packs, 'b')).toEqual(['b']);
+    expect(replaceImportedCgPack([], packs, 'a')).toEqual(['a']);
+    // 选的包本身不会在后面重复
+    expect(replaceImportedCgPack(['ai'], packs, 'ai')).toEqual(['ai']);
   });
 });
 

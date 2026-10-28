@@ -1,6 +1,6 @@
 /**
  * 插件抽屉几页共用的小块(第 2 步 D5):AI 写 / Jev 标、Jev 没填 key 的提示、标签格式那一行、
- * 「提示词模板」页签(模板、恢复默认、宏的展开、当前预设里有没有这一块)。
+ * 「提示词模板」页签(模板、恢复默认、宏的展开、当前预设里有没有这一块)、素材直接换的下拉框。
  */
 
 import { useEffect, useState, type ReactNode } from 'react';
@@ -8,9 +8,64 @@ import type { BlockState, PluginConfig, TagMode } from '../../../plugins/common'
 import type { JevControls } from '../../JevSettings';
 import { DeleteButton } from '../../pluginFields';
 import { SettingRow } from '../../settings/SettingRow';
+import { Icon } from '../../../studio/icons';
+import { useDrawerSkin } from '../skinContext';
 import { Tip } from '../Tip';
 import type { TipKey } from '../tips';
 import type { BlockControls, PresetControls } from './pageModel';
+
+/**
+ * 素材直接换(界面统一 10-25/26 用户定):「常用」第一行一个下拉框,库里全部的包都在里面,不分「她的 / 别人的」,
+ * 选了马上把这张卡这一样原来的绑定整个替换掉。voidChoice 给时多一个「不用」选项(语音页的「不念」)。
+ */
+export function PackSwapRow({
+  label,
+  tip,
+  ariaLabel,
+  options,
+  value,
+  voidChoice,
+  disabled,
+  onPick,
+}: {
+  label: string;
+  tip?: TipKey;
+  ariaLabel: string;
+  options: readonly { id: string; name: string }[];
+  /** 这张卡现在用哪个包;没有是 null */
+  value: string | null;
+  /** 给了就多一个这个字的选项,选它相当于 onPick(null) */
+  voidChoice?: string;
+  disabled?: boolean;
+  onPick: (id: string | null) => void;
+}) {
+  return (
+    <SettingRow
+      label={label}
+      tip={tip}
+      control={{
+        kind: 'custom',
+        render: () => (
+          <select
+            className="text-input"
+            aria-label={ariaLabel}
+            value={value ?? ''}
+            disabled={disabled || (options.length === 0 && !voidChoice)}
+            onChange={(e) => onPick(e.target.value || null)}
+          >
+            {voidChoice && <option value="">{voidChoice}</option>}
+            {!voidChoice && !value && <option value="">{options.length ? '选一个' : '库里还没有'}</option>}
+            {options.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.name}
+              </option>
+            ))}
+          </select>
+        ),
+      }}
+    />
+  );
+}
 
 /** 页头右边:AI 写 / Jev 标 + 问号 */
 export function ModeSwitch({ name, mode, onChange }: { name: string; mode: TagMode; onChange: (mode: TagMode) => void }) {
@@ -201,6 +256,8 @@ export function TryLine({
   onTry,
   recent,
   right,
+  tip,
+  wide,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -210,24 +267,41 @@ export function TryLine({
   onTry: () => void;
   recent: readonly string[];
   right?: ReactNode;
+  /** 游戏皮里按钮后面的「?」(设计稿把「快速预览」那句说明收进这里) */
+  tip?: TipKey;
+  /** 输入框放长一点(语音页念整句) */
+  wide?: boolean;
 }) {
+  const { game } = useDrawerSkin();
+  const input = (
+    <input
+      className="text-input dw-try-input"
+      value={value}
+      placeholder={placeholder}
+      aria-label={placeholder}
+      onChange={(e) => onChange(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' && !e.nativeEvent.isComposing && !disabled) onTry();
+      }}
+    />
+  );
   return (
     <>
       <div className="dw-try">
-        <input
-          className="text-input dw-try-input"
-          value={value}
-          placeholder={placeholder}
-          aria-label={placeholder}
-          onChange={(e) => onChange(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.nativeEvent.isComposing && !disabled) onTry();
-          }}
-        />
+        {game ? (
+          // 设计稿 .pl-field:放大镜 + 输入框一体的细边框
+          <label className={`dw-try-field${wide ? ' wide' : ''}`}>
+            <Icon name="search" size={16} />
+            {input}
+          </label>
+        ) : (
+          input
+        )}
         {right}
         <button type="button" className="btn small" disabled={disabled} onClick={onTry}>
           {button}
         </button>
+        {game && tip && <Tip k={tip} />}
       </div>
       {recent.length > 0 && (
         <div className="dw-recent" aria-label="最近的">

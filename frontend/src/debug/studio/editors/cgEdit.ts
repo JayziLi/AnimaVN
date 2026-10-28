@@ -28,6 +28,19 @@ export function importedCgPackIds(
   });
 }
 
+/**
+ * CG 栏选了一个导入的包:整个换掉原来导入的(10-27「一样只用一个」);AI 生成的包不在这一栏、有它自己那一栏,
+ * 原来绑着的留着、排在后面 —— 生图收藏下来的 CG 不能因为换了一个导入包就从游戏里没了
+ */
+export function replaceImportedCgPack(
+  bound: readonly string[],
+  packs: readonly Pick<CgPack, 'id' | 'generated'>[],
+  id: string,
+): string[] {
+  const generated = bound.filter((x) => x !== id && packs.find((p) => p.id === x)?.generated === true);
+  return [id, ...generated];
+}
+
 /** 这张卡另外绑着几个 AI 生成的 CG 包(CG 栏里不显示,空状态时提一句) */
 export function generatedBoundCount(bound: readonly string[], packs: readonly Pick<CgPack, 'id' | 'generated'>[]): number {
   return bound.filter((id) => packs.find((p) => p.id === id)?.generated === true).length;

@@ -62,7 +62,7 @@ export interface LibraryUsage {
 }
 
 export type SortBy = 'size' | 'name' | 'recent';
-export type LibraryFilter = 'all' | 'bound' | 'unbound' | 'dupes' | 'generated' | 'imported';
+export type LibraryFilter = 'all' | 'bound' | 'unbound' | 'active' | 'dupes' | 'generated' | 'imported';
 
 export interface KindInfo {
   /** 页签上的字 */
@@ -141,14 +141,18 @@ export interface FilterOptions {
   cardNames?: ReadonlyMap<string, string>;
   /** 包 id → 差分名(立绘包):搜索也找差分名;没读到的包只比名字 */
   labels?: ReadonlyMap<string, readonly string[]>;
+  /** 游戏里现在这张卡(菜单「素材」页「在用」筛选用);没有(调试台的素材管理页)就筛不出这一档 */
+  activeCardId?: string | null;
 }
 
-function passes(it: LibraryItem, filter: LibraryFilter, dupes: Set<string>): boolean {
+function passes(it: LibraryItem, filter: LibraryFilter, dupes: Set<string>, activeCardId?: string | null): boolean {
   switch (filter) {
     case 'bound':
       return it.card_ids.length > 0;
     case 'unbound':
       return it.card_ids.length === 0;
+    case 'active':
+      return activeCardId != null && it.card_ids.includes(activeCardId);
     case 'dupes':
       return dupes.has(it.id);
     case 'generated':
@@ -172,7 +176,7 @@ export function filterItems(
   const has = (s: string | undefined) => s !== undefined && s.toLowerCase().includes(q);
   return items.filter(
     (it) =>
-      passes(it, filter, dupes) &&
+      passes(it, filter, dupes, opts.activeCardId) &&
       (!q ||
         has(it.name) ||
         it.card_ids.some((id) => has(opts.cardNames?.get(id))) ||
@@ -201,6 +205,21 @@ export function filterChips(kind: LibraryKind, items: readonly LibraryItem[]): F
     chips.push({ key: 'imported', label: '导入的', count: count('imported') });
     chips.push({ key: 'generated', label: 'AI 生成', count: generated });
   }
+  return chips;
+}
+
+/**
+ * 菜单「素材」页(embedded)的筛选小按钮:10-26 用户定的更简单那套 —— 全部 / 在用,有重复的才出「重复」。
+ * 「在用」= 绑给了游戏里现在这张卡(每个包页头「给她用」换的那个绑定,不是「已绑定过随便哪张卡」)
+ */
+export function filterChipsForActiveCard(items: readonly LibraryItem[], activeCardId: string): FilterChip[] {
+  const count = (f: LibraryFilter) => filterItems(items, f, '', { activeCardId }).length;
+  const chips: FilterChip[] = [
+    { key: 'all', label: '全部', count: items.length },
+    { key: 'active', label: '在用', count: count('active') },
+  ];
+  const dupes = count('dupes');
+  if (dupes > 0) chips.push({ key: 'dupes', label: '重复', count: dupes });
   return chips;
 }
 
@@ -266,9 +285,10 @@ export function itemSub(kind: LibraryKind, it: LibraryItem): string {
   return kind === 'voice' ? n : `${n} · ${formatSize(it.bytes)}`;
 }
 
-/** 列表一行右边:「2 张卡」/「未绑定」 */
-export function boundLabel(it: LibraryItem): string {
-  return it.card_ids.length > 0 ? `${it.card_ids.length} 张卡` : '未绑定';
+/** 列表一行右边:「2 张卡」/「未绑定」;游戏菜单里(embedded)不说绑定:「2 张卡」/「没人用」 */
+export function boundLabel(it: LibraryItem, embedded = false): string {
+  if (it.card_ids.length > 0) return `${it.card_ids.length} 张卡`;
+  return embedded ? '没人用' : '未绑定';
 }
 
 /** 主区顶上包名下面那行的开头:「16 张差分 · 18 MB」 */

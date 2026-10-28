@@ -43,6 +43,8 @@ import {
   totalLabel,
   voiceNotes,
 } from './exportModel';
+import { ExportPaper } from './ExportPaper';
+import { inGame } from './inGame';
 import './export.css';
 
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -56,7 +58,13 @@ interface Props {
   onClose: () => void;
 }
 
-export function ExportBundleDialog({ cardId, cardName, notify, onClose }: Props) {
+/** 游戏开着(画面上有 .vn-root)时是纸卡(ExportPaper,设计稿 kit/transfer.js);调试台里是原来这张深色的 */
+export function ExportBundleDialog(props: Props) {
+  const [paper] = useState(inGame);
+  return paper ? <ExportPaper {...props} /> : <ExportBundleConsole {...props} />;
+}
+
+function ExportBundleConsole({ cardId, cardName, notify, onClose }: Props) {
   const [summary, setSummary] = useState<ExportBundleSummary | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [checks, setChecks] = useState<Record<string, boolean>>({});

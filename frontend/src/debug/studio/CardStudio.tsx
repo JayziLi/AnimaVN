@@ -4,7 +4,7 @@
  *   顶栏     ← 回去 · 头像 · 卡名 · 「资料 / 素材」页签 · 保存状态 · 主按钮「开始」
  *   提示条   导入完成后才有(importer/ImportBanner:一行提示,没认出来的文件点「查看」就地选类型)
  *   资料页   renderProfile() 整块(第 2 段换成目录 + 字段 + 右栏)
- *   素材页   左栏(角色信息 + 已绑定素材)+ renderSlot(这一栏) —— 每一栏自己画主区和右栏
+ *   素材页   左栏(角色信息 + 在用的素材)+ renderSlot(这一栏) —— 每一栏自己画主区和右栏
  *
  * 开在哪(页签、栏、提示)由 DebugApp 管(StudioRoute),这里只画和回报。
  * 拖放落点(importer/dropTarget):左栏 = 给这张卡加素材;立绘 / 背景 / BGM / CG 栏 = 都按这一栏的类型导入给这张卡。
@@ -18,10 +18,14 @@ import { dropTarget, slotKind } from '../importer/dropTarget';
 import type { TavernCard } from '../lib/cardParser';
 import type { SaveState } from '../components/CardPanel';
 import { EnvBadge } from '../components/EnvBadge';
+import { specLabel } from './cardInfo';
 import { CardAvatar, StudioAside } from './StudioAside';
-import { Btn, IconBtn, SaveIndicator } from './ui';
+import { Icon } from './icons';
+import { LayerSkin } from './layerSkin';
+import { Btn, SaveIndicator } from './ui';
 import type { Notify, SlotKey, SlotRow, StudioRoute, StudioTab } from './types';
 import './studio.css';
+import './studioPaper.css';
 
 export interface CardStudioProps {
   cardId: string;
@@ -39,7 +43,7 @@ export interface CardStudioProps {
   renderProfile: () => ReactNode;
   /** 素材页的一栏:主区 + 右栏(<main className="st-main"> + <Inspector>) */
   renderSlot: (slot: SlotKey) => ReactNode;
-  /** 左栏「已绑定素材」(slotSummary.ts 的 summarizeSlots) */
+  /** 左栏「在用的素材」(slotSummary.ts 的 summarizeSlots) */
   slots: readonly SlotRow[];
   notify: Notify;
   /** 提示条里认领一个没认出来的文件(DebugApp 调接口、换上新的提示);不给就不显示「查看」 */
@@ -55,15 +59,13 @@ const OTHER_LAYERS = '.ce-backdrop, .inspector-backdrop';
 function isTextField(t: EventTarget | null): boolean {
   if (!(t instanceof HTMLElement)) return false;
   if (t.isContentEditable || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement) return true;
-  return (
-    t instanceof HTMLInputElement &&
-    !['button', 'checkbox', 'radio', 'range', 'submit', 'reset', 'file', 'color'].includes(t.type)
-  );
+  return t instanceof HTMLInputElement && !['button', 'checkbox', 'radio', 'range', 'submit', 'reset', 'file', 'color'].includes(t.type);
 }
 
-const TABS: { key: StudioTab; label: string }[] = [
-  { key: 'profile', label: '资料' },
-  { key: 'assets', label: '素材' },
+/** 两个页签各带一个线条图标(设计稿 studio.html C,10-25 用户:「给个 icon 方便玩家区分」) */
+const TABS: { key: StudioTab; label: string; en: string; icon: 'profile' | 'assets' }[] = [
+  { key: 'profile', label: '资料', en: 'Profile', icon: 'profile' },
+  { key: 'assets', label: '素材', en: 'Assets', icon: 'assets' },
 ];
 
 export function CardStudio(props: CardStudioProps) {
@@ -98,64 +100,83 @@ export function CardStudio(props: CardStudioProps) {
     return () => window.removeEventListener('keydown', onKey, true);
   }, []);
 
+  // 纸面皮(设计稿 studio.html C):顶栏 = 返回 Esc | 卡编辑器 Card Studio | 头像 + 卡名 | 两个页签 …… 已自动保存 · 开始
   return (
-    <div ref={root} className="st-root" role="dialog" aria-modal="true" aria-label={`卡编辑器 · ${name}`} tabIndex={-1}>
-      <header className="st-header">
-        <IconBtn icon="back" label="返回" onClick={onClose} />
-        <EnvBadge />
-        <CardAvatar className="st-header-avatar" sources={avatars} name={name} />
-        <span className="st-header-name" title={name}>
-          {name}
-        </span>
-        <nav className="st-tabs" aria-label="卡编辑器">
-          {TABS.map((t) => (
-            <button
-              key={t.key}
-              type="button"
-              className="st-tab"
-              aria-current={route.tab === t.key ? 'page' : undefined}
-              onClick={() => onRoute({ ...route, tab: t.key })}
-            >
-              {t.label}
-            </button>
-          ))}
-        </nav>
-        <span className="st-flex" />
-        <SaveIndicator state={saveState} />
-        <Btn kind="primary" icon="play" onClick={onStart}>
-          开始
-        </Btn>
-      </header>
-
-      {notice && (
-        <ImportBanner
-          notice={notice}
-          onClose={() => onRoute({ ...route, notice: null })}
-          onClassify={props.onClassifyUnknown}
-        />
-      )}
-
-      <div className="st-body">
-        {route.tab === 'profile' ? (
-          props.renderProfile()
-        ) : (
-          <>
-            <StudioAside
-              cardId={cardId}
-              card={card}
-              avatars={avatars}
-              slots={slots}
-              active={slot}
-              onSlot={(next) => onRoute({ ...route, slot: next })}
-              onEditProfile={() => onRoute({ ...route, tab: 'profile' })}
-              onImport={props.onImport}
-            />
-            <div className="st-slot" {...dropTarget(cardId, name, slotKind(slot))}>
-              {props.renderSlot(slot)}
+    <LayerSkin.Provider value="st-paper">
+      <div ref={root} className="st-root st-studio" role="dialog" aria-modal="true" aria-label={`卡编辑器 · ${name}`} tabIndex={-1}>
+        <header className="st-header">
+          <button type="button" className="st-back" onClick={onClose} title="回到打开卡编辑器的地方">
+            <Icon name="back" size={16} />
+            返回
+            <kbd>Esc</kbd>
+          </button>
+          <EnvBadge />
+          <div className="st-ttl">
+            <span className="zh">卡编辑器</span>
+            <span className="en">Card Studio</span>
+          </div>
+          <div className="st-who">
+            <CardAvatar className="st-header-avatar" sources={avatars} name={name} />
+            <div>
+              <b className="st-header-name" title={name}>
+                {name}
+              </b>
+              <span>
+                {specLabel(card.spec)}
+                {card.character_version ? ` · ${card.character_version}` : ''}
+              </span>
             </div>
-          </>
+          </div>
+          <nav className="st-tabs" aria-label="卡编辑器">
+            {TABS.map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                className="st-tab"
+                aria-current={route.tab === t.key ? 'page' : undefined}
+                onClick={() => onRoute({ ...route, tab: t.key })}
+              >
+                <Icon name={t.icon} size={18} strokeWidth={1.5} />
+                <span className="zh">{t.label}</span>
+                <span className="en">{t.en}</span>
+              </button>
+            ))}
+          </nav>
+          <span className="st-flex" />
+          <SaveIndicator state={saveState} />
+          {/* 资料页的「导出」挂在这里(CardFieldsView 用 portal 放进来) */}
+          <span className="st-header-slot" />
+          <Btn kind="primary" icon="play" onClick={onStart}>
+            开 始
+          </Btn>
+        </header>
+
+        {notice && (
+          <ImportBanner notice={notice} onClose={() => onRoute({ ...route, notice: null })} onClassify={props.onClassifyUnknown} />
         )}
+
+        <div className="st-body">
+          {route.tab === 'profile' ? (
+            props.renderProfile()
+          ) : (
+            <>
+              <StudioAside
+                cardId={cardId}
+                card={card}
+                avatars={avatars}
+                slots={slots}
+                active={slot}
+                onSlot={(next) => onRoute({ ...route, slot: next })}
+                onEditProfile={() => onRoute({ ...route, tab: 'profile' })}
+                onImport={props.onImport}
+              />
+              <div className="st-slot" {...dropTarget(cardId, name, slotKind(slot))}>
+                {props.renderSlot(slot)}
+              </div>
+            </>
+          )}
+        </div>
       </div>
-    </div>
+    </LayerSkin.Provider>
   );
 }

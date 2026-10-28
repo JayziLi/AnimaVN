@@ -159,7 +159,7 @@ export function VoicePairingGroup({
       ) : listRef === null ? (
         <div className="sp-empty">这张卡没有立绘,语音按表情名挑语气,用不到配对表。</div>
       ) : !main ? (
-        <div className="sp-empty">这张卡还没有主声音:在上面选一个,才有配对表。</div>
+        <div className="sp-empty">这张卡还没有音色:在上面选一个,才有配对表。</div>
       ) : main.emotions.length === 0 ? (
         <div className="sp-empty">「{main.name}」还没有语气(参考音频),没得配。</div>
       ) : error ? (
@@ -178,7 +178,7 @@ export function VoicePairingGroup({
           nameOf={nameOf}
           cardNames={cardNames}
           audition={audition}
-          emptyText="这张卡的立绘包和主声音还没有配对表:用「补上缺的」配一次。"
+          emptyText="这张卡的立绘包和音色还没有配对表:用「补上缺的」配一次。"
           sameNote="全部同一段,建议换声音。"
         />
       )}

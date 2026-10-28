@@ -9,11 +9,15 @@
  *   拖出窗口时偶尔收不到最后那个 dragleave,1.5 秒没有 dragover 就当拖走了。
  * - blocked(上一批还在导入)时照样接住(不然浏览器会把文件当网页打开),松手只提示一句。
  * - 手机上没有拖放,这一层不出现;导入走各处的「导入」按钮。
+ * - 游戏开着时是纸(GameFrame;落点上的小签是墨底白字的小方签,不用角色色、不是胶囊),调试台里照旧深色。
  */
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { inGame } from '../components/export/inGame';
 import { Icon } from '../studio/icons';
+import { popThemeClass } from '../vn/ui/logic';
+import { currentPaperTheme } from '../vn/vnSettings';
 import { collectDrop, type DroppedFile } from './collectDrop';
 import { DROP_SELECTOR, dropLabel, readDropTarget, type ImportTarget } from './dropTarget';
 import './importer.css';
@@ -148,11 +152,43 @@ export function DropLayer({ blocked, onDrop, onRefuse }: Props) {
   }, []);
 
   if (!active) return null;
+  const game = inGame();
   return createPortal(
-    <div className={`imp-drop${hot ? ' hot' : ''}${blocked ? ' blocked' : ''}`} aria-hidden="true">
-      {hot ? <Spot hot={hot} label={blocked ?? dropLabel(hot.target)} /> : <Frame blocked={blocked} hints={hints} />}
+    <div className={`imp-drop${hot ? ' hot' : ''}${blocked ? ' blocked' : ''}${game ? ' ingame' : ''}`} aria-hidden="true">
+      {hot ? (
+        <Spot hot={hot} label={blocked ?? dropLabel(hot.target)} />
+      ) : game ? (
+        <GameFrame blocked={blocked} />
+      ) : (
+        <Frame blocked={blocked} hints={hints} />
+      )}
     </div>,
     document.body,
+  );
+}
+
+/**
+ * 游戏里(设计稿 kit/transfer.js 的 drop,10-23 用户「拖进来直接导」):选角色开着时左边纸面板的格子区变成接收区 ——
+ * 盖住格子的虚线框「松手就导入」(格子淡到四成,场景和她压暗一点);别的画面上是正中一张纸卡。不写说明。
+ */
+function GameFrame({ blocked }: { blocked: string | null }) {
+  const side = document.querySelector('.vn-pick:not(.portrait) .pk-side');
+  const r = side?.getBoundingClientRect();
+  const title = blocked ? '上一批还在导入' : '松手就导入';
+  const zone = r && r.width > 0 ? { left: r.left + 16, top: r.top + 12, width: r.width - 32, height: r.height - 28 } : null;
+  // 压暗的是场景和她;左边那块纸面板不压(接收区就在上面)
+  const p = zone ? side?.closest('.pk-panel')?.getBoundingClientRect() : null;
+  const W = window.innerWidth;
+  const H = window.innerHeight;
+  const hole = p ? { clipPath: `path(evenodd, 'M0 0H${W}V${H}H0Z M${p.left} ${p.top}h${p.width}v${p.height}h${-p.width}Z')` } : undefined;
+  return (
+    <div className="imp-gdrop">
+      <div className="imp-gdrop-dim" style={hole} />
+      <div className={`imp-gdrop-zone ${popThemeClass(currentPaperTheme(), true)}${zone ? '' : ' card'}`} style={zone ?? undefined}>
+        <Icon name="upload" size={30} />
+        <b>{title}</b>
+      </div>
+    </div>
   );
 }
 

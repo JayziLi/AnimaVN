@@ -6,6 +6,7 @@ import { stripComments } from '../../lib/comments';
 import type { MacroContext } from '../../lib/macros';
 import { MARKER_LABELS, type PresetPrompt } from '../../lib/presetParser';
 import { estimateTokens, formatTokens } from '../../lib/tokens';
+import { Btn } from '../ui';
 import { BlockEditorPane } from './BlockEditorPane';
 import {
   canDeleteBlock,
@@ -45,6 +46,12 @@ export interface BlockEditorSideProps {
   onUpdateCard: (patch: Partial<TavernCard>) => void;
   /** 删块(DebugApp 的 deleteBlock);删完外面记得把选中清掉 */
   onDeleteBlock: (identifier: string) => void;
+  /**
+   * 10-25 晚用户定的原话:插件块点开只说一句「该块属于插件块,可在插件内修改」,
+   * 旁边「去插件页」点了才跳 —— 不给这两个就照旧显示正常的字段编辑(调试台弹窗变体不传)
+   */
+  isPluginBlock?: (identifier: string) => boolean;
+  onOpenPlugin?: (identifier: string) => void;
 }
 
 export function BlockEditorSide(props: BlockEditorSideProps) {
@@ -69,6 +76,8 @@ function SideEditor({
   onUpdateBlock,
   onUpdateCard,
   onDeleteBlock,
+  isPluginBlock,
+  onOpenPlugin,
 }: BlockEditorSideProps & { prompt: PresetPrompt }) {
   const [depthText, setDepthText] = useState(String(prompt.injectionDepth));
   const [orderText, setOrderText] = useState(String(prompt.injectionOrder));
@@ -107,6 +116,7 @@ function SideEditor({
     markerSource?.kind === 'card'
       ? '正文改的是角色卡,自动保存;名称改完点左上「存」才写进预设'
       : '改完点左上「存」才写进预设';
+  const plugin = isPluginBlock?.(prompt.identifier) ?? false;
 
   return (
     <aside className="bes" aria-label="编辑块">
@@ -120,16 +130,27 @@ function SideEditor({
       </div>
 
       <div className="bes-body">
-        <BlockEditorPane
-          layout="stack"
-          prompt={prompt}
-          overridden={overridden}
-          markerSource={markerSource}
-          draft={draft}
-          onChange={change}
-          macros={macros}
-        />
-        <p className="bes-note">{note}</p>
+        {plugin ? (
+          <p className="bes-note bes-plugin-note">
+            该块属于插件块,可在插件内修改
+            <Btn small icon="link" onClick={() => onOpenPlugin?.(prompt.identifier)}>
+              去插件页
+            </Btn>
+          </p>
+        ) : (
+          <>
+            <BlockEditorPane
+              layout="stack"
+              prompt={prompt}
+              overridden={overridden}
+              markerSource={markerSource}
+              draft={draft}
+              onChange={change}
+              macros={macros}
+            />
+            <p className="bes-note">{note}</p>
+          </>
+        )}
       </div>
 
       <div className="bes-foot">

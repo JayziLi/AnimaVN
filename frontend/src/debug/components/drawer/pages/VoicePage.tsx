@@ -1,32 +1,28 @@
 /**
- * 插件抽屉角色组「语音」(第 2 步 D5,画布 V6Voice):页头(主声音、用哪台语音服务)→ 常用(主声音、文字和语音、
+ * 插件抽屉角色组「语音」(第 2 步 D5,画布 V6Voice):页头(音色、用哪台语音服务)→ 常用(音色、文字和语音、
  * 最多等、语音情绪)→ 高级(缓存、配对表)→ 去卡编辑器 / 素材管理 / 游戏设置。快速预览在 D6 加。
  * 总开关在左栏这一行的行尾;情绪行、调参在卡编辑器和素材管理;语音服务在全局组。
- * 「主声音」下拉框 10-19 加回来(第 2 步拿掉以后游戏里没处换声音了):换下来的那个留在卡上当备用。
+ * 「主声音」10-25/26 改叫「音色」,下拉里是库里全部的声音,不分她的 / 别人的;选了整个替换掉,不留备用
+ * (「现在我们不搞配角」)——这点和立绘 / 场景包 / CG 一样,替换逻辑在 PluginsDrawer 的 onReplaceVoice。
  */
 
 import { useCallback, useEffect, useState } from 'react';
 import { debugApi } from '../../../lib/api';
-import {
-  DEFAULT_VOICE_CONFIG,
-  MAX_WAIT_MAX,
-  MAX_WAIT_MIN,
-  mainVoiceChoices,
-  normalizeVoiceConfig,
-  switchMainVoice,
-} from '../../../plugins/voice';
+import { DEFAULT_VOICE_CONFIG, MAX_WAIT_MAX, MAX_WAIT_MIN, normalizeVoiceConfig } from '../../../plugins/voice';
 import type { VoicePluginState } from '../../../plugins/useVoicePlugin';
 import { VoicePairingGroup } from '../../PairingGroup';
 import { DeleteButton } from '../../pluginFields';
 import { errText, formatSize, type Notify } from '../../pluginRunner';
 import { SettingRow } from '../../settings/SettingRow';
 import { headTags } from '../cardView';
-import { Advanced, PageFooter, PageHead, Section } from '../frame';
+import { Advanced, PageFooter, PageHead, PageShell, Section } from '../frame';
 import { Tip } from '../Tip';
 import type { CardView } from '../useCardView';
 import { inUseOf, type AdvOpen, type PageLinks } from './pageModel';
-import { TabTitle } from './shared';
-import { VoicePreview } from './VoicePreview';
+import { PackSwapRow, TabTitle } from './shared';
+import { VoicePreview, VoiceStagePreview } from './VoicePreview';
+import { useDrawerSkin } from '../skinContext';
+import type { SpriteStage } from '../../../plugins/spriteLayout';
 
 type CacheStats = { count: number; bytes: number; limit_bytes: number };
 
@@ -43,108 +39,13 @@ function CacheTab({ stats, onCleared, notify }: { stats: CacheStats | null; onCl
   return (
     <div className="dw-tab-stack">
       <TabTitle
-        title={stats ? `${stats.count} 句 · ${stats.bytes ? formatSize(stats.bytes) : '0 KB'} / 上限 ${formatSize(stats.limit_bytes)}` : '…'}
+        title={
+          stats ? `${stats.count} 句 · ${stats.bytes ? formatSize(stats.bytes) : '0 KB'} / 上限 ${formatSize(stats.limit_bytes)}` : '…'
+        }
         tip="adv_cache"
         right={<DeleteButton disabled={!stats?.count} label="清空缓存" onConfirm={() => void clear()} />}
       />
     </div>
-  );
-}
-
-/** 主声音下拉框:这张卡挂着的排前面,换下来的留在卡上当备用 */
-function MainVoiceRow({
-  view,
-  card,
-  voice,
-  isCurrent,
-  notify,
-}: {
-  view: CardView;
-  card: { id: string; name: string };
-  voice: VoicePluginState;
-  isCurrent: boolean;
-  notify: Notify;
-}) {
-  const facts = view.facts;
-  const [busy, setBusy] = useState(false);
-  // 刚选的那个先显示着,等卡的资料重读回来(不然下拉框会先弹回旧的、过一秒才变)
-  const [pending, setPending] = useState<string | null | undefined>(undefined);
-  const saved = facts?.voices.main ?? null;
-  useEffect(() => setPending(undefined), [saved]);
-  if (!facts) return null;
-  const { onCard, others } = mainVoiceChoices(facts.voices, voice.profiles);
-  const nameOf = (id: string) => voice.profiles.find((v) => v.id === id)?.name ?? '这个声音';
-
-  const pick = async (next: string | null) => {
-    const old = facts.voices.main;
-    if (next === old) return;
-    const target = switchMainVoice(facts.voices, next);
-    setBusy(true);
-    setPending(next);
-    try {
-      // 当前聊天这张卡走语音插件(游戏里马上换声音);别的卡直接存
-      if (isCurrent) {
-        if (!(await voice.bind(target))) {
-          setPending(undefined);
-          return;
-        }
-      } else {
-        await debugApi.setCardVoices(card.id, target);
-      }
-      view.reload();
-      notify(
-        'ok',
-        !next
-          ? `「${card.name}」不念了`
-          : old
-            ? `「${nameOf(next)}」设为主声音,「${nameOf(old)}」留在卡上当备用`
-            : `「${nameOf(next)}」设为主声音`,
-      );
-    } catch (e) {
-      setPending(undefined);
-      notify('error', `换主声音失败: ${errText(e)}`);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <SettingRow
-      label="主声音"
-      tip="main_voice"
-      control={{
-        kind: 'custom',
-        render: () => (
-          <select
-            className="text-input"
-            aria-label={`「${card.name}」的主声音`}
-            value={(pending !== undefined ? pending : saved) ?? ''}
-            disabled={busy}
-            onChange={(e) => void pick(e.target.value || null)}
-          >
-            <option value="">不念</option>
-            {onCard.length > 0 && (
-              <optgroup label="挂在这张卡上">
-                {onCard.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.name}
-                  </option>
-                ))}
-              </optgroup>
-            )}
-            {others.length > 0 && (
-              <optgroup label="其他声音">
-                {others.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.name}
-                  </option>
-                ))}
-              </optgroup>
-            )}
-          </select>
-        ),
-      }}
-    />
   );
 }
 
@@ -158,11 +59,17 @@ export function VoicePage(p: {
   links: PageLinks;
   advOpen: AdvOpen;
   notify: Notify;
+  /** 游戏皮的实机预览:所有角色共用的构图、最近几句台词(看的是当前卡才有) */
+  stage: SpriteStage;
+  recentLines: readonly string[];
+  /** 素材直接换:选了一个音色(或「不念」= null),整个替换掉这张卡的声音绑定 */
+  onReplaceVoice: (id: string | null) => void;
 }) {
   const { view, card, voice, notify } = p;
   const { config, changeConfig } = voice;
   const facts = view.facts;
   const name = card?.name || '这张卡';
+  const { game } = useDrawerSkin();
 
   // 缓存的条数页签上也写
   const [stats, setStats] = useState<CacheStats | null>(null);
@@ -174,108 +81,142 @@ export function VoicePage(p: {
   }, [notify]);
   useEffect(loadStats, [loadStats]);
 
-  return (
-    <>
-      <PageHead
-        title="语音"
-        inUse={facts ? inUseOf(name, facts.mainVoice !== null) : null}
-        tags={facts ? headTags('voice', facts, voice.connections) : []}
-        note={
-          config.enabled ? undefined : (
-            <>
-              语音关着,左栏这一行的开关打开才念
-              <Tip k="voice_switch" />
-            </>
-          )
-        }
-      />
+  const head = (
+    <PageHead
+      title="语音"
+      inUse={facts ? inUseOf(name, facts.mainVoice !== null) : null}
+      tags={facts ? headTags('voice', facts, voice.connections) : []}
+      note={
+        config.enabled ? undefined : (
+          <>
+            语音关着,左栏这一行的开关打开才念
+            <Tip k="voice_switch" />
+          </>
+        )
+      }
+    />
+  );
 
-      {card && facts && (
+  const preview =
+    card && facts ? (
+      game ? (
+        facts.mainVoice && config.enabled ? (
+          <VoiceStagePreview
+            key={facts.mainVoice.id}
+            main={facts.mainVoice}
+            card={card}
+            sprites={view.sprites}
+            packId={facts.spritePack?.id ?? null}
+            stage={p.stage}
+            background={view.bgs[0] ?? null}
+            recentLines={p.recentLines}
+          />
+        ) : (
+          <div className="dw-line">{facts.mainVoice ? '语音关着,打开页头的开关再试' : `${name}还没有音色,在右边「音色」里选一个`}</div>
+        )
+      ) : (
         <Section title="快速预览" tip="voice_preview" collapsible storageKey="preview.voice">
           {facts.mainVoice && config.enabled ? (
             <VoicePreview key={facts.mainVoice.id} main={facts.mainVoice} />
           ) : (
             <div className="dw-line">
-              {facts.mainVoice ? '语音关着,打开左栏这一行的开关再试' : `${name}还没有主声音,在下面「主声音」里选一个`}
+              {facts.mainVoice ? '语音关着,打开左栏这一行的开关再试' : `${name}还没有音色,在下面「音色」里选一个`}
             </div>
           )}
         </Section>
+      )
+    ) : null;
+
+  const common = (
+    <Section title="常用" en="Common">
+      {card && (
+        <PackSwapRow
+          label="音色"
+          tip="main_voice"
+          ariaLabel={`「${name}」的音色`}
+          options={voice.profiles.map((v) => ({ id: v.id, name: v.name }))}
+          value={facts?.mainVoice?.id ?? null}
+          voidChoice="不念"
+          onPick={p.onReplaceVoice}
+        />
       )}
-
-      <Section title="常用">
-        {card && <MainVoiceRow view={view} card={card} voice={voice} isCurrent={p.isCurrent} notify={notify} />}
-        <SettingRow
-          label="文字和语音"
-          tip="text_voice"
-          control={{
-            kind: 'segmented',
-            options: [
-              { value: 'text', label: '先出文字' },
-              { value: 'wait', label: '等语音' },
-            ],
-          }}
-          value={config.waitForVoice ? 'wait' : 'text'}
-          default="text"
-          onChange={(v) => changeConfig({ ...config, waitForVoice: v === 'wait' })}
-        />
-        <SettingRow
-          label="最多等"
-          tip="max_wait"
-          control={{ kind: 'slider', min: MAX_WAIT_MIN, max: MAX_WAIT_MAX, step: 1, format: (v) => `${v} 秒` }}
-          value={config.maxWaitSec}
-          default={DEFAULT_VOICE_CONFIG.maxWaitSec}
-          disabled={!config.waitForVoice}
-          onChange={(v) => changeConfig(normalizeVoiceConfig({ ...config, maxWaitSec: v }))}
-        />
-        <SettingRow
-          label="语音情绪"
-          tip="voice_emotion"
-          control={{
-            kind: 'segmented',
-            options: [
-              { value: 'follow', label: '跟着表情' },
-              { value: 'fixed', label: '不变' },
-            ],
-          }}
-          value={config.fixedEmotion ? 'fixed' : 'follow'}
-          default="follow"
-          onChange={(v) => changeConfig({ ...config, fixedEmotion: v === 'fixed' })}
-        />
-      </Section>
-
-      <Advanced
-        pageId="voice"
-        open={p.advOpen}
-        tabs={[
-          { id: 'cache', name: '缓存', badge: stats ? stats.count.toLocaleString() : undefined },
-          { id: 'pairings', name: '配对表' },
-        ]}
-        render={(tab) =>
-          tab === 'cache' ? (
-            <CacheTab stats={stats} onCleared={loadStats} notify={notify} />
-          ) : (
-            <div className="dw-tab-stack">
-              <TabTitle title="每张立绘念主声音的哪段语气" tip="adv_pairings" />
-              <VoicePairingGroup
-                main={facts?.mainVoice ?? null}
-                fixedEmotion={config.fixedEmotion}
-                card={card}
-                sprites={view.sprites}
-                packName={view.spritePack?.name ?? null}
-                cards={p.cards}
-              />
-            </div>
-          )
-        }
+      <SettingRow
+        label="文字和语音"
+        tip="text_voice"
+        control={{
+          kind: 'segmented',
+          options: [
+            { value: 'text', label: '先出文字' },
+            { value: 'wait', label: '等语音' },
+          ],
+        }}
+        value={config.waitForVoice ? 'wait' : 'text'}
+        default="text"
+        onChange={(v) => changeConfig({ ...config, waitForVoice: v === 'wait' })}
       />
-
-      <PageFooter
-        links={[
-          { text: `卡编辑器 · ${name}的声音`, onClick: () => p.links.studio('voice') },
-          { text: '素材管理 · 声音', onClick: () => p.links.library('voice') },
-          ...(p.links.gameSettings ? [{ text: '游戏设置 · 音量', onClick: p.links.gameSettings }] : []),
-        ]}
+      <SettingRow
+        label="最多等"
+        tip="max_wait"
+        control={{ kind: 'slider', min: MAX_WAIT_MIN, max: MAX_WAIT_MAX, step: 1, format: (v) => `${v} 秒` }}
+        value={config.maxWaitSec}
+        default={DEFAULT_VOICE_CONFIG.maxWaitSec}
+        disabled={!config.waitForVoice}
+        onChange={(v) => changeConfig(normalizeVoiceConfig({ ...config, maxWaitSec: v }))}
       />
-    </>
+      <SettingRow
+        label="语音情绪"
+        tip="voice_emotion"
+        control={{
+          kind: 'segmented',
+          options: [
+            { value: 'follow', label: '跟着表情' },
+            { value: 'fixed', label: '不变' },
+          ],
+        }}
+        value={config.fixedEmotion ? 'fixed' : 'follow'}
+        default="follow"
+        onChange={(v) => changeConfig({ ...config, fixedEmotion: v === 'fixed' })}
+      />
+    </Section>
   );
+
+  const advanced = (
+    <Advanced
+      pageId="voice"
+      open={p.advOpen}
+      tabs={[
+        { id: 'cache', name: '缓存', badge: stats ? stats.count.toLocaleString() : undefined },
+        { id: 'pairings', name: '配对表' },
+      ]}
+      render={(tab) =>
+        tab === 'cache' ? (
+          <CacheTab stats={stats} onCleared={loadStats} notify={notify} />
+        ) : (
+          <div className="dw-tab-stack">
+            <TabTitle title="每张立绘念音色的哪段语气" tip="adv_pairings" />
+            <VoicePairingGroup
+              main={facts?.mainVoice ?? null}
+              fixedEmotion={config.fixedEmotion}
+              card={card}
+              sprites={view.sprites}
+              packName={view.spritePack?.name ?? null}
+              cards={p.cards}
+            />
+          </div>
+        )
+      }
+    />
+  );
+
+  const footer = (
+    <PageFooter
+      links={[
+        { text: `卡编辑器 · ${name}的声音`, onClick: () => p.links.studio('voice') },
+        { text: '素材管理 · 声音', onClick: () => p.links.library('voice') },
+        ...(p.links.gameSettings ? [{ text: '游戏设置 · 音量', onClick: p.links.gameSettings }] : []),
+      ]}
+    />
+  );
+
+  return <PageShell title="语音" head={head} preview={preview} common={common} advanced={advanced} footer={footer} />;
 }

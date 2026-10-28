@@ -9,9 +9,14 @@
  * 参考音频、权重在语音机上,这里改的是路径;▶ 原声经后端从语音机取回(/api/tts/reference)。
  */
 
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   debugApi,
+  sceneImageUrl,
+  spriteImageUrl,
+  type PackSprite,
+  type SceneAsset,
+  type SpriteLayout,
   type TtsConnection,
   type VoiceEmotion,
   type VoiceEmotionPatch,
@@ -20,6 +25,9 @@ import {
   type VoiceProfilePatch,
 } from '../../lib/api';
 import { EmotionVectorEditor } from '../../components/EmotionVectorEditor';
+import { spriteForRow } from '../../components/drawer/pages/stageData';
+import { facesByCanvas, type SpriteStage } from '../../plugins/spriteLayout';
+import { Stage } from '../../vn/ui/Stage';
 import { LABEL_MAX } from '../../plugins/common';
 import {
   GSV_NUM_PARAMS,
@@ -86,20 +94,34 @@ import './voiceEditor.css';
 export interface VoiceEditorProps {
   voiceId: string;
   /**
-   * 外面列表里这个声音现在叫什么(素材管理顶上的名字、卡编辑器「⋯ → 重命名」改的):变了就跟着换,
+   * 外面列表里这个声音现在叫什么(素材管理顶上的名字):变了就跟着换,
    * 不用整个重读。不给 = 只认自己读到的
    */
   name?: string;
-  /** 主区顶上那一行:卡编辑器里是类型小牌子 + 声音页签 + ⋯;素材管理页是包名、用到它的卡…… */
+  /** 主区顶上那一行:卡编辑器里是类型小牌子 + 音色下拉框;素材管理页是包名、用到它的卡…… */
   header: ReactNode;
   /**
    * 拿来对照情绪的差分名:卡编辑器里是当前服装启用的差分(空数组 = 这张卡没立绘,对照内置基础表情);
-   * null = 不对照(素材管理页不带卡;备用声音只用默认情绪),表头不出匹配小牌子
+   * null = 不对照(素材管理页不带卡),表头不出匹配小牌子
    */
   spriteLabels: readonly string[] | null;
   /** 改了这个声音(情绪、参考、参数)之后调:DebugApp 重新拉声音列表(voicePlugin.refresh) */
   onChanged: () => void;
   notify: Notify;
+  /**
+   * 试听台左边的小舞台(设计稿 studio.html C 的 .sd-bench):她站在这张卡的场景里,换情绪换差分,念的那句在对话区。
+   * 卡编辑器里给;素材管理页不带卡,不给 = 没有舞台
+   */
+  benchStage?: BenchStage | null;
+}
+
+/** 试听台小舞台要的:这张卡启用的差分、立绘摆法、共用构图、一张背景、说话人的名字 */
+export interface BenchStage {
+  sprites: readonly PackSprite[];
+  layout: SpriteLayout;
+  stage: SpriteStage;
+  background: SceneAsset | null;
+  speaker: string;
 }
 
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -111,7 +133,7 @@ export function VoiceEditor(props: VoiceEditorProps) {
   return <Editor key={props.voiceId} {...props} />;
 }
 
-function Editor({ voiceId, name, header, spriteLabels, onChanged, notify }: VoiceEditorProps) {
+function Editor({ voiceId, name, header, spriteLabels, onChanged, notify, benchStage }: VoiceEditorProps) {
   const [data, setData] = useState<{ profile: VoiceProfile | null; connections: TtsConnection[] } | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   // 外面改了名字:跟着换。只看外面的名字有没有变 —— 这里刚改的名字外面还没刷新时,不能被旧名字盖回去
@@ -160,6 +182,7 @@ function Editor({ voiceId, name, header, spriteLabels, onChanged, notify }: Voic
       spriteLabels={spriteLabels}
       onChanged={onChanged}
       notify={notify}
+      benchStage={benchStage ?? null}
     />
   );
 }
@@ -335,9 +358,10 @@ interface LoadedProps {
   spriteLabels: readonly string[] | null;
   onChanged: () => void;
   notify: Notify;
+  benchStage: BenchStage | null;
 }
 
-function Loaded({ profile, connection, connections, patch, header, spriteLabels, onChanged, notify }: LoadedProps) {
+function Loaded({ profile, connection, connections, patch, header, spriteLabels, onChanged, notify, benchStage }: LoadedProps) {
   const isIndex = connection?.api_type === 'indextts';
   const emotions = profile.emotions;
   const [selId, setSelId] = useState<string | null>(emotions[0]?.id ?? null);
@@ -470,6 +494,7 @@ function Loaded({ profile, connection, connections, patch, header, spriteLabels,
           onEmotion={setBenchEmo}
           preview={preview}
           seed={isIndex ? { seed: null, bad: false } : parseSeed(seedText)}
+          stage={benchStage}
         />
         <section className="vo-panel vo-table" aria-label="情绪参考">
           <div className="vo-table-head">
@@ -633,11 +658,10 @@ function VoiceSettings({
         onClick={() => setOpen((v) => !v)}
       >
         <span className="vo-title">声音设置</span>
-        {!open && (
-          <span className={`vo-note${summary.warn ? ' warn' : ''}`} title={summary.text}>
-            {summary.text}
-          </span>
-        )}
+        {/* 收起、展开都是这一行摘要(设计稿 .sd-vset-h) */}
+        <span className={`vo-note${summary.warn ? ' warn' : ''}`} title={summary.text}>
+          {summary.text}
+        </span>
         <span className="st-flex" />
         <Icon name="chev" size={15} className={open ? 'vo-chev open' : 'vo-chev'} />
       </button>
@@ -735,6 +759,7 @@ function Bench({
   onEmotion,
   preview,
   seed,
+  stage,
 }: {
   profile: VoiceProfile;
   isIndex: boolean;
@@ -743,6 +768,7 @@ function Bench({
   preview: Preview;
   /** 「更多参数」里填的固定种子(只有 GSV);填得不对时不让合成 */
   seed: { seed: number | null; bad: boolean };
+  stage: BenchStage | null;
 }) {
   const samples = samplesFor(profile.text_lang);
   const [text, setText] = useState(samples[0].text);
@@ -793,8 +819,17 @@ function Bench({
 
   const pos = preview.pos('take');
   const current = profile.emotions.find((e) => e.label === emotionLabel);
-  return (
-    <section className="vo-panel vo-bench" aria-label="试听">
+  // 小舞台的脸框;换情绪换差分时放一次入场动效(第一次不放),用换了几次当钥匙
+  const stageSprites = stage?.sprites;
+  const faces = useMemo(() => facesByCanvas(stageSprites ?? []), [stageSprites]);
+  const [emoKey, setEmoKey] = useState(0);
+  const [shownEmo, setShownEmo] = useState(emotionLabel);
+  if (shownEmo !== emotionLabel) {
+    setShownEmo(emotionLabel);
+    setEmoKey((k) => k + 1);
+  }
+  const panel = (
+    <>
       <div className="vo-bench-head">
         <span className="vo-title">试听</span>
         <span className="vo-note">输入台词,选择情绪,试听合成效果</span>
@@ -877,6 +912,46 @@ function Bench({
               ].join(' · '))}
         </div>
       )}
+    </>
+  );
+  if (!stage) {
+    return (
+      <section className="vo-panel vo-bench" aria-label="试听">
+        {panel}
+      </section>
+    );
+  }
+  // 小舞台:这一种情绪对得上的差分(对不上用默认表情),框里那句在对话区;背景用这张卡的第一张
+  const row = current ?? profile.emotions[0] ?? null;
+  const shown = (row ? spriteForRow(stage.sprites, row) : null) ?? stage.sprites[0] ?? null;
+  const spriteSrc = shown ? spriteImageUrl(shown) : null;
+  const bgSrc = stage.background ? sceneImageUrl(stage.background) : null;
+  const said = text.trim();
+  return (
+    <section className="vo-panel vo-bench has-stage" aria-label="试听">
+      <div className="vo-bench-grid">
+        <Stage
+          className="vo-bench-stage"
+          background={bgSrc && stage.background ? { src: bgSrc, focus: stage.background.focus_x } : null}
+          sprite={
+            spriteSrc && shown
+              ? { src: spriteSrc, face: faces.get(shown.id) ?? null, layout: stage.layout, stage: stage.stage, effect: shown.effect, playKey: emoKey }
+              : null
+          }
+          line={said ? { speaker: stage.speaker, text: `「${said}」` } : null}
+          label={
+            <>
+              试音台{row ? (
+                <>
+                  {' · '}
+                  <em>{row.label}</em>
+                </>
+              ) : null}
+            </>
+          }
+        />
+        <div className="vo-bench-r">{panel}</div>
+      </div>
     </section>
   );
 }

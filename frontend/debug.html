@@ -7,7 +7,7 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=72" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=72" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=72" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
     <!-- iPhone 的 Safari 不让网页全屏:「添加到主屏幕」后从图标打开就没有地址栏和工具栏了。
          状态栏用黑底不用透明 —— 调试台没给刘海留位置;横屏时 iPhone 本来就不显示状态栏 -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -15,6 +15,9 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black" />
     <meta name="apple-mobile-web-app-title" content="AnimaVN" />
     <meta name="theme-color" content="#0e0e0e" />
+    <!-- 宋体常用那份(封面、菜单、名字、台词都用;src/debug/vn/vnFonts.css 的 AnimaSerif)打开页面就先下。
+         不等它:字体到之前照旧先用系统字体顶着(font-display: swap)。生僻字那份 nss-extra 和英文两份用到才下,不预载 -->
+    <link rel="preload" href="/vn/fonts/nss-core.woff2" as="font" type="font/woff2" crossorigin />
     <title>AnimaVN · Prompt Console</title>
   </head>
   <body>

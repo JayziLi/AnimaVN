@@ -104,7 +104,9 @@ def test_debug_complete_rejects_empty_messages_and_unknown_connection(
     )
 
     assert empty.status_code == 400
+    assert empty.json()["detail"] == "messages must not be empty"
     assert missing.status_code == 400
+    assert missing.json()["detail"] == "Connection not found"
 
 
 def test_stream_emits_ordered_native_reasoning_and_text_frames(
@@ -152,7 +154,7 @@ def test_empty_stream_returns_error_frame_instead_of_silent_success(
     assert response.status_code == 200
     events = parse_sse(response.text)
     assert [event for event, _ in events] == ["meta", "error"]
-    assert "空响应" in events[-1][1]["message"]
+    assert events[-1][1]["message"].startswith("Empty response")
 
 
 def test_stream_failure_before_first_token_is_normal_http_error(

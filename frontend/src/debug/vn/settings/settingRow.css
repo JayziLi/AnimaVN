@@ -1,0 +1,475 @@
+/* ══════════ 设置行(settings/SettingRow.tsx)══════════
+   照设计稿 pages/settings.css 的 .st-*(行、小节标题、改过的小点、恢复默认、条件行展开、和插件页同一个的小签、出错红字)。
+   都写在 .vn-sp(设置页那张纸)下面;颜色走 theme.css 的 --av-*,套在 .av-day / .av-night / .is-glass 里自动换纸。
+   生图卡带的行也用这一份(它不能被内核 import,所以是内核给它用)。 */
+
+.vn-sp .st-group + .st-group {
+  margin-top: 26px;
+}
+.vn-sp .st-gh {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 12px 0 9px;
+  border-bottom: 1px solid var(--av-hair);
+}
+.vn-sp .st-gh .zh {
+  font: 700 15px/1.2 var(--av-serif);
+  letter-spacing: 0.22em;
+}
+.vn-sp .st-gh .en {
+  font: italic 500 12.5px/1 var(--av-latin);
+  letter-spacing: 0.12em;
+  color: var(--av-dim);
+}
+.vn-sp .st-gh .st-gnote {
+  margin-left: 6px;
+  font: 12.5px/1.4 var(--av-sans);
+  color: var(--av-ink-2);
+  letter-spacing: 0.02em;
+}
+.vn-sp .st-gh .av-btn {
+  margin-left: auto;
+  align-self: center;
+}
+
+.vn-sp .st-row {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: 124px minmax(0, 1fr) 116px;
+  align-items: start;
+  column-gap: 16px;
+  /* studio.css 也有一个 .st-row(创作者工具的行,底下留 8px):这里是设置行,紧挨着一条细线 */
+  margin: 0;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--av-hair-2);
+}
+.vn-sp .st-k {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  align-content: center;
+  min-height: 34px;
+  gap: 4px 6px;
+  font: 600 14px/1.4 var(--av-serif);
+  letter-spacing: 0.08em;
+  min-width: 0;
+}
+.vn-sp .st-nm {
+  position: relative;
+}
+/* 改过的项:名字前一个角色色小点 */
+.vn-sp .st-nm::before {
+  content: '';
+  position: absolute;
+  left: -12px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin-top: -3px;
+  border-radius: 50%;
+  background: var(--av-ctl);
+  opacity: 0;
+  transform: scale(0.4);
+  transition: opacity 0.16s, transform 0.16s var(--av-ease);
+}
+.vn-sp .st-row.changed .st-nm::before {
+  opacity: 1;
+  transform: none;
+}
+.vn-sp .st-en {
+  font: italic 500 11.5px/1 var(--av-latin);
+  letter-spacing: 0.06em;
+  color: var(--av-dim);
+}
+.vn-sp .st-k .av-chip.beta {
+  height: 16px;
+}
+.vn-sp .st-c {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+.vn-sp .st-ctl {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 34px;
+}
+.vn-sp .st-ctl .av-range {
+  flex: 1;
+  min-width: 140px;
+  max-width: 380px;
+}
+.vn-sp .st-seg > button {
+  min-width: 0;
+  padding: 0 11px;
+}
+.vn-sp .st-select {
+  /* studio.css 的 .st-select 是另一样东西(带 flex: 1):这里不跟着撑满 */
+  flex: 0 1 auto;
+  min-width: 230px;
+  max-width: min(100%, 420px);
+}
+.vn-sp .st-note {
+  font: 12px/1.65 var(--av-sans);
+  color: var(--av-dim);
+  letter-spacing: 0.02em;
+}
+.vn-sp .st-fontpv {
+  width: 100%;
+  margin-top: 2px;
+  font-size: 17px;
+  line-height: 1.6;
+  letter-spacing: 0.04em;
+  color: var(--av-ink);
+}
+.vn-sp .st-info {
+  font: 13px/1.5 var(--av-sans);
+  color: var(--av-ink);
+}
+.vn-sp .st-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.vn-sp .st-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  font-size: 12.5px;
+  color: var(--av-ink-2);
+}
+.vn-sp .st-keys span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.vn-sp .st-t {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 0;
+  min-height: 34px;
+}
+.vn-sp .st-v {
+  min-width: 40px;
+  text-align: right;
+  white-space: nowrap;
+}
+.vn-sp .st-reset {
+  position: relative;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  font: 500 11.5px/1 var(--av-sans);
+  letter-spacing: 0.04em;
+  color: var(--av-dim);
+  white-space: nowrap;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+  transition: opacity 0.16s, color 0.16s, background 0.16s, visibility 0s linear 0.16s;
+}
+.vn-sp .st-row.changed .st-reset {
+  opacity: 1;
+  pointer-events: auto;
+  visibility: visible;
+  transition-delay: 0s;
+}
+.vn-sp .st-reset:hover {
+  color: var(--av-ink);
+  background: var(--av-hair-2);
+}
+
+/* 和插件页是同一个:说明后面一个小签,悬停说清楚 */
+.vn-sp .st-dup {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--av-acc-soft);
+  color: var(--av-acc-deep);
+  font: 500 12px/1 var(--av-sans);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  vertical-align: 1px;
+  cursor: help;
+}
+.vn-sp.av-night .st-dup {
+  background: color-mix(in srgb, var(--av-acc) 20%, transparent);
+  color: var(--av-acc);
+}
+.vn-sp .st-dup:hover::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 6px);
+  width: max-content;
+  max-width: 240px;
+  padding: 7px 10px;
+  border-radius: var(--av-r-btn);
+  background: var(--av-ink);
+  color: var(--av-paper);
+  font: 12px/1.55 var(--av-sans);
+  white-space: normal;
+  z-index: 30;
+  box-shadow: 0 6px 18px rgba(20, 16, 40, 0.22);
+  pointer-events: none;
+}
+.vn-sp .st-jump {
+  position: relative;
+  margin-left: 4px;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid var(--av-ctl);
+  background: none;
+  color: var(--av-ink-2);
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.vn-sp .st-jump::before {
+  content: '';
+  position: absolute;
+  inset: min(0px, calc(50% - var(--av-hit) / 2));
+}
+.vn-sp .st-jump::after {
+  content: ' →';
+  font-family: var(--av-latin);
+}
+
+/* 跳到某一行时闪一下 */
+.vn-sp .st-row::after {
+  content: '';
+  position: absolute;
+  inset: 3px -10px;
+  border-radius: 6px;
+  background: var(--av-acc-soft);
+  opacity: 0;
+  pointer-events: none;
+  z-index: -1;
+}
+.vn-sp.av-night .st-row::after {
+  background: color-mix(in srgb, var(--av-acc) 18%, transparent);
+}
+.vn-sp .st-row.flash::after {
+  animation: st-flash 1.5s ease;
+}
+@keyframes st-flash {
+  0%,
+  35% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* 条件出现的行:高度展开 + 淡入,不跳 */
+.vn-sp .st-cond {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+  transition: grid-template-rows 0.22s var(--av-ease), opacity 0.2s ease, visibility 0s 0.22s;
+}
+.vn-sp .st-cond.open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  visibility: visible;
+  transition: grid-template-rows 0.22s var(--av-ease), opacity 0.2s ease 0.04s, visibility 0s;
+}
+.vn-sp .st-cond-in {
+  min-height: 0;
+  overflow: hidden;
+  margin: 0 -12px;
+  padding: 0 12px;
+}
+
+/* 出错的红字:红色圆底「!」+ 红字,夜纸上调亮一点 */
+.vn-sp .st-err {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 0 11px 140px;
+  border-bottom: 1px solid var(--av-hair-2);
+  font: 12.5px/1.6 var(--av-sans);
+  letter-spacing: 0.02em;
+  color: var(--av-bad-ink);
+}
+.vn-sp.av-night .st-err {
+  color: color-mix(in srgb, var(--av-bad) 60%, #fff);
+}
+.vn-sp .st-err i {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  margin-top: 2.5px;
+  border-radius: 50%;
+  background: var(--av-bad);
+  color: #fff;
+  font: 700 10px/1 var(--av-sans);
+  font-style: normal;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vn-sp .st-cond,
+  .vn-sp .st-cond.open,
+  .vn-sp .st-nm::before,
+  .vn-sp .st-reset {
+    transition: none;
+  }
+  .vn-sp .st-row.flash::after {
+    animation: none;
+  }
+}
+
+/* 窄屏(手机):名字一行、控件一行 */
+@media (max-width: 760px) {
+  .vn-sp .st-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: 'k t' 'c c';
+    row-gap: 8px;
+    column-gap: 12px;
+  }
+  .vn-sp .st-k {
+    grid-area: k;
+    min-height: 24px;
+  }
+  .vn-sp .st-c {
+    grid-area: c;
+  }
+  .vn-sp .st-t {
+    grid-area: t;
+    min-height: 24px;
+  }
+  .vn-sp .st-ctl .av-range {
+    max-width: none;
+  }
+  .vn-sp .st-err {
+    padding-left: 0;
+  }
+}
+
+/* 卡带(AI 生图页)里的出错字也照这个画:红色圆底「!」+ 红字(卡带用内核的 .vn-set-error) */
+.vn-sp .vn-set-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font: 12.5px/1.6 var(--av-sans);
+  letter-spacing: 0.02em;
+  color: var(--av-bad-ink);
+}
+.vn-sp.av-night .vn-set-error {
+  color: color-mix(in srgb, var(--av-bad) 60%, #fff);
+}
+.vn-sp .vn-set-error::before {
+  content: '!';
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  margin-top: 2.5px;
+  border-radius: 50%;
+  background: var(--av-bad);
+  color: #fff;
+  font: 700 10px/1 var(--av-sans);
+}
+
+
+/* 卡带(AI 生图页)里的原生滑块和费用条:在游戏的设置页里画成和别的行一样的纸面细轨、纸面底条
+   (这页在调试台网页里也用,那边不动,所以只在 .vn-sp 下改) */
+.vn-sp input[type='range']:not(.av-range) {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 32px;
+  margin: -6px 0;
+  vertical-align: -6px;
+  background: transparent;
+  cursor: pointer;
+}
+.vn-sp input[type='range']:not(.av-range)::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--av-hair);
+}
+.vn-sp input[type='range']:not(.av-range)::-moz-range-track {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--av-hair);
+}
+.vn-sp input[type='range']:not(.av-range)::-moz-range-progress {
+  height: 3px;
+  background: var(--av-ctl);
+}
+.vn-sp input[type='range']:not(.av-range)::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5.5px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid var(--av-faint);
+  box-shadow: 0 1px 4px rgba(20, 20, 40, 0.22);
+}
+.vn-sp input[type='range']:not(.av-range)::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid var(--av-faint);
+}
+.vn-sp .ig-cost {
+  border-radius: 7px;
+  border-color: var(--av-hair);
+  background: var(--av-paper-2);
+  color: var(--av-ink);
+}
+
+/* 手机竖屏(≤640px,设计稿 settings.css 的 .st-mob):行松一点、选择框铺满、组标题放不下就换行;
+   「和插件页是同一个」的小签没有悬停,不弹提示(留着小签本身) */
+@media (max-width: 640px) {
+  .vn-sp .st-row {
+    padding: 13px 0 14px;
+  }
+  .vn-sp .st-k {
+    font-size: 14.5px;
+  }
+  .vn-sp .st-ctl {
+    min-height: 30px;
+  }
+  .vn-sp .st-seg > button {
+    padding: 0 9px;
+  }
+  .vn-sp .st-select {
+    min-width: 0;
+    width: 100%;
+  }
+  .vn-sp .st-gh {
+    flex-wrap: wrap;
+  }
+  .vn-sp .st-gh .st-gnote {
+    margin-left: 0;
+  }
+  .vn-sp .st-dup {
+    cursor: default;
+  }
+  .vn-sp .st-dup:hover::after {
+    display: none;
+  }
+}

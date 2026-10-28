@@ -1,0 +1,399 @@
+/* ══════════ 开发者页(ConsoleView.tsx)的纸面皮 ══════════
+   照设计稿 kit/creator.css 的「开发者」一节(.tl-dev / .tl-dr / .tl-now / .tl-kv),class 换成 cv-。
+   颜色全走 theme.css 的 --av-*,套在菜单面板的白纸 / 夜纸 / 玻璃里自动换;选中不跟角色色(白纸浮起 + 左边一道墨线);
+   不用胶囊、不发光、不加装饰数字。红色只给真出错的字(红色圆底「!」+ 红字,照 settings/settingRow.css 的 .st-err),
+   正常说明(Jev 的统计、没有标签的提示)用普通字色。 */
+
+.cv {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--cv-side, 380px);
+  gap: 0 22px;
+  align-items: start;
+  color: var(--av-ink);
+  font-family: var(--av-sans);
+  font-size: 13px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.cv-main {
+  min-width: 0;
+}
+
+.cv-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  min-height: 34px;
+  margin-bottom: 12px;
+}
+.cv-bar > .cv-dim {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.cv-exit {
+  margin-left: auto;
+}
+.cv-dim,
+.cv-sub {
+  font-size: 12.5px;
+  color: var(--av-dim);
+}
+.cv-sub {
+  margin-left: 4px;
+}
+
+/* ---------- 此刻 ---------- */
+.cv-now {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 14px;
+  border-radius: var(--av-r-btn);
+  background: var(--av-paper-2);
+  box-shadow: inset 0 0 0 1px var(--av-hair-2);
+}
+.cv-now > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+}
+.cv-now b {
+  font: 600 13.5px/1.3 var(--av-serif);
+  letter-spacing: 0.04em;
+}
+/* 小标签(设计稿 .tl-now .tl-fl):宋体 600 12px 淡字,第一个占 34 宽对齐 */
+.cv-fl {
+  font: 600 12px/1.3 var(--av-serif);
+  letter-spacing: 0.08em;
+  color: var(--av-dim);
+  white-space: nowrap;
+}
+.cv-now > div > .cv-fl:first-child {
+  width: 34px;
+}
+.cv-now > div > .cv-fl:not(:first-child) {
+  margin-left: 8px;
+}
+
+/* ---------- 各块的标题 ---------- */
+.cv-sec {
+  margin-top: 16px;
+}
+.cv-sh {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  min-height: 30px;
+  margin-bottom: 6px;
+}
+.cv-sh .zh {
+  font: 700 14.5px/1.2 var(--av-serif);
+  letter-spacing: 0.2em;
+  white-space: nowrap;
+}
+.cv-sh .en {
+  font: italic 500 12px/1 var(--av-latin);
+  letter-spacing: 0.12em;
+  color: var(--av-dim);
+  white-space: nowrap;
+}
+
+.cv-note {
+  margin: 0 0 8px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--av-ink-2);
+}
+/* Jev 的统计:前面一颗控件色小星(设计稿 .tl-jevnote) */
+.cv-jevnote {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.cv-jevnote > .av-star {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  margin-top: 5px;
+  fill: var(--av-ctl);
+}
+
+/* ---------- 表:一行一行,点中的白纸浮起 ---------- */
+/* 表(设计稿 .tl-dtable):纸上一圈细线,不另垫底色 */
+.cv-scroll {
+  max-height: min(46vh, 410px);
+  overflow: auto;
+  padding: 0 4px 4px;
+  border-radius: var(--av-r-panel);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--av-hair);
+  scrollbar-width: thin;
+  scrollbar-color: var(--av-faint) transparent;
+}
+.cv-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12.5px;
+}
+.cv-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: 34px;
+  padding: 0 10px;
+  background: var(--av-paper);
+  border-bottom: 1px solid var(--av-hair);
+  text-align: left;
+  font: 600 12px/1 var(--av-serif);
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+  color: var(--av-dim);
+}
+.cv-table thead tr th:first-child {
+  border-radius: var(--av-r-panel) 0 0 0;
+}
+.cv-table thead tr th:last-child {
+  border-radius: 0 var(--av-r-panel) 0 0;
+}
+.cv-table td {
+  height: 34px;
+  padding: 7px 10px;
+  text-align: left;
+  vertical-align: top;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.cv-table th:first-child,
+.cv-table td:first-child {
+  width: 36px;
+  font-variant-numeric: lining-nums tabular-nums;
+  color: var(--av-ink-2);
+}
+.cv-table tbody tr {
+  cursor: pointer;
+}
+.cv-table tbody tr:hover td {
+  background: var(--av-hair-2);
+}
+.cv-table td:first-child {
+  border-radius: 6px 0 0 6px;
+}
+.cv-table td:last-child {
+  border-radius: 0 6px 6px 0;
+}
+/* 选中那行:白纸浮起 + 一圈淡线 + 左边一道墨线(设计稿 .tl-dr.on) */
+.cv-table tbody tr.on td {
+  background: var(--av-paper);
+  box-shadow:
+    inset 0 1px 0 var(--av-hair-2),
+    inset 0 -1px 0 var(--av-hair-2),
+    0 1px 3px rgba(30, 24, 48, 0.08);
+}
+.cv-table tbody tr.on td:first-child {
+  box-shadow:
+    inset 2px 0 0 var(--av-sel, var(--av-ink)),
+    inset 0 1px 0 var(--av-hair-2),
+    inset 0 -1px 0 var(--av-hair-2),
+    0 1px 3px rgba(30, 24, 48, 0.08);
+}
+.cv-table tbody tr.on td:last-child {
+  box-shadow:
+    inset -1px 0 0 var(--av-hair-2),
+    inset 0 1px 0 var(--av-hair-2),
+    inset 0 -1px 0 var(--av-hair-2),
+    0 1px 3px rgba(30, 24, 48, 0.08);
+}
+.av-night .cv-table tbody tr.on td {
+  background: var(--av-paper-3);
+}
+/* 玻璃:底是糊开的游戏画面,选中那行垫一层深玻璃色,字才不被亮背景吃掉 */
+.is-glass .cv-table tbody tr.on td {
+  background: rgba(var(--gl-base), 0.6);
+}
+.cv-table tbody tr:focus-visible {
+  outline: none;
+}
+.cv-table tbody tr:focus-visible td {
+  background: var(--av-hair-2);
+}
+.cv-table tbody tr:focus-visible td:first-child {
+  box-shadow: inset 2px 0 0 var(--av-ink);
+}
+.cv code,
+.cv-table code {
+  font: 11.5px/1.4 var(--av-mono);
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--av-paper-2);
+  box-shadow: inset 0 0 0 1px var(--av-hair-2);
+  color: var(--av-ink-2);
+  white-space: nowrap;
+}
+.cv-table code {
+  background: var(--av-paper);
+}
+.av-night .cv-table code {
+  background: var(--av-paper-3);
+}
+.cv-synth {
+  margin: 2px 0 0;
+}
+
+/* ---------- 匹配结果 / 出错 ---------- */
+.cv-v.ok {
+  color: var(--av-good-ink);
+}
+.cv-v b {
+  font-weight: 600;
+}
+.cv-v.plain {
+  color: var(--av-ink-2);
+}
+.cv-err {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 8px;
+  font: 12.5px/1.6 var(--av-sans);
+  letter-spacing: 0.02em;
+  color: var(--av-bad-ink);
+}
+.cv-err i {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  margin-top: 2.5px;
+  border-radius: 50%;
+  background: var(--av-bad);
+  color: #fff;
+  font: 700 10px/1 var(--av-sans);
+  font-style: normal;
+}
+.cv-err > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.cv-note > .cv-err {
+  display: flex;
+}
+
+/* ---------- 模型完整输出 ---------- */
+.cv-raw {
+  margin: 0;
+  padding: 12px 14px;
+  max-height: 46vh;
+  overflow: auto;
+  border-radius: var(--av-r-panel);
+  background: var(--av-paper-2);
+  box-shadow: inset 0 0 0 1px var(--av-hair);
+  color: var(--av-ink);
+  font: 13px/1.7 var(--av-mono);
+  white-space: pre-wrap;
+  word-break: break-word;
+  scrollbar-width: thin;
+  scrollbar-color: var(--av-faint) transparent;
+}
+/* 对上了:淡绿底;没对上:红字 + 下划线(不只靠颜色) */
+.cv-raw mark {
+  padding: 0 2px;
+  border-radius: 3px;
+  color: inherit;
+  background: none;
+}
+.cv-raw mark.ok {
+  background: color-mix(in srgb, var(--av-good) 18%, transparent);
+}
+.cv-raw mark.miss {
+  color: var(--av-bad-ink);
+  background: color-mix(in srgb, var(--av-bad) 12%, transparent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* ---------- 右边:小舞台 + 这一句的细节 ---------- */
+.cv-side {
+  position: sticky;
+  top: 0;
+  min-width: 0;
+  padding-left: 20px;
+  border-left: 1px solid var(--av-hair);
+}
+.cv-side .av-stage {
+  --st-stage-max-h: none;
+  /* 设计稿的小舞台比这一栏窄一点(380 栏宽 - 44) */
+  width: calc(100% - 24px);
+}
+.cv-kv {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 8px 12px;
+  align-items: baseline;
+  margin: 14px 0 4px;
+  font-size: 12.5px;
+}
+.cv-kv:empty {
+  display: none;
+}
+.cv-kv > span {
+  font: 600 12px/1.4 var(--av-serif);
+  letter-spacing: 0.08em;
+  color: var(--av-dim);
+}
+.cv-kv > b {
+  min-width: 0;
+  font-weight: 500;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.cv-kv > code {
+  justify-self: start;
+}
+.cv-hint {
+  margin: 10px 0 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--av-dim);
+}
+.cv-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--av-ink-2);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.cv-link:hover {
+  color: var(--av-ink);
+}
+.cv-link:focus-visible {
+  outline: 2px solid var(--av-ctl);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* ---------- 窄屏:舞台放到上面,单栏 ---------- */
+@media (max-width: 900px) {
+  .cv {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .cv-side {
+    order: -1;
+    position: static;
+    margin-bottom: 14px;
+    padding: 0 0 14px;
+    border-left: 0;
+    border-bottom: 1px solid var(--av-hair);
+  }
+  .cv-table th:nth-child(4),
+  .cv-table td:nth-child(4) {
+    white-space: nowrap;
+  }
+}

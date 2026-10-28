@@ -1,0 +1,133 @@
+/* 台词右键小菜单(LineMenu.tsx)和句检查器的纸卡皮。小菜单照设计稿 .ga-ctx */
+.vn-ctx-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+}
+.vn-ctx-layer.leaving,
+.vn-insp-layer.leaving {
+  pointer-events: none;
+}
+.vn-ctx {
+  position: absolute;
+  z-index: 9;
+  display: flex;
+  flex-direction: column;
+  min-width: 168px;
+  padding: 5px;
+}
+.vn-ctx > button {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  padding: 0 12px 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  font: 500 13.5px/1 var(--av-sans);
+  letter-spacing: 0.04em;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  transition: background 0.14s;
+}
+.vn-ctx > button .av-ic {
+  opacity: 0.72;
+}
+.vn-ctx > button:hover,
+.vn-ctx > button:focus-visible {
+  background: color-mix(in srgb, currentColor 8%, transparent);
+  outline: none;
+}
+.vn-ctx > button:focus-visible {
+  box-shadow: inset 0 0 0 1.5px var(--av-ctl, currentColor);
+}
+/* 「这句的详情」(句检查器)和前面的隔一道细线 */
+.vn-ctx > button:last-child {
+  margin-top: 5px;
+}
+.vn-ctx > button:last-child::before {
+  content: '';
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  top: -3px;
+  height: 1px;
+  background: var(--av-hair);
+}
+
+/* 句检查器:同一种纸卡(原来是糊住她身子的玻璃)。里面的字、按钮、下拉原来按深色玻璃写的,
+   在纸卡里把 --vn-* 换成墨色,别的不动(历史页里的检查器还是原来的深色) */
+.vn-insp.vn-insp.av-pcard {
+  --vn-text: var(--av-ink);
+  --vn-text-dim: var(--av-dim);
+  --vn-text-faint: var(--av-dim);
+  --vn-border: var(--av-hair);
+  --vn-accent: var(--av-ctl);
+  --vn-accent-ink: #fff;
+  --vn-miss: var(--av-bad);
+  padding: 4px;
+  border: 1px solid var(--av-hair);
+  border-radius: 7px;
+  background: var(--av-paper);
+  color: var(--av-ink);
+  box-shadow: 0 10px 30px rgba(20, 16, 40, 0.24), 0 1px 3px rgba(20, 16, 40, 0.08);
+  animation: none;
+}
+.vn-insp.av-pcard .vn-pill {
+  background: var(--av-paper);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.vn-insp.av-pcard .vn-pill:hover:not(:disabled) {
+  background: var(--av-paper-2);
+}
+.vn-insp.av-pcard .vn-pill.accent {
+  background: var(--av-ctl);
+  color: #fff;
+}
+.vn-insp.av-pcard .vn-set-select {
+  background: var(--av-paper-2);
+}
+.vn-insp.av-pcard .vn-set-select option {
+  background: var(--av-paper);
+  color: var(--av-ink);
+}
+.vn-insp.av-pcard .vn-vd-play {
+  background: var(--av-paper-2);
+}
+.vn-insp.av-pcard .vn-vd-raw pre {
+  background: var(--av-paper-2);
+}
+.vn-insp.av-pcard .vn-vd-err {
+  color: var(--av-bad);
+}
+/* 主题选「黑」/「玻璃」时检查器是深色纸:压在亮的角色色上的字、错误红换成夜纸那一档 */
+.vn-insp.vn-insp.av-pcard.av-night {
+  --vn-accent-ink: var(--av-acc-ink);
+  --vn-miss: var(--av-bad-ink);
+}
+.vn-insp.av-pcard.av-night .vn-pill.accent {
+  color: var(--av-acc-ink);
+}
+.vn-insp.av-pcard.av-night .vn-vd-err {
+  color: var(--av-bad-ink);
+}
+.vn-insp.vn-insp.av-pcard.is-glass {
+  background: rgba(var(--gl-base), 0.9);
+  border-color: var(--gl-edge);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.38);
+}
+
+/* 手机:长按出的小菜单宽一点、每项 44 高(设计稿 .ga-ph .ga-ctx) */
+@media (max-width: 640px) {
+  .vn-ctx {
+    min-width: 188px;
+  }
+  .vn-ctx > button {
+    height: 44px;
+    font-size: 14px;
+  }
+}

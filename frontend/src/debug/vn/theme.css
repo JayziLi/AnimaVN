@@ -1,0 +1,151 @@
+/* ══════════ 界面统一的底稿变量(--av-*) ══════════
+   照设计稿 docs/design/unify/kit/tokens.css(10-25 那版)抄的:名字、数值都和设计稿一样,以后照设计稿换皮时直接用。
+   和设计稿不一样的只有这几处:
+   - --av-serif / --av-latin 最前面是打包进游戏的 AnimaSerif / AnimaLatin(vnFonts.css),后面的照旧当退路。
+   - 设计稿用 :where(*) 给每个元素各算一份 --av-ctl;游戏里不这么做 —— 菜单里嵌着调试台的大页面,每个元素都多挂一个变量,
+     样式计算会变慢。改成只在写角色色的地方算:.vn-root(VNScreen 往它上面写角色色)、.av-night、.av-day。
+     在别的元素上另写角色色(--av-acc*)时,同一处把 --av-ctl 也写上。
+   - 只抄了变量;组件的样子(.av-btn、.av-seg……)在 vn/ui/ 各组件自己的 css 里。
+   封面、选角色、加载页、局内菜单、设置、游戏上的小窗口和纸卡都直接用这里的 --av-*(U33 起封面、选角色原来的
+   --tt2-* / --pk-* 已经换掉,淡字也跟着用 66%);纸面跟设置里的「主题」靠 .av-night / .is-glass 换值。 */
+
+:root {
+  /* 纸 */
+  --av-paper: #fbfaf8;
+  --av-paper-2: #f4f2ee;
+  --av-paper-3: #e9e6e0;
+  --av-ink: #2a2a33;
+  --av-ink-2: rgba(42, 42, 51, 0.78);
+  /* 淡灰小字:10-24 用户定了 56% → 66%(白纸上对比度 3.5 → 4.7);夜纸那档(下面 .av-night)不变 */
+  --av-dim: rgba(42, 42, 51, 0.66);
+  --av-faint: rgba(42, 42, 51, 0.3);
+  --av-hair: rgba(42, 42, 51, 0.14);
+  --av-hair-2: rgba(42, 42, 51, 0.08);
+  --av-line-white: rgba(255, 255, 255, 0.85);
+  --av-map-opacity: 0.14;
+
+  /* 玻璃 */
+  --av-glass: rgba(251, 250, 248, 0.86);
+  --av-glass-edge: rgba(255, 255, 255, 0.9);
+  --av-glass-dark: rgba(16, 17, 28, 0.62);
+  --av-glass-dark-edge: rgba(255, 255, 255, 0.14);
+
+  /* 角色色:游戏里由 VNScreen 按设置 · 主题色写在 .vn-root 上(accent.ts);这里是设计稿的默认值(星绘) */
+  --av-acc: hsl(206 42% 72%);
+  --av-acc-deep: hsl(206 42% 36%);
+  --av-acc-ink: hsl(206 42% 13%);
+  --av-acc-soft: hsl(206 42% 94%);
+  /* 开关、滑块、焦点框用的角色色:纸上用深色那格,夜纸上换亮色那格(选中不用它,见设计稿 --av-sel) */
+  --av-ctl: var(--av-acc-deep);
+  /* 压在角色色上的字色(名牌);灰白主题这类浅底时换成深色 */
+  --av-name-ink: #fff;
+
+  /* 语义色(只用在出错、警告;不当点缀色) */
+  --av-bad: #b8463c;
+  --av-warn: #b07a1f;
+  --av-good: #4f8a5b;
+  /* 当字用的语义色(直接当字用时 --av-warn / --av-good 对比度不够 4.5) */
+  --av-warn-ink: #8d6219;
+  --av-good-ink: #43754d;
+  --av-bad-ink: var(--av-bad);
+
+  /* 字 */
+  --av-serif: 'AnimaSerif', 'Noto Serif SC', 'Source Han Serif SC', 'Source Han Serif CN', 'Songti SC', 'STSong', 'SimSun',
+    serif;
+  --av-latin: 'AnimaLatin', 'Cormorant Garamond', 'EB Garamond', Garamond, 'Palatino Linotype', 'Book Antiqua', Palatino,
+    serif;
+  --av-sans: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', 'Source Han Sans SC', system-ui, sans-serif;
+  --av-mono: 'JetBrains Mono', 'Cascadia Mono', Consolas, 'SF Mono', monospace;
+
+  /* 形 */
+  --av-r-tag: 4px;
+  --av-r-name: 6px;
+  --av-r-btn: 7px;
+  --av-r-bar: 10px;
+  --av-r-panel: 8px;
+
+  /* 影 */
+  --av-shadow-card: 0 8px 24px rgba(60, 50, 70, 0.18);
+  --av-shadow-float: 0 18px 48px rgba(30, 24, 48, 0.22), 0 2px 6px rgba(30, 24, 48, 0.08);
+  --av-shadow-paper: 6px 0 14px rgba(30, 30, 50, 0.22);
+
+  /* 动:整屏换整屏 / 弹层开 0.22,关 0.18,换页 0.16;差分叠上去 0.2;换背景 0.5(旧图不动、淡完再摘);CG 出现 / 收起 0.5;
+     漫符进出 0.2;句尾 ▼ 一趟 1.2s;整块上浮 10px、小弹层 6px */
+  --av-ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --av-ease-x: cubic-bezier(0.4, 0, 0.2, 1);
+  --av-ease-in: cubic-bezier(0, 0, 0.2, 1);
+  --av-t: 0.22s;
+  --av-t-out: 0.18s;
+  --av-t-fast: 0.16s;
+  --av-t-diff: 0.2s;
+  --av-t-bg: 0.5s;
+  --av-t-cg: 0.5s;
+  --av-t-pop: 0.2s;
+  --av-bob: 1.2s;
+  --av-rise: 10px;
+  --av-rise-sm: 6px;
+
+  /* 点击区:看起来的大小不变,能点到的范围往外扩到这么大(手机屏的容器上设 40px) */
+  --av-hit: 32px;
+}
+/* 减少动态效果:淡入淡出都 0.16s、不上浮 */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --av-t: 0.16s;
+    --av-t-out: 0.16s;
+    --av-t-diff: 0.16s;
+    --av-t-bg: 0.16s;
+    --av-t-cg: 0.16s;
+    --av-t-pop: 0.16s;
+    --av-rise: 0px;
+    --av-rise-sm: 0px;
+  }
+}
+
+/* 开关、滑块、焦点框的角色色就在写角色色的这一层算(见文件开头) */
+.vn-root {
+  --av-ctl: var(--av-acc-deep);
+}
+
+/* 夜纸:套在任何纸面容器上,里面的组件自动跟着变(设置 · 外观 · 主题选「黑」时的纸) */
+.av-night {
+  --av-paper: #1d1f2b;
+  --av-paper-2: #262938;
+  --av-paper-3: #313447;
+  --av-ink: #eceaf2;
+  --av-ink-2: rgba(236, 234, 242, 0.8);
+  --av-dim: rgba(236, 234, 242, 0.56);
+  --av-faint: rgba(236, 234, 242, 0.3);
+  --av-hair: rgba(236, 234, 242, 0.14);
+  --av-hair-2: rgba(236, 234, 242, 0.07);
+  --av-map-opacity: 0.1;
+  --av-glass: rgba(24, 26, 38, 0.8);
+  --av-glass-edge: rgba(255, 255, 255, 0.12);
+  --av-warn-ink: #e0b25c;
+  --av-good-ink: #8fc49a;
+  --av-bad-ink: #f08a7e;
+  --av-ctl: var(--av-acc);
+  color: var(--av-ink);
+}
+
+/* 白纸(夜里也白):外面整层是 .av-night、里面要一块白纸时给那一块加 .av-day,纸、墨、细线、玻璃、开关都回到白天那套。
+   写在 .av-night 后面:两个都挂在同一个元素上时白纸赢(设计稿的 AV.popTheme 只会挂其中一个) */
+.av-day {
+  --av-paper: #fbfaf8;
+  --av-paper-2: #f4f2ee;
+  --av-paper-3: #e9e6e0;
+  --av-ink: #2a2a33;
+  --av-ink-2: rgba(42, 42, 51, 0.78);
+  --av-dim: rgba(42, 42, 51, 0.66);
+  --av-faint: rgba(42, 42, 51, 0.3);
+  --av-hair: rgba(42, 42, 51, 0.14);
+  --av-hair-2: rgba(42, 42, 51, 0.08);
+  --av-map-opacity: 0.14;
+  --av-glass: rgba(251, 250, 248, 0.86);
+  --av-glass-edge: rgba(255, 255, 255, 0.9);
+  --av-warn-ink: #8d6219;
+  --av-good-ink: #43754d;
+  --av-bad-ink: var(--av-bad);
+  --av-ctl: var(--av-acc-deep);
+  color: var(--av-ink);
+}
