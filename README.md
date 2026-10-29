@@ -192,6 +192,16 @@ DeepSeek娘之外，导入你自己的卡就能玩。下面是作者本机导入
 
 ## 🚀 快速开始
 
+### 让 AI 帮你装
+
+用 Claude Code、Codex、Cursor、Trae 这类 AI 编程助手的话，把这句话发给它：
+
+```text
+帮我安装 AnimaVN，照这份说明做：https://raw.githubusercontent.com/JayziLi/AnimaVN/main/skills/install-animavn/SKILL.md
+```
+
+也可以把说明装进助手里（`npx skills add JayziLi/AnimaVN`），以后直接说「帮我装 AnimaVN」「升级 AnimaVN」。
+
 ### Windows：下载整合包（推荐，什么都不用装）
 
 1. 下载整合包 `AnimaVN-日期-windows.zip`（约 160 MB）：国内从 [**魔搭**](https://www.modelscope.cn/models/JayziLi/AnimaVN/files) 下，速度快；海外从 [**GitHub 发布页**](https://github.com/JayziLi/AnimaVN/releases/latest) 下
@@ -419,6 +429,7 @@ AnimaVN/
 │     ├─ vn/                 视觉小说界面：标题、对话、存档、历史、设置
 │     └─ components/         调试台界面
 ├─ deploy/                   Docker + nginx
+├─ skills/install-animavn/   给 AI 助手看的安装说明（SKILL.md）
 └─ docs/                     设计文档（docs/superpowers/specs）、截图
 ```
 
