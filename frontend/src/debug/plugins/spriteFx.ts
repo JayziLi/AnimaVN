@@ -192,3 +192,12 @@ export function fxSwapsInstantly(
   const motion = Boolean(cue.effect.motion && MOTION_FRAMES[cue.effect.motion]) && !reduceMotion;
   return motion || Boolean(cue.effect.bubble);
 }
+
+/**
+ * 立绘外面那层(.vn-sprite-fx)上的动作还在放吗(VNScreen 的 SpriteLayer 用)。
+ * 读得快 / 自动播放时,上一张的动作还没放完就换到下一张:这次就算下一张没设特效也直接换上 ——
+ * 不然新图淡入的那 0.2 秒,旧图还在底下跟着一起跳
+ */
+export function motionPlaying(el: { getAnimations: () => { playState: AnimationPlayState }[] } | null): boolean {
+  return Boolean(el?.getAnimations().some((a) => a.playState === 'running'));
+}

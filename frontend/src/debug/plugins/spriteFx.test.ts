@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { TYPE_SOUNDS } from '../vn/typeSound';
-import { FX_BUBBLES, FX_MOTIONS, FX_SOUNDS, MOTION_FRAMES, fxStep, fxSwapsInstantly, normalizeEffect } from './spriteFx';
+import { FX_BUBBLES, FX_MOTIONS, FX_SOUNDS, MOTION_FRAMES, fxStep, fxSwapsInstantly, motionPlaying, normalizeEffect } from './spriteFx';
 
 describe('normalizeEffect', () => {
   it('keeps known ids and treats unknown ones as not set', () => {
@@ -84,5 +84,20 @@ describe('fxSwapsInstantly:带特效的那次换表情不淡入(旧图不留在�
   it('减少动态:动作不放就不必直接换;有气泡还是直接换', () => {
     expect(fxSwapsInstantly(cue({ motion: 'hop' }), 2, 'smile:1', false, true)).toBe(false);
     expect(fxSwapsInstantly(cue({ motion: 'hop', bubble: FX_BUBBLES[0].id }), 2, 'smile:1', false, true)).toBe(true);
+  });
+});
+
+describe('motionPlaying:上一个动作还没放完又换了表情,也直接换(旧图不留在底下跟着动)', () => {
+  const layer = (...states: AnimationPlayState[]) => ({ getAnimations: () => states.map((playState) => ({ playState })) });
+
+  it('动作正在放:是', () => {
+    expect(motionPlaying(layer('running'))).toBe(true);
+    expect(motionPlaying(layer('finished', 'running'))).toBe(true);
+  });
+
+  it('没有动作、放完了、还没挂上:不是', () => {
+    expect(motionPlaying(layer())).toBe(false);
+    expect(motionPlaying(layer('finished'))).toBe(false);
+    expect(motionPlaying(null)).toBe(false);
   });
 });

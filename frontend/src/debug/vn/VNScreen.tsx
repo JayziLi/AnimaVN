@@ -57,7 +57,7 @@ import { parseBilingual } from '../plugins/lang';
 import { manualEmotions, manualOf } from '../plugins/manualMarks';
 import { cgFrameFromPairs, missingCell, voiceRowFromPairs } from '../plugins/pairings';
 import { bubbleStyle, facesByCanvas, spriteStyle, type SpriteStage } from '../plugins/spriteLayout';
-import { fxStep, fxSwapsInstantly, MOTION_FRAMES, normalizeEffect, playFxSound, preloadSfx, soundFile } from '../plugins/spriteFx';
+import { fxStep, fxSwapsInstantly, motionPlaying, MOTION_FRAMES, normalizeEffect, playFxSound, preloadSfx, soundFile } from '../plugins/spriteFx';
 import { SpriteBubble } from './SpriteBubble';
 import { playTypeSound, preloadTypeSound } from './typeSound';
 import {
@@ -492,6 +492,10 @@ function SpriteLayer({
     const motion = fx.effect.motion ? MOTION_FRAMES[fx.effect.motion] : undefined;
     if (motion && !reduceMotion) fxRef.current?.animate(motion.frames, motion.timing);
   }, [fx, cur, fxVolume, covered, reduceMotion, settle]);
+  // 上一张的动作还没放完就又换了(读得快、自动播放):这次也直接换上,规则见 spriteFx.ts 的 motionPlaying
+  useEffect(() => {
+    if (motionPlaying(fxRef.current)) settle();
+  }, [cur, settle]);
   useEffect(() => {
     if (!playing) return;
     const t = window.setTimeout(() => setPlaying(null), 1500);
