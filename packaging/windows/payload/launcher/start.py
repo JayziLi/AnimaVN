@@ -5,50 +5,18 @@
 已经开着一个(另一个黑窗口)就不再起第二个后端 —— 两个后端同时写一份存档会出事 —— 直接把浏览器指过去。
 """
 
-import socket
 import sys
 import threading
 import time
 import traceback
-import urllib.request
 import webbrowser
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import common  # noqa: E402
+from net import answers, lan_ip, pick_port  # noqa: E402,F401  (test_launcher 还从 start 拿 pick_port)
 
-# 开着代理(Clash 之类)的电脑上,问 127.0.0.1 也别走代理
-NO_PROXY = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 MIGRATING_FLAG = common.DATA / "animabackend.db.migrating"  # 后端升级数据库时留的(app/migrations)
-
-
-def pick_port(start: int = 8000, tries: int = 50) -> int:
-    for port in range(start, start + tries):
-        with socket.socket() as s:
-            try:
-                s.bind(("0.0.0.0", port))
-            except OSError:
-                continue
-            return port
-    raise SystemExit(f"{start}–{start + tries - 1} 这些端口都被别的程序占了,关掉一些程序再试")
-
-
-def lan_ip() -> str | None:
-    """这台电脑在局域网里的地址,给手机用。不会真的发包,只是让系统挑出走局域网的那块网卡。"""
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-            s.connect(("10.255.255.255", 1))
-            return s.getsockname()[0]
-    except OSError:
-        return None
-
-
-def healthy(port: int) -> bool:
-    try:
-        NO_PROXY.open(f"http://127.0.0.1:{port}/api/health", timeout=2)
-        return True
-    except Exception:
-        return False
 
 
 def wait_then_open(port: int, open_browser: bool, started: float, owner: bool = True) -> None:
@@ -56,7 +24,7 @@ def wait_then_open(port: int, open_browser: bool, started: float, owner: bool = 
     said_migrating = False
     next_ping = time.time() + 15
     while time.time() - started < 1800:
-        if healthy(port):
+        if answers(f"http://127.0.0.1:{port}/api/health"):
             print(f"\n  好了({time.time() - started:.0f} 秒)。游戏地址:{url}")
             ip = lan_ip()
             if ip:
@@ -101,15 +69,9 @@ def main(argv: list[str] | None = None) -> int:
         # 第一次:Windows 要把 numpy、音频、数据库这些库的文件挨个过一遍,一两分钟;以后十几秒
         print("  正在启动" + (",第一次要一两分钟……" if first_run else "……"), flush=True)
         threading.Thread(target=wait_then_open, args=(port, open_browser, started), daemon=True).start()
-        sys.path.insert(0, str(common.ROOT / "AnimaBackend"))
-        import uvicorn
-        from fastapi.staticfiles import StaticFiles
+        import server
 
-        from app.main import app
-
-        # 接口都在 /api 下面(先挂的先匹配),剩下的路径都交给打包好的游戏页面
-        app.mount("/", StaticFiles(directory=common.ROOT / "web", html=True), name="web")
-        uvicorn.run(app, host="0.0.0.0", port=port, log_level="warning")
+        server.serve("0.0.0.0", port, log_level="warning")
     except Exception:
         traceback.print_exc()
         print("\n  启动失败了。把这个窗口截图发给作者,或者到 GitHub 提 issue。")

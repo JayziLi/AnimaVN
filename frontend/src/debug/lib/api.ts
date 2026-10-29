@@ -47,7 +47,7 @@ export interface JevDefaults {
 // 没有地址栏(node 里跑测试)时当作 localhost:卡带会在加载时 import 这里,测试 import 登记处时不能崩
 const BASE_URL =
   import.meta.env.VITE_API_BASE_URL ??
-  `http://${typeof location === 'undefined' ? 'localhost' : location.hostname}:8000`;
+  `http://${typeof location === 'undefined' ? 'localhost' : location.hostname}:${import.meta.env.VITE_API_PORT ?? 8000}`;
 
 /** 后端回的错:带着状态码,调用方能分「设置不对」(4xx)和「服务出了问题」(5xx) */
 export class ApiError extends Error {

@@ -1,37 +1,17 @@
 @echo off
-rem Double-click to run: starts backend + frontend in their own windows, waits until
-rem both answer, then opens the prompt console in the default browser.
+rem Double-click to open the AnimaVN launcher. It starts the background (host.py: backend + game page,
+rem no console windows; output on the launcher's Console page); Start opens the game in its own window (game.py).
+rem Settings - Developer picks the packed page (the old play.bat) or the dev server (the old start.bat).
 rem ASCII only in this file to avoid codepage mojibake.
-rem --host 0.0.0.0 / --host so phones on the same Wi-Fi can open http://[this PC's LAN IP]:5173
-start "AnimaBackend" cmd /k "echo AnimaBackend API: http://localhost:8000 && echo Swagger docs: http://localhost:8000/docs && cd /d %~dp0AnimaBackend && .venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000"
-start "AnimaVN Frontend" cmd /k "echo AnimaVN: http://localhost:5173/debug.html && cd /d %~dp0frontend && npm run dev -- --host"
-
-rem Opening the page before the backend is up would load it with empty lists,
-rem so poll both servers first (1s apart, give up after 90s).
-echo Waiting for AnimaBackend and the frontend to come up...
-set tries=0
-set waited=0
-:wait
-set /a tries+=1
-if %tries% gtr 90 (
-  echo Servers did not respond within 90s - check the two server windows for errors.
+cd /d "%~dp0"
+set PY=AnimaBackend\.venv\Scripts\python.exe
+if not exist "%PY%" (
+  echo AnimaBackend\.venv is missing - set up the backend first ^(see README^).
   pause
   exit /b 1
 )
-curl.exe -s -o nul --noproxy "*" http://127.0.0.1:8000/api/health || goto retry
-curl.exe -s -o nul --noproxy "*" http://127.0.0.1:5173/debug.html || goto retry
-start "" http://localhost:5173/debug.html
-exit /b 0
-
-:retry
-rem The backend backs up and upgrades the database before it answers (AnimaBackend/app/migrations);
-rem on a big database that can take longer than 90s. Keep waiting, up to 30 minutes, while it
-rem leaves its flag file next to the database.
-if exist "%~dp0AnimaBackend\data\animabackend.db.migrating" if %waited% lss 1800 (
-  if not defined upgrading echo Upgrading the database - this can take a few minutes, please wait...
-  set upgrading=1
-  set tries=0
-  set /a waited+=1
+"%PY%" -c "import webview, qrcode" 2>nul || (
+  echo Installing the launcher's packages ^(one time^)...
+  "%PY%" -m pip install "pywebview>=6.2" "qrcode>=8" || (pause & exit /b 1)
 )
-ping -n 2 127.0.0.1 >nul
-goto wait
+start "" AnimaBackend\.venv\Scripts\pythonw.exe packaging\windows\payload\launcher\gui.py

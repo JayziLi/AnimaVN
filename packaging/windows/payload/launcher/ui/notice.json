@@ -1,0 +1,19 @@
+{
+  "banner": {
+    "image": "banner.jpg",
+    "version": "2026.10.28",
+    "caption": "Windows 整合包",
+    "url": "https://github.com/JayziLi/AnimaVN/releases/latest"
+  },
+  "log": [
+    { "title": "纸面风格的新界面：封面、选角色、对话框、局内菜单", "date": "10/28", "url": "https://github.com/JayziLi/AnimaVN/releases/tag/v2026.10.28", "tag": "发布" },
+    { "title": "仓库改名：现在叫 JayziLi/AnimaVN", "date": "10/28", "url": "https://github.com/JayziLi/AnimaVN", "tag": "更新" },
+    { "title": "第一版 Windows 整合包：解压，双击就能玩", "date": "10/17", "url": "https://github.com/JayziLi/AnimaVN/releases/tag/v2026.10.17", "tag": "发布" }
+  ],
+  "links": [
+    { "title": "GitHub 仓库", "sub": "JayziLi/AnimaVN", "url": "https://github.com/JayziLi/AnimaVN", "tag": "仓库" },
+    { "title": "国内下载 · 魔搭", "sub": "JayziLi/AnimaVN", "url": "https://www.modelscope.cn/models/JayziLi/AnimaVN/files", "tag": "下载" },
+    { "title": "问题反馈", "sub": "GitHub Issues", "url": "https://github.com/JayziLi/AnimaVN/issues", "tag": "反馈" }
+  ],
+  "all": "https://github.com/JayziLi/AnimaVN/releases"
+}

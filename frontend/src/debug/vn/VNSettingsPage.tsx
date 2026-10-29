@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { debugApi, type MigrationStatus, type RecordsSummary, type SceneAsset, type StorageStatus } from '../lib/api';
 import type { EnterKeyMode } from '../lib/chatSettings';
+import { DISPLAY_MODES, gameWindowApi, sizeName, type GameDisplay } from '../lib/gameWindow';
 import { useCoarsePointer } from '../lib/useIsMobile';
 import type { JaHideControls } from '../plugins/jaHide';
 import type { VoicePluginConfig } from '../plugins/voice';
@@ -109,6 +110,45 @@ interface Props {
 const memory: { tab: string | null; scroll: Record<string, number> } = { tab: null, scroll: {} };
 
 // ───────── 页面自己画的几行 ─────────
+
+/** 「显示」页最上面的窗口模式、画面大小:只在游戏窗口(game.py)里有,浏览器里不显示 */
+function GameWindowRows() {
+  const [api] = useState(gameWindowApi);
+  const [display, setDisplay] = useState<GameDisplay | null>(null);
+  useEffect(() => {
+    if (api) void api.get_display().then(setDisplay, () => setDisplay(null));
+  }, [api]);
+  if (!api || !display) return null;
+  const pick = (key: 'game_display' | 'game_size', value: string) => {
+    void api.set_display(key, value).then(setDisplay, () => undefined);
+  };
+  return (
+    <>
+      <SettingRow id="gameDisplay" name="窗口模式" note="玩的时候按 F11 或 Alt+Enter 随时切换全屏;启动器的设置里也能改">
+        <Seg
+          className="av-seg st-seg"
+          label="窗口模式"
+          options={DISPLAY_MODES}
+          value={display.display}
+          onPick={(v) => pick('game_display', v)}
+        />
+      </SettingRow>
+      <SettingRow
+        id="gameSize"
+        name="画面大小"
+        note={display.display === 'fullscreen' ? '全屏时是退出全屏以后的窗口大小' : undefined}
+      >
+        <Seg
+          className="av-seg st-seg"
+          label="画面大小"
+          options={display.sizes.map((v) => ({ value: v, name: sizeName(v) }))}
+          value={display.size}
+          onPick={(v) => pick('game_size', v)}
+        />
+      </SettingRow>
+    </>
+  );
+}
 
 const ENGINES: { value: TimelineEngine; name: string }[] = [
   { value: 'legacy', name: '旧算法' },
@@ -461,6 +501,7 @@ export function VNSettingsPage({
   const tabs: Tab[] = buildTabs(state, apply, {
     jaHide: jaHideRow,
     data: <DataRows onUploadMarks={onUploadMarks} />,
+    gameWindow: <GameWindowRows />,
   });
   // 跳字音量松手时放一声,试听
   for (const t of tabs)

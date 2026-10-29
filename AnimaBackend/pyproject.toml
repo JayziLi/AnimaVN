@@ -27,6 +27,11 @@ test = [
     "pytest>=8.3",
     "pytest-cov>=6.0",
 ]
+# 双击启动器(packaging/windows/payload/launcher/gui.py)和游戏窗口(game.py):窗口、手机扫码的二维码
+launcher = [
+    "pywebview>=6.2",
+    "qrcode>=8",
+]
 
 [tool.pytest.ini_options]
 addopts = "-ra --strict-config --strict-markers"

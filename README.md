@@ -130,6 +130,7 @@ DeepSeek娘之外，导入你自己的卡就能玩。下面是作者本机导入
 | 相册 | AI 画的插图按存档分组，收藏的进这张卡的 CG，点一张能跳回那句台词 |
 | 设置 | 文字速度、自动播放间隔和倍速、对话框样式和位置、字号、字体、主题（白 / 黑 / 玻璃）、BGM 在说话时压低，右边实机预览 |
 | 标题画面 | 选好角色后封面换成她的立绘和上次那一幕，纸面、明亮两种封面 |
+| 启动器（Windows） | 双击 `start.bat` 打开。后端和游戏页面在后台开，不弹黑窗口；游戏在自己的窗口里，全屏 / 无边框 / 窗口随便切；齿轮里扫码就能在手机上玩 |
 
 ### 提示词调试台
 
@@ -218,7 +219,7 @@ Windows 提示「无法验证发布者」或「已保护你的电脑」时，点
 
 | | 要求 |
 |---|---|
-| 系统 | Windows 10 / 11（`start.bat` 一键启动）。macOS、Linux 手动起两条命令也能跑 |
+| 系统 | Windows 10 / 11（双击 `start.bat` 打开启动器）。macOS、Linux 手动起两条命令也能跑 |
 | Python | **3.11 或更新**（[下载](https://www.python.org/downloads/)，安装时勾上 *Add python.exe to PATH*） |
 | Node.js | **22.12 或更新**（[下载](https://nodejs.org/)，选 LTS） |
 | 模型 API | 任意一个：DeepSeek、Claude、OpenAI、OpenRouter、中转站，或者本地 Ollama |
@@ -260,15 +261,16 @@ cd ..
 
 **4. 启动**
 
-双击仓库根目录的 **`play.bat`**。它先把前端打包一次（一两秒），再开两个窗口（后端、游戏），等两边都起来后自动打开浏览器：
+双击仓库根目录的 **`start.bat`**，打开启动器（第一次会先装两个小依赖：pywebview、qrcode）。启动器一打开就在后台打包游戏页面、开后端，不弹黑窗口；等「开始游戏」亮了点它，游戏在自己的窗口里打开：黑底 logo 等角色卡下好，点一下进封面。
 
-```
-http://localhost:5180/debug.html
-```
+想在桌面放个图标：右键 `packaging\windows\make_shortcut.ps1` →「使用 PowerShell 运行」。
 
-以后每次玩，直接双击 `play.bat` 就行。关掉那两个黑窗口就是退出。
+- 游戏是单独的程序：关掉启动器游戏照玩；启动器和游戏都关了，后台自己停
+- 开始按钮旁边的齿轮：在浏览器里打开、手机扫码玩（启动器开着、后台好了就能连）
+- 左边「控制台」看后台的输出，常见报错会翻成大白话
+- 「设置」里能选游戏窗口全屏 / 无边框 / 窗口和画面大小（游戏里「设置 → 显示」也能改；玩的时候 F11 或 Alt+Enter 切全屏）、点了开始游戏以后启动器留着 / 最小化 / 关掉、改成默认用浏览器打开、要不要显示终端窗口；「开发者」一项能在打包版（流畅，以前的 `play.bat`）和开发版（改代码马上生效，以前的 `start.bat`）之间切
 
-`start.bat` 是改代码时用的开发模式（http://localhost:5173/debug.html）：改了代码页面马上跟着变，但 React 的开发检查会让它重好几倍，AI 写字时画面会卡。只玩不改代码就用 `play.bat`；两个可以同时开着。
+`play.bat` 现在和 `start.bat` 一样，留着是给习惯双击它的人。
 
 ### macOS / Linux
 
@@ -299,7 +301,7 @@ cd AnimaBackend; .venv\Scripts\python -m pip install -e .; cd ..
 cd frontend; npm install; cd ..
 ```
 
-升级前先关掉后端那个黑窗口，再双击 `play.bat`。后端开着的话，`play.bat` 会接着用旧的那个。
+升级前先关掉启动器和游戏窗口（两个都关了后台会自己停），再双击 `start.bat`。
 
 后端启动时会自己先备份、再升级数据库，备份在 `AnimaBackend\data\backups\`。
 
@@ -311,7 +313,7 @@ cd frontend; npm install; cd ..
 
 ### 1. 填模型 API
 
-打开后在右上角点 **API 设置** → 新建连接：
+打开后在右上角点 **API 设置** → 新建连接（启动器开的游戏窗口里没有顶栏：左上角的 **模型** 按钮，或者 Esc 菜单 → **模型**，是同一个）：
 
 - **类型**：DeepSeek、OpenRouter、中转站、Ollama 都选「OpenAI 兼容」；Claude 官方接口选「Anthropic」
 - **地址**：OpenAI 兼容的地址一般以 `/v1` 结尾，比如 `https://api.deepseek.com/v1`；Ollama 是 `http://127.0.0.1:11434/v1`
@@ -319,7 +321,7 @@ cd frontend; npm install; cd ..
 
 ### 2. 先和 DeepSeek娘玩一局
 
-点顶栏 **视觉小说** 进标题画面 → **角色**，库里已经有一张自带的 **DeepSeek娘**：住在你家的鲸鱼女仆，本体就是 DeepSeek，爱吃白饭、爱摸鱼、爱「深度思考」。立绘（16 个表情）、世界书、开场白都配好了，点 **开始** 就能玩。
+启动器开的游戏窗口一进去就是标题画面（在浏览器里点顶栏 **视觉小说**）→ **角色**，库里已经有一张自带的 **DeepSeek娘**：住在你家的鲸鱼女仆，本体就是 DeepSeek，爱吃白饭、爱摸鱼、爱「深度思考」。立绘（16 个表情）、世界书、开场白都配好了，点 **开始** 就能玩。
 
 <img src="docs/images/first-run.webp" alt="刚装好时的选角色页" width="720">
 
@@ -375,7 +377,7 @@ cd frontend; npm install; cd ..
 
 ## 📱 手机上玩
 
-电脑上 `play.bat` 跑着，手机连**同一个 Wi-Fi**，浏览器打开 `http://电脑的局域网IP:5180/debug.html` 就行（开的是 `start.bat` 就把端口换成 5173）（电脑的 IP 在命令行 `ipconfig` 里看，一般是 `192.168.x.x`）。第一次 Windows 防火墙可能会问要不要放行 Node / Python，选「专用网络」。
+电脑上启动器开着，手机连**同一个 Wi-Fi**：首页右下角写着局域网地址，在手机浏览器里打开它；或者点开始按钮旁边的齿轮 →「手机扫码玩」，扫二维码。第一次 Windows 防火墙可能会问要不要放行 Node / Python，选「专用网络」。
 
 - 横屏、竖屏都能玩，手机上自动用压缩过的图，省流量
 - iPhone 用 Safari「分享 → 添加到主屏幕」，安卓用浏览器「添加到主屏幕」，从桌面打开就是全屏、没有地址栏
@@ -409,8 +411,8 @@ nginx 提供页面并反代 `/api`，整站一道密码，数据存在 Docker �
 
 ```
 AnimaVN/
-├─ play.bat                  Windows 一键启动(游玩:先打包,画面流畅)
-├─ start.bat                 Windows 一键启动(改代码:开发模式)
+├─ start.bat                 Windows 双击打开启动器(packaging/windows/payload/launcher/gui.py)
+├─ play.bat                  和 start.bat 一样(老习惯留着)
 ├─ AnimaBackend/             后端：Python + FastAPI + SQLAlchemy + SQLite
 │  ├─ app/
 │  │  ├─ api/                接口：角色卡、预设、对话、立绘包、场景包、声音……
@@ -428,6 +430,7 @@ AnimaVN/
 │     ├─ plugins/            立绘、场景、BGM、CG、语音、外语、别替玩家说话
 │     ├─ vn/                 视觉小说界面：标题、对话、存档、历史、设置
 │     └─ components/         调试台界面
+├─ packaging/windows/        Windows 整合包和启动器（payload/launcher/）
 ├─ deploy/                   Docker + nginx
 ├─ skills/install-animavn/   给 AI 助手看的安装说明（SKILL.md）
 └─ docs/                     设计文档（docs/superpowers/specs）、截图
@@ -447,6 +450,9 @@ cd AnimaBackend
 cd frontend
 npm test
 npm run build
+
+# 启动器、整合包测试（在仓库根目录）
+AnimaBackend/.venv/Scripts/python -m pytest packaging/windows/tests
 ```
 
 后端测试的约定见 [`AnimaBackend/TESTING.md`](AnimaBackend/TESTING.md)。每个功能的设计和取舍记在 [`docs/superpowers/specs/`](docs/superpowers/specs/)。
@@ -458,7 +464,7 @@ npm run build
 <details>
 <summary><b>打开页面是空的 / 一直转圈</b></summary>
 
-看后端那个黑窗口有没有报错，浏览器打开 <http://localhost:8000/api/health> 应该返回 `{"status":"ok"}`。用 `start.bat` 的话它会等两边都起来再开浏览器，90 秒还没起来会提示。
+看启动器「控制台」页有没有报错（常见的问题上面会写「疑难解答」），浏览器打开 <http://localhost:8000/api/health> 应该返回 `{"status":"ok"}`。
 
 </details>
 

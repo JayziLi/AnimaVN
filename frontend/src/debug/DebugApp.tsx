@@ -60,6 +60,7 @@ import { assemble, type AssemblyResult, type BudgetReport, type ChatTurn } from 
 import {
   cardFaceUrl,
   debugApi,
+  spriteImageUrl,
   type ChatPayload,
   type ChatSummary,
   type ClassifyKind,
@@ -106,6 +107,7 @@ import {
 } from './lib/presetParser';
 import { presetFromStored, presetToFileJson, presetToStored } from './lib/presetStore';
 import { loadLastPresetId, saveLastPresetId } from './lib/lastPreset';
+import { wantsPlayMode } from './lib/playMode';
 import { throttle } from './lib/throttle';
 import {
   DEFAULT_SPRITE_CONFIG,
@@ -220,8 +222,11 @@ import {
   presetForCard,
   type PresetBindings,
 } from './lib/presetBinding';
+import { loadImage } from './vn/assetGate';
 import { bgmPlayer } from './vn/bgm';
-import { forgetPickDetail } from './vn/pickDetail';
+import { FALLBACK_BACKGROUND } from './vn/fallbacks';
+import { PlaySplash } from './vn/PlaySplash';
+import { forgetPickDetail, loadPickDetail } from './vn/pickDetail';
 import { VNSaves } from './vn/VNSaves';
 import type { ModelQuick } from './vn/ModelWindow';
 import { VNScreen, type PendingJump } from './vn/VNScreen';
@@ -511,6 +516,21 @@ export default function DebugApp() {
     // 进入按钮这一下点击就是用户手势:趁这时解锁音频,进去就能响(iOS 只认手势里的解锁)
     if (open) bgmPlayer.unlock();
     setVnOpen(open);
+  };
+  // 从启动器打开(debug.html?play=1):先黑屏放 logo,封面要的图下好了再「点击进入游戏」,点了进没选角色的封面。
+  // 用户 10-21:不要进去以后看见角色头像一个个冒出来。loading 在下图 / ready 等点 / leaving 正在淡出
+  const [splash, setSplash] = useState<'loading' | 'ready' | 'leaving' | null>(() =>
+    typeof location !== 'undefined' && wantsPlayMode(location.search) ? 'loading' : null,
+  );
+  const [splashProgress, setSplashProgress] = useState<number | null>(null);
+  const enterGame = () => {
+    setSplash('leaving');
+    bgmPlayer.unlock(); // 这一下点击顺带解锁声音(iOS 只认手势里的解锁):封面音乐进去就能响
+    // 白光铺满了再把封面放上来,白光散开时封面自己的入场正好在播;封面这一次从白里亮起来(vnTitle.css)
+    document.documentElement.dataset.vnEnter = 'light';
+    setTimeout(() => toggleVn(true), 180);
+    setTimeout(() => setSplash(null), 480);
+    setTimeout(() => delete document.documentElement.dataset.vnEnter, 3500);
   };
 
   // 卡编辑器(全屏页,studio/):开在哪个页签、哪一栏;null = 没开。编辑的永远是当前这张卡
@@ -3827,11 +3847,58 @@ export default function DebugApp() {
 
   live.current = { cardId, presetId };
 
+  // 开屏(?play=1):卡列表到了以后先把进去要看到的都下好 —— 封面等待页要等的头像圈小图(地址和 VNScreen 的
+  // gateItems 一样)和默认背景,用同一个 loadImage(下过的等待页直接放行);选角色页每张卡的内容、默认立绘、
+  // 第一张背景,用 VNPick 同一个 loadPickDetail(拉过的它一打开就全画出来,不会四张四张地冒)
+  useEffect(() => {
+    if (splash !== 'loading' || booting) return;
+    let alive = true;
+    const jobs: (() => Promise<unknown>)[] = [
+      () => loadImage(FALLBACK_BACKGROUND),
+      ...listedCards.map((c) => () => loadImage(cardFaceUrl(c.id, 128))),
+      ...listedCards.map((c) => async () => {
+        const d = await loadPickDetail(c.id);
+        if (!d.sprite) wantAvatars([c.id]); // 没立绘的卡,选角色页上站的是卡面头像
+        const sprite = d.sprite ? spriteImageUrl(d.sprite) : null;
+        await Promise.all([sprite ? loadImage(sprite) : null, d.bg ? loadImage(d.bg) : null]);
+      }),
+    ];
+    let done = 0;
+    const tick = () => {
+      done += 1;
+      if (alive) setSplashProgress(done / jobs.length);
+    };
+    setSplashProgress(0);
+    // 六个一组地下,别一口气发几十个请求;哪个坏了也算过(坏图不能把人卡在开屏上)
+    const all = (async () => {
+      for (let i = 0; i < jobs.length && alive; i += 6) {
+        await Promise.all(jobs.slice(i, i + 6).map((job) => job().catch(() => undefined).then(tick)));
+      }
+    })();
+    // 网很慢也别把人卡在开屏上:最多等 15 秒,剩下的进去以后接着下
+    const cap = new Promise<void>((resolve) => setTimeout(resolve, 15000));
+    void Promise.race([all, cap]).then(() => {
+      if (alive) setSplash('ready');
+    });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [booting]);
+
   return (
     // vn-open:视觉小说盖在最上面时,从它里面打开的弹窗(块编辑、高级定义、看提示词)得压过它
     // studio-open:卡编辑器开着时,从它里面打开的旧抽屉、弹窗也得压过它
     <ConfirmProvider value={confirm}>
     <div className={`console${vnOpen ? ' vn-open' : ''}${studio ? ' studio-open' : ''}`}>
+      {splash && (
+        <PlaySplash
+          progress={splashProgress}
+          ready={splash !== 'loading'}
+          leaving={splash === 'leaving'}
+          onEnter={enterGame}
+        />
+      )}
       {toast && <div className={`toast ${toast.kind}`}>{toast.message}</div>}
 
       {/* 导入/导出遮罩:比开机那层轻,只是挡住重复点击并说明在忙什么 */}

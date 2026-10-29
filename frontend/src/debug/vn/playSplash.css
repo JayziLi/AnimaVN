@@ -1,0 +1,277 @@
+/* 启动器打开游戏时的开屏(PlaySplash.tsx):黑底暗 logo → 光从左往右灌满 → 高光扫过、彗星沿彗星轨划过、
+   落到星上闪一下 →「点击进入游戏」→ 点了从 logo 中心炸开白光,白光散去是没选角色的封面。
+   不加装饰数字和大字(用户的审美偏好)。设计稿和三版对比:docs/design/splash/。 */
+
+@property --s {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: -0.3;
+}
+
+.vn-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  overflow: hidden;
+  background: #000;
+  outline: none;
+  cursor: default;
+  user-select: none;
+}
+.vn-splash.ready {
+  cursor: pointer;
+}
+
+/* logo:跟屏幕走(46% 屏宽,矮屏按高度收),和游戏窗口的等待页(launcher/ui/boot.html)同一个位置 */
+.vn-splash-lock {
+  position: absolute;
+  left: 50%;
+  top: 44%;
+  width: min(46vw, 122vh);
+  aspect-ratio: 1800 / 476;
+  transform: translate(-50%, -50%);
+  animation: vn-splash-in 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
+  transition: transform 0.25s cubic-bezier(0.2, 0.7, 0.2, 1), filter 0.2s;
+}
+.vn-splash-lock > img,
+.vn-splash-lock > .glow,
+.vn-splash-lock > .t,
+.vn-splash-lock .glow > div {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.vn-splash-lock .t {
+  -webkit-mask: url(/vn/ui/lockup-text.png) center / 100% 100% no-repeat;
+  mask: url(/vn/ui/lockup-text.png) center / 100% 100% no-repeat;
+}
+.vn-splash-lock .r {
+  -webkit-mask: url(/vn/ui/lockup-trail.png) center / 100% 100% no-repeat;
+  mask: url(/vn/ui/lockup-trail.png) center / 100% 100% no-repeat;
+}
+.vn-splash-lock .glow {
+  filter: drop-shadow(0 0 6px rgba(255, 226, 170, 0.85)) drop-shadow(0 0 22px rgba(255, 206, 140, 0.45));
+}
+
+/* 光注入:暗 logo 上,一道光从左往右灌(--p 是进度),光的前沿带一圈暖光 */
+/* 暗 logo 20%:等后台、等素材时也认得出是 AnimaVN;和游戏窗口的等待页(boot.html)一样亮 */
+.vn-splash-lock .ghost {
+  opacity: 0.2;
+}
+.vn-splash-lock .fill {
+  clip-path: inset(0 calc(100% - var(--p, 0) * 100%) 0 0);
+}
+.vn-splash-lock .edge {
+  background: linear-gradient(
+    90deg,
+    transparent calc(var(--p, 0) * 100% - 9%),
+    rgba(255, 238, 205, 0.9) calc(var(--p, 0) * 100% - 0.4%),
+    rgba(255, 250, 240, 1) calc(var(--p, 0) * 100%),
+    transparent calc(var(--p, 0) * 100% + 0.4%)
+  );
+}
+.vn-splash:not(.load) .edge-wrap {
+  opacity: 0;
+  transition: opacity 0.4s;
+}
+/* 灌满以后一道高光扫过 */
+.vn-splash-lock .sheen {
+  background: linear-gradient(
+    100deg,
+    transparent calc(var(--s) * 100% - 12%),
+    rgba(255, 244, 222, 0.95) calc(var(--s) * 100%),
+    transparent calc(var(--s) * 100% + 12%)
+  );
+}
+.vn-splash.intro .sheen {
+  animation: vn-splash-sheen 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+/* 彗星:划过的地方彗星轨显出来(--c 是彗星走到的 x),刚划过的一段亮一下;彗星头(--hx/--hy)在字母后面时藏起来 */
+.vn-splash-lock .trail {
+  clip-path: inset(0 calc(100% - var(--c, 0) * 100%) 0 0);
+}
+.vn-splash-lock .tglow {
+  background: linear-gradient(
+    90deg,
+    transparent calc(var(--c, 0) * 100% - 16%),
+    rgba(255, 236, 200, 0.95) calc(var(--c, 0) * 100% - 0.3%),
+    transparent calc(var(--c, 0) * 100%)
+  );
+}
+.vn-splash.flown .tglow-wrap,
+.vn-splash.tap .tglow-wrap {
+  opacity: 0;
+  transition: opacity 0.9s;
+}
+.vn-splash-lock .head {
+  position: absolute;
+  left: calc(var(--hx, 0) * 100%);
+  top: calc(var(--hy, 0) * 100%);
+  width: 3.6%;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  transition: opacity 0.07s;
+  pointer-events: none;
+}
+.vn-splash-lock .head i {
+  position: absolute;
+  inset: -70%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 252, 244, 1) 0 5%, rgba(255, 228, 176, 0.6) 14%, rgba(255, 206, 140, 0) 44%);
+}
+.vn-splash-lock .head svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  fill: #fffaf0;
+  filter: drop-shadow(0 0 4px rgba(255, 236, 200, 1));
+  animation: vn-splash-spin 1.6s linear infinite;
+}
+/* 落到星上闪一下:闪光和 logo 的星同一个中心、同样大(位置大小在 PlaySplash 里按拆出来的数写) */
+.vn-splash-lock .glint {
+  position: absolute;
+  transform: translate(-50%, -50%) scale(0);
+  opacity: 0;
+  pointer-events: none;
+}
+.vn-splash-lock .glint svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  fill: #fffaf0;
+  filter: drop-shadow(0 0 5px rgba(255, 236, 200, 1)) drop-shadow(0 0 16px rgba(255, 216, 150, 0.8));
+}
+.vn-splash.flown .glint {
+  animation: vn-splash-flare 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
+}
+
+/* 「点击进入游戏」 */
+.vn-splash-foot {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 17vh;
+  display: flex;
+  justify-content: center;
+}
+.vn-splash .tap {
+  display: flex;
+  align-items: center;
+  gap: 1.1em;
+  font: 500 clamp(14px, 1.15vw, 24px) / 1 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', serif;
+  letter-spacing: 0.5em;
+  padding-left: 0.5em;
+  color: rgba(246, 246, 248, 0.9);
+  animation:
+    vn-splash-fade 0.18s ease backwards,
+    vn-splash-breathe 2.8s ease-in-out 0.18s infinite;
+}
+.vn-splash .tap::before,
+.vn-splash .tap::after {
+  content: '';
+  width: 3.2em;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(246, 246, 248, 0.6));
+}
+.vn-splash .tap::after {
+  transform: scaleX(-1);
+}
+
+/* 点了:logo 微微放大变亮,从中心炸开一团白光铺满,白光散去露出封面(封面在白光盖满时才放上来,DebugApp) */
+.vn-splash-bloom {
+  position: absolute;
+  left: 50%;
+  top: 44%;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff 0 38%, rgba(255, 252, 246, 0.85) 52%, rgba(255, 250, 240, 0) 70%);
+  transform: translate(-50%, -50%) scale(0);
+}
+.vn-splash.leaving {
+  background: transparent;
+  opacity: 0;
+  pointer-events: none;
+  transition: background 0s 0.18s, opacity 0.26s ease 0.18s;
+}
+.vn-splash.leaving .vn-splash-lock {
+  transform: translate(-50%, -50%) scale(1.07);
+  filter: brightness(1.6) blur(1px);
+}
+.vn-splash.leaving .vn-splash-bloom {
+  transform: translate(-50%, -50%) scale(420);
+  transition: transform 0.16s cubic-bezier(0.7, 0, 0.3, 1);
+}
+.vn-splash.leaving .tap {
+  opacity: 0;
+  animation: none;
+  transition: opacity 0.25s;
+}
+
+@keyframes vn-splash-in {
+  from {
+    opacity: 0;
+    translate: 0 10px;
+    filter: blur(4px);
+  }
+}
+@keyframes vn-splash-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes vn-splash-breathe {
+  50% {
+    opacity: 0.42;
+  }
+}
+@keyframes vn-splash-sheen {
+  from {
+    --s: -0.3;
+  }
+  to {
+    --s: 1.3;
+  }
+}
+@keyframes vn-splash-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes vn-splash-flare {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.5) rotate(-25deg);
+  }
+  35% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.9) rotate(0deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1) rotate(0deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vn-splash-lock,
+  .vn-splash .tap,
+  .vn-splash.intro .sheen,
+  .vn-splash.flown .glint {
+    animation: none;
+  }
+  .vn-splash.leaving {
+    transition: opacity 0.3s;
+  }
+  .vn-splash.leaving .vn-splash-lock {
+    transform: translate(-50%, -50%);
+    filter: none;
+  }
+  .vn-splash.leaving .vn-splash-bloom {
+    display: none;
+  }
+}

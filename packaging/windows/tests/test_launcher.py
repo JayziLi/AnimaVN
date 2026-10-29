@@ -59,3 +59,13 @@ def test_pick_port_prefers_the_first_free_one():
         probe.bind(("0.0.0.0", 0))
         port = probe.getsockname()[1]
     assert start.pick_port(port, tries=5) == port
+
+
+import server  # noqa: E402
+
+
+def test_server_args_default_to_lan_on_8000():
+    a = server.parse_args([])
+    assert (a.host, a.port) == ("0.0.0.0", 8000)
+    a = server.parse_args(["--host", "127.0.0.1", "--port", "8003"])
+    assert (a.host, a.port) == ("127.0.0.1", 8003)

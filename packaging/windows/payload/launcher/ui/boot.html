@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>AnimaVN</title>
+<!--
+  游戏窗口(game.py)在后台还没好时放的等待页:和游戏页面的开屏(frontend/src/debug/vn/PlaySplash.tsx)开头一样
+  —— 同一个位置的暗 logo(lockup-text.png,彗星轨等开屏里划出来);这里还不知道要等多久,就让一道光慢慢扫。
+  好了直接换成游戏页面,看起来是同一屏接着往下走(光开始往 logo 里灌)。出错了说一句话,给「打开启动器看看」和「重试」。
+-->
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color: #f6f6f8; user-select: none; }
+  @property --s { syntax: '<number>'; inherits: true; initial-value: -0.3; }
+  .lock { position: absolute; left: 50%; top: 44%; width: min(46vw, 122vh); aspect-ratio: 1800 / 476; transform: translate(-50%, -50%); animation: rise 1.2s cubic-bezier(0.2, 0.7, 0.2, 1) backwards; }
+  .lock img, .lock .sheen { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .lock img { opacity: 0.2; }  /* 和开屏(playSplash.css 的 .ghost)一样亮,换页接得上 */
+  .lock .sheen { -webkit-mask: url(lockup-text.png) center / 100% 100% no-repeat; mask: url(lockup-text.png) center / 100% 100% no-repeat;
+    background: linear-gradient(100deg, transparent calc(var(--s) * 100% - 14%), rgba(255, 244, 222, 0.45) calc(var(--s) * 100%), transparent calc(var(--s) * 100% + 14%));
+    animation: sweep 2.8s cubic-bezier(0.4, 0, 0.2, 1) 0.6s infinite; }
+  .msg { position: absolute; left: 0; right: 0; bottom: calc(17vh - 2.6em); text-align: center; font: 12px/1.6 system-ui, 'Microsoft YaHei', sans-serif; letter-spacing: 0.06em; color: rgba(246, 246, 248, 0.4); opacity: 0; transition: opacity 0.6s; }
+  .msg.on { opacity: 1; }
+  .fail { position: absolute; left: 50%; bottom: 12vh; transform: translateX(-50%); width: min(560px, 86vw); text-align: center; font: 14px/1.7 system-ui, 'Microsoft YaHei', sans-serif; color: rgba(246, 246, 248, 0.86); display: none; }
+  .fail p { margin: 0 0 16px; }
+  .fail button { height: 34px; padding: 0 16px; margin: 0 5px; border-radius: 7px; border: 1px solid rgba(255, 255, 255, 0.22); background: rgba(255, 255, 255, 0.08); color: #f6f6f8; font: inherit; cursor: pointer; }
+  .fail button:hover { background: rgba(255, 255, 255, 0.16); }
+  body.failed .msg { display: none; }
+  body.failed .fail { display: block; }
+  @keyframes rise { from { opacity: 0; translate: 0 10px; filter: blur(4px); } }
+  @keyframes sweep { from { --s: -0.3; } 70%, to { --s: 1.3; } }
+</style>
+</head>
+<body>
+<div class="lock"><img src="lockup-text.png" alt="AnimaVN" draggable="false"><div class="sheen"></div></div>
+<div class="msg" id="msg"></div>
+<div class="fail"><p id="why"></p>
+  <button id="launcher">打开启动器看看</button><button id="retry">重试</button></div>
+<script>
+  (function () {
+    'use strict';
+    const t0 = Date.now();
+    const $ = (id) => document.getElementById(id);
+    let busy = false;
+
+    async function tick() {
+      if (busy) return;
+      busy = true;
+      try {
+        const s = await window.pywebview.api.status();
+        if (s.phase === 'ready' && s.game_url) {
+          location.replace(s.game_url);
+          return;
+        }
+        document.body.classList.toggle('failed', s.phase === 'failed');
+        if (s.phase === 'failed') $('why').textContent = s.message || '后台没启动起来。';
+        // 等了几秒还没好才说在干什么(打包页面要一两分钟),一下就好的时候别闪字
+        $('msg').textContent = s.message || '';
+        $('msg').classList.toggle('on', Date.now() - t0 > 4000 && !!s.message);
+      } catch (e) {
+        // 后台刚开、还没写好端口:下一轮再问
+      } finally {
+        busy = false;
+      }
+    }
+
+    function start() {
+      tick();
+      setInterval(tick, 600);
+    }
+    $('launcher').onclick = () => window.pywebview.api.open_launcher();
+    $('retry').onclick = () => {
+      document.body.classList.remove('failed');
+      window.pywebview.api.retry();
+    };
+    if (window.pywebview && window.pywebview.api) start();
+    else window.addEventListener('pywebviewready', start);
+  })();
+</script>
+</body>
+</html>

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>AnimaVN</title>
+<script>
+  // WebView2 的配置文件夹是固定的(启动快),缓存也留着:样式和脚本带上时间戳,更新以后不会还用旧的
+  window.LC_V = Date.now();
+  document.write('<link rel="stylesheet" href="launcher.css?v=' + window.LC_V + '">');
+</script>
+</head>
+<body>
+<div id="stage" class="stage">
+  <img class="bg" src="kv.jpg" alt="" draggable="false">
+  <div class="shade"></div>
+  <img class="brand" src="wordmark.png" alt="AnimaVN" draggable="false">
+  <div id="badge"></div>
+  <div class="drag pywebview-drag-region"></div>
+  <aside class="side" id="side"></aside>
+  <div class="win" id="win"></div>
+  <section class="notice" id="notice"></section>
+  <div id="status"></div>
+  <div class="dock" id="dock"></div>
+  <div id="pop"></div>
+  <div id="page"></div>
+</div>
+<script>
+  // 截图自查:launcher/ui/index.html?mock=1&state=ready&page=home&pop=gear(真启动器不带这些)
+  if (/[?&]mock=/.test(location.search)) document.write('<script src="mock.js?v=' + window.LC_V + '"><\/script>');
+  document.write('<script src="launcher.js?v=' + window.LC_V + '"><\/script>');
+</script>
+</body>
+</html>

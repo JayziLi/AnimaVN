@@ -19,6 +19,10 @@
          不等它:字体到之前照旧先用系统字体顶着(font-display: swap)。生僻字那份 nss-extra 和英文两份用到才下,不预载 -->
     <link rel="preload" href="/vn/fonts/nss-core.woff2" as="font" type="font/woff2" crossorigin />
     <title>AnimaVN · Prompt Console</title>
+    <!-- 游戏窗口打开的是 ?play=1:脚本加载完之前就先黑着,和前面的等待页、后面的开屏接上,不闪白 -->
+    <script>
+      if (/[?&]play=/.test(location.search)) document.documentElement.style.background = '#000';
+    </script>
   </head>
   <body>
     <div id="root"></div>

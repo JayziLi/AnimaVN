@@ -30,6 +30,14 @@
   pointer-events: none;
   animation: vn-fade-out 0.4s ease both;
 }
+/* 从启动器开屏的白光里进来(PlaySplash,DebugApp 在根上标 data-vn-enter="light"):从白里亮起来,
+   底色和盖的那层换成白的,不然白光散开时先闪一下黑 */
+:root[data-vn-enter='light'] .vn-title.cold {
+  background: #fbfaf8;
+}
+:root[data-vn-enter='light'] .vn-title.cold::after {
+  background: #fff;
+}
 :where(.vn-title) button {
   font: inherit;
   color: inherit;

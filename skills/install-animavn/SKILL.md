@@ -5,7 +5,7 @@ description: 在用户电脑上安装、启动、升级 AnimaVN（用 AI 玩视�
 
 # 安装 AnimaVN
 
-做到这一步算完：用户的浏览器打开了 AnimaVN 的游戏页面。
+做到这一步算完：用户看到了 AnimaVN 的游戏画面（Windows 源码装法是启动器开的游戏窗口，其余在浏览器里）。
 
 - 用用户的语言跟用户说话
 - 只在写了「问用户」的地方停下来问，其余按默认做
@@ -73,7 +73,8 @@ python -m venv .venv
 
 先访问 `http://127.0.0.1:8000/api/health`。有回应说明这台电脑已经开着一个 AnimaVN，问用户要不要先关掉它，关掉再往下。
 
-- **Windows**：在仓库根目录跑 `play.bat`。它会开两个黑窗口（后端、游戏），两边都起来后打开浏览器。以后每次玩双击它，关掉黑窗口就是退出
+- **Windows**：打开 AnimaVN 启动器：`Start-Process start.bat -WorkingDirectory <仓库根目录>`（`play.bat` 一样）。第一次会先往 `.venv` 里装 pywebview、qrcode 两个小包，然后启动器窗口出来，后端和游戏页面在后台开，不弹黑窗口。告诉用户：等启动器里「开始游戏」亮了点它，游戏在自己的窗口里打开；以后每次玩双击 `start.bat`；启动器和游戏都关掉就是退出
+  - 问用户要不要在桌面放个图标，要就跑 `powershell -ExecutionPolicy Bypass -File packaging\windows\make_shortcut.ps1`
 - **macOS / Linux**：开两个能一直开着的终端：
   - `cd AnimaBackend && .venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000`
   - `cd frontend && npx vite build && npx vite preview --port 5180`
@@ -84,14 +85,14 @@ python -m venv .venv
 
 ### 升级
 
-先关掉后端窗口，在仓库根目录 `git pull`，再把第 3 步的 `pip install -e .` 和第 4 步的 `npm install` 各跑一遍，然后照第 5 步启动。
+先关掉后端（Windows：关掉启动器和游戏窗口，两个都关了后台自己停），在仓库根目录 `git pull`，再把第 3 步的 `pip install -e .` 和第 4 步的 `npm install` 各跑一遍，然后照第 5 步启动。
 
 ## 装好以后
 
 告诉用户：
 
-1. 右上角「API 设置」→ 新建连接，填自己的模型 API（DeepSeek、Claude、OpenAI、中转站、本地 Ollama 都行）
-2. 顶栏「视觉小说」→「角色」，自带的 DeepSeek娘点「开始」就能玩；酒馆卡（PNG / JSON）在角色页右上角「＋ 导入」
+1. 右上角「API 设置」→ 新建连接，填自己的模型 API（DeepSeek、Claude、OpenAI、中转站、本地 Ollama 都行）。启动器开的游戏窗口里是左上角「模型」按钮，或者 Esc 菜单 →「模型」
+2. 标题画面 →「角色」（浏览器里先点顶栏「视觉小说」），自带的 DeepSeek娘点「开始」就能玩；酒馆卡（PNG / JSON）在角色页右上角「＋ 导入」
 3. 语音、生图是可选的，要的话看 README 里的「语音配音部署」和「AI 生图」
 
 ## 别做
@@ -107,4 +108,5 @@ python -m venv .venv
 - git clone 连不上 GitHub：问用户开没开代理；Windows 只想玩的改走 A（魔搭国内能下）
 - 能上网却什么都连不上：看看 `HTTP_PROXY` / `HTTPS_PROXY` 环境变量是不是指向一个没开的代理
 - 8000 或 5180 端口被别的程序占了：告诉用户是哪个程序，问要不要关掉
+- Windows 启动器卡在启动中、或者报错：左边「控制台」页是后台的输出，常见报错翻成了大白话，把那里的字给用户看
 - 别的报错：把原文给用户看，建议到 https://github.com/JayziLi/AnimaVN/issues 提问

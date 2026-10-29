@@ -260,6 +260,8 @@ const typeSoundOptions = (instant: boolean) => [
 export interface Nodes {
   jaHide: ReactNode;
   data: ReactNode;
+  /** 游戏窗口(启动器开的)的窗口模式、画面大小;浏览器里它什么都不画 */
+  gameWindow?: ReactNode;
 }
 
 /**
@@ -597,6 +599,7 @@ export function buildTabs(s: SettingsState, apply: (p: Patch) => void, nodes: No
     groups: [
       {
         rows: [
+          ...(nodes.gameWindow ? [{ kind: 'node' as const, id: 'gameWindow', node: nodes.gameWindow }] : []),
           vnSwitch('showThinking', '思考过程', {
             note: v.showThinking
               ? '回复第一句上留「已思考 N 秒」,点开能看模型想了什么'
