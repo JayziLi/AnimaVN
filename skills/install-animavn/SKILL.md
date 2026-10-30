@@ -5,7 +5,7 @@ description: 在用户电脑上安装、启动、升级 AnimaVN（用 AI 玩视�
 
 # 安装 AnimaVN
 
-做到这一步算完：用户看到了 AnimaVN 的游戏画面（Windows 源码装法是启动器开的游戏窗口，其余在浏览器里）。
+做到这一步算完：用户看到了 AnimaVN 的游戏画面（Windows 从启动器点「开始游戏」打开，macOS / Linux 直接开网页）。
 
 - 用用户的语言跟用户说话
 - 只在写了「问用户」的地方停下来问，其余按默认做
@@ -24,10 +24,10 @@ description: 在用户电脑上安装、启动、升级 AnimaVN（用 AI 玩视�
    - `https://www.modelscope.cn/models/JayziLi/AnimaVN/resolve/master/latest.json`
    - `https://github.com/JayziLi/AnimaVN/releases/latest/download/latest.json`
 3. 下载整合包：把上面地址里的 `latest.json` 换成 `full.file` 的文件名。约 170 MB，下完用 `full.sha256` 核对
-4. 解压，找到 `AnimaVN.bat`，在新窗口里打开：`Start-Process AnimaVN.bat -WorkingDirectory <它所在的文件夹>`。别在你自己的终端里直接跑，它会一直占着
-5. 第一次启动要一两分钟，好了会自己打开浏览器。下载的 zip 可以删掉。跳到「装好以后」
+4. 解压，找到 `AnimaVN.bat`，在新窗口里打开：`Start-Process AnimaVN.bat -WorkingDirectory <它所在的文件夹>`
+5. 第一次会先弹一个黑窗口解压，一两分钟，解完它自己关掉，然后启动器窗口出来。告诉用户：等「开始游戏」亮了点它，游戏在默认浏览器里打开；想全屏玩就先勾上按钮下面的「全屏启动」；以后每次玩双击 `AnimaVN.bat`；启动器和游戏都关掉就是退出。下载的 zip 可以删掉。跳到「装好以后」
 
-已经装过整合包的：关掉游戏的黑窗口，双击 `更新.bat`，存档不动。
+已经装过整合包的：关掉启动器和游戏窗口，双击 `更新.bat`，存档不动。
 
 ## B. 源码
 
@@ -65,6 +65,8 @@ python -m venv .venv
 
 最后一行下载立绘表情用的小模型（约 25 MB）。失败了也能玩，告诉用户一声就行。
 
+Windows 再装启动器用的两个包（pywebview、qrcode）：`.venv\Scripts\python -m pip install -e ".[launcher]"`
+
 ### 4. 装前端
 
 在 `AnimaVN/frontend` 里：`npm install`
@@ -73,7 +75,7 @@ python -m venv .venv
 
 先访问 `http://127.0.0.1:8000/api/health`。有回应说明这台电脑已经开着一个 AnimaVN，问用户要不要先关掉它，关掉再往下。
 
-- **Windows**：打开 AnimaVN 启动器：`Start-Process start.bat -WorkingDirectory <仓库根目录>`（`play.bat` 一样）。第一次会先往 `.venv` 里装 pywebview、qrcode 两个小包，然后启动器窗口出来，后端和游戏页面在后台开，不弹黑窗口。告诉用户：等启动器里「开始游戏」亮了点它，游戏在自己的窗口里打开；以后每次玩双击 `start.bat`；启动器和游戏都关掉就是退出
+- **Windows**：打开 AnimaVN 启动器：`Start-Process start.bat -WorkingDirectory <仓库根目录>`（`play.bat` 一样）。启动器窗口出来，后端和游戏页面在后台开，不弹黑窗口。告诉用户：等启动器里「开始游戏」亮了点它，游戏在默认浏览器里打开；想全屏玩就先勾上按钮下面的「全屏启动」；以后每次玩双击 `start.bat`；启动器和游戏都关掉就是退出
   - 问用户要不要在桌面放个图标，要就跑 `powershell -ExecutionPolicy Bypass -File packaging\windows\make_shortcut.ps1`
 - **macOS / Linux**：开两个能一直开着的终端：
   - `cd AnimaBackend && .venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000`
@@ -85,14 +87,14 @@ python -m venv .venv
 
 ### 升级
 
-先关掉后端（Windows：关掉启动器和游戏窗口，两个都关了后台自己停），在仓库根目录 `git pull`，再把第 3 步的 `pip install -e .` 和第 4 步的 `npm install` 各跑一遍，然后照第 5 步启动。
+先关掉后端（Windows：关掉启动器和游戏窗口，两个都关了后台自己停），在仓库根目录 `git pull`，再把第 3 步的 pip install（Windows 两条都跑）和第 4 步的 `npm install` 各跑一遍，然后照第 5 步启动。
 
 ## 装好以后
 
 告诉用户：
 
-1. 右上角「API 设置」→ 新建连接，填自己的模型 API（DeepSeek、Claude、OpenAI、中转站、本地 Ollama 都行）。启动器开的游戏窗口里是左上角「模型」按钮，或者 Esc 菜单 →「模型」
-2. 标题画面 →「角色」（浏览器里先点顶栏「视觉小说」），自带的 DeepSeek娘点「开始」就能玩；酒馆卡（PNG / JSON）在角色页右上角「＋ 导入」
+1. 游戏左上角「模型」（或者 Esc 菜单 →「模型」；macOS / Linux 直接开的网页是右上角「API 设置」）→ 新建连接，填自己的模型 API（DeepSeek、Claude、OpenAI、中转站、本地 Ollama 都行）
+2. 标题画面 →「角色」（macOS / Linux 直接开的网页先点顶栏「视觉小说」），自带的 DeepSeek娘点「开始」就能玩；酒馆卡（PNG / JSON）在角色页右上角「＋ 导入」
 3. 语音、生图是可选的，要的话看 README 里的「语音配音部署」和「AI 生图」
 
 ## 别做
