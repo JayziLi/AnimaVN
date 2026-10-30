@@ -31,6 +31,8 @@
     phone: svg('<rect x="7" y="3" width="10" height="18" rx="2.2"/><path d="M11 18h2"/>'),
     folder: svg('<path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/>'),
     refresh: svg('<path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.5 4.5v4h-4"/>'),
+    full: svg('<path d="M4 9V5.5A1.5 1.5 0 0 1 5.5 4H9"/><path d="M15 4h3.5A1.5 1.5 0 0 1 20 5.5V9"/><path d="M20 15v3.5a1.5 1.5 0 0 1-1.5 1.5H15"/><path d="M9 20H5.5A1.5 1.5 0 0 1 4 18.5V15"/>'),
+    tick: svg('<path d="m5.5 12.5 4 4 9-9.5"/>'),
   };
   const STAR = '<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0l1.2 6.8L16 8l-6.8 1.2L8 16l-1.2-6.8L0 8l6.8-1.2z"/></svg>';
 
@@ -167,15 +169,18 @@
       ? `<div class="lan glass"><div class="k"><small>局域网 · 手机和平板</small><b>${esc(hostOf(s.lan_url))}</b></div>
           <button class="iconbtn" data-copy="${esc(s.lan_url)}" title="复制地址">${I.copy}</button></div>`
       : '';
+    // 按钮下面的勾:勾了开全屏的游戏窗口,没勾用默认浏览器(用户 10-29)
+    const full = `<label class="fsopt"><input type="checkbox" data-sw="fullscreen_start" ${s.settings.fullscreen_start ? 'checked' : ''}>
+        <i>${I.tick}</i>全屏启动</label>`;
     return `${lan}<div class="startwrap">${lastHtml()}<div class="start">
         <button class="go${s.game_open ? ' two' : ''}" data-act="start" ${ok ? '' : 'disabled'}>${label}</button>
         <button class="gear${ui.pop === 'gear' ? ' open' : ''}" data-act="gear" title="更多打开方式" ${ok ? '' : 'disabled'}>${I.gear}</button>
-      </div></div>`;
+      </div>${full}</div>`;
   }
 
   function popHtml(s) {
     if (ui.pop === 'gear') {
-      const other = s.settings.open_in === 'window' ? `${I.globe}在浏览器打开` : `${I.win}在独立窗口打开`;
+      const other = s.settings.fullscreen_start ? `${I.globe}在浏览器打开` : `${I.full}全屏打开`;
       return `<div class="catch" data-act="closepop"></div><div class="pop glass menu">
         <button data-act="other">${other}</button>
         <button data-act="qr" ${s.lan_url ? '' : 'disabled'}>${I.phone}手机扫码玩${s.lan_url ? '' : '<small>设置里没开</small>'}</button></div>`;
@@ -252,13 +257,11 @@
     const portNote = s.kind === 'portable' ? '被别的程序占着时自动往后找一个空的。' : '8000 上已经开着后端（以前的 start.bat）就直接用它。';
     return shell('设置', 'Config', '', `<div class="set scroll">
       <h3>启动<em>Launch</em></h3>
-      ${row('开始游戏时', seg('open_in', [['window', '游戏窗口'], ['browser', '默认浏览器']]), '游戏窗口是单独的程序，有自己的任务栏图标，怎么显示在下面「游戏窗口」里选。选浏览器就跟以前一样。')}
       ${row('开始游戏以后', seg('after_start', [['stay', '启动器留着'], ['minimize', '最小化'], ['close', '关掉启动器']]), '关掉启动器不影响开着的游戏。启动器和游戏都关了，后台自己停。')}
       ${row('打开启动器就进游戏', sw('auto_start'), '不停在首页，启动好了直接打开游戏。')}
       ${row('显示终端窗口', sw('terminal'), '后端另开一个黑窗口显示输出（以前的样子）。不开也能在「控制台」里看。')}
       <h3>游戏窗口<em>Display</em></h3>
-      ${row('显示方式', seg('game_display', [['fullscreen', '全屏'], ['borderless', '无边框窗口'], ['window', '窗口']]), '玩的时候按 F11 或 Alt+Enter 随时切换全屏。窗口可以拖边改大小。')}
-      ${row('画面大小', seg('game_size', sizes), `全屏时是按 F11 退出全屏后的大小。游戏开着的话马上套上；游戏里「设置 → 显示」也能改。`)}
+      ${row('画面大小', seg('game_size', sizes), `勾了「全屏启动」开的游戏窗口，按 F11 或 Alt+Enter 退出全屏后是这个大小。游戏开着的话马上套上；游戏里「设置 → 显示」也能改。`)}
       <h3>网络<em>Network</em></h3>
       ${row('让手机连进来', sw('lan'), '同一个 Wi-Fi 下的手机、平板能打开游戏（启动器或游戏开着时）。关掉以后只有这台电脑能用。')}
       ${row('端口', `<input class="input" data-num="port" value="${st.port}" inputmode="numeric" aria-label="端口">`, portNote)}

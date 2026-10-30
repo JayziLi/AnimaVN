@@ -1,8 +1,8 @@
-/* 假的 Python(只给截图自查用):ui/index.html?mock=1&state=ready|boot|failed|playing|restart&page=home|console|voice|settings&pop=gear|qr&kind=repo|portable */
+/* 假的 Python(只给截图自查用):ui/index.html?mock=1&state=ready|boot|failed|playing|restart&page=home|console|voice|settings&pop=gear|qr&kind=repo|portable&full=1 */
 (function () {
   const q = new URLSearchParams(location.search);
   const st = q.get('state') || 'ready';
-  const settings = { open_in: 'window', after_start: 'stay', game_display: 'fullscreen', game_size: '1920x1080', auto_start: false, terminal: false, lan: true, port: 8000, auto_update: true, dev_mode: 'build' };
+  const settings = { fullscreen_start: q.get('full') === '1', after_start:'stay', game_display: 'fullscreen', game_size: '1920x1080', auto_start: false, terminal: false, lan: true, port: 8000, auto_update: true, dev_mode: 'build' };
   const snap = {
     phase: st === 'boot' ? 'preparing' : st === 'failed' ? 'failed' : 'ready',
     message: st === 'boot' ? '正在打包游戏页面……' : st === 'failed' ? '端口 8000 被别的程序占着。关掉以前开的 start.bat / play.bat 黑窗口，再点「重试」。' : '',

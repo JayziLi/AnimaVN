@@ -2,7 +2,7 @@
 
 启动器只管启动(用户 10-21:「参考那些二游的做法,启动器只是用于启动的」):
 - 一打开就叫后台(host.py)起来:打包游戏页面、开后端;好了手机就能扫码玩
-- 开始游戏 = 开游戏本体(game.py:单独的程序,自己的窗口和任务栏图标);设置里能改成用浏览器打开
+- 开始游戏:默认用浏览器打开;按钮下面勾上「全屏启动」才开游戏本体(game.py:单独的程序,自己的窗口和任务栏图标),全屏
 - 点完以后启动器默认留着(设置里能改成最小化 / 关掉);关掉启动器就是退出,开着的游戏不受影响
 界面是 ui/(照设计稿 A 玻璃版),经 window.pywebview.api 调 App 的方法。三个程序怎么互相找见 apps.py。
 
@@ -130,16 +130,17 @@ class App:
         return {"url": url, "svg": net.qr_svg(url)} if url else {"url": None, "svg": ""}
 
     def start_game(self):
+        """勾了「全屏启动」开全屏的游戏窗口,没勾用默认浏览器;游戏窗口开着时按钮是「回到游戏」,叫它到前面"""
         snap = self.snapshot()
         if not snap["game_url"]:
             return {"ok": False, "message": "还没启动好，稍等一下"}
         s = self._settings()
-        if s.open_in == "browser":
-            webbrowser.open(snap["game_url"])
-            message = "在默认浏览器里打开了"
-        else:
+        if snap["game_open"] or s.fullscreen_start:
             self._open_game()
             message = ""
+        else:
+            webbrowser.open(snap["game_url"])
+            message = "在默认浏览器里打开了"
         if s.after_start == "minimize":
             self._main.minimize()
         elif s.after_start == "close":
@@ -147,11 +148,11 @@ class App:
         return {"ok": True, "message": message}
 
     def open_other(self):
-        """齿轮里那一项:和设置里选的反过来(设的是游戏窗口就开浏览器,反之亦然)"""
+        """齿轮里那一项:和「全屏启动」反过来(勾着就开浏览器,没勾就开全屏的游戏窗口)"""
         snap = self.snapshot()
         if not snap["game_url"]:
             return {"ok": False, "message": "还没启动好，稍等一下"}
-        if self._settings().open_in == "window":
+        if self._settings().fullscreen_start:
             webbrowser.open(snap["game_url"])
             return {"ok": True, "message": "在默认浏览器里打开了"}
         self._open_game()
@@ -199,11 +200,13 @@ class App:
     # ---- 窗口 ----
 
     def _open_game(self):
-        """游戏开着就叫到前面,没开就开一个(单独的程序)"""
+        """游戏开着就叫到前面,没开就开一个(单独的程序),全屏"""
         if apps.running(self._lay, "game"):
             self._let_game_come_forward()
             if single.poke(apps.run_dir(self._lay) / "game.ipc"):
                 return
+        if self._settings().game_display != "fullscreen":  # 上次在游戏里改成了窗口:新开的照样全屏
+            settings_mod.update(self._lay.settings_file, "game_display", "fullscreen")
         apps.spawn(self._lay, "game.py")
 
     def _let_game_come_forward(self):

@@ -17,15 +17,22 @@ def test_broken_json_gives_defaults(tmp_path):
 
 def test_bad_values_fall_back_one_by_one(tmp_path):
     p = tmp_path / "launcher.json"
-    p.write_text(json.dumps({"open_in": "browser", "port": "8000", "lan": 1, "dev_mode": "weird", "auto_start": True}), "utf-8")
+    p.write_text(json.dumps({"fullscreen_start": True, "port": "8000", "lan": 1, "dev_mode": "weird", "auto_start": True}), "utf-8")
     s = S.load(p)
-    assert s.open_in == "browser" and s.auto_start is True
+    assert s.fullscreen_start is True and s.auto_start is True
     assert s.port == 8000 and s.lan is True and s.dev_mode == "build"
+
+
+def test_settings_from_before_the_fullscreen_tick_still_load(tmp_path):
+    p = tmp_path / "launcher.json"
+    p.write_text(json.dumps({"open_in": "window", "lan": False}), "utf-8")  # 10-28 以前的设置文件
+    s = S.load(p)
+    assert s.fullscreen_start is False and s.lan is False
 
 
 def test_save_then_load_round_trips(tmp_path):
     p = tmp_path / "sub" / "launcher.json"
-    s = S.Settings(open_in="browser", terminal=True, port=8123)
+    s = S.Settings(fullscreen_start=True, terminal=True, port=8123)
     S.save(p, s)
     assert S.load(p) == s
 
@@ -50,8 +57,12 @@ def test_update_reads_the_file_first(tmp_path):
 
 
 def test_change_validates():
-    s = S.change(S.Settings(), "open_in", "browser")
-    assert s.open_in == "browser"
+    s = S.change(S.Settings(), "fullscreen_start", True)
+    assert s.fullscreen_start is True
+    with pytest.raises(ValueError):
+        S.change(s, "fullscreen_start", "yes")
+    with pytest.raises(ValueError):
+        S.change(s, "open_in", "browser")  # 10-28 换成了 fullscreen_start
     with pytest.raises(ValueError):
         S.change(s, "nope", 1)
     with pytest.raises(ValueError):

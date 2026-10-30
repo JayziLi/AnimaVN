@@ -12,8 +12,7 @@ from pathlib import Path
 
 # 只能在这几个里选的
 CHOICES = {
-    "open_in": ("window", "browser"),
-    "after_start": ("stay", "minimize", "close"),
+    "after_start":("stay", "minimize", "close"),
     "game_display": ("fullscreen", "borderless", "window"),
     "game_size": ("1280x720", "1600x900", "1920x1080", "2560x1440", "3840x2160"),
     "dev_mode": ("build", "dev"),
@@ -26,9 +25,12 @@ DISPLAY_KEYS = frozenset({"game_display", "game_size"})
 
 @dataclass(frozen=True)
 class Settings:
-    open_in: str = "window"  # 开始游戏时:window 游戏窗口(游戏本体 game.py)/ browser 默认浏览器
+    # 开始游戏按钮下面那个勾:勾了开全屏的游戏窗口(游戏本体 game.py),没勾用默认浏览器(用户 10-29 定的)
+    fullscreen_start: bool = False
     after_start: str = "stay"  # 点了开始游戏以后启动器:stay 留着 / minimize 最小化 / close 关掉(游戏不受影响)
-    game_display: str = "fullscreen"  # 独立窗口怎么显示:fullscreen 全屏 / borderless 无边框窗口 / window 窗口(gamewin.py)
+    # 游戏窗口怎么显示:fullscreen 全屏 / borderless 无边框窗口 / window 窗口(gamewin.py);
+    # 启动器每次开游戏窗口都先设回全屏,玩的时候 F11 或游戏里「设置 → 显示」再改
+    game_display: str = "fullscreen"
     game_size: str = "1920x1080"  # 无边框和窗口的画面大小;全屏时是按 F11 退出全屏后的大小
     auto_start: bool = False  # 打开启动器就进游戏
     terminal: bool = False  # 显示终端窗口:后端另开一个黑窗口(以前的样子)
