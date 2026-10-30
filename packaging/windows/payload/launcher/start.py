@@ -1,6 +1,7 @@
-"""双击 AnimaVN.bat 跑的就是这个:一个端口同时给游戏页面和后端,起来以后自动开浏览器。
+"""不用启动器、在黑窗口里玩:一个端口同时给游戏页面和后端,起来以后自动开浏览器。
 
     python\\python.exe launcher\\start.py [--no-browser]
+    python\\python.exe launcher\\start.py --unpack-only   (AnimaVN.bat 用:只解开 runtime.zip,再开启动器)
 
 已经开着一个(另一个黑窗口)就不再起第二个后端 —— 两个后端同时写一份存档会出事 —— 直接把浏览器指过去。
 """
@@ -44,8 +45,25 @@ def wait_then_open(port: int, open_browser: bool, started: float, owner: bool = 
     print("  等了半个小时还没起来,看看上面有没有报错。", flush=True)
 
 
+def unpack_only() -> int:
+    """AnimaVN.bat 先跑这一步再开启动器:启动器的窗口(pywebview)也在 runtime.zip 里,解开之前起不来。"""
+    if not (common.ROOT / common.RUNTIME_ZIP).is_file():
+        return 0
+    lock = common.try_lock(common.LOCK)
+    if lock is None:
+        print("  另一个窗口正在解压,等它解完再双击一次。")
+        return 1
+    try:
+        common.unpack_runtime(common.ROOT)
+    finally:
+        common.release(lock)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
+    if "--unpack-only" in argv:
+        return unpack_only()
     open_browser = "--no-browser" not in argv
     started = time.time()
     version = common.read_json(common.VERSION_FILE).get("version", "?")

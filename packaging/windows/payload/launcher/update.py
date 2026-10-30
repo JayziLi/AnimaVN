@@ -142,8 +142,12 @@ def main() -> int:
     print(f"AnimaVN 更新(现在是 {local['version']})\n")
 
     lock = common.try_lock(common.LOCK)
-    if lock is None:
-        print("  游戏还开着:先关掉 AnimaVN 的黑窗口,再双击「更新.bat」。")
+    # 启动器关了、游戏还开着时,后台(host.py)拿着自己的锁、后端还在跑:也不能换文件
+    host = common.try_lock(common.DATA / "run" / "host.lock") if lock is not None else None
+    if lock is None or host is None:
+        if lock is not None:
+            common.release(lock)
+        print("  游戏还开着:先关掉 AnimaVN 的启动器和游戏窗口(或者黑窗口),再双击「更新.bat」。")
         return 1
     zip_path, new_dir = root / DOWNLOAD, root / NEW_DIR
     try:
@@ -180,6 +184,7 @@ def main() -> int:
     finally:
         zip_path.unlink(missing_ok=True)
         shutil.rmtree(new_dir, ignore_errors=True)
+        common.release(host)
         common.release(lock)
 
 

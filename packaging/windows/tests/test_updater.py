@@ -154,3 +154,22 @@ def test_apply_update_refuses_incomplete_package(tmp_path):
     with pytest.raises(update.UpdateError):
         update.apply_update(root, new, ITEMS)
     assert (root / "AnimaBackend" / "app" / "main.py").read_text() == "old"
+
+
+def test_update_refuses_while_the_launchers_background_still_runs(tmp_path, monkeypatch):
+    # 启动器关了、游戏还开着:后台(host.py)拿着 run/host.lock,后端在跑,不能换文件
+    import common
+
+    data = tmp_path / "AnimaBackend" / "data"
+    monkeypatch.setattr(common, "ROOT", tmp_path)
+    monkeypatch.setattr(common, "DATA", data)
+    monkeypatch.setattr(common, "LOCK", data / "launcher.lock")
+    monkeypatch.setattr(common, "VERSION_FILE", tmp_path / "version.json")
+    (tmp_path / "version.json").write_text('{"version": "2026.10.17", "sources": []}', "utf-8")
+    host = common.try_lock(data / "run" / "host.lock")
+    try:
+        assert update.main() == 1
+    finally:
+        common.release(host)
+    # 放开了以后更新器自己拿得到两把锁(这里没有下载源,走到查新版那一步就停)
+    assert common.try_lock(data / "launcher.lock") is not None

@@ -47,6 +47,9 @@ DOC_SUFFIXES = (".md", ".txt", ".rst")
 DOC_NAMES = ("py.typed", ".keep")  # openai、anthropic 都带一个空的 lib/.keep
 # 虽然是纯 Python,但会按 __file__ 去找自己目录里的文件:留在文件夹里
 KEEP_ON_DISK = ("huggingface_hub",)
+# PyPI 上只有源码包、没有 wheel 的纯 Python 依赖(pywebview 要的 proxy_tools)。给便携版装依赖时 pip 只认 wheel,
+# 先在本机打成 wheel(纯 Python,哪个平台都一样)放进缓存,装的时候从那儿找
+SDIST_ONLY = ["proxy-tools==0.1.0"]
 
 sys.path.insert(0, str(PAYLOAD / "launcher"))
 from common import RUNTIME_ZIP  # noqa: E402
@@ -84,11 +87,22 @@ def installed(site: Path) -> dict[str, str]:
     return {norm(d.metadata["Name"]): d.version for d in md.distributions(path=[str(site)])}
 
 
-def pip_install(site: Path, *args: str) -> None:
+def local_wheels(cache: Path) -> Path:
+    wheels = cache / "wheels"
+    wheels.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        [sys.executable, "-m", "pip", "wheel", "--quiet", "--disable-pip-version-check", "--no-deps",
+         "-w", str(wheels), *SDIST_ONLY],
+        check=True,
+    )
+    return wheels
+
+
+def pip_install(site: Path, wheels: Path, *args: str) -> None:
     subprocess.run(
         [sys.executable, "-m", "pip", "install", "--quiet", "--disable-pip-version-check", "--no-compile",
          "--only-binary=:all:", "--platform", "win_amd64", "--python-version", PY_VERSION.rsplit(".", 1)[0],
-         "--implementation", "cp", "--target", str(site), *args],
+         "--implementation", "cp", "--find-links", str(wheels), "--target", str(site), *args],
         check=True,
     )
 
@@ -110,14 +124,16 @@ def python_embed(cache: Path, dest: Path) -> None:
     )
 
 
-def dependencies(src: Path, site: Path, refresh: bool, out: Path) -> None:
-    deps = tomllib.loads((src / "AnimaBackend" / "pyproject.toml").read_text("utf-8"))["project"]["dependencies"]
+def dependencies(src: Path, site: Path, refresh: bool, out: Path, wheels: Path) -> None:
+    project = tomllib.loads((src / "AnimaBackend" / "pyproject.toml").read_text("utf-8"))["project"]
+    # 启动器的窗口和二维码(pywebview、qrcode)也进包:双击 AnimaVN.bat 开的是启动器
+    deps = project["dependencies"] + project.get("optional-dependencies", {}).get("launcher", [])
     venv = {norm(d.metadata["Name"]): d.version for d in md.distributions()}
     if refresh or not LOCK_FILE.exists():
         # 按这个 venv(跑过测试的那个)里的版本装,装上什么就记成 lock
         cons = out / "constraints.txt"
         cons.write_text("\n".join(f"{n}=={v}" for n, v in sorted(venv.items())), encoding="utf-8")
-        pip_install(site, "-c", str(cons), *deps)
+        pip_install(site, wheels, "-c", str(cons), *deps)
         got = installed(site)
         LOCK_FILE.write_text(
             "# 整合包里的依赖版本(packaging/windows/build.py --refresh-lock 生成)。改了它玩家就要重下整合包\n"
@@ -126,7 +142,7 @@ def dependencies(src: Path, site: Path, refresh: bool, out: Path) -> None:
         )
         print(f"requirements.lock 重新生成了:{len(got)} 个包")
     else:
-        pip_install(site, "--no-deps", "-r", str(LOCK_FILE))
+        pip_install(site, wheels, "--no-deps", "-r", str(LOCK_FILE))
     got = installed(site)
     names = [norm(re.split(r"[\s\[<>=!~;]", d, maxsplit=1)[0]) for d in deps]
     missing = [n for n in names if n not in got]
@@ -158,7 +174,11 @@ def zip_pure_packages(site: Path, dest: Path) -> list[str]:
         files = [f for f in p.rglob("*") if f.is_file() and "__pycache__" not in f.parts]
         if all(f.suffix in (".py", ".pyi", *DOC_SUFFIXES) or f.name in DOC_NAMES for f in files):
             pure.append(p)
-    tmp = dest.with_suffix(".pyc.tmp")
+    # 每个文件编到自己的临时 .pyc:同一个名字反复写,杀毒软件还拿着上一个时会改名失败(拒绝访问)
+    tmp_dir = dest.with_suffix(".pyc-tmp")
+    shutil.rmtree(tmp_dir, ignore_errors=True)
+    tmp_dir.mkdir()
+    count = 0
     with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as z:
         for p in pure:
             # 文件夹也要单独记一条:没有 __init__.py 的子目录(anthropic._decoders)zip 里只认这个
@@ -168,10 +188,12 @@ def zip_pure_packages(site: Path, dest: Path) -> list[str]:
                 rel = f.relative_to(site).as_posix()
                 z.write(f, rel)  # 源码留着,出错时报错信息里能看到是哪一行
                 # 不校验的 .pyc 放在 .py 旁边(zip 里不认 __pycache__):zip 只会整个换,不会和源码对不上
+                count += 1
+                tmp = tmp_dir / f"{count}.pyc"
                 py_compile.compile(str(f), cfile=str(tmp), dfile=rel, doraise=True,
                                    invalidation_mode=py_compile.PycInvalidationMode.UNCHECKED_HASH)
                 z.write(tmp, rel + "c")
-    tmp.unlink()
+    shutil.rmtree(tmp_dir, ignore_errors=True)
     for p in pure:
         shutil.rmtree(p) if p.is_dir() else p.unlink()
     return [p.name for p in pure]
@@ -259,7 +281,7 @@ def main() -> None:
         shutil.copy2(Path(os.environ["SystemRoot"]) / "System32" / dll, py / dll)
 
     step("依赖")
-    dependencies(src, site, args.refresh_lock, out)
+    dependencies(src, site, args.refresh_lock, out, local_wheels(args.cache))
     print(f"{len(installed(site))} 个包,{mb(size_of(site))}")
     zipped = zip_pure_packages(site, py / "site-packages.zip")
     print(f"纯 Python 的 {len(zipped)} 个放进了 site-packages.zip({mb((py / 'site-packages.zip').stat().st_size)}):")

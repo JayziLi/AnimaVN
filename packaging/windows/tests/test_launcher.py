@@ -69,3 +69,33 @@ def test_server_args_default_to_lan_on_8000():
     assert (a.host, a.port) == ("0.0.0.0", 8000)
     a = server.parse_args(["--host", "127.0.0.1", "--port", "8003"])
     assert (a.host, a.port) == ("127.0.0.1", 8003)
+
+
+def test_unpack_only_unpacks_then_lets_the_bat_open_the_launcher(tmp_path, monkeypatch):
+    # AnimaVN.bat 先解开 runtime.zip(启动器的窗口库在里面),再开启动器
+    monkeypatch.setattr(common, "ROOT", tmp_path)
+    monkeypatch.setattr(common, "LOCK", tmp_path / "AnimaBackend" / "data" / "launcher.lock")
+    with zipfile.ZipFile(tmp_path / common.RUNTIME_ZIP, "w") as z:
+        z.writestr("web/debug.html", "页面")
+    assert start.main(["--unpack-only"]) == 0
+    assert (tmp_path / "web" / "debug.html").exists()
+    assert not (tmp_path / common.RUNTIME_ZIP).exists()
+    # 解过了:不拿锁,直接放行(启动器开着、锁被它拿着时再双击也一样)
+    held = common.try_lock(common.LOCK)
+    try:
+        assert start.main(["--unpack-only"]) == 0
+    finally:
+        common.release(held)
+
+
+def test_unpack_only_waits_for_another_window_that_is_unpacking(tmp_path, monkeypatch):
+    monkeypatch.setattr(common, "ROOT", tmp_path)
+    monkeypatch.setattr(common, "LOCK", tmp_path / "AnimaBackend" / "data" / "launcher.lock")
+    with zipfile.ZipFile(tmp_path / common.RUNTIME_ZIP, "w") as z:
+        z.writestr("web/debug.html", "页面")
+    held = common.try_lock(common.LOCK)
+    try:
+        assert start.main(["--unpack-only"]) == 1
+    finally:
+        common.release(held)
+    assert (tmp_path / common.RUNTIME_ZIP).exists()
