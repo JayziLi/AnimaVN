@@ -518,20 +518,32 @@ export default function DebugApp() {
     setVnOpen(open);
   };
   // 从启动器打开(debug.html?play=1):先黑屏放 logo,封面要的图下好了再「点击进入游戏」,点了进没选角色的封面。
-  // 用户 10-21:不要进去以后看见角色头像一个个冒出来。loading 在下图 / ready 等点 / leaving 正在淡出
-  const [splash, setSplash] = useState<'loading' | 'ready' | 'leaving' | null>(() =>
+  // 用户 10-21:不要进去以后看见角色头像一个个冒出来。
+  // loading 在下图 / ready 等点 / leaving 白光铺满、等封面画出来 / fading 白光散开
+  const [splash, setSplash] = useState<'loading' | 'ready' | 'leaving' | 'fading' | null>(() =>
     typeof location !== 'undefined' && wantsPlayMode(location.search) ? 'loading' : null,
   );
   const [splashProgress, setSplashProgress] = useState<number | null>(null);
   const enterGame = () => {
     setSplash('leaving');
     bgmPlayer.unlock(); // 这一下点击顺带解锁声音(iOS 只认手势里的解锁):封面音乐进去就能响
-    // 白光铺满了再把封面放上来,白光散开时封面自己的入场正好在播;封面这一次从白里亮起来(vnTitle.css)
+    // 白光铺满了再把封面放上来;封面这一次从白里亮起来(vnTitle.css)
     document.documentElement.dataset.vnEnter = 'light';
     setTimeout(() => toggleVn(true), 180);
-    setTimeout(() => setSplash(null), 480);
     setTimeout(() => delete document.documentElement.dataset.vnEnter, 3500);
   };
+  // 白光等封面真画出来了才散:以前按钟点散,电脑慢时封面还没搭好,底下的调试台会露出来一下(10-29)
+  useEffect(() => {
+    if (splash === 'fading') {
+      const t = setTimeout(() => setSplash(null), 320);
+      return () => clearTimeout(t);
+    }
+    if (splash !== 'leaving' || !vnOpen) return;
+    let raf = requestAnimationFrame(() => {
+      raf = requestAnimationFrame(() => setSplash('fading'));
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [splash, vnOpen]);
 
   // 卡编辑器(全屏页,studio/):开在哪个页签、哪一栏;null = 没开。编辑的永远是当前这张卡
   const [studio, setStudio] = useState<StudioRoute | null>(null);
@@ -3895,7 +3907,8 @@ export default function DebugApp() {
         <PlaySplash
           progress={splashProgress}
           ready={splash !== 'loading'}
-          leaving={splash === 'leaving'}
+          leaving={splash === 'leaving' || splash === 'fading'}
+          fading={splash === 'fading'}
           onEnter={enterGame}
         />
       )}

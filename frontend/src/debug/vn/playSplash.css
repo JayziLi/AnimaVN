@@ -181,7 +181,8 @@
   transform: scaleX(-1);
 }
 
-/* 点了:logo 微微放大变亮,从中心炸开一团白光铺满,白光散去露出封面(封面在白光盖满时才放上来,DebugApp) */
+/* 点了:logo 微微放大变亮,从中心炸开一团白光铺满,白光散去露出封面。
+   封面在白光盖满时才放上来,画出来了才挂 fading 散开(DebugApp):白光不能按钟点散,电脑慢时底下的调试台会露出来 */
 .vn-splash-bloom {
   position: absolute;
   left: 50%;
@@ -192,11 +193,15 @@
   background: radial-gradient(circle, #fff 0 38%, rgba(255, 252, 246, 0.85) 52%, rgba(255, 250, 240, 0) 70%);
   transform: translate(-50%, -50%) scale(0);
 }
+/* 白光铺满以后底色也换白:大屏的四角白光够不着,等封面时别透出黑边 */
 .vn-splash.leaving {
-  background: transparent;
-  opacity: 0;
+  background: #fff;
   pointer-events: none;
-  transition: background 0s 0.18s, opacity 0.26s ease 0.18s;
+  transition: background 0s 0.16s;
+}
+.vn-splash.fading {
+  opacity: 0;
+  transition: opacity 0.26s ease;
 }
 .vn-splash.leaving .vn-splash-lock {
   transform: translate(-50%, -50%) scale(1.07);
@@ -264,7 +269,12 @@
   .vn-splash.flown .glint {
     animation: none;
   }
+  /* 不炸白光:黑底盖着等封面,画出来了再淡出 */
   .vn-splash.leaving {
+    background: #000;
+    transition: none;
+  }
+  .vn-splash.fading {
     transition: opacity 0.3s;
   }
   .vn-splash.leaving .vn-splash-lock {

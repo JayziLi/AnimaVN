@@ -18,7 +18,10 @@ interface Props {
   progress: number | null;
   /** 素材都下好了(或者等够了) */
   ready: boolean;
+  /** 点过了:白光铺满,盖着等封面画出来 */
   leaving: boolean;
+  /** 封面画出来了:白光散开 */
+  fading: boolean;
   onEnter: () => void;
 }
 
@@ -27,7 +30,7 @@ type Stage = 'load' | 'intro' | 'flown' | 'tap';
 const COMET_MS = 650;
 const STAR = 'M0-50C4-14 14-4 50 0C14 4 4 14 0 50C-4 14-14 4-50 0C-14-4-4-14 0-50Z';
 
-export function PlaySplash({ progress, ready, leaving, onEnter }: Props) {
+export function PlaySplash({ progress, ready, leaving, fading, onEnter }: Props) {
   const root = useRef<HTMLDivElement>(null);
   const head = useRef<HTMLDivElement>(null);
   const entered = useRef(false);
@@ -112,7 +115,7 @@ export function PlaySplash({ progress, ready, leaving, onEnter }: Props) {
   return (
     <div
       ref={root}
-      className={`vn-splash ${stage}${ready ? ' ready' : ''}${leaving ? ' leaving' : ''}`}
+      className={`vn-splash ${stage}${ready ? ' ready' : ''}${leaving ? ' leaving' : ''}${fading ? ' fading' : ''}`}
       onClick={enter}
       onKeyDown={onKey}
       role="button"
