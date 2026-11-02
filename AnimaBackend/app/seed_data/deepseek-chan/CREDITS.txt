@@ -1,8 +1,8 @@
 DeepSeek娘 —— AnimaVN 自带的示例角色
 ====================================
 
-第一次启动时自动导入:角色卡(card.json + avatar.webp)和立绘包「DeepSeek娘 · 女仆」
-(sprites.json + sprites/*.webp,16 个表情)。
+第一次启动时自动导入:角色卡(card.json + avatar.webp)和立绘包「DeepSeek娘 · 女仆 v2」
+(sprites.json + sprites/*.webp,10 个表情)。
 
 形象与立绘
 ----------
@@ -16,7 +16,7 @@ DeepSeek娘 —— AnimaVN 自带的示例角色
             https://www.pixiv.net/artworks/148186519
             作者说明:方便所有人取用,需要标注作者,不可商用;形象基于上善的鲸鱼娘,
             遵循原作者的 CC BY-NC-SA 4.0 协议
-  表情差分  AnimaVN,在 ZipZipPipe 的原图上改画出 16 个表情,
+  表情差分  AnimaVN,以 ZipZipPipe 的原图为参考重画出 10 个表情,
             同样按 CC BY-NC-SA 4.0 发布
 
 这一目录里的图片不属于 AnimaVN 代码的 MIT 授权范围:可以自由使用、修改、再分发,

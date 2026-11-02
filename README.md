@@ -38,7 +38,7 @@ AnimaVN 是一个跑在浏览器里的 AI 视觉小说。你拿一张角色卡�
 - AI 觉得该换地方了就换**背景**，气氛变了就换 **BGM**
 - 角色用 **GPT-SoVITS 训练的声音念台词**，可以日语配音 + 中文字幕
 - 底部对话框点一下下一句，**读到一半随时插话**，存档、读档、回看历史都有
-- 装好就自带一个角色 **DeepSeek娘**（16 个表情立绘、世界书都配好了），填上 API 就能玩
+- 装好就自带一个角色 **DeepSeek娘**（10 个表情立绘、世界书都配好了），填上 API 就能玩
 
 它的提示词部分照着 SillyTavern（酒馆）做：**酒馆的角色卡、卡里的世界书、Chat Completion 预设、宏、人设、聊天记录都能直接导入**，组出来的请求和酒馆 1.18 逐条对过答案。你在酒馆里调好的卡和预设，拿过来就能当视觉小说玩。
 
@@ -309,7 +309,7 @@ cd frontend; npm install; cd ..
 
 ### 2. 先和 DeepSeek娘玩一局
 
-点顶栏 **视觉小说** 进标题画面 → **角色**，库里已经有一张自带的 **DeepSeek娘**：住在你家的鲸鱼女仆，本体就是 DeepSeek，爱吃白饭、爱摸鱼、爱「深度思考」。立绘（16 个表情）、世界书、开场白都配好了，点 **开始** 就能玩。
+点顶栏 **视觉小说** 进标题画面 → **角色**，库里已经有一张自带的 **DeepSeek娘**：住在你家的鲸鱼女仆，本体就是 DeepSeek，聪明、嘴甜、有点小傲娇，和你是彼此喜欢的关系。立绘（10 个表情）、世界书、开场白都配好了，点 **开始** 就能玩。
 
 <img src="docs/images/first-run.webp" alt="刚装好时的选角色页" width="720">
 
@@ -497,7 +497,7 @@ GPT-SoVITS 需要 NVIDIA 显卡才快。没有的话先不开语音，其它功�
 - [LingChat](https://github.com/SlimeBoyOwO/LingChat)：「每句台词前标情绪」的思路参考了它
 - [bge-small-zh-v1.5](https://huggingface.co/BAAI/bge-small-zh-v1.5)（BAAI，MIT；ONNX 版来自 [Xenova](https://huggingface.co/Xenova/bge-small-zh-v1.5)）：立绘表情兜底匹配
 - [lbpcascade_animeface](https://github.com/nagadomi/lbpcascade_animeface)（MIT）：立绘找脸对齐
-- 自带角色 DeepSeek娘：形象原型是上善的原创角色[《溟月》](https://www.pixiv.net/users/62155430)，女仆鲸鱼娘设计来自 [ZipZipPipe](https://www.pixiv.net/artworks/148186519)，16 个表情差分由 AnimaVN 在原图上改画。立绘按 **CC BY-NC-SA 4.0**（署名、非商用、相同方式共享）发布，详见 [`AnimaBackend/app/seed_data/deepseek-chan/CREDITS.txt`](AnimaBackend/app/seed_data/deepseek-chan/CREDITS.txt)
+- 自带角色 DeepSeek娘：形象原型是上善的原创角色[《溟月》](https://www.pixiv.net/users/62155430)，女仆鲸鱼娘设计来自 [ZipZipPipe](https://www.pixiv.net/artworks/148186519)，10 个表情差分由 AnimaVN 以原图为参考重画。立绘按 **CC BY-NC-SA 4.0**（署名、非商用、相同方式共享）发布，详见 [`AnimaBackend/app/seed_data/deepseek-chan/CREDITS.txt`](AnimaBackend/app/seed_data/deepseek-chan/CREDITS.txt)
 - 示例素材：Ren'Py 示例游戏 *The Question* 的立绘和背景（MIT），Kevin MacLeod 的曲子（CC BY 4.0），详见 [`frontend/public/vn/CREDITS.txt`](frontend/public/vn/CREDITS.txt)
 
 **关于截图**：DeepSeek娘的立绘见上面的授权；Wikira 是作者的原创角色；截图里的背景、刻晴、爱丽丝、爱弥斯等角色来自各自的游戏，版权归原作者，只用来展示界面，不随仓库分发。仓库里除了 DeepSeek娘和上面的示例素材，**不带别的角色卡、立绘或声音模型**，请用你自己有权使用的素材。

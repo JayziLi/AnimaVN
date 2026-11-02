@@ -8,43 +8,26 @@
       "默认",
       "平静",
       "normal",
-      "calm"
+      "calm",
+      "温柔",
+      "gentle",
+      "安心"
     ],
     "description": "甜甜的微笑，默认表情；平常说话、没什么特别情绪的句子都用它",
     "effect": null,
     "face_scan": {
-      "width": 828,
+      "width": 810,
       "height": 1440,
       "face": {
-        "x": 0.3803,
-        "y": 0.0938,
-        "w": 0.2581,
-        "h": 0.1484
+        "x": 0.3594,
+        "y": 0.0693,
+        "w": 0.276,
+        "h": 0.1553
       }
     }
   },
   {
     "file": "01.webp",
-    "label": "温柔",
-    "aliases": [
-      "gentle",
-      "安心"
-    ],
-    "description": "温柔地笑，眼神柔和",
-    "effect": null,
-    "face_scan": {
-      "width": 828,
-      "height": 1440,
-      "face": {
-        "x": 0.3769,
-        "y": 0.0967,
-        "w": 0.2564,
-        "h": 0.1475
-      }
-    }
-  },
-  {
-    "file": "02.webp",
     "label": "喜爱",
     "aliases": [
       "开心",
@@ -64,45 +47,24 @@
       "sound": "emo-heart"
     },
     "face_scan": {
-      "width": 828,
+      "width": 810,
       "height": 1440,
       "face": {
-        "x": 0.3786,
-        "y": 0.0908,
-        "w": 0.2632,
-        "h": 0.1514
+        "x": 0.3316,
+        "y": 0.0713,
+        "w": 0.316,
+        "h": 0.1777
       }
     }
   },
   {
-    "file": "03.webp",
+    "file": "02.webp",
     "label": "担心",
     "aliases": [
       "worried",
       "害怕",
-      "不安"
-    ],
-    "description": "皱着眉看着你，担心、不安",
-    "effect": {
-      "motion": "hop",
-      "bubble": null,
-      "sound": "emo-question"
-    },
-    "face_scan": {
-      "width": 828,
-      "height": 1440,
-      "face": {
-        "x": 0.3786,
-        "y": 0.0957,
-        "w": 0.2581,
-        "h": 0.1484
-      }
-    }
-  },
-  {
-    "file": "04.webp",
-    "label": "难过",
-    "aliases": [
+      "不安",
+      "难过",
       "sad",
       "忧郁",
       "失落",
@@ -111,25 +73,25 @@
       "cry",
       "委屈"
     ],
-    "description": "眼里含着泪，难过、失落；哭、委屈的时候也用它",
+    "description": "皱着眉看着你，担心、不安",
     "effect": {
-      "motion": "shiver",
-      "bubble": "sad",
-      "sound": "emo-sad"
+      "motion": "hop",
+      "bubble": null,
+      "sound": "emo-question"
     },
     "face_scan": {
-      "width": 828,
+      "width": 810,
       "height": 1440,
       "face": {
-        "x": 0.3752,
-        "y": 0.0928,
-        "w": 0.2666,
-        "h": 0.1533
+        "x": 0.3715,
+        "y": 0.084,
+        "w": 0.2656,
+        "h": 0.1494
       }
     }
   },
   {
-    "file": "05.webp",
+    "file": "03.webp",
     "label": "惊讶",
     "aliases": [
       "surprised",
@@ -142,47 +104,31 @@
       "sound": "emo-exclaim"
     },
     "face_scan": {
-      "width": 828,
+      "width": 810,
       "height": 1440,
       "face": {
-        "x": 0.3803,
-        "y": 0.0967,
-        "w": 0.253,
-        "h": 0.1455
+        "x": 0.3906,
+        "y": 0.0762,
+        "w": 0.2708,
+        "h": 0.1523
       }
     }
   },
   {
-    "file": "06.webp",
-    "label": "慌张",
-    "aliases": [
-      "flustered",
-      "心虚",
-      "手足无措"
-    ],
-    "description": "满脸通红、眼神躲开，不知所措的慌张",
-    "effect": {
-      "motion": "shiver",
-      "bubble": "sweat",
-      "sound": "emo-sweat"
-    },
-    "face_scan": {
-      "width": 828,
-      "height": 1440,
-      "face": {
-        "x": 0.3752,
-        "y": 0.0957,
-        "w": 0.2632,
-        "h": 0.1514
-      }
-    }
-  },
-  {
-    "file": "07.webp",
+    "file": "04.webp",
     "label": "害羞",
     "aliases": [
       "shy",
-      "脸红"
+      "脸红",
+      "慌张",
+      "flustered",
+      "心虚",
+      "手足无措",
+      "撒娇",
+      "央求",
+      "拜托",
+      "黏人",
+      "pleading"
     ],
     "description": "红着脸，不好意思",
     "effect": {
@@ -191,23 +137,28 @@
       "sound": "emo-shy"
     },
     "face_scan": {
-      "width": 828,
+      "width": 810,
       "height": 1440,
       "face": {
-        "x": 0.3837,
-        "y": 0.0996,
-        "w": 0.2479,
-        "h": 0.1426
+        "x": 0.3507,
+        "y": 0.0781,
+        "w": 0.3021,
+        "h": 0.1699
       }
     }
   },
   {
-    "file": "08.webp",
+    "file": "05.webp",
     "label": "疑惑",
     "aliases": [
       "confused",
       "不解",
-      "挠头"
+      "挠头",
+      "生气",
+      "angry",
+      "闷闷",
+      "吃醋",
+      "鼓脸"
     ],
     "description": "一只手挠着头、歪着脑袋，搞不懂、没听明白",
     "effect": {
@@ -216,18 +167,18 @@
       "sound": "emo-question"
     },
     "face_scan": {
-      "width": 828,
+      "width": 810,
       "height": 1440,
       "face": {
-        "x": 0.3769,
-        "y": 0.0928,
-        "w": 0.2581,
-        "h": 0.1484
+        "x": 0.3819,
+        "y": 0.083,
+        "w": 0.2604,
+        "h": 0.1465
       }
     }
   },
   {
-    "file": "09.webp",
+    "file": "06.webp",
     "label": "思考",
     "aliases": [
       "thinking",
@@ -242,97 +193,18 @@
       "sound": "emo-bulb"
     },
     "face_scan": {
-      "width": 828,
+      "width": 810,
       "height": 1440,
       "face": {
-        "x": 0.3769,
-        "y": 0.0918,
-        "w": 0.2683,
-        "h": 0.1543
+        "x": 0.3681,
+        "y": 0.0732,
+        "w": 0.2708,
+        "h": 0.1523
       }
     }
   },
   {
-    "file": "10.webp",
-    "label": "生气",
-    "aliases": [
-      "angry",
-      "闷闷",
-      "吃醋",
-      "鼓脸"
-    ],
-    "description": "鼓起脸颊闹小别扭；被说胖、被冷落的时候",
-    "effect": {
-      "motion": "hop",
-      "bubble": null,
-      "sound": "appear-1"
-    },
-    "face_scan": {
-      "width": 828,
-      "height": 1440,
-      "face": {
-        "x": 0.3684,
-        "y": 0.0889,
-        "w": 0.2801,
-        "h": 0.1611
-      }
-    }
-  },
-  {
-    "file": "11.webp",
-    "label": "调皮",
-    "aliases": [
-      "wink",
-      "眨眼",
-      "坏笑",
-      "俏皮",
-      "小恶魔"
-    ],
-    "description": "眨一只眼，小恶魔式的坏笑",
-    "effect": {
-      "motion": "hop",
-      "bubble": null,
-      "sound": "cartoon-1"
-    },
-    "face_scan": {
-      "width": 828,
-      "height": 1440,
-      "face": {
-        "x": 0.3803,
-        "y": 0.0957,
-        "w": 0.2581,
-        "h": 0.1484
-      }
-    }
-  },
-  {
-    "file": "12.webp",
-    "label": "撒娇",
-    "aliases": [
-      "央求",
-      "拜托",
-      "黏人",
-      "pleading"
-    ],
-    "description": "嘟着嘴、眼巴巴地看着你央求；撒娇、求你的时候",
-    "effect": {
-      "motion": null,
-      "bubble": null,
-      "sound": "appear-1"
-    },
-    "face_scan": {
-      "width": 828,
-      "height": 1440,
-      "face": {
-        "x": 0.3735,
-        "y": 0.0908,
-        "w": 0.2666,
-        "h": 0.1533
-      }
-    }
-  },
-  {
-    "file": "13.webp",
+    "file": "07.webp",
     "label": "傻笑",
     "aliases": [
       "憨笑",
@@ -346,18 +218,18 @@
       "sound": "cartoon-2"
     },
     "face_scan": {
-      "width": 828,
+      "width": 810,
       "height": 1440,
       "face": {
-        "x": 0.382,
-        "y": 0.0957,
-        "w": 0.2479,
-        "h": 0.1426
+        "x": 0.3715,
+        "y": 0.0889,
+        "w": 0.2587,
+        "h": 0.1455
       }
     }
   },
   {
-    "file": "14.webp",
+    "file": "08.webp",
     "label": "装傻",
     "aliases": [
       "被骂",
@@ -365,7 +237,13 @@
       "萌混过关",
       "吐舌",
       "tehepero",
-      "卖萌"
+      "卖萌",
+      "调皮",
+      "wink",
+      "眨眼",
+      "坏笑",
+      "俏皮",
+      "小恶魔"
     ],
     "description": "眨一只眼吐舌头、小拳头轻敲自己的头；被骂、被批评、做错事想萌混过关的时候",
     "effect": {
@@ -374,18 +252,18 @@
       "sound": "emo-sweat"
     },
     "face_scan": {
-      "width": 828,
+      "width": 810,
       "height": 1440,
       "face": {
-        "x": 0.3769,
-        "y": 0.0908,
-        "w": 0.2649,
-        "h": 0.1523
+        "x": 0.3906,
+        "y": 0.082,
+        "w": 0.2691,
+        "h": 0.1514
       }
     }
   },
   {
-    "file": "15.webp",
+    "file": "09.webp",
     "label": "吃白饭",
     "aliases": [
       "吃饭",
@@ -401,13 +279,13 @@
       "sound": "emo-heart"
     },
     "face_scan": {
-      "width": 828,
+      "width": 810,
       "height": 1440,
       "face": {
-        "x": 0.3667,
-        "y": 0.0908,
-        "w": 0.275,
-        "h": 0.1582
+        "x": 0.3576,
+        "y": 0.0771,
+        "w": 0.283,
+        "h": 0.1592
       }
     }
   }
