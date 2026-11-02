@@ -77,7 +77,7 @@ def test_bundled_card_comes_with_its_sprite_pack(start_app):
         preset = client.get("/api/tavern/presets").json()[0]
 
     assert [(p["name"], p["sprite_count"], p["card_count"]) for p in packs] == [
-        ("DeepSeek娘 · 女仆", 16, 1)
+        ("DeepSeek娘 · 女仆 v2", 10, 1)
     ]
     assert bound["pack_ids"] == [packs[0]["id"]]
     assert bound["current"] == packs[0]["id"]
@@ -99,7 +99,7 @@ def test_bundled_sprites_go_only_into_the_file_store(start_app):
         client.get("/api/health")
     with db_module.SessionLocal() as s:
         rows = s.execute(text("SELECT image IS NULL, image_sha FROM pack_sprites")).all()
-    assert len(rows) == 16
+    assert len(rows) == 10
     assert all(empty and sha for empty, sha in rows)
 
 

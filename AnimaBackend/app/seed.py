@@ -20,7 +20,8 @@ from app.storage import refs
 _SEED_DATA = Path(__file__).resolve().parent / "seed_data"
 # 自带的角色:卡 + 头像 + 一个立绘包,素材授权见目录里的 CREDITS.txt
 _DEFAULT_CHAR = _SEED_DATA / "deepseek-chan"
-_DEFAULT_PACK_NAME = "DeepSeek娘 · 女仆"
+# 换过一次图(16 张旧图 → 10 张重画的),包名跟着换:老库里留着的旧包不会被当成新包挂回去
+_DEFAULT_PACK_NAME = "DeepSeek娘 · 女仆 v2"
 
 
 def seed_default_persona(db: Session) -> None:
