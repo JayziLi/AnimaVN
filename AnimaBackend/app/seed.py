@@ -9,6 +9,7 @@ from app import bindings
 from app.config import settings
 from app.models import (
     ApiConnection,
+    CardPref,
     PackSprite,
     Persona,
     PromptPreset,
@@ -22,6 +23,8 @@ _SEED_DATA = Path(__file__).resolve().parent / "seed_data"
 _DEFAULT_CHAR = _SEED_DATA / "deepseek-chan"
 # 换过一次图(16 张旧图 → 10 张重画的),包名跟着换:老库里留着的旧包不会被当成新包挂回去
 _DEFAULT_PACK_NAME = "DeepSeek娘 · 女仆 v2"
+# 自带角色的按卡设置:台词语言设成日语(日中对照)—— 没装声音也写日语、配中文字幕(11-05,前端 plugins/lang.ts 的 CardLang)
+_DEFAULT_CARD_PREFS = {"plugin.lang": {"lang": "ja"}}
 
 
 def seed_default_persona(db: Session) -> None:
@@ -130,6 +133,8 @@ def seed_default_tavern_data(db: Session) -> None:
     if db.scalars(select(TavernCard)).first() is None:
         card = _seed_default_card(db)
         _seed_default_sprites(db, card)
+        for key, value in _DEFAULT_CARD_PREFS.items():
+            db.add(CardPref(card_id=card.id, key=key, value=value))
 
     if db.scalars(select(PromptPreset)).first() is None:
         raw = json.loads((_SEED_DATA / "default-preset.json").read_text(encoding="utf-8"))

@@ -58,6 +58,16 @@ export const DEFAULT_LANG_BLOCK_PROMPT_JEV = `[双语输出]
 彼女はそう言って、ソファの端に寄って場所を空けた。
 她说着，往沙发边上挪了挪，给他让出位置。`;
 
+/**
+ * 这张卡的台词用什么语言写(11-05 用户定:语言和声音拆开,换声音时弹窗问,见 vn/LangAsk.tsx):
+ *   ja    日中对照(外语块照发,没有声音也写日语)
+ *   zh    只写中文(外语块不发)
+ *   auto  没设过:跟着主声音走(日语声音才发外语块)—— 以前的规则,老卡不用迁移
+ * 按卡存(card_prefs 的 plugin.lang.lang),全局那份永远是 auto
+ */
+export type CardLang = 'auto' | 'ja' | 'zh';
+export const CARD_LANGS: readonly CardLang[] = ['auto', 'ja', 'zh'];
+
 export interface LangPluginConfig {
   /** 「加入当前预设」时写进块里的内容;预设里的这块始终跟着它 */
   blockPrompt: string;
@@ -65,12 +75,15 @@ export interface LangPluginConfig {
   showJa: boolean;
   /** 预设里完全没有外语块时,组装这次自动补上(core/assembly.ts)。按卡设,默认关(设计稿 2.7、3.9) */
   autoFill: boolean;
+  /** 这张卡的台词语言(按卡设;全局是 auto) */
+  lang: CardLang;
 }
 
 export const DEFAULT_LANG_CONFIG: LangPluginConfig = {
   blockPrompt: DEFAULT_LANG_BLOCK_PROMPT,
   showJa: true,
   autoFill: false,
+  lang: 'auto',
 };
 
 /** 后端存的是任意 JSON —— 缺字段或类型不对的就退回默认值 */
@@ -81,7 +94,32 @@ export function normalizeLangConfig(raw: unknown): LangPluginConfig {
     blockPrompt: typeof r.blockPrompt === 'string' ? r.blockPrompt : d.blockPrompt,
     showJa: typeof r.showJa === 'boolean' ? r.showJa : d.showJa,
     autoFill: typeof r.autoFill === 'boolean' ? r.autoFill : d.autoFill,
+    lang: CARD_LANGS.includes(r.lang as CardLang) ? (r.lang as CardLang) : d.lang,
   };
+}
+
+/** 这张卡现在写不写日语:设过就照设的,没设过(auto)跟着主声音(没有主声音 = 不写) */
+export function writesJa(lang: CardLang, mainVoiceLang: string | null): boolean {
+  if (lang === 'ja') return true;
+  if (lang === 'zh') return false;
+  return mainVoiceLang !== null && isJaLang(mainVoiceLang);
+}
+
+/**
+ * 换主声音时要不要问(vn/LangAsk.tsx):新声音的语言和这张卡现在写的不一样才问。
+ * 返回 null = 不用问;否则 keep = 先把现在的语言记成设过的(没设过的卡换声音时语言不会悄悄跟着变),
+ * toJa = 弹窗里勾上以后切到哪种
+ */
+export function langAskFor(
+  lang: CardLang,
+  oldVoiceLang: string | null,
+  newVoiceLang: string | null,
+): { keep: 'ja' | 'zh'; toJa: boolean } | null {
+  if (newVoiceLang === null) return null;
+  const now = writesJa(lang, oldVoiceLang);
+  const voiceJa = isJaLang(newVoiceLang);
+  if (voiceJa === now) return null;
+  return { keep: now ? 'ja' : 'zh', toJa: voiceJa };
 }
 
 export const langBlockState = (

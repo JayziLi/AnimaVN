@@ -760,3 +760,17 @@
   z-index: 96;
   --av-ctl: var(--av-acc-deep);
 }
+
+/* ---------- 换声音后问换不换语言(LangAskDialog):一行开关 + 确定 ---------- */
+.av-langask {
+  width: 360px;
+}
+.av-langask-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+  font: 14px/1.5 var(--av-sans);
+  color: var(--av-ink);
+  cursor: pointer;
+}

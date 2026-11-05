@@ -54,6 +54,7 @@ export const TIPS = {
   skip_user_off: '你在预设里关了这块，这次不发。',
   lang_not_ja: '这张卡的音色不是日语，外语块这次不发。',
   lang_no_voice: '这张卡没设音色，外语块这次不发。',
+  lang_card_zh: '这张卡设成了只写中文，外语块不发。',
   no_user_block: '让 AI 别替你写台词和动作。哪句是你的话，交给 Jev 来认。',
   voice_switch: '语音总开关。和游戏设置、右上角语音面板里的是同一个。',
   sprite_preview_ai: '输入 AI 可能会写的表情词，看看会换哪张立绘。只查看不修改。',

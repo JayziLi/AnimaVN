@@ -148,7 +148,7 @@ export function LangPage(p: {
   const changed = config.blockPrompt !== DEFAULT_LANG_BLOCK_PROMPT;
   // 看的就是当前聊天这张卡:照这次的发送计划写
   const current = send !== undefined && send.card !== null && card !== null && send.card.id === card.id;
-  const status = current ? langStatus(send.plan, { hasPreset: send.presetName !== null, mainVoiceLang: send.mainVoiceLang }) : null;
+  const status = current ? langStatus(send.plan, { hasPreset: send.presetName !== null, mainVoiceLang: send.mainVoiceLang, cardLang: send.cardLang }) : null;
   const inUse = status ? { on: status.state !== 'skip', text: STATUS_TEXT[status.state] } : facts ? inUseOf(name, ja) : null;
 
   const head = <PageHead title="外语" inUse={inUse} tags={facts ? headTags('lang', facts, []) : []} tagTip="lang_auto" />;

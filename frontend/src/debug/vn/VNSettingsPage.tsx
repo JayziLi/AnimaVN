@@ -83,6 +83,9 @@ interface Props {
   /** 字幕:外语插件的「显示日语」(全局一份,和调试台插件里的是同一个开关) */
   showJa: boolean;
   onChangeShowJa: (showJa: boolean) => void;
+  /** 这张卡写不写日语;没选角色是 undefined(「语言」那行不出) */
+  cardJa?: boolean;
+  onChangeCardLang?: (lang: 'ja' | 'zh') => void;
   /** 隐藏前文日语:外语块不发以后(比如音色换成了中文),前面回复里的日语对玩家和模型都藏起来 */
   jaHide: JaHideControls;
   /** 打开时停在哪一栏(右上角语音面板点「完整设置」进来是「声音」;卡带的分页是它的 key) */
@@ -390,6 +393,8 @@ export function VNSettingsPage({
   onOpenVoice,
   showJa,
   onChangeShowJa,
+  cardJa,
+  onChangeCardLang,
   jaHide,
   initialTab,
   titleMusic,
@@ -409,6 +414,7 @@ export function VNSettingsPage({
     enterKey,
     voiceConfig,
     showJa,
+    cardJa: onChangeCardLang ? cardJa : undefined,
     bgm: { volume: bgm.volume, muted: bgm.muted, error: bgm.error },
     voice: { volume: voice.volume, muted: voice.muted, lastError: voice.lastError },
     titleMusic: titleMusic
@@ -423,6 +429,7 @@ export function VNSettingsPage({
     setVoiceConfig: onChangeVoiceConfig,
     setEnterKey: onChangeEnterKey,
     setShowJa: onChangeShowJa,
+    setCardLang: (lang) => onChangeCardLang?.(lang),
     setBgmVolume: (v) => bgmPlayer.setVolume(v),
     setBgmMuted: (m) => bgmPlayer.setMuted(m),
     setVoiceVolume: (v) => voicePlayer.setVolume(v),
