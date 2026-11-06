@@ -28,6 +28,8 @@ interface World {
   voice: { volume: number; muted: boolean };
   titleMusic: string | null;
   touch?: boolean;
+  /** 这张卡写不写日语;没选角色是 undefined */
+  cardJa?: boolean;
 }
 
 const defaults = (): World => ({
@@ -57,6 +59,7 @@ function stateOf(w: World): SettingsState {
     voiceCastName: '星绘(日语)',
     jaHidden: 0,
     touch: w.touch,
+    cardJa: w.cardJa,
   };
 }
 
@@ -71,6 +74,7 @@ function sinksOf(w: World): Sinks {
     setVoiceVolume: (v) => (w.voice.volume = v),
     setVoiceMuted: (m) => (w.voice.muted = m),
     setTitleMusic: (id) => (w.titleMusic = id),
+    setCardLang: (lang) => (w.cardJa = lang === 'ja'),
   };
 }
 
@@ -274,6 +278,17 @@ describe('一项不能少', () => {
     // 没有对应插件页的项不挂(比如语音音量、BGM 音量)
     expect(dupOf('voiceVol')).toBeUndefined();
     expect(dupOf('bgmVol')).toBeUndefined();
+  });
+
+  it('「语言」只在选了角色时出,在文字页;点了写这张卡的语言', () => {
+    expect(rowOf(build(defaults()), 'cardLang')).toBeUndefined();
+    const w = { ...defaults(), cardJa: false };
+    const tabs = build(w);
+    expect(tabOfRow(tabs, 'cardLang')).toBe('text');
+    const row = rowOf(tabs, 'cardLang');
+    expect(row && row.kind === 'seg' ? row.value : null).toBe(false);
+    if (row?.kind === 'seg') row.onPick(true);
+    expect(w.cardJa).toBe(true);
   });
 
   it('前文日语在文字页、数据在进阶里;每行有自己的 id,页内不重复', () => {

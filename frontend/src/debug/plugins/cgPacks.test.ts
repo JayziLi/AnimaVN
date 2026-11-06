@@ -27,7 +27,7 @@ describe('mergeSceneAssets', () => {
     const a = [asset('c1', 'cg', { source: 'cg' }), asset('c1v', 'cg', { source: 'cg', parent_id: 'c1' })];
     const b = [asset('c2', 'cg', { source: 'cg' })];
     expect(mergeSceneAssets(scene, { cg_pack_id: 'x' }, [a, b]).map((r) => r.id)).toEqual(['bg1', 'm1', 'c1', 'c1v', 'c2']);
-    // 没绑 CG 包:拆过的场景包也不出 CG(Wikira 借星庇所当背景的情形)
+    // 没绑 CG 包:拆过的场景包也不出 CG(角色借别的场景包当背景的情形)
     expect(mergeSceneAssets(scene, { cg_pack_id: 'x' }, []).map((r) => r.id)).toEqual(['bg1', 'm1']);
   });
 

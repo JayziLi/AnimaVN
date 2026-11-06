@@ -7,9 +7,10 @@
  * - 立绘 / 背景 / BGM / CG:插件开关关着 → 不发(off);这一路 Jev 标(有 key)→ 不发(jev);
  *   这张卡没有这一路能用的素材 → 不发(no-material);在编排里开着 → 发(选了 Jev 但没 key 时原因是 no-key);
  *   在编排里关着 → 不发(user-off);不在编排里、开着自动补块 → 自动补(上面三种不发的不补)。
- * - 外语:没有主声音 → 不发(lang-no-voice);主声音不是日语 → 不发(lang-not-ja);在编排里关着 → 不发(user-off);
- *   在编排里开着 → 这次一块标签块都没发时发精简版(lang-trim),否则照发;不在编排里、开着自动补块 → 自动补
- *   (精简版同上)。
+ * - 外语:先看这张卡的语言(cardLang,lang.ts 的 CardLang):设成中文 → 不发(lang-card-zh);设成日语 → 不看声音;
+ *   没设过 → 跟着主声音:没有主声音 → 不发(lang-no-voice),主声音不是日语 → 不发(lang-not-ja)。
+ *   要发时:在编排里关着 → 不发(user-off);在编排里开着 → 这次一块标签块都没发时发精简版(lang-trim),否则照发;
+ *   不在编排里、开着自动补块 → 自动补(精简版同上)。
  * - 别替玩家说话:在编排里开着 → 发;关着 → 不发(user-off);不在编排里、开着自动补块 → 自动补。
  *   不看 Jev、插件开关、素材。
  * 只列在编排里的和这次自动补的,按插件块的先后(PLUGIN_BLOCK_IDS)。
@@ -17,7 +18,7 @@
 
 import type { PresetOrderEntry } from '../lib/presetParser';
 import type { JevKinds } from '../plugins/jev';
-import { isJaLang, LANG_BLOCK_ID } from '../plugins/lang';
+import { isJaLang, LANG_BLOCK_ID, type CardLang } from '../plugins/lang';
 import { PLUGIN } from '../plugins/registry';
 
 /** 这张卡(这个状态)有没有跟着这一路走、真能用起来的素材 */
@@ -42,6 +43,7 @@ export type SendReason =
   | 'user-off' // 预设里关着
   | 'lang-no-voice' // 外语:没有主声音
   | 'lang-not-ja' // 外语:主声音不是日语
+  | 'lang-card-zh' // 外语:这张卡设成了只写中文
   | 'lang-trim' // 外语:精简版(这次一块标签块都没发)
   | 'auto-fill'; // 预设里没有,这次自动补
 
@@ -65,12 +67,21 @@ export interface SendPlanInput {
   material: AutoFillMaterial;
   /** 主声音的 text_lang;没有主声音是 null */
   mainVoiceLang: string | null;
+  /** 这张卡的台词语言;不传 = auto(跟着主声音) */
+  cardLang?: CardLang;
   /** core.assembly.autoFill */
   autoFill: boolean;
 }
 
 /** 跟着素材走、有标签的四路 */
 const TAG_KINDS = ['sprite', 'bg', 'bgm', 'cg'] as const;
+
+/** 外语块这次为什么不发;要发是 null */
+function langSkipOf(cardLang: CardLang, mainVoiceLang: string | null): SendReason | null {
+  if (cardLang === 'zh') return 'lang-card-zh';
+  if (cardLang === 'ja') return null;
+  return mainVoiceLang === null ? 'lang-no-voice' : !isJaLang(mainVoiceLang) ? 'lang-not-ja' : null;
+}
 
 /** 只返回「在编排里的」和「这次自动补的」插件块,按 PLUGIN_BLOCK_IDS 的先后 */
 export function blockSendPlan(i: SendPlanInput): BlockSend[] {
@@ -97,7 +108,7 @@ export function blockSendPlan(i: SendPlanInput): BlockSend[] {
   const tagsSent = out.some((b) => b.state === 'send' || b.state === 'auto');
   const lang = (state: SendState, reason: SendReason, short?: boolean) =>
     out.push({ identifier: LANG_BLOCK_ID, plugin: 'lang', state, reason, ...(short ? { short } : {}) });
-  const langSkip = i.mainVoiceLang === null ? 'lang-no-voice' : !isJaLang(i.mainVoiceLang) ? 'lang-not-ja' : null;
+  const langSkip = langSkipOf(i.cardLang ?? 'auto', i.mainVoiceLang);
   if (langSkip) {
     if (inOrder(LANG_BLOCK_ID)) lang('skip', langSkip);
   } else if (inOrder(LANG_BLOCK_ID)) {
@@ -132,6 +143,7 @@ export type SendTipKey =
   | 'skip_nocg'
   | 'lang_not_ja'
   | 'lang_no_voice'
+  | 'lang_card_zh'
   | 'skip_user_off';
 
 export interface SendBadge {
@@ -147,6 +159,7 @@ const SKIP_TIP: Partial<Record<SendReason, SendTipKey>> = {
   'no-material': 'skip_nomaterial',
   'lang-not-ja': 'lang_not_ja',
   'lang-no-voice': 'lang_no_voice',
+  'lang-card-zh': 'lang_card_zh',
 };
 
 /** 一块的小块;照预设发的、预设里本来就关着的不加(返回 null) */
@@ -164,7 +177,10 @@ export type LangStatus =
   | { state: 'send' | 'short'; auto: boolean }
   | { state: 'skip'; why: { tip: SendTipKey } | { text: string } };
 
-export function langStatus(plan: readonly BlockSend[], o: { hasPreset: boolean; mainVoiceLang: string | null }): LangStatus {
+export function langStatus(
+  plan: readonly BlockSend[],
+  o: { hasPreset: boolean; mainVoiceLang: string | null; cardLang?: CardLang },
+): LangStatus {
   const b = plan.find((x) => x.plugin === 'lang');
   if (b) {
     if (b.state === 'send' || b.state === 'short') return { state: b.state, auto: false };
@@ -174,8 +190,8 @@ export function langStatus(plan: readonly BlockSend[], o: { hasPreset: boolean; 
   }
   // 不在编排里、也没自动补
   if (!o.hasPreset) return { state: 'skip', why: { text: '还没选预设。' } };
-  if (o.mainVoiceLang === null) return { state: 'skip', why: { tip: 'lang_no_voice' } };
-  if (!isJaLang(o.mainVoiceLang)) return { state: 'skip', why: { tip: 'lang_not_ja' } };
+  const skip = langSkipOf(o.cardLang ?? 'auto', o.mainVoiceLang);
+  if (skip) return { state: 'skip', why: { tip: SKIP_TIP[skip] ?? 'skip_user_off' } };
   return { state: 'skip', why: { text: '当前预设里没有这一块，自动补块也关着，所以这次不发送。' } };
 }
 
@@ -208,6 +224,8 @@ export interface SendView {
   plan: readonly BlockSend[];
   auto: readonly AutoBlockInfo[];
   mainVoiceLang: string | null;
+  /** 这张卡的台词语言 */
+  cardLang?: CardLang;
   /** 外语块:插件模板原文、精简版(plugins/jev.ts 的 jevLangPrompt) */
   lang: { full: string; short: string };
 }

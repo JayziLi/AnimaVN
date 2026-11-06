@@ -65,12 +65,9 @@ DeepSeek娘之外，导入你自己的卡就能玩。下面是作者本机导入
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/images/chars-wikira.webp" alt="Wikira"><br><sub>Wikira：作者的原创角色，日语配音、中文字幕</sub></td>
-    <td width="50%"><img src="docs/images/chars-keqing.webp" alt="刻晴"><br><sub>刻晴（原神）：背景和 BGM 跟着剧情换</sub></td>
-  </tr>
-  <tr>
-    <td><img src="docs/images/chars-alice.webp" alt="天童爱丽丝"><br><sub>天童爱丽丝（蔚蓝档案）：旁白也可以日中双语</sub></td>
-    <td><img src="docs/images/chars-aemeath.webp" alt="爱弥斯"><br><sub>爱弥斯（鸣潮）：旁白没有名字，和台词一眼分得开</sub></td>
+    <td width="33%"><img src="docs/images/chars-keqing.webp" alt="刻晴"><br><sub>刻晴（原神）：背景和 BGM 跟着剧情换</sub></td>
+    <td width="33%"><img src="docs/images/chars-alice.webp" alt="天童爱丽丝"><br><sub>天童爱丽丝（蔚蓝档案）：旁白也可以日中双语</sub></td>
+    <td width="33%"><img src="docs/images/chars-aemeath.webp" alt="爱弥斯"><br><sub>爱弥斯（鸣潮）：旁白没有名字，和台词一眼分得开</sub></td>
   </tr>
 </table>
 
@@ -518,6 +515,6 @@ GPT-SoVITS 需要 NVIDIA 显卡才快。没有的话先不开语音，其它功�
 - 自带角色 DeepSeek娘：形象原型是上善的原创角色[《溟月》](https://www.pixiv.net/users/62155430)，女仆鲸鱼娘设计来自 [ZipZipPipe](https://www.pixiv.net/artworks/148186519)，10 个表情差分由 AnimaVN 以原图为参考重画。立绘按 **CC BY-NC-SA 4.0**（署名、非商用、相同方式共享）发布，详见 [`AnimaBackend/app/seed_data/deepseek-chan/CREDITS.txt`](AnimaBackend/app/seed_data/deepseek-chan/CREDITS.txt)
 - 示例素材：Ren'Py 示例游戏 *The Question* 的立绘和背景（MIT），Kevin MacLeod 的曲子（CC BY 4.0），详见 [`frontend/public/vn/CREDITS.txt`](frontend/public/vn/CREDITS.txt)
 
-**关于截图**：DeepSeek娘的立绘见上面的授权；Wikira 是作者的原创角色；截图里的背景、刻晴、爱丽丝、爱弥斯等角色来自各自的游戏，版权归原作者，只用来展示界面，不随仓库分发。仓库里除了 DeepSeek娘和上面的示例素材，**不带别的角色卡、立绘或声音模型**，请用你自己有权使用的素材。
+**关于截图**：DeepSeek娘的立绘见上面的授权；截图里的背景、刻晴、爱丽丝、爱弥斯等角色来自各自的游戏，版权归原作者，只用来展示界面，不随仓库分发。仓库里除了 DeepSeek娘和上面的示例素材，**不带别的角色卡、立绘或声音模型**，请用你自己有权使用的素材。
 
 代码以 [MIT](LICENSE) 协议开源；DeepSeek娘的立绘不在 MIT 范围内，按 CC BY-NC-SA 4.0。

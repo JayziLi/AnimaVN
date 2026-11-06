@@ -241,6 +241,9 @@ interface Props {
   showJa: boolean;
   /** 设置页「字幕」改的就是外语插件的「显示日语」(全局一份) */
   onChangeShowJa: (showJa: boolean) => void;
+  /** 这张卡写不写日语(设置页「语言」);没选角色是 undefined */
+  cardJa?: boolean;
+  onChangeCardLang?: (lang: 'ja' | 'zh') => void;
   /** 隐藏前文日语(plugins/jaHide.ts):藏了的回复不显示日语,历史页「显示原文」还看得到 */
   jaHide: JaHideControls;
   /** 立绘和文字同步(Jev 通用设置):这句 Jev 判完才出字 */
@@ -741,6 +744,8 @@ export function VNScreen({
   onChangeVoiceConfig,
   showJa,
   onChangeShowJa,
+  cardJa,
+  onChangeCardLang,
   jaHide,
   jevSync,
   enterKey,
@@ -2802,6 +2807,8 @@ export function VNScreen({
               onOpenVoice={openVoice}
               showJa={showJa}
               onChangeShowJa={onChangeShowJa}
+              cardJa={currentCardId ? cardJa : undefined}
+              onChangeCardLang={onChangeCardLang}
               jaHide={jaHide}
               initialTab={settingsTab}
               extraTabs={

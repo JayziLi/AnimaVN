@@ -68,7 +68,7 @@ describe('CARD_PREF_FIELDS', () => {
       'plugin.bgm': ['mode', 'jev.threshold'],
       'plugin.cg': ['mode', 'jev.threshold'],
       'plugin.player': ['mode'],
-      'plugin.lang': ['autoFill'],
+      'plugin.lang': ['autoFill', 'lang'],
     });
   });
 
@@ -77,7 +77,7 @@ describe('CARD_PREF_FIELDS', () => {
       path.split('.').reduce<unknown>((o, k) => (o as Record<string, unknown>)[k], obj);
     // 每个字段换一个和默认不一样、又在范围里的值
     const valueOf = (path: string) =>
-      path === 'mode' ? 'jev' : path === 'autoFill' ? true : SWITCH_THRESHOLD.min + 0.01;
+      path === 'mode' ? 'jev' : path === 'autoFill' ? true : path === 'lang' ? 'ja' : SWITCH_THRESHOLD.min + 0.01;
     const normalizers: Record<string, (raw: unknown) => unknown> = {
       'plugin.sprite': normalizeSpriteConfig,
       'plugin.bg': (v) => normalizeSceneConfig('bg', v),

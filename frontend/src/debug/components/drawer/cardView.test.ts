@@ -180,16 +180,16 @@ describe('pickLabels', () => {
       { id: 'a', name: '刻晴', note: '日语配音版：开场白和示例日中对照' },
       { id: 'b', name: '刻晴', note: '中文版：开场白和示例只有中文' },
       { id: 'c', name: '阿米娅', note: '本地测试用角色' },
-      { id: 'd', name: 'Wikira' },
-      { id: 'e', name: 'Wikira', note: '' },
+      { id: 'd', name: 'Mira' },
+      { id: 'e', name: 'Mira', note: '' },
       { id: 'f', name: '' },
     ]);
     expect(Object.fromEntries(labels)).toEqual({
       a: '刻晴 · 日语配音版',
       b: '刻晴 · 中文版',
       c: '阿米娅',
-      d: 'Wikira · 第 1 张',
-      e: 'Wikira · 第 2 张',
+      d: 'Mira · 第 1 张',
+      e: 'Mira · 第 2 张',
       f: '(未命名)',
     });
   });

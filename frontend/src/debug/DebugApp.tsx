@@ -132,7 +132,7 @@ import {
   sceneTagKind,
 } from './plugins/scene';
 import { effectiveOf } from './plugins/cardPrefs';
-import { useCardPrefs } from './plugins/useCardPrefs';
+import { useCardPrefsState } from './plugins/useCardPrefs';
 import { usePluginConfig } from './plugins/usePluginConfig';
 import { useScenePlugin } from './plugins/useScenePlugin';
 import { useSpriteLayout } from './plugins/useSpriteLayout';
@@ -169,8 +169,10 @@ import {
   LANG_BLOCK_NAME,
   LANG_SETTING_KEY,
   insertLangBlock,
+  langAskFor,
   langBlockState,
   normalizeLangConfig,
+  writesJa,
   type LangPluginConfig,
 } from './plugins/lang';
 import {
@@ -231,6 +233,7 @@ import { VNSaves } from './vn/VNSaves';
 import type { ModelQuick } from './vn/ModelWindow';
 import { VNScreen, type PendingJump } from './vn/VNScreen';
 import { ConfirmHost } from './vn/ui/ConfirmHost';
+import { LangAskHost, type LangAsk } from './vn/ui/LangAskDialog';
 import { usePaperTheme } from './vn/usePaperTheme';
 import { ConfirmProvider, createConfirmer, type ConfirmRequest } from './vn/ui/confirm';
 import { noticeToToast, routeNotice, saveReceipt } from './vn/ui/notice';
@@ -725,7 +728,23 @@ export default function DebugApp() {
    * 管行为的地方(组装时摘哪几块、Jev 标哪几类、门槛、标签格式、视觉小说)用叠过的「这张卡实际用的」;
    * 插件抽屉、写进预设的插件块正文还是全局那份。这张卡没另设时就是全局那份本身,和没有按卡设置时一样
    */
-  const cardPrefs = useCardPrefs(cardId, notify);
+  const cardPrefsState = useCardPrefsState(cardId, notify);
+  const cardPrefs = cardPrefsState.prefs;
+  /** 外语插件这张卡实际用的:台词语言(lang)按卡设,其余照全局 */
+  const langEffective = useMemo(
+    () => effectiveOf(langConfig, cardPrefs, LANG_SETTING_KEY, normalizeLangConfig),
+    [langConfig, cardPrefs],
+  );
+  /** 改这张卡的台词语言:按卡设置 plugin.lang 里只换 lang,另设过的别的字段留着 */
+  const putCardPref = cardPrefsState.put;
+  const setCardLang = useCallback(
+    (lang: 'ja' | 'zh') => putCardPref(LANG_SETTING_KEY, { ...(cardPrefs?.[LANG_SETTING_KEY] ?? {}), lang }),
+    [putCardPref, cardPrefs],
+  );
+  /** 换了主声音以后问换不换语言(vn/ui/LangAskDialog);换卡就收起 */
+  const [langAsk, setLangAsk] = useState<LangAsk | null>(null);
+  const langAskSeq = useRef(0);
+  useEffect(() => setLangAsk(null), [cardId]);
   const spriteEffective = useMemo(
     () => effectiveOf(spriteConfig, cardPrefs, SPRITE_SETTING_KEY, normalizeSpriteConfig),
     [spriteConfig, cardPrefs],
@@ -1796,6 +1815,8 @@ export default function DebugApp() {
       },
       // 外语块跟着主声音的语言走(日语声音才发);没有主声音是 null
       mainVoiceLang: voicePlugin.cast.main?.text_lang ?? null,
+      // 这张卡的台词语言:设成日语没有声音也发外语块,设成中文不发,没设过跟着主声音
+      cardLang: langEffective.lang,
       blocks: {
         [SPRITE_BLOCK_ID]: { identifier: SPRITE_BLOCK_ID, name: SPRITE_BLOCK_NAME, content: spriteConfig.blockPrompt },
         [SCENE.bg.blockId]: { identifier: SCENE.bg.blockId, name: SCENE.bg.blockName, content: scenePlugin.configs.bg.blockPrompt },
@@ -1817,6 +1838,7 @@ export default function DebugApp() {
     cgOkNow,
     spriteConfig.blockPrompt,
     langConfig.blockPrompt,
+    langEffective.lang,
     connections,
     connectionId,
   ]);
@@ -1835,6 +1857,7 @@ export default function DebugApp() {
       plan: assemblyPass.plan,
       auto: assemblyPass.auto,
       mainVoiceLang: autoFill.mainVoiceLang,
+      cardLang: autoFill.cardLang,
       lang: { full: langConfig.blockPrompt, short: jevLangPrompt(langConfig.blockPrompt, vnKinds) },
     }),
     [cardId, card, preset?.name, assemblyPass.plan, assemblyPass.auto, autoFill, langConfig.blockPrompt, vnKinds],
@@ -4381,10 +4404,23 @@ export default function DebugApp() {
           voiceConfig={voicePlugin.config}
           voiceCast={voicePlugin.cast}
           voiceProfiles={voicePlugin.profiles}
-          // 游戏里语音面板「音色」就地换:主声音换成它(和抽屉里换音色一样写库),这张卡挂着的配角声音照旧
-          onPickVoice={(id) =>
-            void voicePlugin.bind({ main: id, extras: voicePlugin.binding.extras.filter((x) => x !== id) })
-          }
+          // 游戏里语音面板「音色」就地换:主声音换成它(和抽屉里换音色一样写库),这张卡挂着的配角声音照旧。
+          // 新声音的语言和这张卡现在写的不一样就问一次换不换语言(11-05):没设过的卡先把现在的语言记下,不悄悄跟着变
+          onPickVoice={(id) => {
+            const oldLang = voicePlugin.cast.main?.text_lang ?? null;
+            const next = voicePlugin.profiles.find((p) => p.id === id);
+            const lang = langEffective.lang;
+            void voicePlugin
+              .bind({ main: id, extras: voicePlugin.binding.extras.filter((x) => x !== id) })
+              .then((ok) => {
+                const ask = ok && next ? langAskFor(lang, oldLang, next.text_lang ?? null) : null;
+                if (!ask) return;
+                if (lang === 'auto') void setCardLang(ask.keep);
+                setLangAsk({ id: ++langAskSeq.current, toJa: ask.toJa });
+              });
+          }}
+          cardJa={cardId ? writesJa(langEffective.lang, voicePlugin.cast.main?.text_lang ?? null) : undefined}
+          onChangeCardLang={(lang) => void setCardLang(lang)}
           sfxEnabled={splice.on}
           onChangeVoiceConfig={voicePlugin.changeConfig}
           showJa={langConfig.showJa}
@@ -4671,6 +4707,15 @@ export default function DebugApp() {
       )}
 
       <ConfirmHost req={confirmReq} theme={paperTheme} onSettle={confirmer.settle} />
+      <LangAskHost
+        ask={langAsk}
+        theme={paperTheme}
+        onDone={(switchLang) => {
+          const a = langAsk;
+          setLangAsk(null);
+          if (switchLang && a) void setCardLang(a.toJa ? 'ja' : 'zh');
+        }}
+      />
     </div>
     </ConfirmProvider>
   );

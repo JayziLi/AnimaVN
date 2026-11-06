@@ -292,7 +292,7 @@ describe('生图卡带 · 图挂在消息上', () => {
   it('状态笔记:记在那个分支上,图和别的记号不动;画下一张时拿前面最近那条记下的', () => {
     const note = (story: string): VnImageNote => ({
       place: '客厅',
-      people: [{ who: 'Wikira', look: 'pink hair', clothes: 'barefoot', notes: '' }],
+      people: [{ who: 'Mira', look: 'blue hair', clothes: 'barefoot', notes: '' }],
       story,
     });
     const e = entry('a1', 'assistant', [m(2, 'img')], 2);

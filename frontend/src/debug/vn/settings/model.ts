@@ -50,6 +50,8 @@ export interface Patch {
   voice?: Partial<VoicePluginConfig>;
   enterKey?: EnterKeyMode;
   showJa?: boolean;
+  /** 这张卡的台词语言(按卡存,外语插件的 plugin.lang.lang) */
+  cardLang?: 'ja' | 'zh';
   /** 0–1 */
   bgmVolume?: number;
   bgmMuted?: boolean;
@@ -65,6 +67,7 @@ export interface Sinks {
   setVoiceConfig: (next: VoicePluginConfig) => void;
   setEnterKey: (mode: EnterKeyMode) => void;
   setShowJa: (showJa: boolean) => void;
+  setCardLang: (lang: 'ja' | 'zh') => void;
   setBgmVolume: (v: number) => void;
   setBgmMuted: (m: boolean) => void;
   setVoiceVolume: (v: number) => void;
@@ -78,6 +81,8 @@ export interface SettingsState {
   enterKey: EnterKeyMode;
   voiceConfig: VoicePluginConfig;
   showJa: boolean;
+  /** 这张卡现在写不写日语(设过的照设的,没设过的跟着声音);没选角色是 undefined */
+  cardJa?: boolean;
   bgm: { volume: number; muted: boolean; error: string | null };
   voice: { volume: number; muted: boolean; lastError: string | null };
   /** 封面音乐:没选角色是 null */
@@ -96,6 +101,7 @@ export function applyPatch(p: Patch, s: SettingsState, to: Sinks): void {
   if (p.voice) to.setVoiceConfig(normalizeVoiceConfig({ ...s.voiceConfig, ...p.voice }));
   if (p.enterKey !== undefined) to.setEnterKey(p.enterKey);
   if (p.showJa !== undefined) to.setShowJa(p.showJa);
+  if (p.cardLang !== undefined) to.setCardLang(p.cardLang);
   if (p.bgmVolume !== undefined) to.setBgmVolume(p.bgmVolume);
   if (p.bgmMuted !== undefined) to.setBgmMuted(p.bgmMuted);
   if (p.voiceVolume !== undefined) to.setVoiceVolume(p.voiceVolume);
@@ -339,6 +345,23 @@ export function buildTabs(s: SettingsState, apply: (p: Patch) => void, nodes: No
       {
         rows: [
           vnSeg('textSpeed', '文字速度', TEXT_SPEEDS),
+          // 这张卡的台词语言(11-05 和声音拆开;换声音时 vn/ui/LangAskDialog 问一次)。没选角色不出这行
+          ...(s.cardJa === undefined
+            ? []
+            : [
+                {
+                  kind: 'seg' as const,
+                  id: 'cardLang',
+                  name: '语言',
+                  options: [
+                    { value: true, name: '日语（中文字幕）' },
+                    { value: false, name: '中文' },
+                  ],
+                  value: s.cardJa,
+                  onPick: (val: string | number | boolean) => apply({ cardLang: val ? 'ja' : 'zh' }),
+                  note: '这张卡的台词用哪种语言写',
+                },
+              ]),
           {
             kind: 'seg',
             id: 'showJa',

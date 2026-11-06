@@ -17,7 +17,7 @@ import type { AssembledMessage, AssemblyResult } from '../lib/assembler';
 import type { PresetOrderEntry, PresetPrompt, TavernPreset } from '../lib/presetParser';
 import type { PluginBlock } from '../plugins/common';
 import { anyJev, jevLangPrompt, jevTagKinds, NO_JEV, type JevKinds } from '../plugins/jev';
-import { LANG_BLOCK_ID } from '../plugins/lang';
+import { LANG_BLOCK_ID, type CardLang } from '../plugins/lang';
 import { PLUGIN_BLOCK_IDS } from '../plugins/registry';
 import type { TagKind } from '../vn/script';
 import { blockSendPlan, type AutoFillMaterial, type BlockSend } from './sendPlan';
@@ -31,8 +31,10 @@ export interface AutoFill {
   configuredJev: JevKinds;
   /** 这张卡有没有各路的素材:没有的那一路块不发、也不补 */
   material: AutoFillMaterial;
-  /** 主声音的 text_lang;没有主声音是 null。外语块只跟着日语声音发 */
+  /** 主声音的 text_lang;没有主声音是 null */
   mainVoiceLang: string | null;
+  /** 这张卡的台词语言(按卡设;不传 = auto,外语块跟着日语声音发) */
+  cardLang?: CardLang;
   /** 各插件块的模板:名字和正文,和「加入当前预设」得到的一样 */
   blocks: Readonly<Record<string, PluginBlock>>;
   /** Anthropic 格式的连接:补的块并进最后一个 user 回合 */
@@ -195,6 +197,7 @@ export function pluginAssemblyPass(o: AssemblyPassInput): AssemblyPass {
     offKinds,
     material: fill.material,
     mainVoiceLang: fill.mainVoiceLang,
+    cardLang: fill.cardLang,
     autoFill: fill.enabled && o.preset !== null,
   }).filter((b) => b.state !== 'auto' || b.identifier in fill.blocks);
 

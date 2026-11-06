@@ -28,7 +28,8 @@ export const CARD_PREF_FIELDS: Readonly<Record<string, readonly string[]>> = {
   [PLUGIN.bgm.settingKey]: ['mode', 'jev.threshold'],
   [PLUGIN.cg.settingKey]: ['mode', 'jev.threshold'],
   [PLUGIN.player.settingKey]: ['mode'],
-  [PLUGIN.lang.settingKey]: ['autoFill'],
+  // lang:这张卡的台词语言(lang.ts 的 CardLang),只按卡设
+  [PLUGIN.lang.settingKey]: ['autoFill', 'lang'],
 };
 
 /** 这个键能按卡设的字段;不能按卡设的键是 null(用 hasOwn:库里来的键可能叫 constructor 这类) */

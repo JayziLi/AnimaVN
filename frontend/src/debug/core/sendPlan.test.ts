@@ -103,6 +103,22 @@ describe('blockSendPlan · 外语', () => {
     expect(pick(of(plan({ order: [on('anima_sprite'), off('anima_lang')] }), 'anima_lang'))).toEqual(['skip', 'user-off']);
   });
 
+  it('a card set to Japanese sends it without any voice (or with a Chinese one); a card set to Chinese never does', () => {
+    expect(pick(of(plan({ order, mainVoiceLang: null, cardLang: 'ja' }), 'anima_lang'))).toEqual(['send', 'normal']);
+    expect(pick(of(plan({ order, mainVoiceLang: 'zh', cardLang: 'ja' }), 'anima_lang'))).toEqual(['send', 'normal']);
+    expect(of(plan({ order: [on('anima_sprite')], mainVoiceLang: null, cardLang: 'ja', autoFill: true }), 'anima_lang')).toMatchObject({ state: 'auto' });
+    expect(pick(of(plan({ order, mainVoiceLang: 'ja', cardLang: 'zh' }), 'anima_lang'))).toEqual(['skip', 'lang-card-zh']);
+    expect(of(plan({ order: [on('anima_sprite')], mainVoiceLang: 'ja', cardLang: 'zh', autoFill: true }), 'anima_lang')).toBeUndefined();
+    // 设成日语也照样看预设里关没关
+    expect(pick(of(plan({ order: [on('anima_sprite'), off('anima_lang')], mainVoiceLang: null, cardLang: 'ja' }), 'anima_lang'))).toEqual(['skip', 'user-off']);
+  });
+
+  it('a card never set (auto) follows the main voice, same as before', () => {
+    expect(pick(of(plan({ order, mainVoiceLang: 'ja', cardLang: 'auto' }), 'anima_lang'))).toEqual(['send', 'normal']);
+    expect(pick(of(plan({ order, mainVoiceLang: 'zh', cardLang: 'auto' }), 'anima_lang'))).toEqual(['skip', 'lang-not-ja']);
+    expect(pick(of(plan({ order, mainVoiceLang: null, cardLang: 'auto' }), 'anima_lang'))).toEqual(['skip', 'lang-no-voice']);
+  });
+
   it('fills it when missing for a Japanese voice, short when no tag block goes out, and never for other voices', () => {
     const tags = [on('anima_sprite')];
     expect(of(plan({ order: tags, autoFill: true }), 'anima_lang')).toMatchObject({ state: 'auto', reason: 'auto-fill' });
@@ -197,6 +213,11 @@ describe('langStatus', () => {
     expect(langStatus([], { hasPreset: false, mainVoiceLang: 'ja' })).toEqual({ state: 'skip', why: { text: '还没选预设。' } });
     expect(langStatus([], { hasPreset: true, mainVoiceLang: null })).toEqual({ state: 'skip', why: { tip: 'lang_no_voice' } });
     expect(langStatus([], { hasPreset: true, mainVoiceLang: 'zh' })).toEqual({ state: 'skip', why: { tip: 'lang_not_ja' } });
+    expect(langStatus([], { hasPreset: true, mainVoiceLang: 'ja', cardLang: 'zh' })).toEqual({ state: 'skip', why: { tip: 'lang_card_zh' } });
+    expect(langStatus([], { hasPreset: true, mainVoiceLang: null, cardLang: 'ja' })).toEqual({
+      state: 'skip',
+      why: { text: '当前预设里没有这一块，自动补块也关着，所以这次不发送。' },
+    });
     expect(langStatus([], { hasPreset: true, mainVoiceLang: 'ja' })).toEqual({
       state: 'skip',
       why: { text: '当前预设里没有这一块，自动补块也关着，所以这次不发送。' },

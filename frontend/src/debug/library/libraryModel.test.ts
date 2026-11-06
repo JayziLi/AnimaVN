@@ -45,12 +45,12 @@ describe('sortItems', () => {
     item('星绘', { bytes: 15 * MB, created_at: '2026-10-05T10:00:00' }),
     item('刻晴 · 玉衡星', { bytes: 21 * MB, created_at: '2026-10-01T10:00:00' }),
     item('鲸鱼娘 · 女仆', { bytes: 18 * MB, created_at: '2026-10-12T10:00:00' }),
-    item('Wikira', { bytes: 10 * MB, created_at: '2026-10-12T09:00:00' }),
+    item('Mira', { bytes: 10 * MB, created_at: '2026-10-12T09:00:00' }),
   ];
 
   it('by size: biggest first, without touching the input', () => {
     const before = names(list);
-    expect(names(sortItems(list, 'size'))).toEqual(['刻晴 · 玉衡星', '鲸鱼娘 · 女仆', '星绘', 'Wikira']);
+    expect(names(sortItems(list, 'size'))).toEqual(['刻晴 · 玉衡星', '鲸鱼娘 · 女仆', '星绘', 'Mira']);
     expect(names(list)).toEqual(before);
   });
 
@@ -66,7 +66,7 @@ describe('sortItems', () => {
   });
 
   it('by recent: newest first, times without a time zone read as UTC', () => {
-    expect(names(sortItems(list, 'recent'))).toEqual(['鲸鱼娘 · 女仆', 'Wikira', '星绘', '刻晴 · 玉衡星']);
+    expect(names(sortItems(list, 'recent'))).toEqual(['鲸鱼娘 · 女仆', 'Mira', '星绘', '刻晴 · 玉衡星']);
     const mixed = [item('old', { created_at: '2026-10-12T09:00:00' }), item('new', { created_at: '2026-10-12T10:00:00+00:00' })];
     expect(names(sortItems(mixed, 'recent'))).toEqual(['new', 'old']);
   });
