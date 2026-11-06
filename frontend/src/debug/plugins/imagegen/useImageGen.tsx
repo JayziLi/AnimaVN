@@ -366,7 +366,7 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
   }, [connections]);
 
   // 这张卡还没写长相、这次也带不了参考图:画之前让指导模型读卡写一版存下(一张卡这次打开只问一次,
-  // 没写出来也照画)。10-11 日语版 Wikira 没写长相,画出来五张五个样
+  // 没写出来也照画)。10-11 有张日语卡没写长相,画出来五张五个样
   const lookAsked = useRef(new Set<string>());
   const ensureLook = useCallback(async (): Promise<CardImagePrefs> => {
     const { config: c, prefs: p } = latest.current;

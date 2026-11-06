@@ -575,7 +575,7 @@ function CastPage({ store }: { store: ImageGenStore }) {
               className="ig-input"
               rows={3}
               value={prefs.look}
-              placeholder="adult, pink hair, very long hair, side braid, purple eyes"
+              placeholder="adult, long black hair, ponytail, brown eyes"
               onChange={(e) => changePrefs({ ...prefs, look: e.target.value })}
             />
             <div className="ig-inline">
@@ -589,7 +589,7 @@ function CastPage({ store }: { store: ImageGenStore }) {
               className="ig-input"
               rows={2}
               value={prefs.outfit}
-              placeholder="white off-shoulder blouse, lavender long skirt"
+              placeholder="white shirt, navy long skirt"
               onChange={(e) => changePrefs({ ...prefs, outfit: e.target.value })}
             />
           </Row>

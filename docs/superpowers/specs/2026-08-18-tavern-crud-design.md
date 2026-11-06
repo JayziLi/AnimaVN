@@ -109,7 +109,7 @@ PNG 解析继续留在前端（`frontend/src/debug/lib/cardParser.ts` 已验证�
 
 **独立入口按钮**：世界书、绑定的用户设定、导出下载、复制角色、创建角色、删除角色、收藏。
 
-**为什么是这个分法**：实测 Seraphina（酒馆官方默认卡）的 personality / scenario / mes_example **全是空的（Token 0）**，所有内容都塞在 description 里，连 `<START>` 示例对话也写在描述框内。这和之前分析 Wikira 卡的结论完全一致 —— 现代卡只用 description + first_mes 两个字段。所以酒馆把这两个放一级、其余降到二级，是跟着真实用法走的。
+**为什么是这个分法**：实测 Seraphina（酒馆官方默认卡）的 personality / scenario / mes_example **全是空的（Token 0）**，所有内容都塞在 description 里，连 `<START>` 示例对话也写在描述框内。这和之前分析别的现代卡的结论完全一致 —— 现代卡只用 description + first_mes 两个字段。所以酒馆把这两个放一级、其余降到二级，是跟着真实用法走的。
 
 **对我们的影响**：现有 `CardPanel` 把 8 个字段平铺展示，比参照物还复杂且没有主次，要改成同样的两层。
 

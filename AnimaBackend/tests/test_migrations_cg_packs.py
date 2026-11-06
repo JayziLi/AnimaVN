@@ -21,7 +21,7 @@ def _old_db(path: Path) -> Path:
         for t in ("cg_packs", "cg_assets", "card_roles", "asset_bindings"):
             c.exec_driver_sql(f"DROP TABLE {t}")
     with Session(engine) as db:
-        db.add_all([TavernCard(id="k1", name="星绘"), TavernCard(id="k2", name="Wikira"), TavernCard(id="k3", name="诺亚")])
+        db.add_all([TavernCard(id="k1", name="星绘"), TavernCard(id="k2", name="Mira"), TavernCard(id="k3", name="诺亚")])
         db.add_all([ScenePack(id="s1", name="同居日常 · 星庇所"), ScenePack(id="s2", name="千年")])
         db.add_all(
             [

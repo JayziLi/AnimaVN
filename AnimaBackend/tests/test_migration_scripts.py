@@ -296,9 +296,9 @@ def old_sprite_db(tmp_path: Path) -> Path:
         )
         cards = [
             ("k1", "星绘"),
-            ("k2", "Wikira"),
-            ("k3", "Wikira"),  # 复制出来的卡,立绘一模一样
-            ("k4", "Wikira"),  # 复制后改过一句说明
+            ("k2", "Mira"),
+            ("k3", "Mira"),  # 复制出来的卡,立绘一模一样
+            ("k4", "Mira"),  # 复制后改过一句说明
             ("k5", "没有立绘"),
         ]
         for i, (cid, name) in enumerate(cards):
@@ -329,15 +329,15 @@ def test_sprite_pack_migration_turns_each_cards_sprites_into_a_current_pack(tmp_
     with sqlite3.connect(db_path) as db:
         packs = dict(db.execute("SELECT id, name FROM sprite_packs").fetchall())
         by_name = {name: pid for pid, name in packs.items()}
-        assert sorted(packs.values()) == ["Wikira", "Wikira (2)", "星绘"]
+        assert sorted(packs.values()) == ["Mira", "Mira (2)", "星绘"]
         bound = db.execute(
             "SELECT card_id, pack_id, sort, is_current FROM card_sprite_packs ORDER BY card_id"
         ).fetchall()
         assert bound == [
             ("k1", by_name["星绘"], 0, 1),
-            ("k2", by_name["Wikira"], 0, 1),
-            ("k3", by_name["Wikira"], 0, 1),
-            ("k4", by_name["Wikira (2)"], 0, 1),
+            ("k2", by_name["Mira"], 0, 1),
+            ("k3", by_name["Mira"], 0, 1),
+            ("k4", by_name["Mira (2)"], 0, 1),
         ]
         rows = db.execute(
             "SELECT label, aliases, description, image, mime, sort, enabled, face_scan, created_at"
@@ -350,10 +350,10 @@ def test_sprite_pack_migration_turns_each_cards_sprites_into_a_current_pack(tmp_
         ]
         # 共用的包只存一份
         assert db.execute(
-            "SELECT count(*) FROM pack_sprites WHERE pack_id = ?", (by_name["Wikira"],)
+            "SELECT count(*) FROM pack_sprites WHERE pack_id = ?", (by_name["Mira"],)
         ).fetchone() == (2,)
         assert db.execute(
-            "SELECT description FROM pack_sprites WHERE pack_id = ? ORDER BY sort", (by_name["Wikira (2)"],)
+            "SELECT description FROM pack_sprites WHERE pack_id = ? ORDER BY sort", (by_name["Mira (2)"],)
         ).fetchall() == [("开心时",), ("俏皮、调侃",)]
         assert db.execute("SELECT pack_id, auto, zoom, dx, dy FROM sprite_pack_layouts").fetchall() == [
             (by_name["星绘"], 1, 0.95, 0.037, -0.01)
@@ -385,7 +385,7 @@ def test_sprite_pack_migration_keeps_layouts_apart_and_names_clear_of_existing_p
         names = dict(db.execute(
             "SELECT b.card_id, p.name FROM card_sprite_packs b JOIN sprite_packs p ON p.id = b.pack_id"
         ).fetchall())
-        assert names == {"k1": "星绘 (2)", "k2": "Wikira", "k3": "Wikira (2)", "k4": "Wikira (3)"}
+        assert names == {"k1": "星绘 (2)", "k2": "Mira", "k3": "Mira (2)", "k4": "Mira (3)"}
 
 
 OLD_TTS_CACHE = """
