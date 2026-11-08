@@ -187,12 +187,14 @@
 .vn-slot-time {
   flex: none;
 }
-/* 条数:电脑上的格子不写(设计稿局内菜单 A 那档藏了),手机一行里写 */
+/* 条数:和调试台的对话历史一样写在时间后面(10-31 用户要电脑上也写,名字长了让名字先省略) */
 .vn-slot-count {
-  display: none;
   flex: none;
   font-style: normal;
   font-variant-numeric: lining-nums tabular-nums;
+}
+.vn-slot-count::before {
+  content: '· ';
 }
 .vn-slot-line {
   display: -webkit-box;
@@ -434,12 +436,6 @@
     height: 22px;
     font-size: 11px;
     box-shadow: 0 0 0 1px var(--av-hair);
-  }
-  .vn-slot-count {
-    display: inline;
-  }
-  .vn-slot-count::before {
-    content: '· ';
   }
   .vn-slot-line {
     -webkit-line-clamp: 2;
