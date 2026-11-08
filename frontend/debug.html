@@ -15,17 +15,54 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black" />
     <meta name="apple-mobile-web-app-title" content="AnimaVN" />
     <meta name="theme-color" content="#0e0e0e" />
-    <!-- 宋体常用那份(封面、菜单、名字、台词都用;src/debug/vn/vnFonts.css 的 AnimaSerif)打开页面就先下。
-         不等它:字体到之前照旧先用系统字体顶着(font-display: swap)。生僻字那份 nss-extra 和英文两份用到才下,不预载 -->
-    <link rel="preload" href="/vn/fonts/nss-core.woff2" as="font" type="font/woff2" crossorigin />
+    <!-- 宋体界面字那份(开屏、封面、菜单、选角、登录页上的字,约 100 KB;src/debug/vn/vnFonts.css 的 AnimaSerif)打开页面就先下。
+         不等它:字体到之前照旧先用系统字体顶着(font-display: swap)。常用字 core(1.6 MB)碰到角色名、台词才下,
+         生僻字 extra 和英文两份用到才下,都不预载 —— 网慢的时候 core 会和程序抢带宽(10-30 公网实测) -->
+    <link rel="preload" href="/vn/fonts/nss-ui.woff2" as="font" type="font/woff2" crossorigin />
     <title>AnimaVN · Prompt Console</title>
     <!-- 游戏窗口打开的是 ?play=1:脚本加载完之前就先黑着,和前面的等待页、后面的开屏接上,不闪白 -->
     <script>
       if (/[?&]play=/.test(location.search)) document.documentElement.style.background = '#000';
     </script>
+    <!-- 加载画面:程序下完之前就在(网慢时要等好一阵,别让人对着白屏以为坏了);React 第一次画的时候把 #root 里的它换掉。
+         一下就加载好时不闪字:「正在加载…」1 秒后才出,「网有点慢」10 秒后才出 -->
+    <style>
+      .boot-html { position: fixed; inset: 0; z-index: 10000; display: flex; flex-direction: column; align-items: center;
+        justify-content: center; gap: 14px; background: #0e0e0e; color: rgba(246, 246, 248, 0.55);
+        font: 13px/1.6 system-ui, 'Microsoft YaHei', 'PingFang SC', sans-serif; letter-spacing: 0.08em; user-select: none; }
+      .boot-html-logo { width: 72px; height: 72px; animation: boot-html-breathe 2.4s ease-in-out infinite; }
+      .boot-html-msg { opacity: 0; animation: boot-html-show 0.6s 1s forwards; }
+      .boot-html-slow { margin-top: -10px; font-size: 12px; opacity: 0; animation: boot-html-show 0.6s 10s forwards; }
+      @keyframes boot-html-breathe { 50% { opacity: 0.5; } }
+      @keyframes boot-html-show { to { opacity: 1; } }
+      /* 游戏窗口(?play=):和启动器的等待页(packaging/windows/payload/launcher/ui/boot.html)、开屏(PlaySplash)同一个位置、
+         同一个暗 logo,三页接得上。本机打开,250 KB 的 lockup-text.png 不算什么;别的情况用不到它,不下 */
+      @property --s { syntax: '<number>'; inherits: true; initial-value: -0.3; }
+      .boot-html.play { display: block; background: #000; }
+      .boot-html-lock { position: absolute; left: 50%; top: 44%; width: min(46vw, 122vh); aspect-ratio: 1800 / 476; transform: translate(-50%, -50%); }
+      .boot-html-lock img, .boot-html-lock div { position: absolute; inset: 0; width: 100%; height: 100%; }
+      .boot-html-lock img { opacity: 0.2; }
+      .boot-html-lock div { -webkit-mask: url(/vn/ui/lockup-text.png) center / 100% 100% no-repeat; mask: url(/vn/ui/lockup-text.png) center / 100% 100% no-repeat;
+        background: linear-gradient(100deg, transparent calc(var(--s) * 100% - 14%), rgba(255, 244, 222, 0.45) calc(var(--s) * 100%), transparent calc(var(--s) * 100% + 14%));
+        animation: boot-html-sweep 2.8s cubic-bezier(0.4, 0, 0.2, 1) 0.6s infinite; }
+      @keyframes boot-html-sweep { from { --s: -0.3; } 70%, to { --s: 1.3; } }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="boot-html" id="boot-html">
+        <img class="boot-html-logo" src="/anima-logo.svg?v=72" alt="AnimaVN" draggable="false" />
+        <div class="boot-html-msg">正在加载…</div>
+        <div class="boot-html-slow">网有点慢，再等一下</div>
+      </div>
+    </div>
+    <script>
+      if (/[?&]play=/.test(location.search)) {
+        var boot = document.getElementById('boot-html');
+        boot.className = 'boot-html play';
+        boot.innerHTML = '<div class="boot-html-lock"><img src="/vn/ui/lockup-text.png" alt="AnimaVN" draggable="false" /><div></div></div>';
+      }
+    </script>
     <script type="module" src="/src/debug/main.tsx"></script>
   </body>
 </html>

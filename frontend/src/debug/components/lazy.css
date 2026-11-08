@@ -1,0 +1,44 @@
+/* 点开才下载的页面还在下(Lazy.tsx):调试台、游戏菜单、卡编辑器里都会出现,不跟哪套皮 —— 半透明暗底白字 */
+
+/* 原地:占满它所在的那一栏,中间一个小转圈 */
+.lazy-pending {
+  flex: 1;
+  min-height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 全屏页面(卡编辑器、素材页、弹窗):盖在视觉小说(z 90)和卡编辑器上面 */
+.lazy-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.lazy-card {
+  display: flex;
+  align-items: center;
+  padding: 14px 20px;
+  border-radius: 8px;
+  background: rgba(20, 20, 24, 0.92);
+  color: #f2f2f4;
+  font-size: 13px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
+}
+
+.lazy-failed {
+  flex-direction: column;
+  gap: 8px;
+  max-width: min(420px, 86vw);
+  text-align: center;
+}
+.lazy-error {
+  font-size: 12px;
+  color: rgba(242, 242, 244, 0.6);
+  word-break: break-word;
+}

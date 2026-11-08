@@ -23,8 +23,11 @@
    许可证在 public/vn/fonts/LICENSE-*.txt),可变字体取子集(脚本 frontend/scripts/build-serif-font.py),粗细在 CSS 里定:
      nss-core  —— GB2312 一级 + 界面上用到的字 + 标点、假名、拉丁(约 1.5 MB)
      nss-extra —— GB2312 二级 + 日文汉字(JIS 第一水准里 GB2312 没有的,気 話 髪 这类)(约 1.6 MB)
-   和圆体一样先用 core,core 里没有的字才去下 extra:封面、菜单只下 core,台词里碰到才下 extra。
-   nss-core 在 debug.html 的 head 里预载(打开页面就开始下,不等它);改文件名时那边一起改。 */
+     nss-ui    —— 从 core 里再切的一小份:开屏、封面、菜单、选角、公网登录页和公告上的字(约 100 KB)
+   同一个字几条都有时,浏览器先查写在最后的那条:界面上的字只下 nss-ui;碰到它没有的字(角色名、台词)才去下 core,
+   core 里也没有的才下 extra。网慢的时候不用先等 1.6 MB 的 core 才看得到宋体的封面、登录页(10-30 公网实测)。
+   nss-ui 在 debug.html 的 head 里预载(打开页面就开始下,不等它);改文件名时那边一起改。
+   nss-ui 的字表和下面的 unicode-range 由 frontend/scripts/build-serif-font.py --ui 一起生成,别手改。 */
 @font-face {
   font-family: 'AnimaSerif';
   src: url('/vn/fonts/nss-extra.woff2') format('woff2');
@@ -37,6 +40,13 @@
   src: url('/vn/fonts/nss-core.woff2') format('woff2');
   font-weight: 200 900;
   font-display: swap;
+}
+@font-face {
+  font-family: 'AnimaSerif';
+  src: url('/vn/fonts/nss-ui.woff2') format('woff2');
+  font-weight: 200 900;
+  font-display: swap;
+  unicode-range: U+20-7E, U+B7, U+2010-2016, U+2018-201A, U+201C-201E, U+2020-2022, U+2025-2027, U+3000-3011, U+30FB, U+4E00, U+4E0A-4E0B, U+4E0D-4E0E, U+4E24, U+4E2A, U+4E2D, U+4E3A, U+4E50, U+4E5F, U+4E86, U+4E8B-4E8C, U+4EBA, U+4EC5, U+4ECE, U+4EE5, U+4EEC, U+4EF6, U+4F1A, U+4F4D, U+4F4F, U+4F60, U+4F9B, U+5019, U+5148, U+514D, U+5165, U+516C, U+5173, U+5185, U+518C-518D, U+51C6, U+51FA-51FB, U+5206, U+5212, U+521A-521B, U+5236, U+52A8, U+5305, U+5355, U+5361, U+5386, U+53BB, U+53CC, U+53D1, U+53E5, U+53EA, U+53EF-53F0, U+53F2-53F3, U+540C-540E, U+544A, U+548C, U+56DE, U+56FE, U+5728, U+573A, U+578B, U+586B, U+58F0, U+5904, U+5907, U+590D, U+5929, U+5979, U+59CB, U+5A31, U+5B57-5B58, U+5B83, U+5B98, U+5BB9, U+5BC6, U+5BF9, U+5BFC, U+5C01, U+5C11, U+5DF1-5DF2, U+5E26, U+5E76, U+5E93, U+5F00, U+5F20, U+5F55, U+5F80, U+5FC3, U+5FEB, U+60C5, U+620F-6210, U+6216, U+6237, U+6253, U+6258, U+62DC, U+6309, U+6362, U+63A5, U+63D2, U+64AD, U+653E, U+6545, U+6570, U+65B0, U+65B9, U+65E0, U+65F6, U+661F, U+663E, U+666F, U+6700, U+6709, U+6750, U+6761, U+6765, U+6807, U+6837, U+683C, U+6863, U+6A21, U+6B21-6B22, U+6B63, U+6BCD, U+6BCF, U+6BD4, U+6C49, U+6CA1, U+6CE8, U+6E05, U+6E38, U+6EDA, U+70B9, U+751F, U+7528, U+7531, U+754C, U+767B, U+767D, U+7684, U+76F4, U+76F8, U+770B, U+7740, U+77E5, U+7801, U+793A, U+7A7A, U+7ACB, U+7B49, U+7D20, U+7EBF, U+7ED8, U+7EE7, U+7EED, U+7F6E, U+7FFB, U+8005, U+80CC, U+80FD, U+81EA, U+81F3, U+8272, U+83DC, U+85CF, U+8868, U+89D2, U+8BBE, U+8BCD, U+8BD5, U+8BDD, U+8BE6, U+8BF4, U+8BFB, U+8C03, U+8D39, U+8F6E, U+8F7D, U+8F93, U+8FC7, U+8FCE, U+8FD4, U+8FD8-8FD9, U+8FDB, U+9009, U+9053, U+90A3, U+90FD, U+91CC-91CD, U+952E, U+957F, U+9690, U+9762, U+97F3, U+9884, U+9898, U+FF01-FF1F;
 }
 @font-face {
   font-family: 'AnimaLatin';

@@ -1,41 +1,51 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './debug.css';
 import { AnimaIcon } from './components/AnimaIcon';
-import { ChatHistoryOverlay, type ChatOp } from './components/ChatHistoryOverlay';
+import type { ChatOp } from './components/ChatHistoryOverlay';
 import { CardBindings } from './components/CardBindings';
-import { CardPanel, type CardView, type SaveState } from './components/CardPanel';
+import type { CardView, SaveState } from './components/CardPanel';
+// 样式表的先后:点开才下载的页面(文件末尾 lazyPage 那些)原来在哪一行 import,它带进来的 .css 就照样引在哪一行,
+// 首屏样式表和拆包前一字不差,同样写法的规则谁盖过谁不变(比如 vnMenuCard.css 要排在资料页的样式后面)
+import './components/export/export.css';
 import { EnvBadge } from './components/EnvBadge';
-import { ExportBundleDialog } from './components/export/ExportBundleDialog';
-import { CardStudio } from './studio/CardStudio';
+import './vn/ui/ui.css';
+import './vn/theme.css';
+import './components/export/transfer.css';
+import './vn/vnPick.css';
+import './importer/importer.css';
+import './studio/studio.css';
+import './studio/studioPaper.css';
 import { DropLayer } from './importer/DropLayer';
-import { ImportConfirm } from './importer/ImportConfirm';
-import { ImportDoneCard } from './importer/ImportDone';
 import { ImportProgress } from './importer/ImportProgress';
 import { libraryRouteAfterImport, noticeOf, slotAfterImport } from './importer/importModel';
 import { useImporter, type ImportDone } from './importer/useImporter';
 import { summarizeSlots } from './studio/slotSummary';
-import { BackgroundSlot } from './studio/slots/BackgroundSlot';
-import { BgmSlot } from './studio/slots/BgmSlot';
-import { SpriteSlot } from './studio/slots/SpriteSlot';
+import './vn/vn.css';
+import './studio/preview/stagePreview.css';
+import './vn/ui/stage.css';
 import type { ImportNotice, PackSync, SlotKey, StudioRoute } from './studio/types';
-import { SlotPending } from './studio/ui';
-import { ProfileTab } from './studio/profile/ProfileTab';
+import './studio/profile/profile.css';
 // 菜单「角色」「预设」两页的纸面(只在 .vn-menu 里生效)
 import './vn/vnMenuCard.css';
-import { PresetView } from './studio/profile/PresetView';
-import { VoiceSlot } from './studio/slots/VoiceSlot';
-import { CgSlot } from './studio/slots/CgSlot';
-import { PluginSheet } from './studio/PluginSheet';
-import { AssetLibrary } from './library/AssetLibrary';
+import './components/drawer/drawer.css';
+import './studio/profile/blockEditor.css';
+import './studio/profile/presetView.css';
+// 卡带(生图这些)原来是卡编辑器的「声音」栏一路带进来的,卡带的样式排在这个位置
+import { asksTone, useSplice, useTone } from './plugins/voiceExtensions';
+import './studio/editors/voiceEditor.css';
+import './studio/editors/cgPackEditor.css';
+import './library/library.css';
+import './library/libraryPaper.css';
+import './library/libraryPaperVoice.css';
+import './library/libraryPaperScene.css';
+import './library/libraryPaperJobs.css';
 import type { CardBindingWriter } from './library/libraryApi';
 import type { LibraryKind, LibraryRoute } from './library/libraryModel';
 import { bindRemove } from './studio/slots/voiceSlotModel';
-import { ChatPanel } from './components/ChatPanel';
-import { ConnectionsDrawer } from './components/ConnectionsDrawer';
-import { CropModal } from './components/CropModal';
-import { PersonaDrawer } from './components/PersonaDrawer';
-import { PluginsDrawer, type PluginFocus, type PluginKey } from './components/PluginsDrawer';
-import { SettingsDrawer } from './components/SettingsDrawer';
+import './components/connections/connectionsGame.css';
+import type { PluginFocus, PluginKey } from './components/PluginsDrawer';
+import './components/drawer/drawerGame.css';
+import './components/drawer/pages/sendPages.css';
 import { avatarOf } from './lib/avatar';
 import { uuid } from '../lib/uuid';
 import { MOBILE_QUERY, useIsMobile } from './lib/useIsMobile';
@@ -52,10 +62,8 @@ import {
   toLookup,
   type CustomMacro,
 } from './lib/customMacros';
-import { BudgetBar } from './components/BudgetBar';
-import { PresetPanel, type PresetBaseProps } from './components/PresetPanel';
+import type { PresetBaseProps } from './components/PresetPanel';
 import { Frozen } from './components/Frozen';
-import { PromptInspector } from './components/PromptInspector';
 import { assemble, type AssemblyResult, type BudgetReport, type ChatTurn } from './lib/assembler';
 import {
   cardFaceUrl,
@@ -150,7 +158,6 @@ import {
 import type { SendView } from './core/sendPlan';
 import { useForms } from './plugins/forms';
 import { useStates } from './plugins/useStates';
-import { asksTone, useSplice, useTone } from './plugins/voiceExtensions';
 import { useIllustrations } from './plugins/illustrations';
 import type { CartridgePanel } from './plugins/cartridges';
 import { useVoicePlugin } from './plugins/useVoicePlugin';
@@ -256,6 +263,35 @@ import {
   paramsWithBudget,
   saveRange,
 } from './lib/budget';
+import { Lazy } from './components/Lazy';
+import { lazyPage, preloadPages } from './lib/lazyPage';
+// 点开才出现的页面、抽屉、弹窗:单独打包,头一屏不等它们(lib/lazyPage.ts);用的地方包 <Lazy>
+const CardStudio = lazyPage(() => import('./studio/CardStudio'), 'CardStudio');
+const ProfileTab = lazyPage(() => import('./studio/profile/ProfileTab'), 'ProfileTab');
+const PresetView = lazyPage(() => import('./studio/profile/PresetView'), 'PresetView');
+const SpriteSlot = lazyPage(() => import('./studio/slots/SpriteSlot'), 'SpriteSlot');
+const BackgroundSlot = lazyPage(() => import('./studio/slots/BackgroundSlot'), 'BackgroundSlot');
+const BgmSlot = lazyPage(() => import('./studio/slots/BgmSlot'), 'BgmSlot');
+const VoiceSlot = lazyPage(() => import('./studio/slots/VoiceSlot'), 'VoiceSlot');
+const CgSlot = lazyPage(() => import('./studio/slots/CgSlot'), 'CgSlot');
+const SlotPending = lazyPage(() => import('./studio/ui'), 'SlotPending');
+const PluginSheet = lazyPage(() => import('./studio/PluginSheet'), 'PluginSheet');
+const AssetLibrary = lazyPage(() => import('./library/AssetLibrary'), 'AssetLibrary');
+const PluginsDrawer = lazyPage(() => import('./components/PluginsDrawer'), 'PluginsDrawer');
+const SettingsDrawer = lazyPage(() => import('./components/SettingsDrawer'), 'SettingsDrawer');
+const PersonaDrawer = lazyPage(() => import('./components/PersonaDrawer'), 'PersonaDrawer');
+const ConnectionsDrawer = lazyPage(() => import('./components/ConnectionsDrawer'), 'ConnectionsDrawer');
+const ChatHistoryOverlay = lazyPage(() => import('./components/ChatHistoryOverlay'), 'ChatHistoryOverlay');
+const CropModal = lazyPage(() => import('./components/CropModal'), 'CropModal');
+const PromptInspector = lazyPage(() => import('./components/PromptInspector'), 'PromptInspector');
+const ExportBundleDialog = lazyPage(() => import('./components/export/ExportBundleDialog'), 'ExportBundleDialog');
+const ImportConfirm = lazyPage(() => import('./importer/ImportConfirm'), 'ImportConfirm');
+const ImportDoneCard = lazyPage(() => import('./importer/ImportDone'), 'ImportDoneCard');
+// 调试台三栏:从启动器、公网进来的人直接进游戏,三栏被游戏盖着,也不用先等
+const PresetPanel = lazyPage(() => import('./components/PresetPanel'), 'PresetPanel');
+const BudgetBar = lazyPage(() => import('./components/BudgetBar'), 'BudgetBar');
+const ChatPanel = lazyPage(() => import('./components/ChatPanel'), 'ChatPanel');
+const CardPanel = lazyPage(() => import('./components/CardPanel'), 'CardPanel');
 
 const EMPTY_BUDGET: BudgetReport = {
   limit: null,
@@ -3211,6 +3247,7 @@ export default function DebugApp() {
      */
     extra?: { gameSettings?: () => void; library?: (tab: LibraryKind) => void; game?: boolean },
   ) => (
+    <Lazy quiet={!extra?.game}>
     <PluginsDrawer
       game={extra?.game}
       presetName={preset?.name ?? null}
@@ -3272,6 +3309,7 @@ export default function DebugApp() {
       notify={notify}
       onClose={onClose}
     />
+    </Lazy>
   );
 
   /**
@@ -3630,6 +3668,7 @@ export default function DebugApp() {
    * 同一份数据,只有开在哪(route)各记各的。导完没有卡可开时的提示条只在全屏那份上(finishImport 打开的是它)
    */
   const renderAssetLibrary = (route: LibraryRoute, onRoute: (next: LibraryRoute) => void, embedded = false) => (
+    <Lazy veil={!embedded}>
     <AssetLibrary
       route={route}
       onRoute={onRoute}
@@ -3656,6 +3695,7 @@ export default function DebugApp() {
       covered={studio !== null || (embedded && library !== null)}
       reloadKey={libraryReload}
     />
+    </Lazy>
   );
 
   /**
@@ -3664,6 +3704,7 @@ export default function DebugApp() {
    */
   const renderStudioProfile = (menu?: { onOpenPreset: () => void }) =>
     card && cardId ? (
+      <Lazy>
       <ProfileTab
         card={card}
         avatarUrl={avatarUrl}
@@ -3714,6 +3755,7 @@ export default function DebugApp() {
           }
         }
       />
+      </Lazy>
     ) : null;
   /**
    * 「从这条开始新故事」:新建一张对话,直接停在选中那条开场白上(卡编辑器的资料页、菜单「角色」页都走这个)。
@@ -3725,7 +3767,8 @@ export default function DebugApp() {
     void newChat(undefined, index);
   };
   /** 素材页的一栏(主区 + 右栏)。第 1 段的各个任务逐个换成真的编辑器,还没做的先占位 */
-  const renderStudioSlot = (slot: SlotKey) => {
+  const renderStudioSlot = (slot: SlotKey) => <Lazy>{studioSlot(slot)}</Lazy>;
+  const studioSlot = (slot: SlotKey) => {
     if (slot === 'sprite' && card) {
       return (
         <SpriteSlot
@@ -3870,6 +3913,7 @@ export default function DebugApp() {
    * 调试台的插件抽屉被卡编辑器盖着,点插件块时抽屉开在这一页上面
    */
   const renderStudioPreset = (menu?: { onOpenPlugin: (identifier: string) => void }) => (
+    <Lazy>
     <PresetView
       {...presetBase}
       menu={menu}
@@ -3877,6 +3921,7 @@ export default function DebugApp() {
       renderPlugin={renderPluginsDrawer}
       budget={{ report: preview.budget, value: tokenBudget, onChange: changeBudget, range: rangeScale, onRange: changeRange }}
     />
+    </Lazy>
   );
 
   // 给 VN 的角色列表:每次渲染都 map 出一个新数组的话,流式生成时每来一个字选角页和等待页
@@ -3934,6 +3979,14 @@ export default function DebugApp() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [booting]);
+
+  // 开机好了(开屏要的图也下完了)再过 3 秒,把点开才用的页面在后台先下好(lib/lazyPage.ts),点的时候不用等
+  const splashLoading = splash === 'loading';
+  useEffect(() => {
+    if (booting || splashLoading) return;
+    const t = window.setTimeout(preloadPages, 3000);
+    return () => clearTimeout(t);
+  }, [booting, splashLoading]);
 
   return (
     // vn-open:视觉小说盖在最上面时,从它里面打开的弹窗(块编辑、高级定义、看提示词)得压过它
@@ -4167,6 +4220,7 @@ export default function DebugApp() {
           style={bodyStyle}
         >
           <div className="left-col">
+            <Lazy quiet>
             {renderPresetPanel({
               collapsed: leftCollapsed,
               onToggleCollapse: () => setLeftCollapsed((v) => !v),
@@ -4203,6 +4257,7 @@ export default function DebugApp() {
                 </button>
               </div>
             )}
+            </Lazy>
           </div>
 
           <div
@@ -4214,6 +4269,7 @@ export default function DebugApp() {
 
           <div className="chat-col">
             {drawer === 'settings' && (
+              <Lazy quiet>
               <SettingsDrawer
                 settings={chatSettings}
                 onChange={changeChatSettings}
@@ -4227,11 +4283,13 @@ export default function DebugApp() {
                 onChangeWorldInfo={changeWorldInfoSettings}
                 onClose={() => setDrawer(null)}
               />
+              </Lazy>
             )}
 
             {drawer === 'plugins' && renderPluginsDrawer(pluginFocus, () => setDrawer(null))}
 
             {drawer === 'persona' && (
+              <Lazy quiet>
               <PersonaDrawer
                 notify={notify}
                 onClose={() => setDrawer(null)}
@@ -4242,9 +4300,11 @@ export default function DebugApp() {
                 card={cardId && card ? { id: cardId, name: card.name } : null}
                 cardNames={new Map(savedCards.map((c) => [c.id, c.name]))}
               />
+              </Lazy>
             )}
 
             {drawer === 'api' && (
+              <Lazy quiet>
               <ConnectionsDrawer
                 connections={connections}
                 notify={notify}
@@ -4252,9 +4312,11 @@ export default function DebugApp() {
                 onChanged={refreshConnections}
                 jev={{ status: jevKey, onOpen: () => openPluginSection('jev') }}
               />
+              </Lazy>
             )}
 
             {showHistory && (
+              <Lazy quiet>
               <ChatHistoryOverlay
                 chats={treeChats}
                 currentChatId={chatId}
@@ -4277,8 +4339,10 @@ export default function DebugApp() {
                 onDelete={removeChat}
                 onClose={() => setShowHistory(false)}
               />
+              </Lazy>
             )}
 
+            <Lazy quiet>
             <ChatPanel
               entries={entries}
               settings={chatSettings}
@@ -4316,6 +4380,7 @@ export default function DebugApp() {
               onRegenerate={regenerateLast}
               tagKinds={vnKinds}
             />
+            </Lazy>
           </div>
 
           <div
@@ -4325,6 +4390,7 @@ export default function DebugApp() {
             onPointerDown={(e) => startDrag('right', e)}
           />
 
+          <Lazy quiet>
           <CardPanel
             card={card}
             avatarUrl={avatarUrl}
@@ -4353,6 +4419,7 @@ export default function DebugApp() {
             onPickAvatar={() => pickAvatarFor({ kind: 'card' })}
             bindings={cardBindings}
           />
+          </Lazy>
         </div>
       </Frozen>
 
@@ -4371,6 +4438,7 @@ export default function DebugApp() {
 
       {/* 头像裁剪:卡图和人设头像同一个弹窗、同一套 2:3 规格 */}
       {cropTask && (
+        <Lazy veil>
         <CropModal
           file={cropTask.file}
           onCancel={() => setCropTask(null)}
@@ -4381,6 +4449,7 @@ export default function DebugApp() {
             else void changePersonaAvatar(target.id, blob);
           }}
         />
+        </Lazy>
       )}
 
       {/* 对话导入:藏起来的 file input,分支树里的 ↓ 触发,可多选 jsonl */}
@@ -4622,6 +4691,7 @@ export default function DebugApp() {
             // 模型:就是调试台的「API 设置」,同一个组件、同一份连接数据,两边改动互通
             return (
               <div className="vn-embed vn-model-embed">
+                <Lazy>
                 <ConnectionsDrawer
                   // 局内菜单里排成三栏(连接 + Jev / 表单 / 测试);调试台的 API 抽屉不传,还是单栏
                   game
@@ -4632,6 +4702,7 @@ export default function DebugApp() {
                   onChanged={refreshConnections}
                   jev={{ status: jevKey, onOpen: () => ctx.openPlugin('jev') }}
                 />
+                </Lazy>
               </div>
             );
           }}
@@ -4644,6 +4715,7 @@ export default function DebugApp() {
 
       {/* 卡编辑器:全屏,盖在视觉小说上面(从选角页、菜单的「角色」页也能打开) */}
       {studio && card && cardId && (
+        <Lazy veil>
         <CardStudio
           cardId={cardId}
           card={card}
@@ -4661,6 +4733,7 @@ export default function DebugApp() {
           onClassifyUnknown={classifyUnknown}
           onImport={() => importer.pick({ cardId, cardName, kind: null })}
         />
+        </Lazy>
       )}
 
       {/* 导入:拖进窗口的遮罩(落点在卡片列表、选角页、卡编辑器里)、上传和整理的进度、导入前的确认框 */}
@@ -4671,6 +4744,7 @@ export default function DebugApp() {
       />
       <ImportProgress phase={importer.phase} onCancel={importer.cancelUpload} />
       {importDone && vnOpen && (
+        <Lazy veil>
         <ImportDoneCard
           key={importDone.notice.jobId ?? importDone.cardId}
           cardId={importDone.cardId}
@@ -4681,8 +4755,10 @@ export default function DebugApp() {
           onClassify={classifyInDone}
           onClose={() => setImportDone(null)}
         />
+        </Lazy>
       )}
       {exportBundleFor && (
+        <Lazy veil>
         <ExportBundleDialog
           key={exportBundleFor.id}
           cardId={exportBundleFor.id}
@@ -4690,8 +4766,10 @@ export default function DebugApp() {
           notify={notify}
           onClose={() => setExportBundleFor(null)}
         />
+        </Lazy>
       )}
       {importer.confirm && (
+        <Lazy veil>
         <ImportConfirm
           key={importer.confirm.plan.plan_id}
           plan={importer.confirm.plan}
@@ -4703,20 +4781,25 @@ export default function DebugApp() {
           onCancel={importer.cancelConfirm}
           onConfirm={importer.confirmApply}
         />
+        </Lazy>
       )}
       {studio && studioPlugin && (
+        <Lazy veil>
         <PluginSheet onClose={() => setStudioPlugin(null)}>
           {renderPluginsDrawer(studioPlugin, () => setStudioPlugin(null))}
         </PluginSheet>
+        </Lazy>
       )}
 
       {inspecting && (
+        <Lazy veil>
         <PromptInspector
           result={inspecting}
           lastRaw={lastRaw}
           onClose={() => setInspecting(null)}
           onNotify={notify}
         />
+        </Lazy>
       )}
 
       <ConfirmHost req={confirmReq} theme={paperTheme} onSettle={confirmer.settle} />

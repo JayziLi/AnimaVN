@@ -55,8 +55,9 @@ import {
   type ImageGenConfig,
   type SizeKey,
 } from './config';
-import { ConsoleSettings } from './ConsoleSettings';
-import { ImageGenSettings } from './ImageGenSettings';
+// 设置页、相册改成点开才下载了(文件末尾 lazyPage 那些);它们原来带进来的样式照原位置引,样式表先后不变(DebugApp.tsx 开头)
+import './imagegen.css';
+import '../../vn/settings/settingRow.css';
 import {
   addImage,
   blockedByCooldown,
@@ -71,10 +72,18 @@ import {
   withNote,
   type ShowLog,
 } from './marks';
-import { MenuAlbum } from './MenuAlbum';
-import { StudioAlbum } from './StudioAlbum';
+import './menuAlbum.css';
+import './studioAlbum.css';
 import { albumSummary } from './studioAlbumModel';
 import { IgButton, IgStage } from './VnControls';
+import { Lazy } from '../../components/Lazy';
+import { lazyPage } from '../../lib/lazyPage';
+
+// 设置页、相册点开才用:单独打包,头一屏不等它们(lib/lazyPage.ts);游戏里的「画」按钮和画面(VnControls)照常一起加载
+const ConsoleSettings = lazyPage(() => import('./ConsoleSettings'), 'ConsoleSettings');
+const ImageGenSettings = lazyPage(() => import('./ImageGenSettings'), 'ImageGenSettings');
+const MenuAlbum = lazyPage(() => import('./MenuAlbum'), 'MenuAlbum');
+const StudioAlbum = lazyPage(() => import('./StudioAlbum'), 'StudioAlbum');
 
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const COARSE = typeof window !== 'undefined' && Boolean(window.matchMedia?.('(pointer: coarse)').matches);
@@ -765,7 +774,11 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
       ...IMAGEGEN_PANEL,
       inUse: imagegenInUse,
       // 抽屉里看的是另一张卡时,「这张卡」那几项读写那张卡(ConsoleSettings)
-      render: (p: CartridgePanelProps) => <ConsoleSettings store={store} card={p.card} place={p.game ? 'game' : 'console'} />,
+      render: (p: CartridgePanelProps) => (
+        <Lazy>
+          <ConsoleSettings store={store} card={p.card} place={p.game ? 'game' : 'console'} />
+        </Lazy>
+      ),
     }),
     [store],
   );
@@ -775,14 +788,24 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
     () => ({
       name: 'AI 生成',
       summary: (kept) => albumSummary(store.album, kept),
-      render: (ctx) => <StudioAlbum key={ctx.cardId} store={store} {...ctx} />,
+      render: (ctx) => (
+        <Lazy>
+          <StudioAlbum key={ctx.cardId} store={store} {...ctx} />
+        </Lazy>
+      ),
     }),
     [store],
   );
 
   // 局内菜单的「相册」页:按存档分组的画过的图(MenuAlbum.tsx),收藏、删除和卡编辑器那一栏是同一份
   const menuAlbum: MenuAlbumIllustrations = useMemo(
-    () => ({ render: (ctx) => <MenuAlbum key={ctx.cardId} store={store} {...ctx} /> }),
+    () => ({
+      render: (ctx) => (
+        <Lazy>
+          <MenuAlbum key={ctx.cardId} store={store} {...ctx} />
+        </Lazy>
+      ),
+    }),
     [store],
   );
 
@@ -800,7 +823,11 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
       },
       button: (ctx) => <IgButton store={store} ctx={ctx} />,
       stage: (ctx) => <IgStage store={store} ctx={ctx} />,
-      settings: () => <ImageGenSettings store={store} place="game" />,
+      settings: () => (
+        <Lazy>
+          <ImageGenSettings store={store} place="game" />
+        </Lazy>
+      ),
       settingsName: 'AI 生图',
       onReplyDone: (entry, lines, place) => void onReplyDone(entry, lines, place),
       studio,

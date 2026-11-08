@@ -14,6 +14,10 @@ from fontTools.ttLib import TTFont
 #   (默认是脚本旁边),pip install fonttools brotli,再跑这个脚本。
 #   加 --scan [文件夹]:只列出界面代码(默认 ../src)里新出现、宋体里有、但还不在 core 的字,要的话抄进 UI_EXTRA
 #   (正则里写的区间端点 㐀 鿿 豈 这类不用管)。
+#   加 --ui:不用下载源字体,从已有的 nss-core.woff2 再切一份 nss-ui.woff2 —— 只有开屏、封面、菜单、选角、公网登录页和公告
+#   上的字(UI_FILES 里的文件;约 100 KB),debug.html 预载它,不再预载 1.6 MB 的 core。顺手把 vnFonts.css 里
+#   nss-ui 那条的 unicode-range 改成同一份字表。只增不减:旧 nss-ui 里有的字照留,在本地版跑不会丢掉公网版登录页的字。
+#   这几个文件的字改了(加了新按钮、新提示)就再跑一次;漏了也不出错,只是那个字会让浏览器去下 core。
 # 输出转给管道 / 文件时 Windows 默认按 GBK 写,--scan 列出的字(㐀 这类)会报错;统一按 UTF-8 写
 sys.stdout.reconfigure(encoding='utf-8')
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -30,6 +34,11 @@ SUPPLEMENT = '窸窣綺頷咥囁苺呟滲攣痙餡唸嚙撐瞼曖囃贅軋箋'
 # 宋体去掉会多带字形、又用不到的特性(aalt dlig hist fwid hwid pwid ruby);竖排、标点挤压、kern 留着
 SERIF_FEATURES = ['ccmp', 'liga', 'locl', 'vert', 'vrt2', 'kern', 'mark', 'palt', 'halt', 'chws', 'vchw', 'vhal', 'vkrn', 'vpal']
 LATIN_FEATURES = ['kern', 'liga', 'calt', 'ccmp', 'locl', 'mark', 'mkmk', 'lnum', 'onum', 'tnum', 'pnum', 'case']
+# 打开页面头一屏会用宋体画出来的界面(相对 frontend/);play/ 下面那几个只有公网版有,这边没有就跳过
+UI_FILES = ['src/debug/vn/PlaySplash.tsx', 'src/debug/vn/VNTitle.tsx', 'src/debug/vn/VNMenu.tsx', 'src/debug/vn/cover',
+            'src/debug/vn/pick', 'src/debug/play/LoginPage.tsx', 'src/debug/play/Notice.tsx', 'src/debug/play/noticeText.ts']
+FRONTEND = os.path.join(HERE, '..')
+VN_FONTS_CSS = os.path.join(FRONTEND, 'src', 'debug', 'vn', 'vnFonts.css')
 
 
 def rng(a, b):
@@ -59,22 +68,16 @@ BASE = (rng(0x20, 0x7E) | rng(0xA0, 0xFF) | rng(0x2000, 0x206F) | rng(0x2190, 0x
 LATIN_CPS = (rng(0x20, 0x7E) | rng(0xA0, 0xFF) | {0x131, 0x152, 0x153, 0x2C6, 0x2DA, 0x2DC} | rng(0x2010, 0x2027)
              | rng(0x2030, 0x203A) | {0x2044, 0x20AC, 0x2116, 0x2122, 0x2212, 0x2215} | rng(0x2190, 0x2193))
 
-have = set(TTFont(SERIF, lazy=True).getBestCmap())
-core = (BASE | GB1 | {ord(c) for c in UI_EXTRA}) & have
-extra = ((GB2 | JIS1 | {ord(c) for c in SUPPLEMENT}) & have) - core
-
-if '--scan' in sys.argv:
-    root = next((a for a in sys.argv[1:] if a != '--scan'), os.path.join(HERE, '..', 'src'))
+def code_chars(root):
+    """界面代码里出现的字(去掉注释;测试文件不算)。root 是文件或文件夹"""
+    paths = [root] if os.path.isfile(root) else [os.path.join(dp, fn) for dp, _, fns in os.walk(root) for fn in fns]
     found = set()
-    for dp, _, fns in os.walk(root):
-        for fn in fns:
-            if re.search(r'\.(tsx?|css)$', fn) and not re.search(r'\.(test|spec)\.', fn):
-                text = open(os.path.join(dp, fn), encoding='utf-8').read()
-                text = re.sub(r'/\*.*?\*/|(?<![:\'"])//[^\n]*', '', text, flags=re.S)
-                found |= {ord(c) for c in text}
-    new = sorted(c for c in found if c > 0x7E and c in have and c not in core)
-    print(''.join(map(chr, new)) or '没有新字')
-    sys.exit()
+    for path in paths:
+        if re.search(r'\.(tsx?|css)$', path) and not re.search(r'\.(test|spec)\.', path):
+            text = open(path, encoding='utf-8').read()
+            text = re.sub(r'/\*.*?\*/|(?<![:\'"])//[^\n]*', '', text, flags=re.S)
+            found |= {ord(c) for c in text}
+    return found
 
 
 def ranges(cps):
@@ -102,6 +105,38 @@ def build(src, name, cps, features):
     f.save(os.path.join(OUT, name))
     print(name, len(cps), 'chars', os.path.getsize(os.path.join(OUT, name)) // 1024, 'KB')
 
+
+if '--ui' in sys.argv:
+    core_woff = os.path.join(OUT, 'nss-core.woff2')
+    ui_woff = os.path.join(OUT, 'nss-ui.woff2')
+    in_core = set(TTFont(core_woff, lazy=True).getBestCmap())
+    # 拉丁、常用标点、CJK 标点、全角标点和数字:动态的数字、空格也在宋体里画,别为它们去下 core
+    ui = rng(0x20, 0x7E) | {0xB7} | rng(0x2010, 0x2027) | rng(0x3000, 0x3011) | rng(0xFF01, 0xFF1F)
+    for f in UI_FILES:
+        if os.path.exists(os.path.join(FRONTEND, f)):
+            ui |= code_chars(os.path.join(FRONTEND, f))
+    if os.path.exists(ui_woff):
+        ui |= set(TTFont(ui_woff, lazy=True).getBestCmap())
+    ui &= in_core
+    build(core_woff, 'nss-ui.woff2', ui, SERIF_FEATURES)
+    css = open(VN_FONTS_CSS, encoding='utf-8').read()
+    block = re.search(r"@font-face \{[^}]*nss-ui\.woff2[^}]*\}", css)
+    if not block:
+        sys.exit('vnFonts.css 里没找到 nss-ui.woff2 那条 @font-face')
+    new_block = re.sub(r'unicode-range:[^;]*;', f'unicode-range: {ranges(ui)};', block.group(0))
+    open(VN_FONTS_CSS, 'w', encoding='utf-8', newline='\n').write(css.replace(block.group(0), new_block))
+    print('vnFonts.css unicode-range updated')
+    sys.exit()
+
+have = set(TTFont(SERIF, lazy=True).getBestCmap())
+core = (BASE | GB1 | {ord(c) for c in UI_EXTRA}) & have
+extra = ((GB2 | JIS1 | {ord(c) for c in SUPPLEMENT}) & have) - core
+
+if '--scan' in sys.argv:
+    root = next((a for a in sys.argv[1:] if a != '--scan'), os.path.join(HERE, '..', 'src'))
+    new = sorted(c for c in code_chars(root) if c > 0x7E and c in have and c not in core)
+    print(''.join(map(chr, new)) or '没有新字')
+    sys.exit()
 
 os.makedirs(OUT, exist_ok=True)
 build(SERIF, 'nss-core.woff2', core, SERIF_FEATURES)
