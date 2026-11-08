@@ -263,8 +263,11 @@ export interface CardRef {
   sha: string | null;
   /** 连画风一起参考(默认只参考人,画风照这里选的) */
   style: boolean;
+  /** 参考强度 0.3–1.0(11-04 用户:低一点画风、衣服不会都被立绘拉过去);1 = 以前写死的值 */
+  strength: number;
 }
-export const DEFAULT_CARD_REF: CardRef = { kind: 'sprite', id: null, sha: null, style: false };
+export const DEFAULT_CARD_REF: CardRef = { kind: 'sprite', id: null, sha: null, style: false, strength: 1 };
+export const REF_STRENGTH = { min: 0.3, max: 1, step: 0.05 } as const;
 
 /** 这张卡自己的那份 */
 export interface CardImagePrefs {
@@ -422,9 +425,12 @@ function normalizeRef(raw: unknown): CardRef {
   const d = DEFAULT_CARD_REF;
   if (!isObj(raw)) return { ...d };
   const kind: RefKind = raw.kind === 'upload' || raw.kind === 'off' ? raw.kind : 'sprite';
+  const style = bool(raw.style, d.style);
+  // 两位小数,免得 0.6000000000000001 这种存进去
+  const strength = Math.round(num(raw.strength, d.strength, REF_STRENGTH.min, REF_STRENGTH.max) * 100) / 100;
   // 上传的没有编号就是没传成:退回默认立绘
-  if (kind === 'upload' && !id(raw.id)) return { ...d, style: bool(raw.style, d.style) };
-  return { kind, id: kind === 'off' ? null : id(raw.id), sha: kind === 'off' ? null : id(raw.sha), style: bool(raw.style, d.style) };
+  if (kind === 'upload' && !id(raw.id)) return { ...d, style, strength };
+  return { kind, id: kind === 'off' ? null : id(raw.id), sha: kind === 'off' ? null : id(raw.sha), style, strength };
 }
 
 export function normalizeCardPrefs(raw: unknown): CardImagePrefs {

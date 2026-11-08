@@ -160,20 +160,31 @@ describe('生图卡带 · 设置', () => {
   });
 
   it('参考图默认用立绘;上传的没有编号退回立绘;只有 V4.5 用得上、关了就不用', () => {
-    expect(DEFAULT_CARD_PREFS.ref).toEqual({ kind: 'sprite', id: null, sha: null, style: false });
+    expect(DEFAULT_CARD_PREFS.ref).toEqual({ kind: 'sprite', id: null, sha: null, style: false, strength: 1 });
     expect(normalizeCardPrefs({ ref: { kind: 'upload', id: '' } }).ref.kind).toBe('sprite');
     expect(normalizeCardPrefs({ ref: { kind: 'upload', id: 'r1', sha: 'abc', style: true } }).ref).toEqual({
       kind: 'upload',
       id: 'r1',
       sha: 'abc',
       style: true,
+      strength: 1,
     });
-    expect(normalizeCardPrefs({ ref: { kind: 'off', id: 'x' } }).ref).toEqual({ kind: 'off', id: null, sha: null, style: false });
+    expect(normalizeCardPrefs({ ref: { kind: 'off', id: 'x' } }).ref).toEqual({ kind: 'off', id: null, sha: null, style: false, strength: 1 });
     const v5 = normalizeImageGenConfig(undefined);
     const v45 = { ...v5, model: 'nai-diffusion-4-5-full' };
     expect(usesReference(v5, DEFAULT_CARD_PREFS)).toBe(false);
     expect(usesReference(v45, DEFAULT_CARD_PREFS)).toBe(true);
     expect(usesReference(v45, normalizeCardPrefs({ ref: { kind: 'off' } }))).toBe(false);
+  });
+
+  it('参考强度按卡存:默认 1,超出 0.3–1.0 夹回去,不是数字按 1', () => {
+    expect(normalizeCardPrefs({ ref: { kind: 'sprite', strength: 0.6 } }).ref.strength).toBe(0.6);
+    expect(normalizeCardPrefs({ ref: { kind: 'sprite', strength: 0.1 } }).ref.strength).toBe(0.3);
+    expect(normalizeCardPrefs({ ref: { kind: 'sprite', strength: 3 } }).ref.strength).toBe(1);
+    expect(normalizeCardPrefs({ ref: { kind: 'sprite', strength: '0.6' } }).ref.strength).toBe(1);
+    expect(normalizeCardPrefs({ ref: { kind: 'sprite', strength: 0.6000000000000001 } }).ref.strength).toBe(0.6);
+    // 上传的没传成退回立绘,强度照留
+    expect(normalizeCardPrefs({ ref: { kind: 'upload', id: '', strength: 0.5 } }).ref).toMatchObject({ kind: 'sprite', strength: 0.5 });
   });
 
   it('镜头只有一个全局设置,默认第一人称;不认识的值退回默认,卡上不存镜头', () => {

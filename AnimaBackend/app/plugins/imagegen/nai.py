@@ -137,10 +137,12 @@ class CharPrompt:
 
 @dataclass(frozen=True)
 class Reference:
-    """角色参考:image 是已经补成规定尺寸的 PNG(reference_canvas);style = 连画风一起参考(网页上的 Style Aware)"""
+    """角色参考:image 是已经补成规定尺寸的 PNG(reference_canvas);style = 连画风一起参考(网页上的 Style Aware);
+    strength = 参考强度(网页上的 Strength,玩家按卡调 0.3–1.0;11-04 用户:低一点画风、衣服不会都被立绘拉过去)"""
 
     image: bytes
     style: bool = False
+    strength: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -263,7 +265,7 @@ def build_body(r: Request) -> dict:
     if r.variety and not v5:
         params["skip_cfg_above_sigma"] = round(VARIETY_SIGMA * math.sqrt(r.width * r.height / _BASE_PIXELS), 4)
     if r.reference is not None and supports_reference(r.model):
-        # 字段和数值照 10-09 实测的(强度 1、信息量 1);只参考人时 base_caption 写 character
+        # 字段和数值照 10-09 实测的(信息量 1;强度默认 1,玩家可调);只参考人时 base_caption 写 character
         params.update(
             director_reference_images=[base64.b64encode(r.reference.image).decode()],
             director_reference_descriptions=[
@@ -273,7 +275,7 @@ def build_body(r: Request) -> dict:
                 }
             ],
             director_reference_information_extracted=[1.0],
-            director_reference_strength_values=[1.0],
+            director_reference_strength_values=[r.reference.strength],
             director_reference_secondary_strength_values=[0.0],
         )
     return {"input": r.prompt, "model": r.model, "action": "generate", "parameters": params}

@@ -130,6 +130,8 @@ export interface RefIn {
   /** 立绘 / 上传的编号;不传 = 当前立绘包的默认立绘 */
   id?: string | null;
   style?: boolean;
+  /** 参考强度 0.3–1.0;不传 = 1 */
+  strength?: number;
 }
 
 export interface LookIn {
@@ -204,8 +206,8 @@ export interface GeneratedImage {
     quality?: string;
     uc_preset?: string;
     seed?: number;
-    /** 带了参考图:谁、哪张(null = 默认立绘)、是不是连画风一起参考 */
-    reference?: { who: string; kind: 'sprite' | 'upload'; id: string | null; style: boolean } | null;
+    /** 带了参考图:谁、哪张(null = 默认立绘)、是不是连画风一起参考、强度(11-04 以前的图没记,都是 1) */
+    reference?: { who: string; kind: 'sprite' | 'upload'; id: string | null; style: boolean; strength?: number } | null;
     /** 设了参考图但这张没带上的原因 */
     reference_note?: string;
   };

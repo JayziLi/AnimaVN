@@ -131,7 +131,8 @@ export function referenceText(params: GeneratedImage['params']): string {
   const ref = params.reference;
   if (ref) {
     const what = ref.kind === 'upload' ? '用了上传的图' : ref.id ? '用了立绘' : '用了默认立绘';
-    return ref.style ? `${what} · 连画风一起` : what;
+    const strength = ref.strength !== undefined && ref.strength < 1 ? ` · 强度 ${ref.strength.toFixed(2)}` : '';
+    return `${ref.style ? `${what} · 连画风一起` : what}${strength}`;
   }
   if (params.reference_note) return `没用(${params.reference_note})`;
   return params.model && supportsReference(params.model) ? '没用' : '没用(只有 V4.5 能用)';

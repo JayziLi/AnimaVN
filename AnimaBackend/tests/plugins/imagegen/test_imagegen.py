@@ -117,6 +117,13 @@ def test_reference_is_sent_only_to_v45():
     assert "director_reference_images" not in v5
 
 
+def test_reference_strength_is_sent_as_chosen():
+    ref = nai.Reference(b"x", style=True, strength=0.6)
+    p = nai.build_body(nai.Request("1girl", "", 832, 1216, 1, model=nai.V45_FULL, reference=ref))["parameters"]
+    assert p["director_reference_strength_values"] == [0.6]
+    assert p["director_reference_secondary_strength_values"] == [0.0]
+
+
 def test_reference_canvas_pads_to_a_size_novelai_takes():
     tall = Image.open(io.BytesIO(nai.reference_canvas(sprite_png(100, 300)))).convert("RGB")
     assert tall.size == (1024, 1536)
@@ -576,7 +583,7 @@ def test_v45_uses_the_cards_default_sprite_as_reference(client: TestClient, fake
     img = r.json()
     # 长相交给参考图,衣服照写
     assert img["chars"][0]["prompt"] == "girl, blouse, looking back, smile"
-    assert img["params"]["reference"] == {"who": "Mira", "kind": "sprite", "id": None, "style": False}
+    assert img["params"]["reference"] == {"who": "Mira", "kind": "sprite", "id": None, "style": False, "strength": 1.0}
 
 
 def test_a_chosen_sprite_is_used_instead_of_the_default(client: TestClient, fake_nai, make_card, make_sprite_pack):
@@ -587,6 +594,19 @@ def test_a_chosen_sprite_is_used_instead_of_the_default(client: TestClient, fake
     p = fake_nai[0][1]["parameters"]
     assert decoded(p["director_reference_images"][0]).size == (1472, 1472)
     assert p["director_reference_descriptions"][0]["caption"]["base_caption"] == "character&style"
+
+
+def test_reference_strength_goes_to_novelai_and_is_recorded(client: TestClient, fake_nai, make_card, make_sprite_pack):
+    card, _, _ = _card_with_sprites(client, make_card, make_sprite_pack)
+    client.put("/api/imagegen/token", json={"token": "pst-x"})
+    looks = {"Mira": {"tags": "pink hair", "ref": {"kind": "sprite", "style": True, "strength": 0.6}}}
+    img = client.post("/api/imagegen/generate", json=generate_payload(card["id"], model=nai.V45_FULL, looks=looks)).json()
+    assert fake_nai[0][1]["parameters"]["director_reference_strength_values"] == [0.6]
+    assert img["params"]["reference"]["strength"] == 0.6
+    # 0.3–1.0 以外的不收
+    too_low = {"Mira": {"tags": "pink hair", "ref": {"kind": "sprite", "strength": 0.1}}}
+    r = client.post("/api/imagegen/generate", json=generate_payload(card["id"], model=nai.V45_FULL, looks=too_low))
+    assert r.status_code == 422 and len(fake_nai) == 1
 
 
 def test_reference_is_left_out_on_v5_or_when_she_is_not_drawn(client: TestClient, fake_nai, make_card, make_sprite_pack):

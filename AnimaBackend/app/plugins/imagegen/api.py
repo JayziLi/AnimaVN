@@ -312,7 +312,7 @@ async def _reference(db: Session, req: GenerateIn) -> tuple[str | None, nai.Refe
         image = await run_in_threadpool(nai.reference_canvas, data)
     except nai.NaiError as e:
         return None, None, f"{e.message},这张用文字写的长相"
-    return name, nai.Reference(image=image, style=ref.style), ""
+    return name, nai.Reference(image=image, style=ref.style, strength=ref.strength), ""
 
 
 @router.post("/generate", response_model=ImageOut)
@@ -416,9 +416,15 @@ async def generate(req: GenerateIn, db: Session = Depends(get_db)):
             "quality": quality,
             "uc_preset": req.uc_preset,
             "seed": seed,
-            # 带了参考图:谁、哪张(立绘 / 上传的编号,null = 默认立绘)、是不是连画风一起参考
+            # 带了参考图:谁、哪张(立绘 / 上传的编号,null = 默认立绘)、是不是连画风一起参考、强度
             "reference": (
-                {"who": ref_name, "kind": req.looks[ref_name].ref.kind, "id": req.looks[ref_name].ref.id, "style": reference.style}
+                {
+                    "who": ref_name,
+                    "kind": req.looks[ref_name].ref.kind,
+                    "id": req.looks[ref_name].ref.id,
+                    "style": reference.style,
+                    "strength": reference.strength,
+                }
                 if ref_name and reference
                 else None
             ),

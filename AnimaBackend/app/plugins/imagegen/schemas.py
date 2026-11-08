@@ -160,6 +160,8 @@ class RefIn(BaseModel):
     id: str | None = Field(None, max_length=32)
     # 连画风一起参考;默认只参考人,画风照插件里选的
     style: bool = False
+    # 参考强度:越低画风、衣服越不被参考图拉过去;1 = 以前写死的值
+    strength: float = Field(1.0, ge=0.3, le=1.0)
 
 
 class LookIn(BaseModel):

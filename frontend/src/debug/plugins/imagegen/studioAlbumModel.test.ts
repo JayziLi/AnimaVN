@@ -160,6 +160,12 @@ describe('右栏的字', () => {
     expect(referenceText({ model: 'nai-diffusion-4-5-full', reference: { who: '刻晴', kind: 'sprite', id: 's1', style: true } })).toBe(
       '用了立绘 · 连画风一起',
     );
+    expect(
+      referenceText({ model: 'nai-diffusion-4-5-full', reference: { who: '刻晴', kind: 'sprite', id: 's1', style: true, strength: 0.6 } }),
+    ).toBe('用了立绘 · 连画风一起 · 强度 0.60');
+    expect(
+      referenceText({ model: 'nai-diffusion-4-5-full', reference: { who: '刻晴', kind: 'sprite', id: 's1', style: false, strength: 1 } }),
+    ).toBe('用了立绘');
     expect(referenceText({ model: 'nai-diffusion-4-5-full', reference: { who: '刻晴', kind: 'upload', id: 'u1', style: false } })).toBe(
       '用了上传的图',
     );

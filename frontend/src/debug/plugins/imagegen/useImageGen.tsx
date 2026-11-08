@@ -423,7 +423,7 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
         gender: p.gender,
         name_tag: p.nameTag,
         // 模型用不了参考图时后端自己跳过,这里照卡上的设置带
-        ref: p.ref.kind === 'off' ? null : { kind: p.ref.kind, id: p.ref.id, style: p.ref.style },
+        ref: p.ref.kind === 'off' ? null : { kind: p.ref.kind, id: p.ref.id, style: p.ref.style, strength: p.ref.strength },
       },
       [userName]: player,
       玩家: player,

@@ -21,6 +21,7 @@ import {
   orientsOf,
   qualityOptions,
   REFERENCE_ANLAS,
+  REF_STRENGTH,
   RESOLUTIONS,
   SAMPLERS,
   SFW_MODEL,
@@ -162,7 +163,7 @@ function PicturePage({ store, go }: { store: ImageGenStore; go: (p: Page) => voi
       ? '先选一张角色卡'
       : prefs.ref.kind === 'off'
         ? '不用'
-        : `${prefs.ref.kind === 'upload' ? '上传的那张' : '立绘'} · ${prefs.ref.style ? '连画风一起参考' : '只参考人'} · 每张 ${REFERENCE_ANLAS} Anlas`;
+        : `${prefs.ref.kind === 'upload' ? '上传的那张' : '立绘'} · ${prefs.ref.style ? '连画风一起参考' : '只参考人'}${prefs.ref.strength < 1 ? ` · 强度 ${prefs.ref.strength.toFixed(2)}` : ''} · 每张 ${REFERENCE_ANLAS} Anlas`;
   const herText = !store.cardId
     ? '先选一张角色卡'
     : [prefs.nameTag, withRef ? '长相看参考图' : short(prefs.look) || '还没写长相(第一次画时让指导模型读卡写)']
@@ -541,6 +542,19 @@ function ReferenceRows({ store }: { store: ImageGenStore }) {
           </Toggle>
         )}
       </Row>
+      {ref.kind !== 'off' && (
+        <Row label="参考强度" value={ref.strength.toFixed(2)} tip={IG_TIPS.ref_strength}>
+          <input
+            type="range"
+            min={REF_STRENGTH.min}
+            max={REF_STRENGTH.max}
+            step={REF_STRENGTH.step}
+            value={ref.strength}
+            aria-label="参考强度"
+            onChange={(e) => setRef({ ...ref, strength: Math.round(Number(e.target.value) * 100) / 100 })}
+          />
+        </Row>
+      )}
     </>
   );
 }
