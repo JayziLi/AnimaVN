@@ -13,10 +13,15 @@ import {
   fmtSpeed,
   langName,
   langOptions,
+  IN_STORE_PLACEHOLDER,
+  isBlob,
   matchBadge,
+  modelNames,
   missingSettings,
   moreParamsSummary,
   paramDefault,
+  pathInputValue,
+  pathPlaceholder,
   parseSeed,
   moveToFront,
   newEmotionFrom,
@@ -28,7 +33,10 @@ import {
   selectAfterDelete,
   settingPatch,
   settingsSummary,
+  shownName,
+  showManualFiles,
   tableNote,
+  voiceNamePatch,
   withParam,
 } from './voiceEditorModel';
 
@@ -350,5 +358,107 @@ describe('more parameters', () => {
     expect(benchTuning(p, null, false)).toBeUndefined();
     expect(benchTuning(p, 7, true)).toBeUndefined();
     expect(benchTuning(p, 7, false)).toEqual({ speed: 1.1, text_lang: 'ja', params: { top_k: 10 }, seed: 7 });
+  });
+});
+
+describe('files in the store (blob: paths)', () => {
+  const SHA = 'a'.repeat(64);
+  const stored: VoiceProfile = {
+    ...profile([]),
+    gpt_weights: `blob:${SHA}`,
+    sovits_weights: `blob:${'b'.repeat(64)}`,
+    gpt_name: "凯露 's-e15.ckpt",
+    sovits_name: '',
+  };
+
+  it('never shows the fingerprint: original name when known, else 文件仓库里', () => {
+    expect(isBlob(`blob:${SHA}`)).toBe(true);
+    expect(isBlob('D:/models/a.ckpt')).toBe(false);
+    expect(shownName(stored.gpt_weights, stored.gpt_name)).toBe("凯露 's-e15.ckpt");
+    expect(shownName(stored.sovits_weights, stored.sovits_name)).toBe('文件仓库里');
+    expect(shownName(stored.sovits_weights)).toBe('文件仓库里');
+    expect(shownName('D:\\models\\角色 a.pth', 'ignored.pth')).toBe('角色 a.pth');
+    expect(shownName(`blob:${SHA}`, '   ')).toBe('文件仓库里');
+  });
+
+  it('shows blob paths as empty input with a placeholder; real paths as they are', () => {
+    expect(pathInputValue(`blob:${SHA}`)).toBe('');
+    expect(pathInputValue('D:/a.ckpt')).toBe('D:/a.ckpt');
+    expect(pathPlaceholder(`blob:${SHA}`, 'D:/示例.ckpt')).toBe(IN_STORE_PLACEHOLDER);
+    expect(IN_STORE_PLACEHOLDER).toBe('在文件仓库里');
+    expect(pathPlaceholder('', 'D:/示例.ckpt')).toBe('D:/示例.ckpt');
+    expect(pathPlaceholder('D:/a.ckpt', 'D:/示例.ckpt')).toBe('D:/示例.ckpt');
+  });
+
+  it('does not save an empty value over an untouched blob path, but a typed path replaces it', () => {
+    expect(settingPatch(stored, 'gpt_weights', '')).toBeNull();
+    expect(settingPatch(stored, 'gpt_weights', '  ')).toBeNull();
+    expect(settingPatch(stored, 'gpt_weights', stored.gpt_weights)).toBeNull();
+    expect(settingPatch(stored, 'gpt_weights', ' "D:/models/新.ckpt" ')).toEqual({ gpt_weights: 'D:/models/新.ckpt' });
+    // 手填路径的清空照旧能存
+    expect(settingPatch({ ...stored, ref_path: 'D:/a.wav' }, 'ref_path', '')).toEqual({ ref_path: '' });
+  });
+
+  it('summary and rows use the name, not the fingerprint', () => {
+    const { text } = settingsSummary(stored, { id: 'c', name: '台式机', api_type: 'gpt_sovits' }, false);
+    expect(text).toContain("凯露 's-e15.ckpt");
+    expect(text).toContain('文件仓库里');
+    expect(text).not.toContain('blob');
+    expect(text).not.toContain(SHA);
+    expect(missingSettings(stored, false)).toEqual([]);
+    expect(rowText(emo('1', '平静', { ref_path: `blob:${SHA}` }), false)).toEqual({ text: '文件仓库里', faint: true });
+    expect(rowText(emo('1', '平静', { ref_path: `blob:${SHA}`, prompt_text: '你好' }), false).text).toBe('你好');
+    expect(modelNames(stored)).toEqual({ gpt_weights: "凯露 's-e15.ckpt", sovits_weights: '' });
+  });
+});
+
+describe('showManualFiles', () => {
+  it('only pending voices, and only when files cannot go over by themselves', () => {
+    expect(showManualFiles('manual', { ok: true, route: 'none' })).toBe(false);
+    expect(showManualFiles('sent', { ok: true, route: 'none' })).toBe(false);
+    expect(showManualFiles(undefined, { ok: true, route: 'none' })).toBe(false);
+    expect(showManualFiles('pending', { ok: true, route: 'none' })).toBe(true);
+    expect(showManualFiles('pending', { ok: true, route: 'same' })).toBe(false);
+    expect(showManualFiles('pending', { ok: true, route: 'plugin' })).toBe(false);
+    // 还在测:不出;连不上 / 不是 GPT-SoVITS(没有 route):出
+    expect(showManualFiles('pending', 'testing')).toBe(false);
+    expect(showManualFiles('pending', { ok: false })).toBe(true);
+    expect(showManualFiles('pending', { ok: true, route: null })).toBe(true);
+    expect(showManualFiles('pending', { ok: true })).toBe(true);
+  });
+});
+
+describe('fish and relay voices', () => {
+  const base = { ref_path: '', gpt_weights: '', sovits_weights: '', emotions: [] as VoiceEmotion[], name: 'alloy' };
+  it('fish needs no weights; relay needs a voice name', () => {
+    expect(missingSettings({ ...base, params: {} }, false, 'fish')).toEqual([]);
+    expect(missingSettings({ ...base, params: {} }, false, 'openai')).toEqual(['音色名']);
+    expect(missingSettings({ ...base, params: { voice: ' ' } }, false, 'openai')).toEqual(['音色名']);
+    expect(missingSettings({ ...base, params: { voice: 'nova' } }, false, 'openai')).toEqual([]);
+    expect(missingSettings({ ...base, params: {} }, false)).toEqual(['GPT 权重', 'SoVITS 权重']);
+  });
+  it('bench: relay needs no emotion rows, fish still does', () => {
+    expect(benchBlocker({ ...base, params: { voice: 'nova' } }, false, 'openai')).toBeNull();
+    expect(benchBlocker({ ...base, params: {} }, false, 'fish')).toContain('还没有参考音频');
+  });
+  it('languages follow the type', () => {
+    expect(langOptions('zh', false, 'openai').map((l) => l.value)).toEqual(['zh', 'ja']);
+    expect(langOptions('zh', false, 'fish').map((l) => l.value)).toEqual(['zh', 'ja', 'en']);
+  });
+  it('voice name patch keeps the other params', () => {
+    const p = { params: { voice: 'alloy', temperature: 0.5 } };
+    expect(voiceNamePatch(p, ' nova ')).toEqual({ params: { voice: 'nova', temperature: 0.5 } });
+    expect(voiceNamePatch(p, 'alloy')).toBeNull();
+    expect(voiceNamePatch(p, '  ')).toBeNull();
+  });
+  it('summary shows the voice name', () => {
+    const s = settingsSummary(
+      { text_lang: 'ja', ref_path: '', gpt_weights: '', sovits_weights: '', params: { voice: 'nova' } },
+      { id: 'c', name: '我的中转站', api_type: 'openai' },
+      false,
+      'openai',
+    );
+    expect(s.warn).toBe(false);
+    expect(s.text).toContain('nova');
   });
 });

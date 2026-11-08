@@ -354,3 +354,11 @@ def index_tts(monkeypatch) -> Iterator[FakeIndexTts]:
     reset_engines()
     yield fake
     reset_engines()
+
+
+@pytest.fixture
+def no_voice_dedupe(monkeypatch):
+    """要把同一个声音再导一份来比对的测试:关掉「已有就复用」"""
+    from app.bundle import restore
+
+    monkeypatch.setattr(restore._Restorer, "same_voice", lambda self, engine, pack: None)

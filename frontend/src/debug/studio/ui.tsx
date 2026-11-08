@@ -19,6 +19,7 @@ import {
   type ButtonHTMLAttributes,
   type CSSProperties,
   type ReactNode,
+  type Ref,
 } from 'react';
 import { createPortal } from 'react-dom';
 import type { SaveState } from '../components/CardPanel';
@@ -750,6 +751,8 @@ interface BtnProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   kind?: BtnKind;
   icon?: IconName;
   small?: boolean;
+  /** 要贴着按钮弹菜单时用;React 19 的 ref 是普通 prop,随 rest 落到 button 上 */
+  ref?: Ref<HTMLButtonElement>;
 }
 
 export function Btn({ kind = 'secondary', icon, small, className, type = 'button', children, ...rest }: BtnProps) {

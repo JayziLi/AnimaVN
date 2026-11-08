@@ -36,6 +36,7 @@ import { PanelRail, PanelResizer } from '../studio/panelParts';
 import { DEFAULT_PANELS, InspectorCollapse, useSidePanels, type SidePanelOptions } from '../studio/sidePanels';
 import { LayerSkin } from '../studio/layerSkin';
 import { Btn, ConfirmDialog, IconBtn, Inspector, PromptDialog } from '../studio/ui';
+import { ImportMenuButton } from './ImportMenuButton';
 import type { ImportNotice, Notify, PackSync, SlotKey } from '../studio/types';
 import { describeClean } from '../vn/dataTab';
 import { popThemeClass } from '../vn/ui/logic';
@@ -163,8 +164,10 @@ export interface AssetLibraryProps {
   onOpenCard: (cardId: string, slot: SlotKey) => void;
   /** 撤销了一次导入:卡列表、当前卡要重读 */
   onUndone?: (result: ImportUndoPreview) => void;
-  /** 顶栏「导入」:选文件交给导入器(不带目标卡;文件夹选不了,拖进来可以)。不给 = 按钮灰着 */
+  /** 顶栏「导入」:选文件交给导入器(不带目标卡)。不给 = 按钮灰着 */
   onImport?: () => void;
+  /** 顶栏「导入」点开的第二项「选文件夹」(声音文件夹、角色文件夹);不给就只有一个按钮、直接选文件 */
+  onImportFolder?: () => void;
   /** 导完没有卡可开(只导了包)时顶栏下面那一行提示,和卡编辑器素材页的同一个(ImportBanner);给了就要给 onNoticeClose */
   notice?: ImportNotice | null;
   onNoticeClose?: () => void;
@@ -597,10 +600,11 @@ export function AssetLibrary(props: AssetLibraryProps) {
           />
         </label>
       )}
-      <span className="lib-import" title={props.onImport ? '选文件导入(文件夹直接拖进来)' : '拖进来导入马上就能用'}>
-        <Btn kind="primary" icon="upload" disabled={!props.onImport} onClick={props.onImport}>
-          导入
-        </Btn>
+      <span
+        className="lib-import"
+        title={props.onImport ? (props.onImportFolder ? '选文件或文件夹导入(也可以直接拖进来)' : '选文件导入(文件夹直接拖进来)') : '拖进来导入马上就能用'}
+      >
+        <ImportMenuButton onFiles={props.onImport} onFolder={props.onImportFolder} />
       </span>
     </header>
   );
@@ -709,7 +713,7 @@ export function AssetLibrary(props: AssetLibraryProps) {
                     ) : all.length === 0 && kind === 'voice' ? (
                       <>
                         <span className="st-empty-title">还没有声音</span>
-                        <span className="st-empty-note">新建一个空声音,或者导入语音机上的 refs.json</span>
+                        <span className="st-empty-note">点右上角「导入」,选声音文件夹或角色包</span>
                         <span className="lib-empty-actions">{voiceActions}</span>
                       </>
                     ) : all.length === 0 ? (

@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import common  # noqa: E402
 
 # 更新时整个换掉的东西(相对整合包根目录)。存档 AnimaBackend/data、python、情绪模型都不在里面
-UPDATE_ITEMS = ["AnimaBackend/app", "web", "launcher", "AnimaVN.bat", "更新.bat", "使用说明.txt"]
+UPDATE_ITEMS = ["AnimaBackend/app", "web", "launcher", "AnimaVN.bat", "更新.bat", "使用说明.txt", "语音小插件"]
 DOWNLOAD = "_update.zip"
 NEW_DIR = "_update_new"
 OLD_DIR = "_update_old"

@@ -38,13 +38,19 @@ export function rowSize(bytes: number): string {
   return `${(mb / 1000).toFixed(1)} GB`;
 }
 
-/** 底部的总大小:「约 58 MB」;10 MB 以下留一位小数 */
-export function totalLabel(bytes: number): string {
+/** 一个包那一行的大小;勾了压缩图片时,带图的包(立绘、背景、CG)写「压缩前约 …」 */
+export function packSize(item: Pick<ExportBundleItem, 'kind' | 'bytes'>, compressed: boolean): string {
+  return compressed && item.kind !== 'voice' ? `压缩前约 ${rowSize(item.bytes)}` : rowSize(item.bytes);
+}
+
+/** 底部的总大小:「约 58 MB」;10 MB 以下留一位小数。勾了压缩图片时写「压缩前约 58 MB」(真实大小压完才知道) */
+export function totalLabel(bytes: number, compressed = false): string {
   const mb = bytes / 1e6;
-  if (mb < 0.05) return '约 0.1 MB';
-  if (mb < 10) return `约 ${Number(mb.toFixed(1))} MB`;
-  if (mb < 1000) return `约 ${Math.round(mb)} MB`;
-  return `约 ${(mb / 1000).toFixed(1)} GB`;
+  const head = compressed ? '压缩前约' : '约';
+  if (mb < 0.05) return `${head} 0.1 MB`;
+  if (mb < 10) return `${head} ${Number(mb.toFixed(1))} MB`;
+  if (mb < 1000) return `${head} ${Math.round(mb)} MB`;
+  return `${head} ${(mb / 1000).toFixed(1)} GB`;
 }
 
 /** 左边那一格写什么 */
@@ -65,19 +71,25 @@ const NONE_LABEL: Record<ExportPackKind, string> = {
 
 const KIND_ORDER: readonly ExportPackKind[] = ['sprite', 'scene', 'cg', 'voice'];
 
-/** 声音那一行拿不到文件时的灰字 */
-export const VOICE_MISSING_NOTE = '语音机连不上,这个声音只能带设置';
-
-/** 声音那一行底下的小字:黄字 warn(后端给的)、灰字「只能带设置」(有文件拿不到时);别的包都是 null */
-export function voiceNotes(item: ExportBundleItem): { warn: string | null; missing: string | null } {
-  if (item.kind !== 'voice') return { warn: null, missing: null };
-  return { warn: item.warn || null, missing: (item.missing ?? 0) > 0 ? VOICE_MISSING_NOTE : null };
+/** 声音那一行有文件还在语音机上时的灰字 */
+export function voiceMissingNote(n: number): string {
+  return `还有 ${n} 个文件在语音机上`;
 }
 
-/** 导出中时底部的小字:勾着声音时要先从语音机取文件,会慢一些;没勾声音是 null */
-export function busyNote(summary: ExportBundleSummary, checks: ExportChecks): string | null {
-  const voice = summary.items.some((it) => it.kind === 'voice' && checks[it.key] !== false);
-  return voice ? '正在从语音机取参考音频和模型,模型大时要等一会儿' : null;
+/** 声音那一行底下的小字:黄字 warn(后端给的)、灰字「还有 N 个文件在语音机上」;别的包都是 null */
+export function voiceNotes(item: ExportBundleItem): { warn: string | null; missing: string | null } {
+  if (item.kind !== 'voice') return { warn: null, missing: null };
+  return { warn: item.warn || null, missing: (item.missing ?? 0) > 0 ? voiceMissingNote(item.missing ?? 0) : null };
+}
+
+/** 「拉回来」按钮的字 */
+export function pullLabel(pulling: boolean): string {
+  return pulling ? '拉取中…' : '拉回来';
+}
+
+/** 拉完还缺几个:没缺是 null */
+export function pullLeftNote(left: number): string | null {
+  return left > 0 ? `还有 ${left} 个拉不到(语音机开着吗?)` : null;
 }
 
 /** 清单里的一行包:同一类只有第一行写类名;一类都没有时是一行灰字 */
@@ -142,12 +154,14 @@ export function bundleBody(
   withPreset: boolean,
   note: string,
   preview: ExportPreview,
+  compressImages = true,
 ): ExportBundleBody {
   return {
     exclude: excludeOf(summary, checks),
     preset: withPreset && summary.preset !== null,
     note: note.trim(),
     preview,
+    compress_images: compressImages,
   };
 }
 

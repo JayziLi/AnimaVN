@@ -237,7 +237,9 @@ interface Props {
   /** 语音面板「音色」那张短列表:全部声音(不给 = 只显示现在用的) */
   voiceProfiles?: readonly VoiceProfile[];
   /** 语音面板里点了一个声音:换成这张卡的主声音(下一句起用它) */
-  onPickVoice?: (id: string) => void;
+  onPickVoice?: (id: string | null) => void;
+  /** 现在念的是默认声音(这张卡自己没绑) */
+  voiceIsDefault?: boolean;
   /** 拆句拼接开着(卡带的 useSplice):合成请求带 sfx */
   sfxEnabled: boolean;
   /** 设置页里改语音开关 / 等不等语音:改的是插件配置,和调试台插件抽屉同一份 */
@@ -748,6 +750,7 @@ export function VNScreen({
   voiceCast,
   voiceProfiles,
   onPickVoice,
+  voiceIsDefault,
   onChangeVoiceConfig,
   showJa,
   onChangeShowJa,
@@ -1380,9 +1383,11 @@ export function VNScreen({
     probeConnectionId: voiceCast.main?.connection_id ?? null,
     interrupt: settings.voiceInterrupt,
   });
-  // 右上角的语音标签:这张卡绑了声音才有
+  // 语音按钮:这张卡绑了声音,或者声音库里有声音可选(没配声音的卡也要能就地选一个)
   const showVoiceChip =
-    settings.showVoice && currentCardId !== null && (voiceCast.main !== null || voiceCast.extras.length > 0);
+    settings.showVoice &&
+    currentCardId !== null &&
+    (voiceCast.main !== null || voiceCast.extras.length > 0 || (voiceProfiles?.length ?? 0) > 0);
 
   // 念台词时 BGM 压到多少,跟着设置走(压低由音频总线做)
   useEffect(() => {
@@ -2331,6 +2336,7 @@ export function VNScreen({
         onLineAction={voice.release}
         profiles={voiceProfiles}
         onPickVoice={onPickVoice}
+        voiceIsDefault={voiceIsDefault}
         modelLabel={modelLabel}
       />
     ) : null;

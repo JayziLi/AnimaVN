@@ -1083,6 +1083,10 @@ export const debugApi = {
   exportBundleSummary: (cardId: string) =>
     request<ExportBundleSummary>(`/api/export/bundle/${encodeURIComponent(cardId)}/summary`),
 
+  /** 把声音还在语音机上的文件拉回文件仓库;返回还拉不到的个数(要等一会儿) */
+  pullVoiceFiles: (voiceId: string) =>
+    request<{ missing: number }>(`/api/export/voice/${encodeURIComponent(voiceId)}/pull`, { method: 'POST' }),
+
   /** 导出角色包(.animavn)并存到本地;fallbackName 是后端没给文件名时用的 */
   exportBundle: (cardId: string, body: ExportBundleBody, fallbackName = 'character.animavn') =>
     downloadAttachment(`${BASE_URL}/api/export/bundle/${encodeURIComponent(cardId)}`, fallbackName, {
@@ -1128,7 +1132,7 @@ export const debugApi = {
   listTtsConnections: () => request<TtsConnection[]>('/api/tts/connections'),
 
   createTtsConnection: (
-    payload: { name: string; api_type?: TtsApiType; base_url: string } & TtsConnectionPatch,
+    payload: { name: string; api_type?: TtsApiType; base_url: string; model?: string } & TtsConnectionPatch,
   ) =>
     request<TtsConnection>('/api/tts/connections', {
       method: 'POST',
@@ -1145,7 +1149,25 @@ export const debugApi = {
     request<void>(`/api/tts/connections/${id}`, { method: 'DELETE' }),
 
   testTtsConnection: (id: string) =>
-    request<{ ms: number }>(`/api/tts/connections/${id}/test`, { method: 'POST' }),
+    request<{
+      ms: number;
+      route?: 'same' | 'plugin' | 'none' | null;
+      plugin?: boolean;
+      pair_ok?: boolean;
+      /** 中转站:列出了几个模型 */
+      model_count?: number | null;
+    }>(`/api/tts/connections/${id}/test`, { method: 'POST' }),
+
+  /** 中转站已保存的连接:拉可用模型 */
+  listTtsModels: (id: string) =>
+    request<{ models: string[] }>(`/api/tts/connections/${id}/models`, { method: 'POST' }).then((r) => r.models),
+
+  /** 中转站还没保存:用表单里的地址和 key 拉模型(key 留空 + connection_id = 用存着的) */
+  previewTtsModels: (body: { base_url: string; api_key: string; copy_from_llm?: string; connection_id?: string }) =>
+    request<{ models: string[] }>('/api/tts/connections/models-preview', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }).then((r) => r.models),
 
   /** force:不信任后端记住的「当前权重」,强制重新切(插件页的按钮用) */
   warmupVoice: (profileId: string, force = false) =>
@@ -1170,6 +1192,10 @@ export const debugApi = {
   },
 
   listVoices: () => request<VoiceProfile[]>('/api/voices'),
+
+  /** 现在就把这个声音的文件送到语音机(导入后调);失败是后端原文 */
+  deliverVoice: (id: string) =>
+    request<VoiceProfile>(`/api/voices/${encodeURIComponent(id)}/deliver`, { method: 'POST' }),
 
   createVoice: (payload: { name: string; connection_id: string } & VoiceProfilePatch) =>
     request<VoiceProfile>('/api/voices', { method: 'POST', body: JSON.stringify(payload) }),
@@ -1649,7 +1675,7 @@ export function sceneThumbUrl(a: SceneAsset, w: number): string | null {
 
 // ---- 语音插件 ----
 
-export type TtsApiType = 'gpt_sovits' | 'indextts';
+export type TtsApiType = 'gpt_sovits' | 'indextts' | 'fish' | 'openai';
 
 export interface TtsConnection {
   id: string;
@@ -1662,9 +1688,23 @@ export interface TtsConnection {
   emo_alpha: number;
   /** 用这个服务的声音有几个 */
   profile_count: number;
+  /** 填过 GSV 小插件的配对码(码本身不返回) */
+  has_pair_code?: boolean;
+  /** Fish、中转站:存过 key(key 本身不返回) */
+  has_api_key?: boolean;
+  /** Fish、中转站的模型名;其余类型是空串 */
+  model?: string;
 }
 
-export type TtsConnectionPatch = Partial<Pick<TtsConnection, 'name' | 'base_url' | 'sample_steps' | 'emo_alpha'>>;
+export type TtsConnectionPatch = Partial<Pick<TtsConnection, 'name' | 'api_type' | 'base_url' | 'sample_steps' | 'emo_alpha' | 'model'>> & {
+  /** 空字符串 = 清掉 */
+  pair_code?: string;
+  /** 新 key;不发 = 不改 */
+  api_key?: string;
+  clear_api_key?: boolean;
+  /** 模型页连接的 id:后端把那条的 key 抄过来,地址只在这里没填时抄 */
+  copy_from_llm?: string;
+};
 
 /**
  * 一种情绪,名字和立绘表情名对上时用它,排第一的是默认。
@@ -1702,6 +1742,8 @@ export interface VoiceParams {
   parallel_infer?: boolean;
   /** IndexTTS */
   emo_alpha?: number;
+  /** 中转站:音色名 */
+  voice?: string;
 }
 
 /** 试音台:这一句整组换掉声音存着的语速、语言和参数 */
@@ -1732,9 +1774,12 @@ export interface VoiceProfile {
    * manual = 手填的路径(原有的声音都是)。后端是旧版时没有,当 manual
    */
   files_at?: VoiceFilesAt;
+  /** 导入时模型的原文件名;路径是 blob:<指纹> 时界面拿它当文件名。手填路径的声音是空的,后端是旧版时没有 */
+  gpt_name?: string;
+  sovits_name?: string;
 }
 
-export type VoiceFilesAt = 'local' | 'pending' | 'manual';
+export type VoiceFilesAt = 'local' | 'pending' | 'sent' | 'manual';
 
 export type VoiceProfilePatch = Partial<
   Pick<
@@ -1864,7 +1909,7 @@ export interface ImportPlanOptions {
 export interface ImportGroup {
   key: string;
   /** bundle = 一个角色包(.animavn),pack_file = 一个单包(.animapack):都照包里的清单另建一份 */
-  type: 'card' | 'sprite_pack' | 'scene_pack' | 'cg_pack' | 'bundle' | 'pack_file';
+  type: 'card' | 'sprite_pack' | 'scene_pack' | 'cg_pack' | 'bundle' | 'pack_file' | 'voice_folder';
   /** 建议的名字(撞名时执行那一步再加「 2」) */
   name: string;
   /** 卡 1;立绘张数;背景 + 曲子的数目;CG 构图数 */
@@ -1877,8 +1922,39 @@ export interface ImportGroup {
   bgm_count?: number;
   /** CG 包:差分一共几张 */
   variant_count?: number;
-  /** bundle 组是 ImportBundleDetail,pack_file 组是 ImportPackDetail;别的组没有 */
-  detail?: ImportBundleDetail | ImportPackDetail;
+  /** bundle 组是 ImportBundleDetail,pack_file 组是 ImportPackDetail,voice_folder 组是 ImportVoiceFolderDetail;别的组没有 */
+  detail?: ImportBundleDetail | ImportPackDetail | ImportVoiceFolderDetail;
+}
+
+/** 声音文件夹能挂到的一个语音服务 */
+export interface ImportVoiceTarget {
+  id: string;
+  name: string;
+  api_type: 'gpt_sovits' | 'indextts';
+  /** 不能挂时灰着;reason 写原因(「没有模型」) */
+  usable: boolean;
+  reason: string;
+  /** 能挂但要说一句(「只拿参考音频」) */
+  note: string;
+  /** 默认选它 */
+  best: boolean;
+}
+
+/** 导入一个文件夹认出来的声音(voice_folder 组) */
+export interface ImportVoiceFolderDetail {
+  /** 文件夹名;原文有假名又没写语言时后端已经加了「(日语)」 */
+  name: string;
+  folder: string;
+  /** 参考原文的语言(zh / ja) */
+  lang: string;
+  models: { kind: 'gpt' | 'sovits'; name: string; size: number; file: string }[];
+  /** 同一个情绪多段时第二段起标签加 2、3;平静 / 默认排最前 */
+  refs: { label: string; text: string; file: string }[];
+  /** 没导的文件名(名字不合格的音频、多出来的旧模型) */
+  skipped: string[];
+  /** 库里已经有模型和参考都一样的声音 */
+  existing: { id: string; name: string } | null;
+  connections: ImportVoiceTarget[];
 }
 
 /** 角色包、单包里的一个包(导入确认那一行) */
@@ -1904,6 +1980,14 @@ export interface ImportVoiceDetail {
   connection: { id: string; name: string; local: boolean } | null;
   /** 包里缺几个文件(导出时语音机连不上):导入后只有设置 */
   missing: number;
+  /** 库里已经有文件完全一样的声音:不再存一份,直接用那条 */
+  existing?: { id: string; name: string } | null;
+  /** 带模型:挂到 Fish / IndexTTS 时说一句以后还能改挂 */
+  has_models?: boolean;
+  /** 一条能挂的连接都没有时会怎样 */
+  empty_note?: string | null;
+  /** 每条连接挂不挂得上(和声音文件夹同一套说法);老后端没有 */
+  targets?: { id: string; name: string; api_type: TtsConnection['api_type']; usable: boolean; reason: string; note: string }[];
 }
 
 /** 角色包(.animavn)里有什么:导入确认照它画 */
@@ -1941,8 +2025,8 @@ export interface ImportApplyBody {
   classify?: Record<string, ClassifyKind>;
   /** 拖到原有的卡上时,挂上以后直接换成这次的第一套立绘 */
   make_current?: boolean;
-  /** 角色包 / 单包那一组的选项(组的 key → 选项):preset = 也导入作者建议的预设;connection_id = 声音导到哪个语音服务 */
-  options?: Record<string, { preset?: boolean; connection_id?: string }>;
+  /** 角色包 / 单包 / 声音文件夹那一组的选项(组的 key → 选项):preset = 也导入作者建议的预设;connection_id = 声音导到哪个语音服务;name、lang = 声音文件夹导成什么名字、念哪种语言 */
+  options?: Record<string, { preset?: boolean; connection_id?: string; name?: string; lang?: string }>;
 }
 
 /** 素材页顶上那一行提示 */
@@ -2042,8 +2126,10 @@ export interface ExportBundleItem {
   current?: boolean;
   /** 缩略图地址(已有的缩略图接口);没有是 null */
   thumb: string | null;
-  /** 声音:现在拿不到的文件数(语音机连不上、路径不让读);别的包没有 */
+  /** 声音:仓库里还没有的文件数(还在语音机上);别的包没有 */
   missing?: number;
+  /** 声音:编号(点「拉回来」用) */
+  voice_id?: string;
   /** 声音:黄字提醒,比如「只给自己用,别发给别人」;没有是 null */
   warn?: string | null;
 }
@@ -2079,6 +2165,8 @@ export interface ExportBundleBody {
   preset: boolean;
   note: string;
   preview: ExportPreview;
+  /** 立绘、背景、CG 转 WebP,包小很多;后端默认开 */
+  compress_images: boolean;
 }
 
 /** 单包导出的地址(GET 直接回 .animapack 文件) */

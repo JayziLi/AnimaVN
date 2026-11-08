@@ -7,7 +7,12 @@
 
 import type { CardVoices, TtsApiType, TtsConnection, VoiceProfile } from '../../lib/api';
 
-export const ENGINE_NAME: Record<TtsApiType, string> = { gpt_sovits: 'GPT-SoVITS', indextts: 'IndexTTS-2.5' };
+export const ENGINE_NAME: Record<TtsApiType, string> = {
+  gpt_sovits: 'GPT-SoVITS',
+  indextts: 'IndexTTS-2.5',
+  fish: 'Fish Audio',
+  openai: '中转站',
+};
 
 /**
  * 「引擎 · 连接名」;连接名里已经写了引擎名(「5090 · GPT-SoVITS」、默认建出来的「GPT-SoVITS」)时只写连接名,

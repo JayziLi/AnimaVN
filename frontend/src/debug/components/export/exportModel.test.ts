@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ExportBundleSummary } from '../../lib/api';
+import type { ExportBundleItem, ExportBundleSummary } from '../../lib/api';
 import {
   absoluteUrl,
   bundleBody,
@@ -16,9 +16,11 @@ import {
   packRows,
   previewSrc,
   rowSize,
-  busyNote,
-  VOICE_MISSING_NOTE,
+  pullLabel,
+  pullLeftNote,
+  voiceMissingNote,
   voiceNotes,
+  packSize,
   stateBadge,
   totalBytes,
   totalLabel,
@@ -80,7 +82,23 @@ describe('checks, exclude and total', () => {
   it('builds the request body with a trimmed note', () => {
     const s = summary();
     const body = bundleBody(s, { 'scene:s': false }, true, '  原神刻晴 \n', { kind: 'sprite', id: 's1' });
-    expect(body).toEqual({ exclude: ['scene:s'], preset: true, note: '原神刻晴', preview: { kind: 'sprite', id: 's1' } });
+    expect(body).toEqual({
+      exclude: ['scene:s'],
+      preset: true,
+      note: '原神刻晴',
+      preview: { kind: 'sprite', id: 's1' },
+      compress_images: true,
+    });
+    expect(bundleBody(s, {}, true, '', { kind: 'avatar' }, false).compress_images).toBe(false);
+  });
+});
+
+describe('packSize', () => {
+  it('says the size is before compression only for packs that hold images', () => {
+    const item = (kind: 'sprite' | 'voice') => ({ kind, bytes: 21_300_000 }) as ExportBundleItem;
+    expect(packSize(item('sprite'), true)).toBe('压缩前约 21.3 MB');
+    expect(packSize(item('sprite'), false)).toBe('21.3 MB');
+    expect(packSize(item('voice'), true)).toBe('21.3 MB');
   });
 });
 
@@ -98,6 +116,8 @@ describe('labels', () => {
     expect(totalLabel(57_802_000)).toBe('约 58 MB');
     expect(totalLabel(2_340_000)).toBe('约 2.3 MB');
     expect(totalLabel(1_520_000_000)).toBe('约 1.5 GB');
+    expect(totalLabel(57_802_000, true)).toBe('压缩前约 58 MB');
+    expect(totalLabel(1_520_000_000, true)).toBe('压缩前约 1.5 GB');
   });
 
   it('names the pack kind only on the first row and lists missing kinds', () => {
@@ -144,8 +164,8 @@ describe('voice rows', () => {
   it('shows the yellow warning and the settings-only note', () => {
     const [a, b] = voices.items;
     expect(voiceNotes(a)).toEqual({ warn: '只给自己用,别发给别人', missing: null });
-    expect(voiceNotes(b)).toEqual({ warn: null, missing: VOICE_MISSING_NOTE });
-    expect(VOICE_MISSING_NOTE).toBe('语音机连不上,这个声音只能带设置');
+    expect(voiceNotes(b)).toEqual({ warn: null, missing: '还有 10 个文件在语音机上' });
+    expect(voiceMissingNote(3)).toBe('还有 3 个文件在语音机上');
     // 别的包没有这两行
     expect(voiceNotes({ ...a, kind: 'sprite' })).toEqual({ warn: null, missing: null });
   });
@@ -156,10 +176,11 @@ describe('voice rows', () => {
     expect(totalBytes(voices, checks, false)).toBe(412_000 + 312_000_000);
   });
 
-  it('says it is fetching from the voice machine only while a voice is checked', () => {
-    expect(busyNote(voices, {})).toMatch(/语音机/);
-    expect(busyNote(voices, { 'voice:v1': false, 'voice:v2': false })).toBeNull();
-    expect(busyNote(summary(), {})).toBeNull();
+  it('words the pull button and what is left after pulling', () => {
+    expect(pullLabel(false)).toBe('拉回来');
+    expect(pullLabel(true)).toBe('拉取中…');
+    expect(pullLeftNote(2)).toBe('还有 2 个拉不到(语音机开着吗?)');
+    expect(pullLeftNote(0)).toBeNull();
   });
 });
 

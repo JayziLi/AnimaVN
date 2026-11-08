@@ -180,7 +180,7 @@ def test_rule1_many_broken_images_are_listed_with_a_count(plan_of):
     assert not has_line(plan, "无关文件")
 
 
-def test_rule1_voice_references_are_not_recognised_this_time(plan_of):
+def test_rule1_voice_references_without_proper_names_are_not_recognised(plan_of):
     plan = plan_of(
         {
             "刻晴/立绘/微笑.png": img("smile"),
@@ -191,9 +191,12 @@ def test_rule1_voice_references_are_not_recognised_this_time(plan_of):
             "AI Hobbyist/【吃惊】什么?.wav": wav("3"),
         }
     )
-    assert [g.type for g in plan.groups] == ["sprite_pack"]
+    # AI Hobbyist 里的音频名字合格(【情绪】原文.wav):是一个声音文件夹(规则 11);其余记一句不认
+    assert [g.type for g in plan.groups] == ["sprite_pack", "voice_folder"]
+    assert plan.groups[1].name == "AI Hobbyist" and len(plan.groups[1].detail["refs"]) == 2
     assert plan.unknown == []
-    assert has_line(plan, "声音包这次不认", "语音参考", "refs.json", "AI Hobbyist")
+    assert has_line(plan, "声音包这次不认", "语音参考", "refs.json")
+    assert not has_line(plan, "声音包这次不认", "AI Hobbyist")
 
 
 # ── 规则 2:卡 ──

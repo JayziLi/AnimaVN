@@ -8,7 +8,7 @@ import re
 import time
 from collections.abc import Callable, Sequence
 from typing import Protocol
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import func, select
@@ -19,7 +19,7 @@ from app.contracts import LABEL_MAX
 from app.db import get_db
 from app.emotion.matcher import Candidate, Match
 from app.emotion.service import EmotionUnavailable, get_matcher
-from app.models import TtsConnection, VoiceEmotion, VoiceProfile
+from app.models import ApiConnection, TtsConnection, VoiceEmotion, VoiceProfile
 from app.schemas import (
     SpliceSegmentOut,
     TtsCacheOut,
@@ -28,16 +28,21 @@ from app.schemas import (
     TtsConnectionUpdate,
     TtsExplainIn,
     TtsExplainOut,
+    TtsModelsOut,
+    TtsModelsPreviewIn,
     TtsSpeakIn,
+    TtsTestOut,
     TtsTimingOut,
     TtsWarmupIn,
     VoiceTuning,
 )
 from app.tts import cache as tts_cache
+from app.tts import delivery
 from app.tts import files as voice_files
 from app.tts.base import TTSEngine, TTSError, VoiceSpec
 from app.tts.indextts import emo_mode
-from app.tts.registry import emo_alpha_of, engine_for, forget_engine
+from app.tts.openai_speech import OpenAiSpeechEngine
+from app.tts.registry import api_key_of, emo_alpha_of, engine_for, forget_engine, model_of
 
 router = APIRouter(prefix="/api/tts", tags=["tts"])
 
@@ -64,10 +69,24 @@ def _engine(conn: TtsConnection) -> TTSEngine:
         raise HTTPException(e.status, e.message) from e
 
 
-def _clean_url(raw: str) -> str:
+FISH_OFFICIAL = "https://api.fish.audio"
+_OPENAI_TAILS = ("/chat/completions", "/audio/speech", "/models")
+
+
+def _clean_url(raw: str, api_type: str = "gpt_sovits") -> str:
+    """整理地址。Fish 留空 = 官方;中转站去掉结尾的接口名,只有主机时补 /v1"""
     url = raw.strip().rstrip("/")
+    if api_type == "fish" and not url:
+        return FISH_OFFICIAL
     if not _URL.match(url):
         raise HTTPException(400, "地址要以 http:// 或 https:// 开头,比如 http://127.0.0.1:9880")
+    if api_type == "openai":
+        for tail in _OPENAI_TAILS:
+            if url.endswith(tail):
+                url = url[: -len(tail)].rstrip("/")
+                break
+        if not urlsplit(url).path.strip("/"):
+            url += "/v1"
     return url
 
 
@@ -98,7 +117,26 @@ def _conn_out(conn: TtsConnection, db: Session) -> TtsConnectionOut:
         sample_steps=conn.sample_steps,
         emo_alpha=emo_alpha_of(conn),
         profile_count=_profile_count(conn.id, db),
+        has_pair_code=bool(delivery.pair_code_of(conn)),
+        has_api_key=bool(api_key_of(conn)),
+        model=model_of(conn),
     )
+
+
+def _llm_source(llm_id: str | None, db: Session) -> ApiConnection | None:
+    """模型页的连接(copy_from_llm):给了 id 却找不到就报错"""
+    if not llm_id:
+        return None
+    llm = db.get(ApiConnection, llm_id)
+    if llm is None:
+        raise HTTPException(400, "模型页里没有这条连接")
+    return llm
+
+
+def _with_option(conn: TtsConnection, key: str, value: str | None) -> None:
+    """options 是 JSON 列,要整个换掉;value 为空 = 去掉这一项"""
+    opts = {k: v for k, v in (conn.options or {}).items() if k != key}
+    conn.options = {**opts, key: value} if value else opts
 
 
 @router.get("/connections", response_model=list[TtsConnectionOut])
@@ -109,12 +147,22 @@ def list_connections(db: Session = Depends(get_db)):
 
 @router.post("/connections", response_model=TtsConnectionOut)
 def create_connection(req: TtsConnectionIn, db: Session = Depends(get_db)):
+    llm = _llm_source(req.copy_from_llm, db)
+    raw_url = req.base_url if req.base_url.strip() or llm is None else (llm.base_url or "")
+    options: dict = {"emo_alpha": req.emo_alpha}
+    if req.pair_code.strip():
+        options["pair_code"] = req.pair_code.strip()
+    key = req.api_key.strip() or ((llm.api_key or "") if llm is not None else "")
+    if key:
+        options["api_key"] = key
+    if req.model.strip():
+        options["model"] = req.model.strip()
     conn = TtsConnection(
         name=_clean_name(req.name),
         api_type=req.api_type,
-        base_url=_clean_url(req.base_url),
+        base_url=_clean_url(raw_url, req.api_type),
         sample_steps=req.sample_steps,
-        options={"emo_alpha": req.emo_alpha},
+        options=options,
     )
     db.add(conn)
     db.commit()
@@ -125,17 +173,43 @@ def create_connection(req: TtsConnectionIn, db: Session = Depends(get_db)):
 @router.put("/connections/{conn_id}", response_model=TtsConnectionOut)
 def update_connection(conn_id: str, req: TtsConnectionUpdate, db: Session = Depends(get_db)):
     conn = _load_conn(conn_id, db)
+    type_changed = req.api_type is not None and req.api_type != conn.api_type
+    if type_changed:
+        count = _profile_count(conn_id, db)
+        if count:
+            raise HTTPException(400, f"还有 {count} 个声音在用这条连接,先给它们换一条")
+        conn.api_type = req.api_type
     if req.name is not None:
         conn.name = _clean_name(req.name)
+    llm = _llm_source(req.copy_from_llm, db)
     if req.base_url is not None:
-        conn.base_url = _clean_url(req.base_url)
+        conn.base_url = _clean_url(req.base_url, conn.api_type)
+    elif llm is not None and not conn.base_url:
+        conn.base_url = _clean_url(llm.base_url or "", conn.api_type)
+    elif type_changed:
+        conn.base_url = _clean_url(conn.base_url, conn.api_type)
     if req.sample_steps is not None:
         conn.sample_steps = req.sample_steps
     if req.emo_alpha is not None:
         # JSON 列要整个换掉,原地改 SQLAlchemy 看不出变化
         conn.options = {**(conn.options or {}), "emo_alpha": req.emo_alpha}
+    if req.pair_code is not None:
+        code = req.pair_code.strip()
+        opts = {k: v for k, v in (conn.options or {}).items() if k != "pair_code"}
+        conn.options = {**opts, "pair_code": code} if code else opts
+    if req.api_key and req.api_key.strip():
+        _with_option(conn, "api_key", req.api_key.strip())
+    elif llm is not None and llm.api_key:
+        _with_option(conn, "api_key", llm.api_key)
+    elif req.clear_api_key:
+        _with_option(conn, "api_key", None)
+    if req.model is not None:
+        _with_option(conn, "model", req.model.strip())
     db.commit()
     db.refresh(conn)
+    if type_changed:
+        forget_engine(conn_id)
+    delivery.forget(conn_id)
     return _conn_out(conn, db)
 
 
@@ -148,17 +222,62 @@ def delete_connection(conn_id: str, db: Session = Depends(get_db)):
     db.delete(conn)
     db.commit()
     forget_engine(conn_id)
+    delivery.forget(conn_id)
 
 
-@router.post("/connections/{conn_id}/test", response_model=TtsTimingOut)
+@router.post("/connections/{conn_id}/test", response_model=TtsTestOut)
 async def test_connection(conn_id: str, db: Session = Depends(get_db)):
-    engine = _engine(_load_conn(conn_id, db))
+    conn = _load_conn(conn_id, db)
+    engine = _engine(conn)
     start = time.perf_counter()
     try:
         await engine.ping()
     except TTSError as e:
         raise HTTPException(e.status, e.message) from e
-    return TtsTimingOut(ms=_ms(start))
+    out = TtsTestOut(ms=_ms(start))
+    # 云端服务的文件由 AnimaVN 随请求带过去,route 算 same:声音编辑器别再提示手动放文件
+    if conn.api_type == "openai":
+        return TtsTestOut(ms=out.ms, route="same", model_count=getattr(engine, "last_model_count", None))
+    if conn.api_type == "fish":
+        return TtsTestOut(ms=out.ms, route="same")
+    if conn.api_type in ("gpt_sovits", "indextts"):
+        try:
+            r = await delivery.route_of(conn, fresh=True)
+            out = TtsTestOut(ms=out.ms, route=r.kind, plugin=r.plugin, pair_ok=r.pair_ok)
+        except TTSError:
+            pass  # ping 通了就算通;文件怎么送下次再问
+    return out
+
+
+def _openai_engine(base_url: str, api_key: str, model: str = "") -> OpenAiSpeechEngine:
+    return OpenAiSpeechEngine(_clean_url(base_url, "openai"), model, api_key)
+
+
+async def _list_models(engine: OpenAiSpeechEngine) -> TtsModelsOut:
+    try:
+        return TtsModelsOut(models=await engine.list_models())
+    except TTSError as e:
+        raise HTTPException(e.status, e.message) from e
+
+
+@router.post("/connections/models-preview", response_model=TtsModelsOut)
+async def models_preview(req: TtsModelsPreviewIn, db: Session = Depends(get_db)):
+    """中转站还没保存时列模型:用表单里的地址和 key。key 留空时用 connection_id 存着的,再不行抄模型页那条"""
+    llm = _llm_source(req.copy_from_llm, db)
+    stored = db.get(TtsConnection, req.connection_id) if req.connection_id else None
+    url = req.base_url.strip() or (llm.base_url if llm is not None else "") or ""
+    key = req.api_key.strip() or (api_key_of(stored) if stored is not None else "") or ((llm.api_key or "") if llm is not None else "")
+    return await _list_models(_openai_engine(url, key))
+
+
+@router.post("/connections/{conn_id}/models", response_model=TtsModelsOut)
+async def connection_models(conn_id: str, db: Session = Depends(get_db)):
+    conn = _load_conn(conn_id, db)
+    if conn.api_type != "openai":
+        raise HTTPException(400, "只有中转站能列模型")
+    engine = _engine(conn)
+    assert isinstance(engine, OpenAiSpeechEngine)
+    return await _list_models(engine)
 
 
 # ── 合成 ──────────────────────────────────────────────
@@ -244,9 +363,12 @@ def nearest_emotion(wanted: str, emotions: list[VoiceEmotion]) -> EmotionPick | 
 
 def _gsv_spec(profile: VoiceProfile, row: VoiceEmotion | None) -> tuple[VoiceSpec, str, str]:
     """GSV 的情绪就是参考音频:这一行必须有参考和原文。
+    路径空、有指纹的声音(导进来的)写 blob:<指纹>,发给语音服务前由 delivery 换成实际路径。
     两个权重都得填:留空时语音服务沿用上一次加载的模型,念出来是上一个角色的声音,
     还会按「没填权重」进缓存,以后换了模型也命中这份错的(P21)。零样本就填底模的路径"""
-    if not (profile.gpt_weights and profile.sovits_weights):
+    gpt = delivery.path_or_blob(profile.gpt_weights, profile.gpt_sha)
+    sovits = delivery.path_or_blob(profile.sovits_weights, profile.sovits_sha)
+    if not (gpt and sovits):
         if profile.files_at == "pending":  # 导进来了,文件还没放到语音机上
             raise HTTPException(400, f"声音「{profile.name}」的文件还没放到语音机上:去声音编辑器把文件放过去")
         raise HTTPException(
@@ -256,39 +378,88 @@ def _gsv_spec(profile: VoiceProfile, row: VoiceEmotion | None) -> tuple[VoiceSpe
         )
     if row is None:
         raise HTTPException(400, f"声音「{profile.name}」还没有参考音频")
-    if not row.ref_path:
+    ref = delivery.path_or_blob(row.ref_path, row.ref_sha)
+    if not ref:
         raise HTTPException(400, f"情绪「{row.label}」还没填参考音频路径")
     if not row.prompt_text:
         raise HTTPException(400, f"情绪「{row.label}」还没填参考音频的原文")
+    paths, shas = list(row.aux_refs or []), list(row.aux_shas or [])
+    aux = tuple(
+        a
+        for i in range(max(len(paths), len(shas)))
+        if (a := delivery.path_or_blob(paths[i] if i < len(paths) else "", shas[i] if i < len(shas) else None))
+    )
     spec = VoiceSpec(
-        gpt_weights=profile.gpt_weights,
-        sovits_weights=profile.sovits_weights,
-        ref_path=row.ref_path,
+        gpt_weights=gpt,
+        sovits_weights=sovits,
+        ref_path=ref,
         prompt_text=row.prompt_text,
         text_lang=profile.text_lang or "zh",
         speed=profile.speed,
         params=dict(profile.params or {}),
-        aux_ref_paths=tuple(row.aux_refs or ()),
+        aux_ref_paths=aux,
     )
     return spec, row.label, "ref"
 
 
 def _indextts_spec(profile: VoiceProfile, row: VoiceEmotion | None) -> tuple[VoiceSpec, str, str]:
     """IndexTTS:音色参考必填;情绪行可以没有(沿用音色参考的语气),不需要原文。"""
-    if not profile.ref_path:
+    speaker = delivery.path_or_blob(profile.ref_path, profile.speaker_sha)
+    if not speaker:
         raise HTTPException(400, f"声音「{profile.name}」还没填音色参考")
     spec = VoiceSpec(
         gpt_weights="",
         sovits_weights="",
-        ref_path=row.ref_path if row else "",
+        ref_path=delivery.path_or_blob(row.ref_path, row.ref_sha) if row else "",
         prompt_text="",
         text_lang=profile.text_lang or "zh",
         speed=profile.speed,
-        spk_ref_path=profile.ref_path,
+        spk_ref_path=speaker,
         emo_vector=tuple(row.emo_vector) if row and row.emo_vector else None,
         params=dict(profile.params or {}),
     )
     return spec, row.label if row else "", emo_mode(spec)
+
+
+def _fish_spec(profile: VoiceProfile, row: VoiceEmotion | None) -> tuple[VoiceSpec, str, str]:
+    """Fish:和 GSV 一样每个情绪是一段参考音频 + 原文,但没有权重"""
+    if row is None:
+        raise HTTPException(400, f"声音「{profile.name}」还没有参考音频")
+    ref = delivery.path_or_blob(row.ref_path, row.ref_sha)
+    if not ref:
+        raise HTTPException(400, f"情绪「{row.label}」还没填参考音频路径")
+    if not row.prompt_text:
+        raise HTTPException(400, f"情绪「{row.label}」还没填参考音频的原文")
+    spec = VoiceSpec(
+        gpt_weights="",
+        sovits_weights="",
+        ref_path=ref,
+        prompt_text=row.prompt_text,
+        text_lang=profile.text_lang or "zh",
+        speed=profile.speed,
+        params=dict(profile.params or {}),
+    )
+    return spec, row.label, "ref"
+
+
+def _openai_spec(profile: VoiceProfile, row: VoiceEmotion | None) -> tuple[VoiceSpec, str, str]:
+    """中转站:只有音色名(params.voice),没有参考音频、没有情绪"""
+    params = dict(profile.params or {})
+    if not str(params.get("voice") or "").strip():
+        raise HTTPException(400, f"声音「{profile.name}」没填音色名")
+    spec = VoiceSpec(
+        gpt_weights="",
+        sovits_weights="",
+        ref_path="",
+        prompt_text="",
+        text_lang=profile.text_lang or "zh",
+        speed=profile.speed,
+        params=params,
+    )
+    return spec, "", "none"
+
+
+_SPEC_BUILDERS = {"indextts": _indextts_spec, "fish": _fish_spec, "openai": _openai_spec}
 
 
 @dataclasses.dataclass(frozen=True)
@@ -323,7 +494,7 @@ def _voice_for(
     emotions = list_emotions(profile.id, db)
     paired = next((e for e in emotions if e.id == emotion_id), None)
     pick = EmotionPick(paired, "pairing") if paired else pick_emotion(emotions, emotion, nearest_emotion)
-    build = _indextts_spec if conn.api_type == "indextts" else _gsv_spec
+    build = _SPEC_BUILDERS.get(conn.api_type, _gsv_spec)
     spec, label, mode = build(profile, pick.row)
     if tuning is not None:
         params = tuning.params.model_dump(exclude_none=True)
@@ -387,7 +558,7 @@ def register_splicer(splicer: Splicer | None) -> None:
 
 def _splice_plan(wanted: bool, text: str, v: VoiceChoice, db: Session) -> SplicePlan | None:
     """请求要了拼接、有卡带登记了拼接器、它也说这句拼,才拼"""
-    if not wanted or _splicer is None:
+    if not wanted or _splicer is None or v.conn.api_type == "openai":
         return None
     return _splicer(text, v, db)
 
@@ -396,6 +567,19 @@ def _material(text: str, v: VoiceChoice, engine: TTSEngine, plan: SplicePlan | N
     """缓存键的材料:不拼时是引擎自己的那份,拼时由拼接的那一版包一层"""
     base = engine.cache_material(text, v.spec)
     return plan.material(base) if plan is not None else base
+
+
+def _mark_sent(v: VoiceChoice, db: Session) -> None:
+    """文件已经送到语音机了:声音编辑器不用再提示手动放"""
+    if v.profile.files_at == "pending":
+        v.profile.files_at = "sent"
+        db.commit()
+
+
+async def _with_files(v: VoiceChoice, db: Session, run):
+    result = await delivery.with_files(db, v.conn, v.spec, run)
+    _mark_sent(v, db)
+    return result
 
 
 @router.post("/speak")
@@ -410,7 +594,7 @@ async def speak(req: TtsSpeakIn, db: Session = Depends(get_db)):
         if hit is not None:
             return _audio(*hit, cache="hit", emotion=v.label, mode=v.mode)
         try:
-            data, mime = await plan.synthesize(v.spec, engine, db)
+            data, mime = await _with_files(v, db, lambda s: plan.synthesize(s, engine, db))
         except TTSError as e:
             raise HTTPException(e.status, e.message) from e
         tts_cache.cache_put(db, key, data, mime)
@@ -421,7 +605,7 @@ async def speak(req: TtsSpeakIn, db: Session = Depends(get_db)):
     if hit is not None:
         return _audio(*hit, cache="hit", emotion=v.label, mode=v.mode)
     try:
-        data, mime = await engine.synthesize(text, v.spec)
+        data, mime = await _with_files(v, db, lambda s: engine.synthesize(text, s))
     except TTSError as e:
         raise HTTPException(e.status, e.message) from e
     tts_cache.cache_put(db, key, data, mime)
@@ -466,11 +650,13 @@ async def reference_audio(profile_id: str, path: str, db: Session = Depends(get_
     known = {profile.ref_path}
     for e in list_emotions(profile.id, db):
         known.update([e.ref_path, *(e.aux_refs or [])])
+    slots = voice_files.slots_of(db, profile)
+    known.update(delivery.blob_ref(s.sha) for s in slots if s.sha)  # 导进来的声音,请求里写的是 blob:<指纹>
     if not path or path not in known:
         raise HTTPException(404, "这个声音没有配这段参考音频")
     # 声音包导进来的(第 4 步):文件就在本机的文件仓库里,不用问语音服务
-    for slot in voice_files.slots_of(db, profile):
-        if slot.path == path and (disk := voice_files.file_of(db, slot)) is not None:
+    for slot in slots:
+        if path in (slot.path, delivery.blob_ref(slot.sha)) and (disk := voice_files.file_of(db, slot)) is not None:
             return Response(content=disk.read_bytes(), media_type=voice_files.mime_of(db, slot), headers={"Cache-Control": "private, max-age=600"})
     conn = db.get(TtsConnection, profile.connection_id)
     if conn is None:
@@ -490,7 +676,7 @@ async def warmup(req: TtsWarmupIn, db: Session = Depends(get_db)):
     engine = _engine(v.conn)
     start = time.perf_counter()
     try:
-        await engine.warmup(v.spec, req.force)
+        await _with_files(v, db, lambda s: engine.warmup(s, req.force))
     except TTSError as e:
         raise HTTPException(e.status, e.message) from e
     return TtsTimingOut(ms=_ms(start))

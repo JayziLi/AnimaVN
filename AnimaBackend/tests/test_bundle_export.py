@@ -263,7 +263,7 @@ def test_download_bundle(api, export_tmp):
     client, ids, _ = api
     r = client.post(
         f"/api/export/bundle/{ids['main']}",
-        json={"exclude": [f"cg:{ids['cg_pack']}"], "preset": False, "note": "说明", "preview": {"kind": "sprite", "id": ids["s1"]}},
+        json={"exclude": [f"cg:{ids['cg_pack']}"], "preset": False, "compress_images": False, "note": "说明", "preview": {"kind": "sprite", "id": ids["s1"]}},
     )
     assert r.status_code == 200, r.text
     cd = r.headers["content-disposition"]

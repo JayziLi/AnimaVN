@@ -127,8 +127,21 @@ def _ref_error(res: httpx.Response, service: str) -> TTSError:
     return TTSError(status, str(detail) if detail else f"{service} 返回 HTTP {res.status_code}")
 
 
-def make_tts_client(base_url: str, timeout: float | httpx.Timeout) -> httpx.AsyncClient:
+def make_tts_client(
+    base_url: str, timeout: float | httpx.Timeout, follow_redirects: bool = False
+) -> httpx.AsyncClient:
     host = urlsplit(base_url).hostname or ""
     return httpx.AsyncClient(
-        timeout=timeout, trust_env=not is_direct_host(host), verify=_ssl_context()
+        timeout=timeout,
+        trust_env=not is_direct_host(host),
+        verify=_ssl_context(),
+        follow_redirects=follow_redirects,
     )
+
+
+LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
+
+
+def is_local(base_url: str | None) -> bool:
+    """语音服务的地址是不是本机(127.0.0.1 / localhost / ::1)。SSH 隧道也长这样,能问插件时以插件为准"""
+    return (urlsplit(base_url or "").hostname or "").strip("[]").lower() in LOCAL_HOSTS

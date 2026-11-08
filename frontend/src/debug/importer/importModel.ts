@@ -20,6 +20,7 @@ import type {
   ImportPlan,
   ImportResult,
   ImportVoiceDetail,
+  ImportVoiceFolderDetail,
   ScenePack,
   TtsConnection,
 } from '../lib/api';
@@ -124,6 +125,10 @@ function titleOf(g: ImportGroup): { icon: RowIcon; title: string } {
     }
     case 'bundle':
       return { icon: 'card', title: `角色包「${g.name}」` };
+    case 'voice_folder': {
+      const d = voiceFolderDetail(g);
+      return { icon: 'voice', title: `声音「${d?.name ?? g.name}」${d ? `· ${voiceFolderCounts(d)}` : ''}` };
+    }
     case 'pack_file': {
       const d = packDetail(g);
       const kind = d?.kind ?? 'sprite';
@@ -261,11 +266,15 @@ export function defaultVoiceConnections(plan: ImportPlan): Record<string, string
 }
 
 /** 计划里有没有声音(要读语音服务列表、给下拉) */
-export const planHasVoices = (plan: ImportPlan) => plan.groups.some((g) => groupVoices(g).length > 0);
+export const planHasVoices = (plan: ImportPlan) =>
+  plan.groups.some((g) => groupVoices(g).length > 0 || g.type === 'voice_folder');
 
 /** 选了这个语音服务以后会怎样 */
-export const VOICE_LOCAL = '导完就能念';
-export const VOICE_REMOTE = '语音服务在另一台电脑,导完要把文件放过去';
+// 地址是 127.0.0.1 也可能是隧道到别的电脑,这里不说「在本机」,真要不要送由后端测过再定
+export const VOICE_LOCAL = '导完自动准备好文件,好了就能念';
+export const VOICE_REMOTE = '语音服务在另一台电脑,导完自动送过去';
+export const VOICE_EXISTS = '库里已经有一样的声音:不再存一份,直接用那条';
+export const VOICE_CLOUD = '导完就能念,参考音频念的时候带过去';
 export const VOICE_NO_SERVICE = '没有语音服务:会自动连本机 GPT-SoVITS(127.0.0.1:9880),没装也能先导进来';
 
 /** 声音那一行要画的 */
@@ -307,18 +316,164 @@ export interface VoiceTarget {
 export function voiceTarget(
   g: ImportGroup,
   chosen: string | undefined,
-  connections: readonly Pick<TtsConnection, 'id' | 'name' | 'base_url'>[] | null,
+  connections: readonly (Pick<TtsConnection, 'id' | 'name' | 'base_url'> & Partial<Pick<TtsConnection, 'api_type'>>)[] | null,
 ): VoiceTarget {
-  const fallback = groupVoices(g).find((v) => v.connection)?.connection ?? null;
+  const voices = groupVoices(g);
+  const fallback = voices.find((v) => v.connection)?.connection ?? null;
+  const voice = voices.find((v) => v.targets) ?? voices[0];
+  const targets = voice?.targets ?? null;
+  // 下拉里只放念得了这个声音的连接(后端算的;老后端没给就全放)
+  const pickable = connections && targets ? connections.filter((c) => targets.some((t) => t.id === c.id && t.usable)) : connections;
   let id = chosen ?? fallback?.id ?? null;
-  // 列表里已经没有这个了(刚删掉):换成第一个
-  if (id && connections && connections.length > 0 && !connections.some((c) => c.id === id)) id = connections[0].id;
+  // 列表里已经没有这个了(刚删掉),或者这个声音挂不上:换成第一个能挂的
+  if (id && pickable && !pickable.some((c) => c.id === id) && (pickable.length > 0 || targets)) id = pickable[0]?.id ?? null;
   const hit = id ? connections?.find((c) => c.id === id) : undefined;
   const local = hit ? isLocalUrl(hit.base_url) : fallback !== null && fallback.id === id ? fallback.local : false;
   const name = hit?.name ?? (fallback && fallback.id === id ? fallback.name : '');
-  const options = connections && connections.length > 1 ? connections.map((c) => ({ value: c.id, label: c.name })) : null;
-  if (!id) return { id: null, name: '', options, status: VOICE_NO_SERVICE, local: false };
-  return { id, name, options, status: local ? VOICE_LOCAL : VOICE_REMOTE, local };
+  const options = pickable && pickable.length > 1 ? pickable.map((c) => ({ value: c.id, label: c.name })) : null;
+  if (!id) return { id: null, name: '', options, status: voice?.empty_note ?? VOICE_NO_SERVICE, local: false };
+  if (voice?.existing) return { id, name, options: null, status: VOICE_EXISTS, local };
+  const note = targets?.find((t) => t.id === id)?.note;
+  const cloud = hit?.api_type === 'fish' || hit?.api_type === 'openai';
+  const status = note ? (voice?.has_models ? `${note};以后加了 GPT-SoVITS 可以改挂` : note) : cloud ? VOICE_CLOUD : local ? VOICE_LOCAL : VOICE_REMOTE;
+  return { id, name, options, status, local };
+}
+
+// ---------------------------------------------------------------- 从文件夹导入声音
+
+export const voiceFolderDetail = (g: ImportGroup): ImportVoiceFolderDetail | null =>
+  g.type === 'voice_folder' && g.detail && 'refs' in g.detail ? g.detail : null;
+
+/** 计划里只有一个声音文件夹(拖进来的就是一个文件夹):确认框照画布 Import 画 */
+export function voiceFolderOnly(plan: ImportPlan): ImportGroup | null {
+  const g = plan.groups[0];
+  return plan.groups.length === 1 && plan.unknown.length === 0 && g && voiceFolderDetail(g) ? g : null;
+}
+
+/** 「2 个模型 + 12 段参考」(没有模型的只写参考) */
+export function voiceFolderCounts(d: Pick<ImportVoiceFolderDetail, 'models' | 'refs'>): string {
+  return [d.models.length > 0 ? `${d.models.length} 个模型` : '', d.refs.length > 0 ? `${d.refs.length} 段参考` : '']
+    .filter(Boolean)
+    .join(' + ');
+}
+
+/** 导入框里「情绪」先列几行,剩下的点「展开」 */
+export const VOICE_FOLDER_SHOWN = 4;
+
+export const VOICE_FOLDER_LANGS: readonly { value: string; label: string }[] = [
+  { value: 'zh', label: '中文' },
+  { value: 'ja', label: '日语' },
+];
+
+/** 导入框里用户改了的:名字、念哪种语言(没改的不放) */
+export interface VoiceFolderEdit {
+  name?: string;
+  lang?: string;
+}
+
+export interface VoiceFolderTargetRow {
+  id: string;
+  name: string;
+  /** 右边的灰字:最像 / 只拿参考音频 / 不能挂的原因 */
+  note: string;
+  disabled: boolean;
+  /** 绿字(最像) */
+  good: boolean;
+}
+
+const listed = (names: readonly string[]) =>
+  names.length > 3 ? `${names.slice(0, 3).join('、')} 等 ${names.length} 个` : names.join('、');
+
+const isModelFile = (name: string) => /\.(ckpt|pth)$/i.test(name);
+
+/** 没导的文件说一句:音频是名字不合格,模型是多出来的旧一轮 */
+export function voiceFolderSkipped(skipped: readonly string[]): string[] {
+  const models = skipped.filter(isModelFile);
+  const audio = skipped.filter((n) => !isModelFile(n));
+  return [
+    ...(audio.length > 0 ? [`${listed(audio)} 看不出情绪和原文,先不导。要用就改名成「【情绪】原文.wav」再导一次。`] : []),
+    ...(models.length > 0 ? [`${listed(models)} 是旧的一轮,没导(同一种模型只取轮数最大的)。`] : []),
+  ];
+}
+
+/** 挂到哪条:选过且能用的用选的,不然后端推荐的,再不然第一条能用的;一条能用的都没有是 null */
+export function voiceFolderPick(d: ImportVoiceFolderDetail, chosen: string | undefined): string | null {
+  const ok = (id: string | undefined) => d.connections.find((c) => c.id === id && c.usable)?.id ?? null;
+  return ok(chosen) ?? d.connections.find((c) => c.best)?.id ?? d.connections.find((c) => c.usable)?.id ?? null;
+}
+
+export function voiceFolderTargets(d: ImportVoiceFolderDetail): VoiceFolderTargetRow[] {
+  return d.connections.map((c) => {
+    const best = c.best && c.api_type === 'gpt_sovits' && d.models.length > 0;
+    return {
+      id: c.id,
+      name: c.name,
+      disabled: !c.usable,
+      good: best,
+      note: !c.usable ? c.reason : best ? '最像:模型和参考音频都用上' : c.note,
+    };
+  });
+}
+
+export interface VoiceFolderView {
+  key: string;
+  /** 导入框标题旁的灰字:「三月七_ja · 14 个文件 · 390 MB」(大小是模型的) */
+  meta: { source: string; files: number; modelBytes: number };
+  /** 模型一行:「2 个」+ 文件名 */
+  models: { count: number; names: string };
+  refCount: number;
+  /** 原文里有假名(语言选日语的缘由) */
+  kana: boolean;
+  lang: string;
+  emotions: { label: string; text: string }[];
+  hidden: number;
+  skipped: string[];
+  existing: { id: string; name: string } | null;
+}
+
+export function voiceFolderView(g: ImportGroup, source: string | null, expanded: boolean): VoiceFolderView {
+  const d = voiceFolderDetail(g);
+  if (!d) throw new Error('不是声音文件夹');
+  const root = d.folder.split('/')[0] || g.name;
+  const shown = expanded ? d.refs : d.refs.slice(0, VOICE_FOLDER_SHOWN);
+  return {
+    key: g.key,
+    meta: {
+      source: source ?? root,
+      files: d.models.length + d.refs.length + d.skipped.length,
+      modelBytes: d.models.reduce((n, m) => n + m.size, 0),
+    },
+    models: { count: d.models.length, names: d.models.map((m) => m.name).join(' · ') },
+    refCount: d.refs.length,
+    kana: d.lang === 'ja',
+    lang: d.lang,
+    emotions: shown.map((r) => ({ label: r.label, text: r.text })),
+    hidden: d.refs.length - shown.length,
+    skipped: voiceFolderSkipped(d.skipped),
+    existing: d.existing,
+  };
+}
+
+/** 「会怎样」那一行 */
+export function voiceFolderEffect(
+  d: ImportVoiceFolderDetail,
+  chosen: string | null,
+  connections: readonly (Pick<TtsConnection, 'id' | 'name' | 'base_url'> & Partial<Pick<TtsConnection, 'api_type'>>)[] | null,
+): string {
+  if (d.existing) return '库里已经有一样的声音:不再存一份,直接用那条。';
+  if (d.connections.length === 0) {
+    return d.models.length > 0 ? VOICE_NO_SERVICE : '没有语音服务:会自动连本机 IndexTTS(127.0.0.1:9890),没装也能先导进来';
+  }
+  if (!chosen) {
+    const need = d.models.length > 0 ? '要 GPT-SoVITS 才能念' : '没有模型,要 Fish Audio 或 IndexTTS 才能念';
+    return `${need}:文件先存着,以后加了连接,在声音编辑器里挂上。`;
+  }
+  const hit = connections?.find((c) => c.id === chosen);
+  if (!hit) return '';
+  if (hit.api_type === 'fish' || hit.api_type === 'openai') return `${hit.name}:${VOICE_CLOUD}。`;
+  return isLocalUrl(hit.base_url)
+    ? `${hit.name}:${VOICE_LOCAL}。`
+    : `${hit.name}在另一台电脑:导完自动把文件送过去,送完就能念。`;
 }
 
 /** 角色包的预设默认勾着(作者建议的) */
@@ -405,6 +560,9 @@ export function confirmModel(
       const packs = bundleDetail(g)?.packs.length ?? 0;
       return `新建角色卡${packs > 0 ? `和 ${packs} 个包` : ''},都是另存的一份`;
     }
+    if (g.type === 'voice_folder') {
+      return voiceFolderDetail(g)?.existing ? '库里已经有一样的声音:不再存一份,直接用那条' : '另建一个声音,先放进素材库,不挂到卡上';
+    }
     if (g.type === 'pack_file') {
       return packDetail(g)?.kind === 'voice' ? '另建一个声音,先放进素材库,不挂到卡上' : '另建一个新的包,先放进素材库,不绑到卡上';
     }
@@ -456,12 +614,18 @@ export function applyBody(
   makeCurrent: boolean,
   bundlePresets: Readonly<Record<string, boolean>> = {},
   voiceConnections: Readonly<Record<string, string>> = {},
+  voiceFolders: Readonly<Record<string, VoiceFolderEdit>> = {},
 ): ImportApplyBody {
   const choosable = new Set(model.rows.filter((r) => r.choice).map((r) => r.key));
   const groups = new Set(model.rows.map((r) => r.key));
-  const options: Record<string, { preset?: boolean; connection_id?: string }> = {};
+  const options: NonNullable<ImportApplyBody['options']> = {};
   for (const [k, preset] of Object.entries(bundlePresets)) if (groups.has(k)) options[k] = { preset };
   for (const [k, id] of Object.entries(voiceConnections)) if (groups.has(k) && id) options[k] = { ...options[k], connection_id: id };
+  for (const [k, edit] of Object.entries(voiceFolders)) {
+    if (!groups.has(k)) continue;
+    const name = edit.name?.trim();
+    options[k] = { ...options[k], ...(name ? { name } : {}), ...(edit.lang ? { lang: edit.lang } : {}) };
+  }
   return {
     decisions: Object.fromEntries(Object.entries(decisions).filter(([k]) => choosable.has(k))),
     classify: Object.fromEntries(
@@ -503,7 +667,7 @@ export function slotAfterImport(plan: ImportPlan, kind: ImportKind | null): Slot
 
 /** 卡编辑器素材页 / 素材管理页顶上那条提示 */
 export function noticeOf(result: ImportResult): ImportNotice {
-  return { ...result.notice, jobId: result.job_id, report: result.report };
+  return { ...result.notice, jobId: result.job_id, report: result.report, voices: result.created?.voices };
 }
 
 /** 场景包有几张背景、几首曲子(lib/api 的 ScenePack 里这几样就够) */
@@ -533,6 +697,9 @@ export function libraryRouteAfterImport(
   if (c?.scene_packs[0]) return { tab: sceneTab(c.scene_packs[0], scenePacks), id: c.scene_packs[0] };
   if (c?.cg_packs[0]) return { tab: 'cg', id: c.cg_packs[0] };
   if (c?.voices?.[0]) return { tab: 'voice', id: c.voices[0] };
+  // 导的是库里已经有的声音:打开那一条
+  const twin = plan.groups.map((g) => voiceFolderDetail(g)?.existing).find((x) => x);
+  if (twin) return { tab: 'voice', id: twin.id };
   const shared = plan.groups.find((g) => g.type !== 'card' && g.duplicate_of && body.decisions?.[g.key] === 'share');
   if (shared?.duplicate_of) {
     const id = shared.duplicate_of.id;

@@ -219,7 +219,7 @@ export function PluginsDrawer(outer: Props) {
   const testTts = useCallback((id: string) => {
     setTtsTests((t) => ({ ...t, [id]: 'pending' }));
     withTimeout(debugApi.testTtsConnection(id), TTS_TEST_MS, `${TTS_TEST_MS / 1000} 秒没回`)
-      .then((r) => setTtsTests((t) => ({ ...t, [id]: { ok: true, ms: r.ms } })))
+      .then((r) => setTtsTests((t) => ({ ...t, [id]: { ok: true, ms: r.ms, route: r.route, plugin: r.plugin, pair_ok: r.pair_ok, model_count: r.model_count } })))
       .catch((e: unknown) => setTtsTests((t) => ({ ...t, [id]: { ok: false, error: errText(e) } })));
   }, []);
   const ttsTried = useRef(new Set<string>());

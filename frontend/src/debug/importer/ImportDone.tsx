@@ -19,6 +19,8 @@ import { titleSpriteStyle } from '../vn/titleArt';
 import { Help } from '../vn/ui/Help';
 import { TransferDialog } from '../components/export/TransferDialog';
 import { CLASSIFY_CHOICES, doneRows, fileName } from './importModel';
+import { useVoiceDelivery } from './useVoiceDelivery';
+import { DeliveryRows } from './VoiceDelivery';
 
 const FACE_POSE = { faceSize: 0.62, faceTop: 0.18, cx: 0.5 };
 
@@ -44,6 +46,8 @@ export function ImportDoneCard({
   const [detail, setDetail] = useState<PickDetail | null>(null);
   const [bind, setBind] = useState<PickBind | undefined>(undefined);
   const [picking, setPicking] = useState<Record<string, ClassifyKind>>({});
+  // 新建的声音文件还在这台电脑上、语音服务在别处时,导完自动送过去
+  const delivery = useVoiceDelivery(created?.voices);
 
   useEffect(() => {
     let alive = true;
@@ -148,6 +152,7 @@ export function ImportDoneCard({
               </span>
             </li>
           ))}
+          <DeliveryRows items={delivery.items} onRetry={delivery.retry} />
           {notice.unknown.map((path) => (
             <li key={path} className="unk">
               <span className="k">

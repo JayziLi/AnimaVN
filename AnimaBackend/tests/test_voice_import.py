@@ -20,6 +20,9 @@ from tests.bundle_seed import VOICE_FILES, seed
 API = "/api/import"
 
 
+pytestmark = pytest.mark.usefixtures("no_voice_dedupe")
+
+
 @pytest.fixture(autouse=True)
 def export_tmp(tmp_path, monkeypatch):
     monkeypatch.setattr(write, "TMP_DIR", tmp_path / "export-tmp")
@@ -64,22 +67,33 @@ def test_bundle_plan_lists_the_voice_and_where_it_will_go(lib):
     assert d["voices"] == [
         {
             "name": "刻晴声音",
+            "existing": {"id": ids["voice"], "name": "刻晴声音"},  # 库里已有文件一样的:预览就说得出
             "detail": "3 段参考 + 2 个模型",
             "connection": {"id": ids["tts"], "name": "台式机", "local": False},
             "missing": 0,
+            "has_models": True, "empty_note": "现有的连接念不了这个声音:会新建「本机 GPT-SoVITS」,没装也能先导进来", "targets": [{"id": ids["tts"], "name": "台式机", "api_type": "gpt_sovits", "usable": True, "reason": "", "note": ""}],
         }
     ]
     assert all(p["kind"] != "voice" for p in d["packs"])
 
-    # 选本机的语音服务:导完路径就指向仓库里的文件
+    # 选本机的语音服务:路径空着、文件在仓库里,念的时候才决定怎么给语音服务
     local = client.post("/api/tts/connections", json={"name": "本机", "base_url": "http://127.0.0.1:9880"}).json()
     before = _counts(db)
     out = _apply(client, plan, {plan["groups"][0]["key"]: {"preset": False, "connection_id": local["id"]}})
     (vid,) = out["created"]["voices"]
     v = client.get("/api/voices").json()
     new = next(x for x in v if x["id"] == vid)
-    assert new["connection_id"] == local["id"] and new["files_at"] == "local" and new["files_missing"] == 0
-    assert new["gpt_weights"].endswith(".ckpt") and new["emotions"][0]["ref_path"].endswith(".wav")
+    assert new["connection_id"] == local["id"] and new["files_at"] == "pending" and new["files_missing"] == 0
+    assert new["gpt_weights"].startswith("blob:") and new["emotions"][0]["ref_path"].startswith("blob:")
+    row = db.get(VoiceProfile, vid)
+    assert row.gpt_weights == ""  # 库里路径是空的,blob: 只是给界面看的
+
+    # 编辑器把 blob: 原样存回来,指纹不能丢
+    r = client.put(f"/api/voices/{vid}", json={"gpt_weights": new["gpt_weights"]})
+    assert r.status_code == 200, r.text
+    db.expire_all()
+    row = db.get(VoiceProfile, vid)
+    assert row.gpt_weights == "" and row.gpt_sha
     assert client.get(f"/api/tavern/cards/{out['card_id']}/voices").json()["main"] == vid
     assert any("刻晴声音 2" in line for line in out["report"])
 
@@ -108,7 +122,7 @@ def test_single_voice_pack_is_a_pack_file_group_that_asks_first(lib):
     d = g["detail"]
     assert d["kind"] == "voice" and d["name"] == "刻晴声音" and d["detail"] == "3 段参考 + 2 个模型"
     assert d["voices"] == [
-        {"name": "刻晴声音", "detail": "3 段参考 + 2 个模型", "connection": {"id": ids["tts"], "name": "台式机", "local": False}, "missing": 0}
+        {"name": "刻晴声音", "existing": {"id": ids["voice"], "name": "刻晴声音"}, "detail": "3 段参考 + 2 个模型", "connection": {"id": ids["tts"], "name": "台式机", "local": False}, "missing": 0, "has_models": True, "empty_note": "现有的连接念不了这个声音:会新建「本机 GPT-SoVITS」,没装也能先导进来", "targets": [{"id": ids["tts"], "name": "台式机", "api_type": "gpt_sovits", "usable": True, "reason": "", "note": ""}]}
     ]
     out = _apply(client, plan)
     (vid,) = out["created"]["voices"]
@@ -129,7 +143,7 @@ def test_without_any_voice_service_the_plan_says_none_and_apply_makes_a_local_on
     out = _apply(client, plan)
     conns = client.get("/api/tts/connections").json()
     assert [(c["name"], c["base_url"]) for c in conns] == [("本机 GPT-SoVITS", "http://127.0.0.1:9880")]
-    assert client.get("/api/voices").json()[0]["files_at"] == "local"
+    assert client.get("/api/voices").json()[0]["files_at"] == "pending"
     client.post(f"{API}/jobs/{out['job_id']}/undo")
     assert _counts(db) == before  # 新建的语音服务也撤掉
 

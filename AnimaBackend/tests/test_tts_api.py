@@ -311,6 +311,23 @@ def test_indextts_connection_keeps_emotion_strength(client: TestClient):
     assert bad.status_code == 422
 
 
+def test_connection_type_can_change_only_while_empty(client: TestClient):
+    conn = make_conn(client)
+    r = client.put(f"/api/tts/connections/{conn['id']}", json={"api_type": "indextts"})
+    assert r.status_code == 200
+    assert r.json()["api_type"] == "indextts"
+    # 同类型不算改
+    assert client.put(f"/api/tts/connections/{conn['id']}", json={"api_type": "indextts"}).status_code == 200
+    client.post(
+        "/api/voices",
+        json={"name": "阿米娅", "connection_id": conn["id"], "gpt_weights": "D:/a.ckpt", "sovits_weights": "D:/a.pth"},
+    )
+    bad = client.put(f"/api/tts/connections/{conn['id']}", json={"api_type": "gpt_sovits"})
+    assert bad.status_code == 400
+    assert bad.json()["detail"] == "还有 1 个声音在用这条连接,先给它们换一条"
+    assert client.get("/api/tts/connections").json()[0]["api_type"] == "indextts"
+
+
 INDEX_URL = "http://index.test:9890"
 SPK = "D:/refs/阿米娅/平静.wav"
 HAPPY = [0.8, 0, 0, 0, 0, 0, 0, 0]
@@ -657,3 +674,179 @@ def test_reference_audio_covers_the_indextts_speaker_reference(client: TestClien
     assert index_tts.calls == [("ref", SPK)]
     assert r.status_code == 501
     assert "IndexTTS" in r.json()["detail"]
+
+
+# ── 导进来的声音:文件交给 delivery 送到语音机 ──────────────────────
+
+SHA_A, SHA_B, SHA_C = "a" * 64, "b" * 64, "c" * 64
+
+
+def setup_sha_voice(client: TestClient, files_at: str = "pending") -> tuple[dict, dict]:
+    """路径全空、只有指纹的声音(声音包导进来、还没放到语音机上)"""
+    from app.db import get_db
+    from app.main import app
+    from app.models import VoiceEmotion, VoiceProfile
+
+    conn = make_conn(client)
+    voice = client.post("/api/voices", json={"name": "阿米娅", "connection_id": conn["id"]}).json()
+    client.post(
+        f"/api/voices/{voice['id']}/emotions",
+        json={"label": "平静", "ref_path": "D:/tmp.wav", "prompt_text": "平静的原文"},
+    )
+    db = next(app.dependency_overrides[get_db]())
+    p = db.get(VoiceProfile, voice["id"])
+    p.gpt_weights, p.gpt_sha, p.sovits_weights, p.sovits_sha, p.files_at = "", SHA_A, "", SHA_B, files_at
+    e = db.query(VoiceEmotion).filter_by(profile_id=voice["id"]).one()
+    e.ref_path, e.ref_sha = "", SHA_C
+    db.commit()
+    return conn, voice
+
+
+def patch_localize(monkeypatch, seen: list | None = None):
+    import dataclasses
+
+    from app.tts import delivery
+
+    async def fake(db, conn, spec):
+        if seen is not None:
+            seen.append(spec)
+        swap = lambda p: "/cache/x" if p.startswith("blob:") else p  # noqa: E731
+        return dataclasses.replace(
+            spec,
+            gpt_weights=swap(spec.gpt_weights),
+            sovits_weights=swap(spec.sovits_weights),
+            ref_path=swap(spec.ref_path),
+            aux_ref_paths=tuple(swap(p) for p in spec.aux_ref_paths),
+        )
+
+    monkeypatch.setattr(delivery, "localize", fake)
+
+
+def files_at_of(client: TestClient, profile_id: str) -> str:
+    return next(v for v in client.get("/api/voices").json() if v["id"] == profile_id)["files_at"]
+
+
+def test_speak_delivers_a_pending_voice_and_caches_by_the_blob_key(client: TestClient, gsv, monkeypatch):
+    seen: list = []
+    patch_localize(monkeypatch, seen)
+    _, voice = setup_sha_voice(client)
+    first = speak(client, voice["id"])
+    assert first.status_code == 200, first.text
+    assert seen[0].gpt_weights == f"blob:{SHA_A}" and seen[0].ref_path == f"blob:{SHA_C}"
+    tts = gsv.calls[-1][1]
+    assert tts["ref_audio_path"] == "/cache/x"
+    assert ("set_gpt_weights", "/cache/x") in gsv.calls
+    assert files_at_of(client, voice["id"]) == "sent"
+    second = speak(client, voice["id"])
+    assert second.headers["x-tts-cache"] == "hit"
+    assert len(seen) == 1
+
+
+def test_speak_with_paths_never_localizes_anything(client: TestClient, gsv, monkeypatch):
+    seen: list = []
+    patch_localize(monkeypatch, seen)
+    _, voice = setup_voice(client)
+    assert speak(client, voice["id"]).status_code == 200
+    assert gsv.calls[-1][1]["ref_audio_path"] == "D:/refs/平静.wav"
+    assert ("set_gpt_weights", "D:/a.ckpt") in gsv.calls
+    assert files_at_of(client, voice["id"]) == "manual"
+
+
+def test_speak_passes_on_the_no_route_message(client: TestClient, gsv, monkeypatch):
+    from app.tts import delivery
+    from app.tts.base import TTSError
+
+    async def refuse(db, conn, spec):
+        raise TTSError(400, delivery.NO_ROUTE)
+
+    monkeypatch.setattr(delivery, "localize", refuse)
+    _, voice = setup_sha_voice(client)
+    r = speak(client, voice["id"])
+    assert (r.status_code, r.json()["detail"]) == (400, delivery.NO_ROUTE)
+    assert files_at_of(client, voice["id"]) == "pending"
+
+
+def test_speak_still_refuses_a_voice_with_neither_path_nor_fingerprint(client: TestClient, gsv):
+    _, voice = setup_voice(client)
+    client.put(f"/api/voices/{voice['id']}", json={"gpt_weights": "", "sovits_weights": ""})
+    r = speak(client, voice["id"])
+    assert r.status_code == 400 and "没填 GPT / SoVITS 权重" in r.json()["detail"]
+
+
+def test_connection_keeps_the_pair_code_but_never_returns_it(client: TestClient, monkeypatch):
+    from app.tts import delivery
+
+    forgotten: list[str] = []
+    monkeypatch.setattr(delivery, "forget", forgotten.append)
+    conn = make_conn(client, pair_code=" ABCD2345 ")
+    assert conn["has_pair_code"] is True and "pair_code" not in conn
+    assert make_conn(client)["has_pair_code"] is False
+    r = client.put(f"/api/tts/connections/{conn['id']}", json={"pair_code": ""})
+    assert r.json()["has_pair_code"] is False and "pair_code" not in r.json()
+    assert forgotten == [conn["id"]]
+    r = client.put(f"/api/tts/connections/{conn['id']}", json={"pair_code": "XYZ"})
+    assert r.json()["has_pair_code"] is True
+    client.put(f"/api/tts/connections/{conn['id']}", json={"name": "改名"})
+    assert client.get("/api/tts/connections").json()[0]["has_pair_code"] is True
+    # 只改别的字段不动配对码
+    assert client.delete(f"/api/tts/connections/{conn['id']}").status_code == 204
+    assert forgotten[-1] == conn["id"]
+
+
+def test_connection_test_reports_how_files_travel(client: TestClient, gsv, monkeypatch):
+    from app.tts import delivery
+    from app.tts.base import TTSError
+
+    conn = make_conn(client)
+
+    async def plugin(c, *, fresh=False):
+        assert fresh
+        return delivery.Route("plugin", True, False)
+
+    monkeypatch.setattr(delivery, "route_of", plugin)
+    body = client.post(f"/api/tts/connections/{conn['id']}/test").json()
+    assert body["route"] == "plugin" and body["plugin"] is True and body["pair_ok"] is False and body["ms"] >= 0
+
+    async def down(c, *, fresh=False):
+        raise TTSError(503, "连不上")
+
+    monkeypatch.setattr(delivery, "route_of", down)
+    ok = client.post(f"/api/tts/connections/{conn['id']}/test")
+    assert ok.status_code == 200 and ok.json()["route"] is None
+
+
+def test_indextts_connection_test_reports_the_route_like_gsv(client: TestClient, index_tts, monkeypatch):
+    """IndexTTS 也能装小插件了(anima_indextts.py):测试连接和 GSV 一样问文件怎么送"""
+    from app.tts import delivery
+
+    async def plugin(c, *, fresh=False):
+        return delivery.Route("plugin", True, True)
+
+    monkeypatch.setattr(delivery, "route_of", plugin)
+    conn = make_conn(client, name="IndexTTS", api_type="indextts", base_url=INDEX_URL)
+    body = client.post(f"/api/tts/connections/{conn['id']}/test").json()
+    assert (body["route"], body["plugin"], body["pair_ok"]) == ("plugin", True, True)
+
+
+def test_deliver_sends_the_files_now(client: TestClient, gsv, monkeypatch):
+    seen: list = []
+    patch_localize(monkeypatch, seen)
+    _, voice = setup_sha_voice(client)
+    r = client.post(f"/api/voices/{voice['id']}/deliver")
+    assert r.status_code == 200 and r.json()["files_at"] == "sent"
+    assert len(seen) == 1
+    assert set(seen[0].aux_ref_paths) == {f"blob:{SHA_A}", f"blob:{SHA_B}", f"blob:{SHA_C}"}
+
+
+def test_deliver_passes_on_the_error(client: TestClient, gsv, monkeypatch):
+    from app.tts import delivery
+    from app.tts.base import TTSError
+
+    async def refuse(db, conn, spec):
+        raise TTSError(400, delivery.NO_ROUTE)
+
+    monkeypatch.setattr(delivery, "localize", refuse)
+    _, voice = setup_sha_voice(client)
+    r = client.post(f"/api/voices/{voice['id']}/deliver")
+    assert (r.status_code, r.json()["detail"]) == (400, delivery.NO_ROUTE)
+    assert files_at_of(client, voice["id"]) == "pending"

@@ -51,7 +51,7 @@ def _unzip(archive, tmp_path, name="out"):
     return folder
 
 
-def test_round_trip_into_the_same_library_is_identical_up_to_ids_and_name_suffixes(db, tmp_path):
+def test_round_trip_into_the_same_library_is_identical_up_to_ids_and_name_suffixes(db, tmp_path, no_voice_dedupe):
     ids = seed(db)
     before = canon.canonical(db, ids["main"])
     folder = _unzip(collect.collect_card(db, ids["main"], exclude=[], with_preset=True), tmp_path)

@@ -34,6 +34,8 @@ HERE = Path(__file__).resolve().parent
 LOCK_FILE = HERE / "requirements.lock"
 SOURCES_FILE = HERE / "sources.json"
 PAYLOAD = HERE / "payload"
+VOICE_PLUGIN = "语音小插件"
+VOICE_PLUGIN_FILES = ("api_v2_anima.py", "anima_gsv_routes.py", "anima_indextts.py")
 
 # 官方便携版 Python。3.11.9 是 3.11 最后一个带 Windows 安装包的版本,和开发用的 venv 一致
 PY_VERSION = "3.11.9"
@@ -230,6 +232,17 @@ def runtime_fingerprint(site: Path, models: Path) -> str:
     return h.hexdigest()[:16]
 
 
+def voice_plugin(src: Path, dest: Path) -> None:
+    """GSV 小插件和安装脚本:玩家自己下官方 GSV,双击 install 里的 bat 装进去。按单子拷,别把开发机自己的脚本带上"""
+    folder = src / "tools" / "voice-helper"
+    dest.mkdir(parents=True, exist_ok=True)
+    for name in VOICE_PLUGIN_FILES:
+        shutil.copy2(folder / name, dest / name)
+    shutil.copytree(folder / "install", dest / "install", dirs_exist_ok=True, ignore=shutil.ignore_patterns("__pycache__"))
+    for bat in (dest / "install").glob("*.bat"):  # 和外层的 bat 一样,不管仓库按什么换行符检出都用 CRLF
+        bat.write_bytes(bat.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n"))
+
+
 def files_of(stage: Path, items: list[str]) -> list[Path]:
     files = []
     for item in items:
@@ -307,6 +320,9 @@ def main() -> None:
         json.dumps({"version": args.version, "runtime": runtime, "sources": sources}, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+
+    step("语音小插件")
+    voice_plugin(src, stage / VOICE_PLUGIN)
 
     step("压缩")
     name = f"AnimaVN-{args.version}{tag}"

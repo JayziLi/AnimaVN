@@ -6,7 +6,8 @@
 - POST /api/import/{plan_id}/apply    {decisions, classify, make_current, options} → {job_id, card_id, notice, report, created}
                                       (created = 这次新建的卡和包的编号 {cards, sprite_packs, scene_packs, cg_packs},
                                       角色包另有 presets、state_groups、word_records、settings);
-                                      options = {组的 key: {"preset": true | false}}(角色包组要不要另建建议的预设,默认要)
+                                      options = {组的 key: {"preset": true | false}}(角色包组要不要另建建议的预设,默认要);
+                                     声音文件夹组 {"name", "lang", "connection_id"}
 - GET  /api/import/{plan_id}/file?path=&w=  暂存目录里的一个文件(导入确认里角色包的预览图、缩略图;只许取暂存目录里的;
                                       图片带 w 时缩成 WebP)
 - DELETE /api/import/{plan_id}        确认框点了取消:删掉暂存(执行过的回 409)
@@ -85,6 +86,9 @@ def _group_out(g) -> dict:
         # 角色包 / 单包:导入确认照 detail 画(技术计划「接口」);count = 几张卡 / 包里几行
         count = len(d.get("cards", [])) if g.type == "bundle" else int(d.get("count") or 0)
         return {"key": g.key, "type": g.type, "name": g.name, "count": count, "owner": None, "duplicate_of": None, "detail": d}
+    if g.type == "voice_folder":
+        # 声音文件夹:导入确认照 detail 画(名字、模型、参考、挂到哪个语音服务)
+        return {"key": g.key, "type": g.type, "name": g.name, "count": len(d.get("refs", [])), "owner": None, "duplicate_of": None, "detail": d}
     count = {
         "card": 1,
         "sprite_pack": len(g.files),
@@ -144,7 +148,9 @@ def make_plan(
         or any(g.duplicate_of for g in plan.groups)
         or any(g.type == "bundle" for g in plan.groups)
         # 声音包要选挂到哪个语音服务、看「模型会执行代码」的提醒
-        or any(g.type == "pack_file" and g.detail.get("kind") == "voice" for g in plan.groups),
+        or any(g.type == "pack_file" and g.detail.get("kind") == "voice" for g in plan.groups)
+        # 声音文件夹要看认出了什么、选挂到哪个语音服务
+        or any(g.type == "voice_folder" for g in plan.groups),
     }
 
 

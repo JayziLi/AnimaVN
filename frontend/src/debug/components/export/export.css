@@ -380,3 +380,28 @@ label.exp-row:has(input:disabled) {
     display: none;
   }
 }
+
+.exp-pull {
+  margin-left: 8px;
+  padding: 0 6px;
+  font: inherit;
+  color: inherit;
+  text-decoration: underline;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.exp-pull:disabled {
+  cursor: default;
+  opacity: 0.6;
+  text-decoration: none;
+}
+
+.exp-compress {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  color: var(--text-dim);
+  font-size: 12px;
+}

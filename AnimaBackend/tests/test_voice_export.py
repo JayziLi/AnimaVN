@@ -191,37 +191,52 @@ def api(client, monkeypatch):
     reset_engines()
 
 
-def test_export_pulls_missing_files_first_and_brings_settings_for_the_rest(api):
+def test_export_does_not_touch_the_voice_machine_and_brings_settings_for_missing_files(api, monkeypatch):
     client, ids, session, machine = api
+
+    async def boom(*a, **k):
+        raise AssertionError("导出不该去语音机拉文件")
+
+    monkeypatch.setattr("app.api.export.prefetch_voice_files", boom, raising=False)
     r = client.get("/api/export/pack/voice/v2")
     assert r.status_code == 200, r.text
-    zf = zipfile.ZipFile(BytesIO(r.content))
-    p = json.loads(zf.read("pack.json"))
-    assert sorted(machine.requests) == sorted(["D:/m/q.ckpt", "G:/m/q.pth", "D:/r/【平静】嗯.wav"])
-    assert zf.read(p["pack"]["models"]["gpt"]["file"]) == b"q-gpt" * 10
-    assert p["pack"]["models"]["sovits"] == {"name": "q.pth", "size": None}  # 旧脚本不让读 G 盘
-    assert zf.read(p["items"][0]["file"]) == b"RIFFqin"
-    assert store().has(sha_of(b"RIFFqin"), "audio/wav")
-    # 老声音的路径不动
+    p = json.loads(zipfile.ZipFile(BytesIO(r.content)).read("pack.json"))
+    assert machine.requests == []
+    assert p["pack"]["models"]["gpt"] == {"name": "q.ckpt", "size": None}
+    assert p["items"][0]["file"] is None
     session.expire_all()
-    assert session.get(VoiceProfile, "v2").gpt_weights == "D:/m/q.ckpt"
-    assert session.get(VoiceProfile, "v2").files_at == "manual"
+    assert session.get(VoiceProfile, "v2").gpt_weights == "D:/m/q.ckpt"  # 老声音的路径不动
 
 
-def test_summary_counts_what_could_not_be_pulled(api):
+def test_summary_and_bundle_do_not_pull_and_say_what_is_missing(api, monkeypatch):
     client, ids, session, machine = api
     from app import bindings
 
+    async def boom(*a, **k):
+        raise AssertionError("导出不该去语音机拉文件")
+
+    monkeypatch.setattr("app.api.export.prefetch_voice_files", boom, raising=False)
     bindings.replace(session, ids["lonely"], bindings.VOICE, ["v2"], "v2")
     session.commit()
     s = client.get(f"/api/export/bundle/{ids['lonely']}/summary").json()
     (v,) = [i for i in s["items"] if i["kind"] == "voice"]
-    assert v["key"] == "voice:v2" and v["missing"] == 1 and v["detail"] == "1 段参考 + 2 个模型"
-    assert v["bytes"] == len(b"q-gpt" * 10) + len(b"RIFFqin")
-    assert "声音(第 4 步再加)" not in s["not_included"]
-    # 语音机关着:照样导出,只带设置
-    machine.files = {}
-    session.get(TtsConnection, ids["tts"]).base_url = "http://10.0.0.3:9880"
-    session.commit()
-    r = client.post(f"/api/export/bundle/{ids['lonely']}", json={})
-    assert r.status_code == 200
+    assert v["key"] == "voice:v2" and v["voice_id"] == "v2" and v["missing"] == 3
+    assert client.post(f"/api/export/bundle/{ids['lonely']}", json={}).status_code == 200
+    assert machine.requests == []
+
+
+def test_pull_fetches_the_files_once_and_reports_what_is_left(api):
+    client, ids, session, machine = api
+    r = client.post("/api/export/voice/v2/pull")
+    assert r.status_code == 200, r.text
+    assert r.json() == {"missing": 1}  # 旧脚本不让读 G 盘那个
+    assert sorted(machine.requests) == sorted(["D:/m/q.ckpt", "G:/m/q.pth", "D:/r/【平静】嗯.wav"])
+    assert store().has(sha_of(b"RIFFqin"), "audio/wav")
+    session.expire_all()
+    assert session.get(VoiceProfile, "v2").files_at == "manual"
+    assert client.post("/api/export/voice/nope/pull").status_code == 404
+    # 拉完再导出:带上拉回来的文件
+    r = client.get("/api/export/pack/voice/v2")
+    zf = zipfile.ZipFile(BytesIO(r.content))
+    p = json.loads(zf.read("pack.json"))
+    assert zf.read(p["items"][0]["file"]) == b"RIFFqin"

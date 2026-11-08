@@ -626,3 +626,26 @@
     opacity: 0.5;
   }
 }
+
+.tf-erow .what small .tf-pull {
+  margin-left: 8px;
+  padding: 0 4px;
+  font: inherit;
+  color: inherit;
+  text-decoration: underline;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.tf-erow .what small .tf-pull:disabled {
+  cursor: default;
+  opacity: 0.6;
+  text-decoration: none;
+}
+
+.tf-compress {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}

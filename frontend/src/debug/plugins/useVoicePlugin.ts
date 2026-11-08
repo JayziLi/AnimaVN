@@ -12,6 +12,7 @@ import {
   DEFAULT_VOICE_CONFIG,
   VOICE_SETTING_KEY,
   castOf,
+  effectiveMainId,
   normalizeVoiceConfig,
   voiceSignature,
   type VoiceCast,
@@ -102,7 +103,9 @@ export function useVoicePlugin(cardId: string | null, notify: Notify): VoicePlug
     return ok;
   };
 
-  const cast = useMemo(() => castOf(profiles, binding.main, binding.extras), [profiles, binding]);
+  const cast = useMemo(() => castOf(profiles, effectiveMainId(binding.main, config.defaultVoiceId), binding.extras),
+    [profiles, binding, config.defaultVoiceId],
+  );
 
   return { config, changeConfig, connections, profiles, refresh, binding, bind, cast };
 }

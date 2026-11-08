@@ -523,6 +523,13 @@
   cursor: pointer;
   transition: background 0.14s, box-shadow 0.14s;
 }
+.ga-vq-grp {
+  flex: none;
+  padding: 8px 10px 2px;
+  font: 600 11.5px/1.2 var(--av-sans);
+  letter-spacing: 0.08em;
+  color: var(--av-dim);
+}
 .ga-vq-opt:hover {
   background: var(--av-hair-2);
 }

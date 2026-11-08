@@ -50,6 +50,13 @@ detail 的样子:
 - 角色包   {note, preview, cards: [{name, new_name, state}], packs: [{kind, name, detail, thumbs}], follows, preset: {name} | None,
            has_voice, bytes, folder};files = [清单的路径]。preview、thumbs 是 /api/import/{plan_id}/file?path=… 的地址
 - 单包     {kind, name, detail, thumbs, bytes, folder};files = [pack.json 的路径]
+- 声音文件夹 {name, folder, lang, models: [{kind: gpt | sovits, name, size, file}], refs: [{label, text, file}], skipped: [文件名],
+           existing: {id, name} | None, connections: [{id, name, api_type, usable, reason, note, best}]};files = 用到的模型和参考
+           (规则 11)
+11. 声音文件夹:文件夹里(或它下面一层的 refs/、models/)有名字合格的参考音频(【情绪】原文.wav,REF_NAME_PATTERN),
+    就是一个 voice_folder 组,整个文件夹不再走上面的规则。.ckpt = GPT、.pth = SoVITS,各取一个(名字里 e<轮数> 和 s<步数>
+    最大的),其余和名字不合格的音频进 skipped。同一个情绪多段的,第二段起标签加 2、3;「平静」「默认」排最前。
+    挂到哪个语音服务见 voice_folder_targets。
 所有名字都已经去掉禁用字符、截好长度、在各自的范围里不重名(立绘:整个包的名字和别名;背景、曲子各算各的;
 CG:构图之间,差分在同一个构图里),apply 照着建就行。
 """
@@ -80,11 +87,15 @@ from app.importer import aliases
 from app.importer.audio import stored_file as stored_audio
 from app.importer.cards import CardError, normalize, parse_card
 from app.importer.staging import StagedFile, StagedTree, _safe_part
-from app.models import CgAsset, CgPack, PackSprite, SceneAsset, ScenePack, SpritePack, TavernCard
+from app.models import CgAsset, CgPack, PackSprite, SceneAsset, ScenePack, SpritePack, TavernCard, TtsConnection
 from app.storage import refs
+from app.storage.blobs import sha_of_file
+from app.tts.gpt_sovits import detect_lang
 
-GroupType = Literal["card", "sprite_pack", "scene_pack", "cg_pack", "bundle", "pack_file"]
+GroupType = Literal["card", "sprite_pack", "scene_pack", "cg_pack", "bundle", "pack_file", "voice_folder"]
 BUNDLE_TYPES = ("bundle", "pack_file")
+# 每次都另建一份、不认编号、不绑卡的组(只能选 new)
+STANDALONE_TYPES = (*BUNDLE_TYPES, "voice_folder")
 # 导入确认里的缩略图:几张、多宽
 THUMBS, THUMB_W = 4, 256
 # 拖到素材页的哪一栏(forced_kind)能认的
@@ -337,6 +348,13 @@ class _SceneSet:
 
 
 @dataclass
+class _VoiceFolder:
+    dir: str
+    name: str
+    files: list[StagedFile]  # 文件夹自己和下面一层里的文件
+
+
+@dataclass
 class _CgSet:
     ctx: _Ctx
     dir: str
@@ -356,10 +374,12 @@ class _Planner:
         self.unknown: list[str] = []
         self.irrelevant: list[str] = []
         self.voice: list[str] = []
+        self.voice_folders: list[_VoiceFolder] = []
         self.skipped_dirs: list[str] = []
         self.notes: list[str] = []
         self._parsed: dict[str, dict | None] = {}
         self._shas: dict[str, str] = {}
+        self._voice_shas: dict[str, str] = {}
         self._kinds = {f.path: f.kind for f in tree.files}
         self.card_names: dict[str, str] = {}  # 卡组的 key → 卡名
         self.cards_by_dir: dict[str, list[str]] = {}  # 文件夹 → 直接放在里面的卡组
@@ -412,6 +432,22 @@ class _Planner:
         audio = [f for f in d.files if f.kind == "audio"]
         return bool(audio) and 2 * sum(bool(_REF_FILE.match(_basename(f.path))) for f in audio) >= len(audio)
 
+    def _voice_root(self, d: _Dir) -> bool:
+        """这个文件夹是不是一个声音文件夹(规则 11):不是素材文件夹、下面没有素材文件夹,
+        自己装着名字合格的参考音频,或者下面一层里恰好有一个子文件夹装着(另一个可以是 models/)"""
+        if not d.path or self._folder_kind(d)[0] or self._has_kind_below(d):
+            return False
+        if any(_REF_FILE.match(_basename(f.path)) for f in d.files if f.kind == "audio"):
+            return True
+        having = [c for c in d.dirs if any(_REF_FILE.match(_basename(f.path)) for f in c.files if f.kind == "audio")]
+        return len(having) == 1
+
+    def _voice_folder(self, d: _Dir) -> None:
+        files = list(d.files)
+        for c in d.dirs:
+            files.extend(c.files)
+        self.voice_folders.append(_VoiceFolder(d.path, d.name, files))
+
     def _has_kind_child(self, d: _Dir) -> bool:
         return any(self._folder_kind(c)[0] for c in d.dirs)
 
@@ -419,6 +455,9 @@ class _Planner:
         return any(self._folder_kind(c)[0] or self._has_kind_below(c) for c in d.dirs)
 
     def visit(self, d: _Dir, ctx: _Ctx) -> None:
+        if self._voice_root(d):
+            self._voice_folder(d)
+            return
         if self._is_voice(d):
             self.voice.append(d.path)
             return
@@ -442,7 +481,7 @@ class _Planner:
             ctx = _Ctx(d.path, d.name or None, True)  # 角色文件夹(规则 5)
         self._loose(d, ctx)
         for c in d.dirs:
-            if not ctx.char or self._is_voice(c) or self._folder_kind(c)[0] or self._has_kind_below(c):
+            if not ctx.char or self._is_voice(c) or self._voice_root(c) or self._folder_kind(c)[0] or self._has_kind_below(c):
                 self.visit(c, ctx)
             else:
                 self.skipped_dirs.append(c.path)
@@ -694,7 +733,36 @@ class _Planner:
         sprites = self._sprite_groups()
         scenes = self._scene_groups()
         cgs = self._cg_groups()
-        return cards + sprites + scenes + cgs
+        return cards + sprites + scenes + cgs + self._voice_groups()
+
+    def _voice_groups(self) -> list[PlanGroup]:
+        out = []
+        connections = [
+            {"id": c.id, "name": c.name, "api_type": c.api_type}
+            for c in self.db.scalars(select(TtsConnection).order_by(TtsConnection.created_at))
+        ]
+        for n, vf in enumerate(self.voice_folders, 1):
+            detail = voice_folder_detail(vf, self.tree)
+            detail["connections"] = voice_folder_targets(bool(detail["models"]), connections)
+            detail["existing"] = self._voice_twin(detail)
+            files = [m["file"] for m in detail["models"]] + [r["file"] for r in detail["refs"]]
+            out.append(PlanGroup(f"voice:{n}", "voice_folder", detail["name"], files, None, detail))
+        return out
+
+    def _voice_twin(self, detail: dict) -> dict | None:
+        """库里有没有模型和参考文件都一样的声音(挂在「最合适」的那种语音服务上比)"""
+        engine = "gpt_sovits" if detail["models"] else "indextts"
+        pack = voice_folder_pack(detail, engine)
+
+        def sha(rel):
+            if not rel:
+                return None
+            if rel not in self._voice_shas:
+                self._voice_shas[rel] = sha_of_file(self.tree.path(rel))
+            return self._voice_shas[rel]
+
+        twin = bundle_restore.find_twin(self.db, engine, pack, sha)
+        return {"id": twin.id, "name": twin.name} if twin else None
 
     def _owner(self, path: str) -> str | None:
         if self.forced or not self.cards:
@@ -824,6 +892,8 @@ class _Planner:
         }
         contents: dict[str, list[tuple[object, list]]] = {}
         for g in groups:
+            if g.type == "voice_folder":
+                continue  # 声音的「已经有了」在 detail.existing
             if g.type == "card":
                 c = g.detail["card"]
                 row = self.db.scalars(
@@ -871,6 +941,99 @@ class _Planner:
             more = " 等" if len(names) > 3 else ""
             lines.append(f"跳过 {len(names)} 个无关文件({'、'.join(names[:3])}{more})")
         return lines + self.notes
+
+
+# ── 声音文件夹(规则 11)──
+
+_MODEL_KIND = {".ckpt": "gpt", ".pth": "sovits"}
+_EPOCH = re.compile(r"(?:^|[-_.\s])e(\d+)(?=$|[-_.\s])", re.I)
+_STEP = re.compile(r"(?:^|[-_.\s])s(\d+)(?=$|[-_.\s])", re.I)
+_LANG_IN_NAME = re.compile(r"日语|日文|日本語|中文|汉语|国语|普通话|英语|英文|[(（\[]\s*(?:ja|jp|zh|cn|en)\s*[)）\]]", re.I)
+_GENERIC_VOICE_DIR = re.compile(r"^(?:refs?|voices?|语音|声音|语音参考|参考音频|音频|audio|wav|models?|模型)$")
+_FIRST_LABELS = ("平静", "默认", "日常", "普通", "自然", "微笑")  # 靠前的当默认情绪
+
+
+def _model_rank(f: StagedFile) -> tuple:
+    """同一种模型有好几个时,轮数(e15)、步数(s152)大的先;都没写就比大小"""
+    stem = PurePosixPath(_basename(f.path)).stem
+    e, s = _EPOCH.search(stem), _STEP.search(stem)
+    return (int(e.group(1)) if e else -1, int(s.group(1)) if s else -1, f.size, _natural(_basename(f.path)))
+
+
+def voice_folder_detail(vf: _VoiceFolder, tree: StagedTree) -> dict:
+    """一个声音文件夹 → 组的 detail(见文件头);connections、existing 由调用方补"""
+    models: dict[str, list[StagedFile]] = {}
+    audio: list[StagedFile] = []
+    skipped: list[str] = []
+    for f in sorted(vf.files, key=lambda f: _natural(f.path)):
+        kind = _MODEL_KIND.get(PurePosixPath(_basename(f.path)).suffix.casefold())
+        if kind:
+            models.setdefault(kind, []).append(f)
+        elif f.kind == "audio":
+            audio.append(f)
+    picked = []
+    for kind in ("gpt", "sovits"):
+        ranked = sorted(models.get(kind, []), key=_model_rank, reverse=True)
+        if ranked:
+            picked.append({"kind": kind, "name": _basename(ranked[0].path), "size": ranked[0].size, "file": ranked[0].path})
+            skipped.extend(_basename(f.path) for f in ranked[1:])
+    found: list[tuple[str, str, str]] = []  # (情绪, 原文, 路径)
+    for f in audio:
+        m = _REF_FILE.match(_basename(f.path))
+        if m:
+            found.append((_clean(m.group(1)), m.group(2).strip(), f.path))
+        else:
+            skipped.append(_basename(f.path))
+    found = [x for x in found if x[0]]
+    # 稳定排序:平静 / 默认这些排最前,其余保持文件名顺序
+    found.sort(key=lambda x: _FIRST_LABELS.index(x[0]) if x[0] in _FIRST_LABELS else len(_FIRST_LABELS))
+    taken: set[str] = set()
+    refs_out = [{"label": _unique(label, "默认", taken), "text": text, "file": path} for label, text, path in found]
+    lang = detect_lang(" ".join(r["text"] for r in refs_out))
+    name = vf.name
+    if _GENERIC_VOICE_DIR.match(_key(name)) and "/" in vf.dir:
+        name = vf.dir.rsplit("/", 2)[-2]
+    name = _clean(name)[:70].strip() or "声音"
+    if lang == "ja" and not _LANG_IN_NAME.search(name):
+        name += "(日语)"
+    return {"name": name, "folder": vf.dir, "lang": lang, "models": picked, "refs": refs_out, "skipped": skipped}
+
+
+def voice_folder_targets(has_models: bool, connections: list[dict]) -> list[dict]:
+    """声音文件夹能挂到哪些语音服务:GPT-SoVITS 要有模型(没有的灰着,原因「没有模型」);Fish、IndexTTS 只拿参考音频(灰字说明);
+    中转站只认音色名,挂不上。best = 有模型时第一个 GPT-SoVITS,否则第一个能用的。connections:按列表顺序的 {id, name, api_type}"""
+    out = []
+    for c in connections:
+        kind = c["api_type"]
+        if kind == "gpt_sovits":
+            usable, reason, note = has_models, "" if has_models else bundle_restore.NO_MODEL, ""
+        elif kind == "openai":
+            usable, reason, note = False, bundle_restore.RELAY_ONLY, ""
+        else:
+            usable, reason, note = True, "", (bundle_restore.CLONE_NOTES if has_models else bundle_restore.REF_NOTES)[kind]
+        out.append({"id": c["id"], "name": c["name"], "api_type": kind, "usable": usable, "reason": reason, "note": note, "best": False})
+    best = next((o for o in out if o["usable"] and o["api_type"] == "gpt_sovits" and has_models), None) or next(
+        (o for o in out if o["usable"]), None
+    )
+    if best:
+        best["best"] = True
+    return out
+
+
+def voice_folder_pack(detail: dict, engine: str, name: str | None = None, lang: str | None = None) -> dict:
+    """声音文件夹的 detail → 角色包里声音包那种清单(app/bundle/restore.py 照它建声音);文件路径是暂存目录里的相对路径。
+    IndexTTS 不要模型,第一段参考当音色参考"""
+    models = {m["kind"]: {"file": m["file"], "name": m["name"], "size": m["size"]} for m in detail["models"]} if engine == "gpt_sovits" else {}
+    rows = detail["refs"]
+    head = {
+        "name": name if name is not None else detail["name"],
+        "engine": engine,
+        "text_lang": lang or detail["lang"],
+        "models": models,
+        "speaker_ref": rows[0]["file"] if engine == "indextts" and rows else None,
+    }
+    items = [{"key": f"ref{i}", "label": r["label"], "file": r["file"], "prompt_text": r["text"], "sort": i} for i, r in enumerate(rows)]
+    return {"kind": "voice", "key": "voice", "pack": head, "items": items}
 
 
 def file_label(path: str, fallback: str) -> str:
@@ -1072,12 +1235,27 @@ def _bundle_groups(tree: StagedTree, db: Session) -> tuple[list[PlanGroup], list
 
 def voice_out(db: Session, pack: dict) -> dict:
     """计划里的一个声音:名字、「12 段参考 + 2 个模型」、默认挂到哪个语音服务(没有是 null:导入时新建本机的)、包里没带的文件数"""
-    conn = bundle_restore.default_connection(db, bundle_restore.voice_engine(pack))
+    engine = bundle_restore.voice_engine(pack)
+    conns = db.scalars(select(TtsConnection).order_by(TtsConnection.created_at)).all()
+    fits = [(c, *bundle_restore.voice_fits(pack, c.api_type)) for c in conns]
+    conn = bundle_restore.default_connection(db, engine) or next((c for c, ok, _ in fits if ok), None)
+    twin = bundle_restore.find_twin(db, conn.api_type if conn else engine, pack, bundle_restore.sha_in_name)
+    if engine == "openai":
+        empty_note = "会新建一条空的中转站连接,音色名跟着走,key 你自己填"
+    else:
+        empty_note = f"现有的连接念不了这个声音:会新建「{bundle_restore.DEFAULT_CONNECTIONS[engine][0]}」,没装也能先导进来" if conns else None
     return {
         "name": str(pack["pack"].get("name") or ""),
+        "existing": {"id": twin.id, "name": twin.name} if twin else None,
         "detail": bundle_restore.voice_pack_detail(pack),
         "connection": {"id": conn.id, "name": conn.name, "local": bundle_restore.is_local(conn.base_url)} if conn else None,
         "missing": bundle_restore.voice_counts(pack)[2],
+        "has_models": bundle_restore.voice_counts(pack)[1] > 0,
+        "empty_note": empty_note,
+        "targets": [
+            {"id": c.id, "name": c.name, "api_type": c.api_type, "usable": ok, "reason": "" if ok else why, "note": why if ok else ""}
+            for c, ok, why in fits
+        ],
     }
 
 

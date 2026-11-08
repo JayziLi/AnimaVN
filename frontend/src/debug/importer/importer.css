@@ -822,3 +822,188 @@ body:has(.imp-drop.ingame .imp-gdrop) .vn-pick .pk-tile {
   font: 500 12.5px/1.3 var(--av-sans);
   box-shadow: var(--av-shadow-card, 0 2px 8px rgba(30, 24, 48, 0.2));
 }
+
+/* ── 导入声音文件夹(画布 voice-import 的 Import) ── */
+.imp-vf-grid {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  column-gap: 16px;
+  padding: 4px 20px 8px;
+}
+.imp-vf-k {
+  padding: 16px 0 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+.imp-vf-v {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  min-width: 0;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--bg-raised);
+  font-size: 13px;
+}
+.imp-vf-v:last-child {
+  border-bottom: 0;
+}
+.imp-vf-v.col {
+  flex-direction: column;
+  align-items: stretch;
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+.imp-vf-name {
+  width: 280px;
+  max-width: 100%;
+  height: 32px;
+}
+.imp-vf-chip {
+  padding: 2px 8px;
+  border-radius: 5px;
+  background: rgba(120, 140, 220, 0.18);
+  color: var(--text-dim);
+  font-size: 11.5px;
+}
+.imp-vf-line {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+.imp-vf-sub {
+  min-width: 64px;
+  color: var(--text-dim);
+}
+.imp-vf-sub.lead {
+  min-width: 0;
+  margin-left: 8px;
+}
+.imp-vf-mono {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.imp-vf-seg {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 7px;
+  background: var(--bg-raised);
+}
+.imp-vf-seg > button {
+  height: 26px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  cursor: pointer;
+}
+.imp-vf-seg > button.on {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.imp-vf-emo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 28px;
+}
+.imp-vf-tag {
+  flex: none;
+  min-width: 44px;
+  padding: 2px 7px;
+  box-sizing: border-box;
+  border-radius: 4px;
+  background: var(--bg-raised);
+  color: var(--text-dim);
+  font-size: 11.5px;
+  text-align: center;
+}
+.imp-vf-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.imp-vf-more {
+  align-self: flex-start;
+}
+.imp-vf-warn {
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(220, 170, 70, 0.14);
+  color: var(--text-body);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+.imp-vf-conn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.imp-vf-conn.on {
+  box-shadow: 0 0 0 1.5px var(--text);
+}
+.imp-vf-conn.off {
+  color: var(--text-faint);
+  cursor: default;
+}
+.imp-vf-conn > b {
+  min-width: 160px;
+  font-weight: 600;
+}
+.imp-vf-conn.off > b {
+  font-weight: 400;
+}
+/* 选不了的那行不画圆点:禁用的单选在深色主题下看着像选中了 */
+.imp-vf-conn.off > input {
+  visibility: hidden;
+}
+.imp-vf-note {
+  color: var(--text-faint);
+  font-size: 12.5px;
+}
+.imp-vf-note.good {
+  color: #5fae75;
+}
+@media (max-width: 640px) {
+  .imp-vf-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .imp-vf-k {
+    padding: 12px 0 0;
+  }
+  .imp-vf-v {
+    padding: 8px 0;
+  }
+  .imp-vf-conn > b {
+    min-width: 0;
+  }
+}
+
+/* ── 导完送文件到语音机的进度 ── */
+.imp-deliver {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-dim);
+  font-size: 12.5px;
+}
+.imp-deliver.fail {
+  color: var(--danger, #e0795f);
+}
+.imp-deliver-row.fail small {
+  color: var(--danger, #e0795f);
+}

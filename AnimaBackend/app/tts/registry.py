@@ -7,8 +7,10 @@
 
 from app.models import TtsConnection
 from app.tts.base import ServerState, TTSEngine, TTSError
+from app.tts.fish import FishEngine
 from app.tts.gpt_sovits import GptSovitsEngine
 from app.tts.indextts import IndexTtsEngine
+from app.tts.openai_speech import OpenAiSpeechEngine
 
 # 用户试听(2026-09-25):情绪强度高的好。服务端会先把向量归一化(合计压到 0.8 以内),
 # 所以 1.0 并不会太过头
@@ -32,8 +34,17 @@ def emo_alpha_of(conn: TtsConnection) -> float:
     return float(v) if isinstance(v, (int, float)) else DEFAULT_EMO_ALPHA
 
 
+def api_key_of(conn: TtsConnection) -> str:
+    """云端服务(Fish、中转站)的 key,存在连接的 options 里;绝不进响应和日志"""
+    return str((conn.options or {}).get("api_key") or "")
+
+
+def model_of(conn: TtsConnection) -> str:
+    return str((conn.options or {}).get("model") or "")
+
+
 def engine_for(conn: TtsConnection) -> TTSEngine:
-    sig = (conn.api_type, conn.base_url, conn.sample_steps, emo_alpha_of(conn))
+    sig = (conn.api_type, conn.base_url, conn.sample_steps, emo_alpha_of(conn), api_key_of(conn), model_of(conn))
     hit = _engines.get(conn.id)
     if hit is not None and hit[0] == sig:
         return hit[1]
@@ -42,6 +53,10 @@ def engine_for(conn: TtsConnection) -> TTSEngine:
         engine: TTSEngine = GptSovitsEngine(conn.base_url, conn.sample_steps, state)
     elif conn.api_type == "indextts":
         engine = IndexTtsEngine(conn.base_url, emo_alpha_of(conn), state)
+    elif conn.api_type == "fish":
+        engine = FishEngine(conn.base_url, model_of(conn), api_key_of(conn))
+    elif conn.api_type == "openai":
+        engine = OpenAiSpeechEngine(conn.base_url, model_of(conn), api_key_of(conn))
     else:
         raise TTSError(400, f"不支持的语音引擎:{conn.api_type}")
     _engines[conn.id] = (sig, engine)

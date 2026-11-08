@@ -41,6 +41,8 @@ export interface VoicePluginConfig {
   maxWaitSec: number;
   /** 情绪不变:主声音每句都用情绪表排第一的那行(默认情绪),不跟着立绘表情换 */
   fixedEmotion: boolean;
+  /** 没配声音的卡用这个声音念(声音 id);null = 不念。只影响念,不改卡自己的绑定 */
+  defaultVoiceId: string | null;
 }
 
 export const DEFAULT_VOICE_CONFIG: VoicePluginConfig = {
@@ -49,6 +51,7 @@ export const DEFAULT_VOICE_CONFIG: VoicePluginConfig = {
   waitForVoice: false,
   maxWaitSec: 3,
   fixedEmotion: false,
+  defaultVoiceId: null,
 };
 
 export const MAX_WAIT_MIN = 1;
@@ -65,7 +68,41 @@ export function normalizeVoiceConfig(raw: unknown): VoicePluginConfig {
         ? Math.min(MAX_WAIT_MAX, Math.max(MAX_WAIT_MIN, Math.round(r.maxWaitSec)))
         : d.maxWaitSec,
     fixedEmotion: typeof r.fixedEmotion === 'boolean' ? r.fixedEmotion : d.fixedEmotion,
+    defaultVoiceId: typeof r.defaultVoiceId === 'string' && r.defaultVoiceId ? r.defaultVoiceId : d.defaultVoiceId,
   };
+}
+
+export interface VoiceGroup<T> {
+  id: string;
+  name: string;
+  voices: T[];
+}
+
+/** 全部声音按连接分组,连接按列表顺序;只有一组时界面不画组标题 */
+export function groupVoices<T extends { connection_id: string }>(
+  profiles: readonly T[],
+  connections: readonly { id: string; name: string }[],
+): VoiceGroup<T>[] {
+  const known = connections.map((c) => ({ id: c.id, name: c.name, voices: profiles.filter((p) => p.connection_id === c.id) }));
+  const ids = new Set(connections.map((c) => c.id));
+  const lost = profiles.filter((p) => !ids.has(p.connection_id));
+  return [...known, ...(lost.length ? [{ id: '', name: '找不到语音服务', voices: lost }] : [])].filter((g) => g.voices.length);
+}
+
+const API_TYPE_NAMES: Record<string, string> = { gpt_sovits: 'GPT-SoVITS', indextts: 'IndexTTS', fish: 'Fish Audio', openai: '中转站' };
+
+/** 组标题:连接名 + 类型;名字里已经写了类型就不重复 */
+export function groupTitle(name: string, apiType?: string): string {
+  const t = apiType ? API_TYPE_NAMES[apiType] : undefined;
+  return t && !name.toLowerCase().includes(t.toLowerCase()) ? `${name} · ${t}` : name;
+}
+
+/** 这张卡实际念谁:卡自己绑的,没绑就用默认声音 id(两个都没有是 null) */
+export const effectiveMainId = (bound: string | null, defaultId: string | null): string | null => bound ?? defaultId;
+
+/** 「音色」下拉里「不念」那一项的字:有默认声音就写默认(名字) */
+export function voidChoiceText(defaultName: string | null): string {
+  return defaultName ? `默认(${defaultName})` : '不念';
 }
 
 /** 这张卡能用的声音:主声音念角色自己的台词,其他的按说话人名字对上才念 */
@@ -446,6 +483,15 @@ export const VOICE_LANGS: Record<TtsApiType, { value: string; name: string }[]> 
     { value: 'zh', name: '中文' },
     { value: 'ja', name: '日语' },
     { value: 'en', name: '英语' },
+  ],
+  fish: [
+    { value: 'zh', name: '中文' },
+    { value: 'ja', name: '日语' },
+    { value: 'en', name: '英语' },
+  ],
+  openai: [
+    { value: 'zh', name: '中文' },
+    { value: 'ja', name: '日语' },
   ],
 };
 

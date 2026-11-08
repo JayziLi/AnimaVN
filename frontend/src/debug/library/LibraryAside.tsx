@@ -188,11 +188,7 @@ export function LibraryAside({
         </div>
         <div className="lib-foot-row">
           <span className="lib-foot-key" />
-          {kind === 'voice' ? (
-            <span className="lib-foot-note">参考音频在语音机上,不占这里</span>
-          ) : (
-            <span className="lib-foot-note">{about}</span>
-          )}
+          {kind !== 'voice' && <span className="lib-foot-note">{about}</span>}
           {storage.dupes > 0 && (
             <button type="button" className="st-link lib-foot-link" onClick={() => onFilter('dupes')}>
               重复 {storage.dupes} 套

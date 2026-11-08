@@ -28,7 +28,8 @@ import type { Notify } from '../../studio/types';
 import {
   absoluteUrl,
   bundleBody,
-  busyNote,
+  pullLabel,
+  pullLeftNote,
   cardLine,
   fileNameOf,
   initialChecks,
@@ -45,6 +46,7 @@ import {
 } from './exportModel';
 import { ExportPaper } from './ExportPaper';
 import { inGame } from './inGame';
+import { usePullVoice } from './usePullVoice';
 import './export.css';
 
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -69,10 +71,12 @@ function ExportBundleConsole({ cardId, cardName, notify, onClose }: Props) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [checks, setChecks] = useState<Record<string, boolean>>({});
   const [withPreset, setWithPreset] = useState(true);
+  const [compress, setCompress] = useState(true);
   const [note, setNote] = useState('');
   const [preview, setPreview] = useState<ExportPreview>({ kind: 'avatar' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const puller = usePullVoice(cardId, setSummary);
 
   useEffect(() => {
     let alive = true;
@@ -100,7 +104,7 @@ function ExportBundleConsole({ cardId, cardName, notify, onClose }: Props) {
     try {
       const saved = await debugApi.exportBundle(
         cardId,
-        bundleBody(summary, checks, withPreset, note, preview),
+        bundleBody(summary, checks, withPreset, note, preview, compress),
         fileNameOf(summary),
       );
       notify('ok', `已存成 ${saved.name}`);
@@ -115,7 +119,6 @@ function ExportBundleConsole({ cardId, cardName, notify, onClose }: Props) {
   const badge = summary ? stateBadge(summary) : null;
   const src = summary ? previewSrc(summary, preview, resolve) : null;
   const canSwitch = (summary?.previews.length ?? 0) > 1;
-  const waiting = busy && summary ? busyNote(summary, checks) : null;
 
   return (
     <Modal
@@ -135,8 +138,8 @@ function ExportBundleConsole({ cardId, cardName, notify, onClose }: Props) {
         <>
           {summary && (
             <>
-              <span className="exp-total">{totalLabel(totalBytes(summary, checks, withPreset))}</span>
-              <span className="exp-file">{waiting ?? `存成 ${fileNameOf(summary)}`}</span>
+              <span className="exp-total">{totalLabel(totalBytes(summary, checks, withPreset), compress)}</span>
+              <span className="exp-file">{`存成 ${fileNameOf(summary)}`}</span>
             </>
           )}
           <span className="st-flex" />
@@ -210,6 +213,7 @@ function ExportBundleConsole({ cardId, cardName, notify, onClose }: Props) {
                     row={r}
                     checked={checks[r.item.key] !== false}
                     busy={busy}
+                    puller={puller}
                     onCheck={(on) => setChecks((c) => ({ ...c, [r.item.key]: on }))}
                   />
                 ) : (
@@ -274,6 +278,16 @@ function ExportBundleConsole({ cardId, cardName, notify, onClose }: Props) {
                 </div>
               )}
             </div>
+            <label className="exp-compress">
+              <input
+                type="checkbox"
+                checked={compress}
+                disabled={busy}
+                onChange={(e) => setCompress(e.target.checked)}
+              />
+              <span>压缩图片</span>
+              <HelpTip text={TERMS.compressImages} />
+            </label>
             {summary.not_included.length > 0 && (
               <div className="exp-not">
                 <b>不带</b>
@@ -297,14 +311,19 @@ function VoiceRow({
   row,
   checked,
   busy,
+  puller,
   onCheck,
 }: {
   row: Extract<PackRow, { type: 'item' }>;
   checked: boolean;
   busy: boolean;
+  puller: ReturnType<typeof usePullVoice>;
   onCheck: (on: boolean) => void;
 }) {
   const notes = voiceNotes(row.item);
+  const vid = row.item.voice_id;
+  const pulling = puller.pulling === vid;
+  const leftNote = vid && !pulling ? pullLeftNote(puller.left[vid] ?? 0) : null;
   return (
     <label className={`exp-row${checked ? '' : ' off'}`}>
       <input
@@ -322,7 +341,25 @@ function VoiceRow({
         <span className="exp-what stack">
           <span className="exp-what-text">{row.title}</span>
           {notes.warn && <span className="exp-warn">{notes.warn}</span>}
-          {notes.missing && <span className="exp-faint">{notes.missing}</span>}
+          {notes.missing && (
+            <span className="exp-faint">
+              {leftNote ?? notes.missing}
+              {vid && (
+                <button
+                  type="button"
+                  className="exp-pull"
+                  disabled={busy || puller.pulling !== null}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    void puller.pull(vid);
+                  }}
+                >
+                  {pullLabel(pulling)}
+                </button>
+              )}
+            </span>
+          )}
+          {vid && puller.pullError?.id === vid && <span className="exp-warn">{puller.pullError.text}</span>}
         </span>
       </span>
       <span className="exp-size">{rowSize(row.item.bytes)}</span>

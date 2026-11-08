@@ -8,7 +8,14 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { debugApi } from '../../../lib/api';
-import { DEFAULT_VOICE_CONFIG, MAX_WAIT_MAX, MAX_WAIT_MIN, normalizeVoiceConfig } from '../../../plugins/voice';
+import {
+  DEFAULT_VOICE_CONFIG,
+  MAX_WAIT_MAX,
+  MAX_WAIT_MIN,
+  groupVoices,
+  normalizeVoiceConfig,
+  voidChoiceText,
+} from '../../../plugins/voice';
 import type { VoicePluginState } from '../../../plugins/useVoicePlugin';
 import { VoicePairingGroup } from '../../PairingGroup';
 import { DeleteButton } from '../../pluginFields';
@@ -70,6 +77,12 @@ export function VoicePage(p: {
   const facts = view.facts;
   const name = card?.name || '这张卡';
   const { game } = useDrawerSkin();
+  // 没配声音的卡念默认声音:预览和下拉的「不念」一项都照它
+  const defaultVoice = voice.profiles.find((v) => v.id === config.defaultVoiceId) ?? null;
+  const shownVoice = facts ? (facts.mainVoice ?? defaultVoice) : null;
+  const voiceOptions = groupVoices(voice.profiles, voice.connections).flatMap((g) =>
+    g.voices.map((v) => ({ id: v.id, name: v.name, group: g.name })),
+  );
 
   // 缓存的条数页签上也写
   const [stats, setStats] = useState<CacheStats | null>(null);
@@ -100,10 +113,10 @@ export function VoicePage(p: {
   const preview =
     card && facts ? (
       game ? (
-        facts.mainVoice && config.enabled ? (
+        shownVoice && config.enabled ? (
           <VoiceStagePreview
-            key={facts.mainVoice.id}
-            main={facts.mainVoice}
+            key={shownVoice.id}
+            main={shownVoice}
             card={card}
             sprites={view.sprites}
             packId={facts.spritePack?.id ?? null}
@@ -112,15 +125,15 @@ export function VoicePage(p: {
             recentLines={p.recentLines}
           />
         ) : (
-          <div className="dw-line">{facts.mainVoice ? '语音关着,打开页头的开关再试' : `${name}还没有音色,在右边「音色」里选一个`}</div>
+          <div className="dw-line">{shownVoice ? '语音关着,打开页头的开关再试' : `${name}还没有音色,在右边「音色」里选一个`}</div>
         )
       ) : (
         <Section title="快速预览" tip="voice_preview" collapsible storageKey="preview.voice">
-          {facts.mainVoice && config.enabled ? (
-            <VoicePreview key={facts.mainVoice.id} main={facts.mainVoice} />
+          {shownVoice && config.enabled ? (
+            <VoicePreview key={shownVoice.id} main={shownVoice} />
           ) : (
             <div className="dw-line">
-              {facts.mainVoice ? '语音关着,打开左栏这一行的开关再试' : `${name}还没有音色,在下面「音色」里选一个`}
+              {shownVoice ? '语音关着,打开左栏这一行的开关再试' : `${name}还没有音色,在下面「音色」里选一个`}
             </div>
           )}
         </Section>
@@ -134,9 +147,9 @@ export function VoicePage(p: {
           label="音色"
           tip="main_voice"
           ariaLabel={`「${name}」的音色`}
-          options={voice.profiles.map((v) => ({ id: v.id, name: v.name }))}
+          options={voiceOptions}
           value={facts?.mainVoice?.id ?? null}
-          voidChoice="不念"
+          voidChoice={voidChoiceText(defaultVoice?.name ?? null)}
           onPick={p.onReplaceVoice}
         />
       )}

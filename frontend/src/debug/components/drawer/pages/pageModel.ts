@@ -40,3 +40,16 @@ export const inUseOf = (cardName: string, on: boolean) => ({ on, text: on ? `${c
 /** 选了 Jev 标,但这次用不上 Jev(没填 key、后端是旧版):页头下面写一行 */
 export const jevKeyMissing = (mode: TagMode, jev: JevControls): boolean =>
   mode === 'jev' && (jev.defaults === null || (jev.keyStatus !== null && !jev.keyStatus.has_key));
+
+/** 下拉选项按 group 连续分段;只有一种 group(或都没有)时不分,label 为 null */
+export function optionGroups<T extends { group?: string }>(options: readonly T[]): { label: string | null; items: T[] }[] {
+  const labels = new Set(options.map((o) => o.group ?? ''));
+  if (labels.size <= 1) return [{ label: null, items: [...options] }];
+  const out: { label: string | null; items: T[] }[] = [];
+  for (const o of options) {
+    const last = out[out.length - 1];
+    if (last && last.label === (o.group ?? '')) last.items.push(o);
+    else out.push({ label: o.group ?? '', items: [o] });
+  }
+  return out;
+}

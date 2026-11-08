@@ -1,0 +1,151 @@
+/* 语音服务页(游戏皮)中间那块:左 连接列表 / 右 表单。样式大头复用模型页的 .vn-cn-*(connectionsGame.css) */
+
+.vn-ts {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  min-height: 0;
+  color: var(--av-ink);
+  font-family: var(--av-sans);
+}
+.vn-ts > * {
+  min-height: 0;
+}
+.vn-ts .vn-cn-list {
+  padding-left: 0;
+}
+.vn-ts-n {
+  flex: none;
+  font: 500 11.5px/1 var(--av-sans);
+  color: var(--av-dim);
+  white-space: nowrap;
+}
+.vn-ts-voices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 22px;
+  max-width: 760px;
+}
+.vn-ts-vlist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+.vn-ts-vlist li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.vn-ts-test {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* 表单里的输入框一律占满所在的格子 */
+.vn-ts .vn-cn-field > :is(.text-input, .select) {
+  width: 100%;
+  box-sizing: border-box;
+}
+.vn-ts-pair {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.vn-ts-pair > .text-input {
+  flex: 1;
+  min-width: 0;
+}
+.vn-ts-vrows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.vn-ts-vrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.vn-ts-vrow > .text-input {
+  flex: 1;
+  min-width: 0;
+}
+.vn-ts-seg {
+  display: inline-flex;
+  border: 1px solid var(--av-line, rgba(42, 42, 51, 0.2));
+  border-radius: 6px;
+  overflow: hidden;
+}
+.vn-ts-seg button {
+  border: 0;
+  background: transparent;
+  padding: 6px 10px;
+  font: 500 12px/1 var(--av-sans);
+  color: var(--av-dim);
+  cursor: pointer;
+}
+.vn-ts-seg button[aria-pressed='true'] {
+  background: var(--av-ink);
+  color: #fff;
+}
+.vn-ts-x {
+  border: 0;
+  background: transparent;
+  color: var(--av-dim);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 4px 6px;
+}
+.vn-ts-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.vn-ts-chips button {
+  border: 1px solid var(--av-line, rgba(42, 42, 51, 0.2));
+  border-radius: 999px;
+  background: transparent;
+  padding: 3px 9px;
+  font: 12px/1.3 var(--av-mono, monospace);
+  color: var(--av-ink);
+  cursor: pointer;
+}
+.vn-ts-bring {
+  position: relative;
+}
+.vn-ts-bring-menu {
+  position: absolute;
+  right: 0;
+  top: 22px;
+  z-index: 5;
+  min-width: 240px;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(42, 42, 51, 0.18), 0 0 0 1px rgba(42, 42, 51, 0.1);
+  padding: 4px;
+}
+.vn-ts-bring-menu button {
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 7px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font: 13px/1.3 var(--av-sans);
+  color: var(--av-ink);
+}
+.vn-ts-bring-menu button:hover {
+  background: rgba(42, 42, 51, 0.06);
+}
+.vn-ts-bring-menu small {
+  display: block;
+  color: var(--av-dim);
+  font-size: 11.5px;
+}

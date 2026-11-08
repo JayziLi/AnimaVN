@@ -17,6 +17,7 @@ import {
   type PackSprite,
   type SceneAsset,
   type SpriteLayout,
+  type TtsApiType,
   type TtsConnection,
   type VoiceEmotion,
   type VoiceEmotionPatch,
@@ -62,11 +63,9 @@ import {
   MORE_GSV_PARAMS,
   SEED_MAX,
   aliasesPatch,
-  basename,
   benchBlocker,
   benchTuning,
   connectionOption,
-  filesPending,
   fmtSpeed,
   langOptions,
   matchBadge,
@@ -76,6 +75,8 @@ import {
   newEmotionFrom,
   paramDefault,
   parseSeed,
+  pathInputValue,
+  pathPlaceholder,
   peaksOf,
   progressText,
   refPatch,
@@ -83,8 +84,12 @@ import {
   samplesFor,
   selectAfterDelete,
   settingPatch,
+  voiceNamePatch,
   settingsSummary,
+  showManualFiles,
+  shownName,
   tableNote,
+  type FilesProbe,
   withParam,
   type SettingKey,
 } from './voiceEditorModel';
@@ -216,6 +221,27 @@ async function decode(audio: ArrayBuffer, bars: number): Promise<Clip> {
 const refClips = new Map<string, Promise<Clip>>();
 const REF_KEEP = 12;
 const refKey = (profileId: string, path: string) => `${profileId}\n${path}`;
+
+/**
+ * 导进来的声音文件还没送到语音机时(files_at = pending),问一下这条连接的文件怎么送(route),
+ * 「手动放文件」那块只在送不过去时才出来;连接测不通按「不确定」算(showManualFiles)
+ */
+function useFilesProbe(filesAt: string | undefined, connectionId: string): FilesProbe {
+  const [done, setDone] = useState<{ id: string; probe: FilesProbe } | null>(null);
+  const need = filesAt === 'pending' && !!connectionId;
+  useEffect(() => {
+    if (!need) return;
+    let alive = true;
+    debugApi.testTtsConnection(connectionId).then(
+      (r) => alive && setDone({ id: connectionId, probe: { ok: true, route: r.route } }),
+      () => alive && setDone({ id: connectionId, probe: { ok: false } }),
+    );
+    return () => {
+      alive = false;
+    };
+  }, [need, connectionId]);
+  return need && done?.id === connectionId ? done.probe : 'testing';
+}
 
 function loadRef(profileId: string, path: string): Promise<Clip> {
   const key = refKey(profileId, path);
@@ -363,6 +389,8 @@ interface LoadedProps {
 
 function Loaded({ profile, connection, connections, patch, header, spriteLabels, onChanged, notify, benchStage }: LoadedProps) {
   const isIndex = connection?.api_type === 'indextts';
+  const kind = connection?.api_type;
+  const isRelay = kind === 'openai';
   const emotions = profile.emotions;
   const [selId, setSelId] = useState<string | null>(emotions[0]?.id ?? null);
   const sel = emotions.find((e) => e.id === selId) ?? emotions[0] ?? null;
@@ -471,12 +499,13 @@ function Loaded({ profile, connection, connections, patch, header, spriteLabels,
   };
 
   const badge = matchBadge(spriteLabels, profile);
+  const probe = useFilesProbe(profile.files_at, profile.connection_id);
 
   return (
     <>
       <main className="st-main">
         {header}
-        {filesPending(profile) && (
+        {showManualFiles(profile.files_at, probe) && (
           <VoiceFilesPending
             profile={profile}
             onPlaced={(next) => {
@@ -486,16 +515,18 @@ function Loaded({ profile, connection, connections, patch, header, spriteLabels,
             notify={notify}
           />
         )}
-        <VoiceSettings profile={profile} connections={connections} isIndex={isIndex} saveVoice={saveVoice} />
+        <VoiceSettings profile={profile} connections={connections} isIndex={isIndex} kind={kind} saveVoice={saveVoice} />
         <Bench
           profile={profile}
           isIndex={isIndex}
+          kind={kind}
           emotionLabel={benchLabel}
           onEmotion={setBenchEmo}
           preview={preview}
           seed={isIndex ? { seed: null, bad: false } : parseSeed(seedText)}
           stage={benchStage}
         />
+        {!isRelay && (
         <section className="vo-panel vo-table" aria-label="情绪参考">
           <div className="vo-table-head">
             <span className="vo-title">情绪参考</span>
@@ -566,6 +597,7 @@ function Loaded({ profile, connection, connections, patch, header, spriteLabels,
             </div>
           )}
         </section>
+        )}
       </main>
 
       <EmotionInspector
@@ -632,17 +664,19 @@ function VoiceSettings({
   profile,
   connections,
   isIndex,
+  kind,
   saveVoice,
 }: {
   profile: VoiceProfile;
   connections: readonly TtsConnection[];
   isIndex: boolean;
+  kind?: TtsApiType;
   saveVoice: (body: VoiceProfilePatch) => Promise<boolean>;
 }) {
-  const [open, setOpen] = useState(() => missingSettings(profile, isIndex).length > 0);
+  const [open, setOpen] = useState(() => missingSettings(profile, isIndex, kind).length > 0);
   const bodyId = useId();
   const connection = connections.find((c) => c.id === profile.connection_id) ?? null;
-  const summary = settingsSummary(profile, connection, isIndex);
+  const summary = settingsSummary(profile, connection, isIndex, kind);
   const save = (key: SettingKey, raw: string) => {
     const body = settingPatch(profile, key, raw);
     return body ? saveVoice(body) : false;
@@ -686,7 +720,7 @@ function VoiceSettings({
             <SelectBox
               label="语言"
               value={profile.text_lang}
-              options={langOptions(profile.text_lang, isIndex)}
+              options={langOptions(profile.text_lang, isIndex, kind)}
               onChange={(v) => void save('text_lang', v)}
             />
           </div>
@@ -700,14 +734,27 @@ function VoiceSettings({
               }}
             />
           </div>
-          {isIndex ? (
+          {kind === 'openai' ? (
+            <div className="vo-set-field wide">
+              <FieldLabel text="音色名" help="中转站那边的音色名,比如 alloy、nova" />
+              <CommitInput
+                label="音色名"
+                value={profile.params?.voice ?? ''}
+                placeholder="alloy"
+                onCommit={(v) => {
+                  const body = voiceNamePatch(profile, v);
+                  return body ? saveVoice(body) : false;
+                }}
+              />
+            </div>
+          ) : kind === 'fish' ? null : isIndex ? (
             <div className="vo-set-field wide">
               <FieldLabel text="音色参考" help={TERMS.speakerRef} />
               <CommitInput
                 path
                 label="音色参考的路径"
-                value={profile.ref_path}
-                placeholder="D:/AnimaVoice/refs/角色/【平静】原文.wav"
+                value={pathInputValue(profile.ref_path)}
+                placeholder={pathPlaceholder(profile.ref_path, 'D:/AnimaVoice/refs/角色/【平静】原文.wav')}
                 onCommit={(v) => save('ref_path', v)}
               />
             </div>
@@ -718,8 +765,8 @@ function VoiceSettings({
                 <CommitInput
                   path
                   label="GPT 权重的路径"
-                  value={profile.gpt_weights}
-                  placeholder="D:/AnimaVoice/models/角色/角色-e10.ckpt"
+                  value={pathInputValue(profile.gpt_weights)}
+                  placeholder={pathPlaceholder(profile.gpt_weights, 'D:/AnimaVoice/models/角色/角色-e10.ckpt')}
                   onCommit={(v) => save('gpt_weights', v)}
                 />
               </div>
@@ -728,8 +775,8 @@ function VoiceSettings({
                 <CommitInput
                   path
                   label="SoVITS 权重的路径"
-                  value={profile.sovits_weights}
-                  placeholder="D:/AnimaVoice/models/角色/角色_e10_s230_l32.pth"
+                  value={pathInputValue(profile.sovits_weights)}
+                  placeholder={pathPlaceholder(profile.sovits_weights, 'D:/AnimaVoice/models/角色/角色_e10_s230_l32.pth')}
                   onCommit={(v) => save('sovits_weights', v)}
                 />
               </div>
@@ -755,6 +802,7 @@ interface Take extends Clip {
 function Bench({
   profile,
   isIndex,
+  kind,
   emotionLabel,
   onEmotion,
   preview,
@@ -763,6 +811,7 @@ function Bench({
 }: {
   profile: VoiceProfile;
   isIndex: boolean;
+  kind?: TtsApiType;
   emotionLabel: string;
   onEmotion: (label: string) => void;
   preview: Preview;
@@ -782,7 +831,7 @@ function Bench({
   const [take, setTake] = useState<Take | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const missing = benchBlocker(profile, isIndex);
+  const missing = benchBlocker(profile, isIndex, kind);
   const canRun = Boolean(text.trim()) && !busy && !missing && !seed.bad;
 
   const synth = async () => {
@@ -1136,12 +1185,15 @@ function EmotionInspector({
             <CommitInput
               path
               label="参考音频的路径"
-              value={e.ref_path}
-              placeholder={isIndex ? '可选。填了就照这段的语气念,向量不生效' : 'D:/AnimaVoice/refs/角色/【平静】原文.wav'}
+              value={pathInputValue(e.ref_path)}
+              placeholder={pathPlaceholder(
+                e.ref_path,
+                isIndex ? '可选。填了就照这段的语气念,向量不生效' : 'D:/AnimaVoice/refs/角色/【平静】原文.wav',
+              )}
               onCommit={(v) => void saveEmotion(e, refPatch(e, v))}
             />
             <span className={`vo-refnote${refError ? ' error' : ''}`}>
-              {refError ?? (e.ref_path ? basename(e.ref_path) : '文件在语音机上,这里填的是那边的路径')}
+              {refError ?? (e.ref_path ? shownName(e.ref_path) : '文件在语音机上,这里填的是那边的路径')}
             </span>
           </div>
 
@@ -1172,12 +1224,12 @@ function EmotionInspector({
               </div>
               <div className="vo-aux">
                 {e.aux_refs.map((p) => (
-                  <span key={p} className="vo-aux-item" title={p}>
-                    <span className="vo-aux-name">{basename(p)}</span>
+                  <span key={p} className="vo-aux-item" title={shownName(p)}>
+                    <span className="vo-aux-name">{shownName(p)}</span>
                     <button
                       type="button"
                       className="st-tag-x"
-                      aria-label={`去掉辅助参考「${basename(p)}」`}
+                      aria-label={`去掉辅助参考「${shownName(p)}」`}
                       title="去掉这段"
                       onClick={() => void saveEmotion(e, { aux_refs: e.aux_refs.filter((x) => x !== p) })}
                     >

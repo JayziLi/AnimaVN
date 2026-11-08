@@ -20,6 +20,8 @@ export interface ImportNotice {
   jobId: string | null;
   /** 一句一条的导入报告(提示条悬停时看);旧的提示没有 */
   report?: string[];
+  /** 这次新建的声音(提示条里把它们的文件送到语音机);旧的提示没有 */
+  voices?: string[];
 }
 
 /** 卡编辑器开在哪:哪个页签、素材页的哪一栏、要不要带导入提示 */

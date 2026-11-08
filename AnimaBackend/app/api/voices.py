@@ -39,6 +39,7 @@ from app.schemas import (
     VoiceProfileUpdate,
     VoiceReorder,
 )
+from app.tts import delivery
 from app.tts import files as voice_files
 from app.tts.emotion_presets import BUILTIN_EMOTIONS, clean_emo_vector, preset_vector
 
@@ -158,15 +159,25 @@ def _check_emotion_names(
             raise HTTPException(409, f"情绪名「{n}」已经被「{owner}」占用了")
 
 
+def _aux_view(e: VoiceEmotion) -> list[str]:
+    """给界面看的辅助参考:路径空、有指纹的写 blob:<指纹>(导进来的声音),界面就当它有文件"""
+    paths, shas = list(e.aux_refs or []), list(e.aux_shas or [])
+    out = [
+        delivery.path_or_blob(paths[i] if i < len(paths) else "", shas[i] if i < len(shas) else None)
+        for i in range(max(len(paths), len(shas)))
+    ]
+    return [p for p in out if p]
+
+
 def _emotion_out(e: VoiceEmotion) -> VoiceEmotionOut:
     return VoiceEmotionOut(
         id=e.id,
         profile_id=e.profile_id,
         label=e.label,
         aliases=list(e.aliases or []),
-        ref_path=e.ref_path,
+        ref_path=delivery.path_or_blob(e.ref_path, e.ref_sha),
         prompt_text=e.prompt_text,
-        aux_refs=list(e.aux_refs or []),
+        aux_refs=_aux_view(e),
         emo_vector=list(e.emo_vector) if e.emo_vector else None,
         sort=e.sort,
     )
@@ -178,9 +189,9 @@ def _profile_out(p: VoiceProfile, db: Session) -> VoiceProfileOut:
         name=p.name,
         aliases=list(p.aliases or []),
         connection_id=p.connection_id,
-        gpt_weights=p.gpt_weights,
-        sovits_weights=p.sovits_weights,
-        ref_path=p.ref_path,
+        gpt_weights=delivery.path_or_blob(p.gpt_weights, p.gpt_sha),
+        sovits_weights=delivery.path_or_blob(p.sovits_weights, p.sovits_sha),
+        ref_path=delivery.path_or_blob(p.ref_path, p.speaker_sha),
         text_lang=p.text_lang,
         speed=p.speed,
         params=dict(p.params or {}),
@@ -190,6 +201,8 @@ def _profile_out(p: VoiceProfile, db: Session) -> VoiceProfileOut:
         source=p.source or "",
         license=p.license or "",
         files_missing=files_missing(p, db),
+        gpt_name=p.gpt_name or "",
+        sovits_name=p.sovits_name or "",
     )
 
 
@@ -209,8 +222,10 @@ def files_missing(p: VoiceProfile, db: Session) -> int:
 
 
 def set_profile_path(p: VoiceProfile, key: str, value: str) -> None:
-    """改声音上的一个路径(gpt_weights / sovits_weights / ref_path);和原来不一样时清掉那个文件的指纹"""
-    if getattr(p, key) == value:
+    """改声音上的一个路径(gpt_weights / sovits_weights / ref_path);和原来不一样时清掉那个文件的指纹。
+    界面把 blob:<指纹> 原样存回来时不算改"""
+    sha = {"gpt_weights": p.gpt_sha, "sovits_weights": p.sovits_sha, "ref_path": p.speaker_sha}[key]
+    if getattr(p, key) == value or (sha and value == delivery.blob_ref(sha)):
         return
     setattr(p, key, value)
     if key == "gpt_weights":
@@ -222,8 +237,8 @@ def set_profile_path(p: VoiceProfile, key: str, value: str) -> None:
 
 
 def set_emotion_ref(e: VoiceEmotion, path: str) -> None:
-    """改一行情绪的参考路径;变了就清掉它的指纹"""
-    if e.ref_path != path:
+    """改一行情绪的参考路径;变了就清掉它的指纹(blob:<指纹> 原样存回来不算变)"""
+    if e.ref_path != path and not (e.ref_sha and path == delivery.blob_ref(e.ref_sha)):
         e.ref_path = path
         e.ref_sha = None
 
@@ -231,12 +246,13 @@ def set_emotion_ref(e: VoiceEmotion, path: str) -> None:
 def set_emotion_aux(e: VoiceEmotion, paths: list[str]) -> None:
     """改辅助参考:没变的那几条留着指纹"""
     old = list(e.aux_refs or [])
-    if old == paths:
+    if old == paths or _aux_view(e) == paths:
         return
     shas = list(e.aux_shas or [])
-    known = {p: (shas[i] if i < len(shas) else None) for i, p in enumerate(old)}
-    e.aux_refs = paths
+    known = {p: (shas[i] if i < len(shas) else None) for i, p in enumerate(old) if p}
+    known.update({delivery.blob_ref(s): s for s in shas if s})
     e.aux_shas = [known.get(p) for p in paths]
+    e.aux_refs = ["" if p.startswith(delivery.BLOB) else p for p in paths]
 
 
 # ── 声音 ──────────────────────────────────────────────
@@ -479,6 +495,29 @@ def voice_files_placed(profile_id: str, req: VoicePlacedIn, db: Session = Depend
         raise HTTPException(400, "填语音机上放这些文件的目录")
     voice_files.place(db, profile, folder)
     db.commit()
+    db.refresh(profile)
+    return _profile_out(profile, db)
+
+
+@router.post(PROFILES + "/{profile_id}/deliver", response_model=VoiceProfileOut)
+async def voice_deliver(profile_id: str, db: Session = Depends(get_db)):
+    """现在就把这个声音的文件送到语音机(导入后、保存后调;不调的话第一句念的时候也会送)"""
+    from app.tts.base import TTSError, VoiceSpec
+
+    profile = _load_profile(profile_id, db)
+    conn = db.get(TtsConnection, profile.connection_id)
+    if conn is None:
+        raise HTTPException(400, f"声音「{profile.name}」没有选语音服务")
+    slots = voice_files.slots_of(db, profile)
+    refs = tuple(delivery.blob_ref(s.sha) for s in slots if not s.path and s.sha)
+    spec = VoiceSpec(gpt_weights="", sovits_weights="", ref_path="", prompt_text="", text_lang="zh", speed=1.0, aux_ref_paths=refs)
+    try:
+        await delivery.localize(db, conn, spec)
+    except TTSError as e:
+        raise HTTPException(e.status, e.message) from e
+    if profile.files_at == "pending":
+        profile.files_at = "sent"
+        db.commit()
     db.refresh(profile)
     return _profile_out(profile, db)
 

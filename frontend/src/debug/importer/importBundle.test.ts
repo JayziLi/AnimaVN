@@ -192,9 +192,35 @@ describe('voices in a bundle or a voice pack (step 4)', () => {
       { value: 'tts2', label: '台式机' },
     ]);
     expect(t).toMatchObject({ id: 'tts2', name: '台式机', local: false, status: VOICE_REMOTE });
-    expect(VOICE_REMOTE).toBe('语音服务在另一台电脑,导完要把文件放过去');
+    expect(VOICE_REMOTE).toBe('语音服务在另一台电脑,导完自动送过去');
     // 选的那个已经删掉了:换成第一个
     expect(voiceTarget(withVoice, 'gone', conns).id).toBe('tts1');
+  });
+
+  it('only lists connections that can read this voice, and says what happens', () => {
+    const conns = [
+      { id: 'r', name: '中转', base_url: 'http://r/v1', api_type: 'openai' as const },
+      { id: 'f', name: 'Fish', base_url: 'https://api.fish.audio', api_type: 'fish' as const },
+      { id: 'i', name: '索引', base_url: 'http://10.0.0.2:9890', api_type: 'indextts' as const },
+    ];
+    const row = (id: string, api_type: 'openai' | 'fish' | 'indextts', usable: boolean, note: string) => ({ id, name: id, api_type, usable, note, reason: usable ? '' : '用不上:只认音色名' });
+    const targets = [row('r', 'openai', false, ''), row('f', 'fish', true, '只用参考音频克隆,没那么像'), row('i', 'indextts', true, '只用参考音频')];
+    const voice = { name: 'v', detail: 'd', missing: 0, connection: { id: 'f', name: 'Fish', local: false }, has_models: true, empty_note: null, targets };
+    const g = { key: 'k', type: 'bundle', name: 'x', files: [], owner: null, detail: { voices: [voice], cards: [], packs: [], follows: [], note: '', preview: null, preset: null, bytes: 0, folder: '' } } as unknown as ImportGroup;
+    const t = voiceTarget(g, undefined, conns);
+    expect(t.id).toBe('f');
+    expect(t.options?.map((o) => o.value)).toEqual(['f', 'i']);
+    expect(t.status).toBe('只用参考音频克隆,没那么像;以后加了 GPT-SoVITS 可以改挂');
+    // 选过一条挂不上的(比如列表变了):换成第一条能挂的
+    expect(voiceTarget(g, 'r', conns).id).toBe('f');
+    // 全都挂不上:写后端给的说明
+    const none = { ...voice, connection: null, empty_note: '会新建', targets: targets.map((x) => ({ ...x, usable: false })) };
+    const g2 = { ...g, detail: { ...(g.detail as object), voices: [none] } } as unknown as ImportGroup;
+    expect(voiceTarget(g2, undefined, conns)).toMatchObject({ id: null, status: '会新建', options: null });
+    // 库里已经有一样的:不用选挂到哪,直接说
+    const twin = { ...voice, existing: { id: 'v1', name: 'v' } };
+    const g3 = { ...g, detail: { ...(g.detail as object), voices: [twin] } } as unknown as ImportGroup;
+    expect(voiceTarget(g3, undefined, conns)).toMatchObject({ options: null, status: '库里已经有一样的声音:不再存一份,直接用那条' });
   });
 
   it('says there is no voice service yet when none exists', () => {

@@ -42,10 +42,10 @@ from app.bundle import read as bundle_read
 from app.bundle import restore as bundle_restore
 from app.importer import aliases as alias_dict
 from app.importer import audio
-from app.importer.classify import BUNDLE_TYPES, ImportPlan, PlanGroup, file_label
+from app.importer.classify import STANDALONE_TYPES, ImportPlan, PlanGroup, file_label, voice_folder_pack, voice_folder_targets
 from app.importer.sniff import kind_of
 from app.importer.staging import StagedTree, _safe_part
-from app.models import CgAsset, CgPack, ImportJob, PackSprite, SceneAsset, ScenePack, SpritePack, TavernCard
+from app.models import CgAsset, CgPack, ImportJob, PackSprite, SceneAsset, ScenePack, SpritePack, TavernCard, TtsConnection
 from app.schemas import TavernCardCreate
 from app.sprite_faces import scan
 from app.storage import refs
@@ -444,6 +444,38 @@ class ImportContext:
         made = next((noun[k] for k in noun if getattr(created, k)), "包")
         self.unbound.append(f"{made}「{g.name}」还没绑定到角色卡,在卡编辑器里绑上")
 
+    def voice_folder_group(self, g: PlanGroup, opts: dict) -> None:
+        """声音文件夹建成一个声音(路径空、只记指纹,念的时候再送到语音机);不绑到任何卡。
+        opts:name 改名、lang 念哪种语言、connection_id 挂到哪个语音服务(不给用最合适的那条)"""
+        d = g.detail
+        conns = [{"id": c.id, "name": c.name, "api_type": c.api_type} for c in self.db.scalars(select(TtsConnection).order_by(TtsConnection.created_at))]
+        targets = voice_folder_targets(bool(d["models"]), conns)
+        if opts.get("connection_id"):
+            chosen = next((t for t in targets if t["id"] == opts["connection_id"]), None)
+            if chosen is None:
+                raise HTTPException(400, "选的语音服务不在了")
+        else:
+            # 一条能用的都没有时挂第一条能放文件的(中转站只认音色名,挂不上)
+            chosen = next((t for t in targets if t["best"]), None) or next((t for t in targets if t["api_type"] != "openai"), None)
+        # 自己选了个用不了的才拒绝;一条能用的都没有时照常导,挂第一条(文件先存着,以后在声音编辑器里换)
+        if opts.get("connection_id") and chosen is not None and not chosen["usable"]:
+            raise HTTPException(400, f"声音「{g.name}」挂不到语音服务「{chosen['name']}」:{chosen['reason']}")
+        engine = chosen["api_type"] if chosen else ("gpt_sovits" if d["models"] else "indextts")
+        name = opts.get("name")
+        if name is not None and (not isinstance(name, str) or not name.strip()):
+            raise HTTPException(400, "声音名不能为空")
+        lang = opts.get("lang")
+        if lang is not None and (not isinstance(lang, str) or not lang.strip() or len(lang.strip()) > 12):
+            raise HTTPException(400, "念哪种语言要写语言代码,比如 zh、ja")
+        pack = voice_folder_pack(d, engine, name.strip()[:80] if name else None, lang.strip() if lang else None)
+        try:
+            created = bundle_restore.restore_pack(self.db, self.tree.root, pack, chosen["id"] if chosen else None)
+        except bundle_read.BundleError as e:
+            raise HTTPException(400, f"声音「{g.name}」导入不了:{e}") from e
+        self._restored(created)
+        if created.voices:
+            self.unbound.append(f"声音「{pack['pack']['name']}」还没绑定到角色卡,在卡编辑器里绑上")
+
     def sprite_group(self, g: PlanGroup, decision: str, owner: str | None) -> None:
         shared = self._shared(g, SpritePack, decision)
         if shared is not None:
@@ -778,8 +810,8 @@ def apply_plan(
             raise HTTPException(400, f"不认识的选择:{decision}(只能是 new / share / update)")
         if decision == "update" and groups[key].type != "card":
             raise HTTPException(400, "只有角色卡能选「更新这张」")
-        if decision != "new" and groups[key].type in BUNDLE_TYPES:
-            raise HTTPException(400, "角色包、素材包每次都另存一份,只能选 new")
+        if decision != "new" and groups[key].type in STANDALONE_TYPES:
+            raise HTTPException(400, "角色包、素材包、声音每次都另存一份,只能选 new")
     for path, kind in classify.items():
         if path not in plan.unknown:
             raise HTTPException(400, f"「{path}」不在没认出来的文件里")
@@ -805,11 +837,13 @@ def apply_plan(
                 bundle_cards.append(main_card)
         elif g.type == "pack_file":
             ctx.pack_file_group(g, opts.get("connection_id") or None)
+        elif g.type == "voice_folder":
+            ctx.voice_folder_group(g, opts)
     # 导完打开的卡:新建的第一张(散卡优先,然后是角色包的主卡),都没有才是拖到的卡
     ctx.card_id = next(iter(card_ids.values()), None) or next(iter(bundle_cards), None) or target
     handlers = {"sprite_pack": ctx.sprite_group, "scene_pack": ctx.scene_group, "cg_pack": ctx.cg_group}
     for g in plan.groups:
-        if g.type == "card" or g.type in BUNDLE_TYPES:
+        if g.type == "card" or g.type in STANDALONE_TYPES:
             continue
         owner = target if g.owner == "target" else card_ids.get(g.owner or "")
         handlers[g.type](g, decisions.get(g.key, "new"), owner)

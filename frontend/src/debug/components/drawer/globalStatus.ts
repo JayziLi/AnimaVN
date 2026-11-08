@@ -3,9 +3,10 @@
  */
 
 import type { JevHealth } from '../../plugins/jev';
+import type { RouteInfo } from './pages/ttsServiceModel';
 
 /** 一台语音服务这次打开抽屉测出来的样子;还没测完是 'pending' */
-export type TtsTest = 'pending' | { ok: true; ms: number } | { ok: false; error: string };
+export type TtsTest = 'pending' | ({ ok: true; ms: number } & RouteInfo) | { ok: false; error: string };
 
 /** 语音服务:没设 / 测试中 / 通了 / 连不上;ok 是 null 时不算好也不算坏(没设、还在测) */
 export function ttsSummary(

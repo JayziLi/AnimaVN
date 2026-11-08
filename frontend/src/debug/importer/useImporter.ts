@@ -233,6 +233,30 @@ export function useImporter(deps: Deps) {
     el.click();
   }, []);
   useEffect(() => () => inputRef.current?.remove(), []);
+
+  /** 点「选文件夹」:选一个文件夹(模型和参考音频放在一起的声音文件夹等),里面的文件带着相对路径,照拖进来的文件夹走 */
+  const folderRef = useRef<HTMLInputElement | null>(null);
+  const pickFolder = useCallback((target: ImportTarget = NO_TARGET) => {
+    let input = folderRef.current;
+    if (!input) {
+      input = document.createElement('input');
+      input.type = 'file';
+      input.setAttribute('webkitdirectory', '');
+      input.style.display = 'none';
+      document.body.appendChild(input);
+      folderRef.current = input;
+    }
+    const el = input;
+    el.onchange = () => {
+      const files = Array.from(el.files ?? []);
+      el.value = '';
+      if (files.length > 0) {
+        startRef.current(files.map((file) => ({ file, path: file.webkitRelativePath || file.name })), target);
+      }
+    };
+    el.click();
+  }, []);
+  useEffect(() => () => folderRef.current?.remove(), []);
   useEffect(() => {
     pickRef.current = pick;
   }, [pick]);
@@ -278,6 +302,7 @@ export function useImporter(deps: Deps) {
     blocked: busy ? IMPORT_BUSY : null,
     start: run,
     pick,
+    pickFolder,
     cancelUpload,
     confirmApply,
     cancelConfirm,

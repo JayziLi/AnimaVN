@@ -3688,6 +3688,7 @@ export default function DebugApp() {
       onUndone={(r) => void afterImportUndone(r)}
       // 「导入」:选文件交给导入器,不带目标卡;导完有卡就开那张卡的卡编辑器(盖在这一页上面)
       onImport={() => importer.pick()}
+      onImportFolder={() => importer.pickFolder()}
       notice={embedded ? null : libraryNotice}
       onNoticeClose={() => setLibraryNotice(null)}
       onClassifyUnknown={classifyInLibrary}
@@ -4491,7 +4492,13 @@ export default function DebugApp() {
           voiceProfiles={voicePlugin.profiles}
           // 游戏里语音面板「音色」就地换:主声音换成它(和抽屉里换音色一样写库),这张卡挂着的配角声音照旧。
           // 新声音的语言和这张卡现在写的不一样就问一次换不换语言(11-05):没设过的卡先把现在的语言记下,不悄悄跟着变
+          voiceIsDefault={voicePlugin.binding.main === null && voicePlugin.cast.main !== null}
           onPickVoice={(id) => {
+            // 选「不念 / 默认」= 解除这张卡的绑定
+            if (id === null) {
+              void voicePlugin.bind({ main: null, extras: [] });
+              return;
+            }
             const oldLang = voicePlugin.cast.main?.text_lang ?? null;
             const next = voicePlugin.profiles.find((p) => p.id === id);
             const lang = langEffective.lang;

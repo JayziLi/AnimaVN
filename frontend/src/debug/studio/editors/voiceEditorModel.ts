@@ -5,6 +5,7 @@
  */
 
 import type {
+  TtsApiType,
   TtsConnection,
   VoiceEmotion,
   VoiceEmotionPatch,
@@ -28,6 +29,47 @@ import { ENGINE_NAME } from '../slots/voiceSlotModel';
 
 export const basename = (path: string) => path.split(/[\\/]/).pop() || path;
 
+// ---------------------------------------------------------------- 文件仓库里的文件(路径空、只有指纹)
+
+/** 后端把路径空、有指纹的字段写成 blob:<指纹>(存回来时原样认,不算改);指纹不给玩家看 */
+export const isBlob = (path: string) => path.startsWith('blob:');
+
+/** 路径框里没有路径可写时的灰字 */
+export const IN_STORE_PLACEHOLDER = '在文件仓库里';
+const IN_STORE = '文件仓库里';
+
+/** 路径显示成文件名:blob: 开头的不露指纹 —— 拿得到原名用原名(模型有),拿不到写「文件仓库里」 */
+export function shownName(path: string, original?: string | null): string {
+  if (!isBlob(path)) return basename(path);
+  return original?.trim() || IN_STORE;
+}
+
+/** 路径输入框里的字:blob: 显示成空 */
+export const pathInputValue = (path: string) => (isBlob(path) ? '' : path);
+
+/** 路径输入框的灰字:blob: 写「在文件仓库里」,别的用平时的示例 */
+export const pathPlaceholder = (path: string, usual?: string) => (isBlob(path) ? IN_STORE_PLACEHOLDER : usual);
+
+/** 声音上两个模型的原文件名(显示用);字段名对应 SettingKey */
+export const modelNames = (p: Pick<VoiceProfile, 'gpt_name' | 'sovits_name'>) => ({
+  gpt_weights: p.gpt_name,
+  sovits_weights: p.sovits_name,
+});
+
+/**
+ * 导进来的声音,文件还没送到语音机时,编辑器顶上「手动放文件」那一块要不要出来:
+ * 连接测出来同一台电脑、或者装了小插件(route 是 same / plugin)的会自动送,不需要;测出 none 才有意义。
+ * 还在测时不出(免得闪一下);连接连不上、没给 route(不是 GPT-SoVITS)时出(保守:总得有条路)
+ */
+export type FilesProbe = 'testing' | { ok: true; route?: 'same' | 'plugin' | 'none' | null } | { ok: false };
+
+export function showManualFiles(filesAt: string | undefined, probe: FilesProbe): boolean {
+  if (filesAt !== 'pending') return false;
+  if (probe === 'testing') return false;
+  if (!probe.ok) return true;
+  return probe.route !== 'same' && probe.route !== 'plugin';
+}
+
 /** 贴进来的路径常带着引号(Windows「复制为路径」) */
 const unquote = (s: string) => s.trim().replace(/^"|"$/g, '').trim();
 
@@ -48,9 +90,18 @@ export function settingPatch(
   const required = key === 'name' || key === 'connection_id' || key === 'text_lang';
   const value = required ? raw.trim() : unquote(raw);
   if ((required && !value) || value === profile[key]) return null;
+  // 框里显示成空的 blob: 路径没动过:别把空值存回去(后端会清掉指纹)
+  if (!value && isBlob(profile[key])) return null;
   const patch: VoiceProfilePatch = {};
   patch[key] = value;
   return patch;
+}
+
+/** 中转站声音的音色名(存在 params.voice,其余参数原样带着);没变、清空了是 null */
+export function voiceNamePatch(profile: Pick<VoiceProfile, 'params'>, raw: string): VoiceProfilePatch | null {
+  const value = raw.trim();
+  if (!value || value === profile.params?.voice) return null;
+  return { params: { ...profile.params, voice: value } };
 }
 
 /** 别名:去掉空的、重复的(不分大小写)、和名字一样的(后端也这么收);和原来一样是 null */
@@ -72,9 +123,13 @@ export function aliasesPatch(
 
 /** 还没填、念不了的:IndexTTS 要音色参考,GPT-SoVITS 两个权重都要(后端缺了就不念) */
 export function missingSettings(
-  profile: Pick<VoiceProfile, 'ref_path' | 'gpt_weights' | 'sovits_weights'>,
+  profile: Pick<VoiceProfile, 'ref_path' | 'gpt_weights' | 'sovits_weights'> & Partial<Pick<VoiceProfile, 'params'>>,
   isIndex: boolean,
+  kind?: TtsApiType,
 ): string[] {
+  // Fish 没有权重;中转站只要音色名
+  if (kind === 'fish') return [];
+  if (kind === 'openai') return profile.params?.voice?.trim() ? [] : ['音色名'];
   if (isIndex) return profile.ref_path.trim() ? [] : ['音色参考'];
   return [
     ...(profile.gpt_weights.trim() ? [] : ['GPT 权重']),
@@ -106,40 +161,48 @@ export function connectionOption(c: Pick<TtsConnection, 'id' | 'name' | 'api_typ
  * 「语言」下拉:这个引擎认的几种(plugins/voice.ts 的 VOICE_LANGS,写人话名字);
  * 存着的不在里面(换过引擎、手填过 all_ja 这类)就原样多列一项,不悄悄改掉
  */
-export function langOptions(textLang: string, isIndex: boolean): { value: string; label: string }[] {
-  const list = VOICE_LANGS[isIndex ? 'indextts' : 'gpt_sovits'].map((l) => ({ value: l.value, label: l.name }));
+export function langOptions(textLang: string, isIndex: boolean, kind?: TtsApiType): { value: string; label: string }[] {
+  const list = VOICE_LANGS[kind ?? (isIndex ? 'indextts' : 'gpt_sovits')].map((l) => ({ value: l.value, label: l.name }));
   return list.some((l) => l.value === textLang) ? list : [...list, { value: textLang, label: textLang }];
 }
 
 /** 语言的人话名字:「日语」;不认识的原样 */
-export const langName = (textLang: string, isIndex: boolean) =>
-  langOptions(textLang, isIndex).find((l) => l.value === textLang)?.label ?? textLang;
+export const langName = (textLang: string, isIndex: boolean, kind?: TtsApiType) =>
+  langOptions(textLang, isIndex, kind).find((l) => l.value === textLang)?.label ?? textLang;
 
 /** 「声音设置」收起时的一行:用哪台语音服务、念什么语言 + 权重 / 音色参考的文件名;缺东西时写缺什么(warn) */
 export function settingsSummary(
-  profile: Pick<VoiceProfile, 'text_lang' | 'ref_path' | 'gpt_weights' | 'sovits_weights'>,
+  profile: Pick<VoiceProfile, 'text_lang' | 'ref_path' | 'gpt_weights' | 'sovits_weights'> &
+    Partial<Pick<VoiceProfile, 'gpt_name' | 'sovits_name' | 'params'>>,
   connection: Pick<TtsConnection, 'id' | 'name' | 'api_type'> | null,
   isIndex: boolean,
+  kind?: TtsApiType,
 ): { text: string; warn: boolean } {
   const opt = connection && connectionOption(connection);
   const conn = opt ? [opt.label, ...(opt.sub ? [opt.sub] : [])].join(' · ') : '没选语音服务';
-  const head = `${conn} · ${langName(profile.text_lang, isIndex)}`;
-  const missing = missingSettings(profile, isIndex);
+  const head = `${conn} · ${langName(profile.text_lang, isIndex, kind)}`;
+  const missing = missingSettings(profile, isIndex, kind);
   if (!connection || missing.length > 0) {
     return { text: missing.length > 0 ? `${head} · ${lacking(missing)}` : head, warn: true };
   }
-  const files = isIndex ? [basename(profile.ref_path)] : [basename(profile.gpt_weights), basename(profile.sovits_weights)];
+  if (kind === 'fish') return { text: head, warn: false };
+  if (kind === 'openai') return { text: [head, profile.params?.voice ?? ''].join(' · '), warn: false };
+  const files = isIndex
+    ? [shownName(profile.ref_path)]
+    : [shownName(profile.gpt_weights, profile.gpt_name), shownName(profile.sovits_weights, profile.sovits_name)];
   return { text: [head, ...files].join(' · '), warn: false };
 }
 
 /** 试听台念不了时那句话(缺音色参考 / 权重 / 参考音频);念得了是 null */
 export function benchBlocker(
-  profile: Pick<VoiceProfile, 'name' | 'ref_path' | 'gpt_weights' | 'sovits_weights' | 'emotions'>,
+  profile: Pick<VoiceProfile, 'name' | 'ref_path' | 'gpt_weights' | 'sovits_weights' | 'emotions'> &
+    Partial<Pick<VoiceProfile, 'params'>>,
   isIndex: boolean,
+  kind?: TtsApiType,
 ): string | null {
-  const missing = missingSettings(profile, isIndex);
+  const missing = missingSettings(profile, isIndex, kind);
   if (missing.length > 0) return `「${profile.name}」${lacking(missing)},念不了 · 在上面「声音设置」里填`;
-  if (!isIndex && profile.emotions.length === 0) {
+  if (!isIndex && kind !== 'openai' && profile.emotions.length === 0) {
     return `「${profile.name}」还没有参考音频,念不了 · 在下面「新增情绪」贴一段参考音频的路径`;
   }
   return null;
@@ -180,7 +243,7 @@ const trimNum = (n: number) => String(Number(n.toFixed(2)));
 /** 表里每行最右边那列:参考文本;没有就写文件名或缺什么(faint = 灰字) */
 export function rowText(e: VoiceEmotion, isIndex: boolean): { text: string; faint: boolean } {
   if (e.prompt_text.trim() && e.ref_path) return { text: e.prompt_text.trim(), faint: false };
-  if (e.ref_path) return { text: basename(e.ref_path), faint: true };
+  if (e.ref_path) return { text: shownName(e.ref_path), faint: true };
   if (!isIndex) return { text: e.prompt_text.trim() || '还没填参考音频', faint: true };
   if (e.emo_vector?.some((v) => v > 0)) {
     const parts = e.emo_vector.flatMap((v, i) => (v > 0 ? [`${EMO_DIMS[i]?.short ?? i} ${trimNum(v)}`] : []));

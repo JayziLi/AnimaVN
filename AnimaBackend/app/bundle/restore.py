@@ -10,9 +10,9 @@
 - 绑定走 app/bindings.py(旧表照样写一份);状态组、按卡设置(只收 plugin.*)、认词记录、配对表、预设和它的绑定
   (app_settings 的 preset.bindings)都建上。内置名单(builtin)的认词记录只补库里还没有的词,不改你自己的。
 - 声音(第 4 步):参考音频和模型原样放进文件仓库(按指纹,存成带扩展名的文件;wav 不转码)。挂到哪个语音服务:
-  给了 connection_id 就用它(引擎对得上的声音),不然用第一个同引擎的;一个都没有就新建「本机 GPT-SoVITS」
-  (127.0.0.1:9880;IndexTTS 是 9890)。语音服务是本机(127.0.0.1 / localhost / ::1)时,声音的路径直接写成仓库里那几个文件的
-  绝对路径(files_at = local,导完就能念);不是本机时路径先空着(files_at = pending,在声音编辑器里导出这些文件、放好再填目录)。
+  给了 connection_id 就用它(同引擎,或者 voice_fits 说挂得上:GSV 的声音挂到 Fish / IndexTTS 只用参考音频,模型留着以后能改挂),
+  不然用第一个同引擎的;一个都没有就新建「本机 GPT-SoVITS」(127.0.0.1:9880;IndexTTS 是 9890)。路径一律空着、只记指纹(files_at = pending),念的时候 app/tts/delivery.py 再决定用仓库路径还是送到语音机:
+  导入时不靠地址判断同机,SSH 隧道的 127.0.0.1 其实在别的电脑上。
   语音的配对表(名单是立绘包或内置名单、target 是声音、格子是情绪行)一起建。
 - 返回 Created:建了什么(撤销用,app/importer/jobs.py)和一句一句的报告。
 """
@@ -24,7 +24,6 @@ import copy
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from urllib.parse import urlsplit
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -60,6 +59,7 @@ from app.models import (
 )
 from app.storage import refs
 from app.storage.blobs import mime_for_name, store
+from app.tts.http import is_local  # noqa: F401  classify.py 从这里用
 
 PACK_MODELS = {
     "sprite": (SpritePack, PackSprite, refs.SPRITE, "sprite_packs", "立绘包"),
@@ -72,13 +72,9 @@ _NEVER = {"id", "pack_id", "created_at", "updated_at"}
 DEFAULT_CONNECTIONS = {
     "gpt_sovits": ("本机 GPT-SoVITS", "http://127.0.0.1:9880"),
     "indextts": ("本机 IndexTTS", "http://127.0.0.1:9890"),
+    "fish": ("Fish Audio", "https://api.fish.audio"),
+    "openai": ("中转站", ""),
 }
-LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
-
-
-def is_local(base_url: str | None) -> bool:
-    """语音服务是不是就在这台电脑上(地址的主机是 127.0.0.1 / localhost / ::1)"""
-    return (urlsplit(base_url or "").hostname or "").strip("[]").lower() in LOCAL_HOSTS
 
 
 def default_connection(db: Session, engine: str) -> TtsConnection | None:
@@ -102,7 +98,7 @@ def voice_counts(pack: dict) -> tuple[int, int, int]:
     for i in items:
         if i.get("file"):
             refs_seen.add(i["file"])
-        elif engine == "gpt_sovits":
+        elif engine in ("gpt_sovits", "fish"):
             lost.add(str(i.get("ref_name") or f"row:{i.get('key')}"))
         refs_seen.update(a for a in i.get("aux") or [] if isinstance(a, str))
     missing = len(lost)
@@ -115,6 +111,35 @@ def voice_counts(pack: dict) -> tuple[int, int, int]:
     missing += sum(1 for k in ("gpt", "sovits") if isinstance(models.get(k), dict) and not models[k].get("file"))
     n_refs = len(refs_seen) + len(lost)
     return n_refs, n_models, missing
+
+
+NO_MODEL = "没有模型"
+RELAY_ONLY = "用不上:只认音色名"
+# 有模型的声音挂到不用模型的连接 / 本来就只有参考音频时,给玩家看的灰字
+CLONE_NOTES = {"fish": "只用参考音频克隆,没那么像", "indextts": "只用参考音频"}
+REF_NOTES = {"fish": "用参考音频克隆", "indextts": "用参考音频"}
+
+
+def voice_fits(pack: dict, target: str) -> tuple[bool, str]:
+    """包里这个声音能不能挂到 target 类型的连接:(能不能, 说明)。能挂时说明是灰字,不能挂时是原因"""
+    engine = voice_engine(pack)
+    if target == engine:
+        return True, ""
+    if target == "openai":
+        return False, RELAY_ONLY
+    if engine == "openai":
+        return False, "中转站音色没有参考音频"
+    head = pack.get("pack") or {}
+    models = head.get("models") if isinstance(head.get("models"), dict) else {}
+    if target == "gpt_sovits":
+        ok = all(isinstance(models.get(k), dict) and models[k].get("file") for k in ("gpt", "sovits"))
+        return ok, "" if ok else NO_MODEL
+    items = [i for i in pack.get("items") or [] if isinstance(i, dict)]
+    # Fish 每次都要参考和它的原文;IndexTTS 有一段音色参考就够
+    has_ref = any(i.get("file") and (target == "indextts" or i.get("prompt_text")) for i in items)
+    if not has_ref and not (target == "indextts" and head.get("speaker_ref")):
+        return False, "没有参考音频"
+    return True, CLONE_NOTES[target] if models else REF_NOTES[target]
 
 
 def voice_pack_detail(pack: dict) -> str:
@@ -228,6 +253,44 @@ class _Files:
         return self._sha[rel], self._mime[rel]
 
 
+def sha_in_name(ref) -> str | None:
+    """包里文件名 assets/<指纹>.<扩展名> 的指纹(预览时不拷文件,靠它比)"""
+    return Path(ref).stem if isinstance(ref, str) and ref else None
+
+
+def find_twin(db: Session, engine: str, pack: dict, sha) -> VoiceProfile | None:
+    """库里有没有文件完全一样的声音:模型、音色参考、每行主参考和辅助参考都对得上。缺文件的包不算。
+    sha(包内路径) → 指纹"""
+    head = pack["pack"]
+    models = head.get("models") if isinstance(head.get("models"), dict) else {}
+    gpt = sha((models.get("gpt") or {}).get("file"))
+    sovits = sha((models.get("sovits") or {}).get("file"))
+    speaker = sha(head.get("speaker_ref"))
+    items = [i for i in pack.get("items") or [] if isinstance(i, dict)]
+    rows = []
+    for i in items:
+        aux = [sha(a) for a in i.get("aux") or [] if isinstance(a, str)]
+        if any(a is None for a in aux):
+            return None
+        rows.append((sha(i.get("file")), tuple(sorted(aux))))
+    if not items or any(r[0] is None for r in rows):
+        return None
+    if engine == "gpt_sovits" and not (gpt and sovits):
+        return None
+    want = sorted(rows)
+    for p in db.scalars(
+        select(VoiceProfile).where(VoiceProfile.gpt_sha == gpt, VoiceProfile.sovits_sha == sovits, VoiceProfile.speaker_sha == speaker)
+    ):
+        conn = db.get(TtsConnection, p.connection_id)
+        if conn is None or conn.api_type != engine:
+            continue
+        mine = db.scalars(select(VoiceEmotion).where(VoiceEmotion.profile_id == p.id)).all()
+        have = sorted((e.ref_sha or "", tuple(sorted(x for x in e.aux_shas or [] if x))) for e in mine)
+        if have == want:
+            return p
+    return None
+
+
 def _unique_name(name: str, taken: set[str]) -> str:
     """X、X 2、X 3…(不分大小写);不往 taken 里记"""
     base = name.strip()
@@ -289,17 +352,41 @@ class _Restorer:
         self._conns[engine] = conn
         return conn
 
+    def chosen_other_engine(self, pack: dict, engine: str) -> TtsConnection | None:
+        """玩家选了别的类型的连接、这个声音也挂得上:返回那条;其余情况 None(走 connection)"""
+        if not self.connection_id:
+            return None
+        chosen = self.db.get(TtsConnection, self.connection_id)
+        if chosen is None or chosen.api_type == engine or not voice_fits(pack, chosen.api_type)[0]:
+            return None
+        return chosen
+
+    def same_voice(self, engine: str, pack: dict) -> VoiceProfile | None:
+        def sha(ref) -> str | None:
+            got = self.files.put_file(ref if isinstance(ref, str) else None)
+            return got[0] if got else None
+
+        return find_twin(self.db, engine, pack, sha)
+
     def voice(self, pack: dict) -> str:
         db = self.db
         head = pack["pack"]
         engine = voice_engine(pack)
-        conn = self.connection(engine)
-        local = is_local(conn.base_url)
+        other = self.chosen_other_engine(pack, engine)
+        target = other.api_type if other is not None else engine
+        twin = self.same_voice(target, pack)
+        if twin is not None:
+            # 绑定和配对表靠 packs / items 换编号:都指到已有那条
+            self.packs[pack["key"]] = twin.id
+            by_ref = {e.ref_sha: e.id for e in db.scalars(select(VoiceEmotion).where(VoiceEmotion.profile_id == twin.id))}
+            for item in pack.get("items") or []:
+                got = self.files.put_file(item.get("file"))
+                if got and got[0] in by_ref:
+                    self.items[item["key"]] = by_ref[got[0]]
+            self.created.lines.append(f"声音「{twin.name}」已经有了,用现有的那条")
+            return twin.id
+        conn = other if other is not None else self.connection(engine)
         blobs = store()
-
-        def where(got: tuple[str, str] | None) -> str:
-            return str(blobs.path(*got).resolve()) if got and local else ""
-
         vid = self.packs[pack["key"]]
         taken = {n.casefold() for n in db.scalars(select(VoiceProfile.name)).all()}
         profile = VoiceProfile(
@@ -312,10 +399,10 @@ class _Restorer:
             params=copy.deepcopy(head["params"]) if isinstance(head.get("params"), dict) else {},
             source=str(head.get("source") or ""),
             license=str(head.get("license") or ""),
-            files_at="local" if local else "pending",
+            files_at="pending",
         )
         models = head.get("models") if isinstance(head.get("models"), dict) else {}
-        for kind, path_attr in (("gpt", "gpt_weights"), ("sovits", "sovits_weights")):
+        for kind in ("gpt", "sovits"):
             m = models.get(kind)
             if not isinstance(m, dict):
                 continue
@@ -326,11 +413,13 @@ class _Restorer:
                 setattr(profile, f"{kind}_sha", got[0])
                 size = blobs.path(*got).stat().st_size
             setattr(profile, f"{kind}_size", size)
-            setattr(profile, path_attr, where(got))
         speaker = self.files.put_file(head.get("speaker_ref"))
+        if speaker is None and target == "indextts":
+            # 别的引擎的声音挂到 IndexTTS:拿第一段参考当音色
+            first = next((i for i in sorted(pack.get("items") or [], key=lambda i: i.get("sort") or 0) if i.get("file")), None)
+            speaker = self.files.put_file(first.get("file")) if first else None
         if speaker:
             profile.speaker_sha = speaker[0]
-            profile.ref_path = where(speaker)
         db.add(profile)
         db.flush()
         for item in pack.get("items") or []:
@@ -347,9 +436,7 @@ class _Restorer:
                     sort=int(item["sort"]) if isinstance(item.get("sort"), int) else 0,
                     emo_vector=list(vector) if isinstance(vector, list) else None,
                     ref_sha=got[0] if got else None,
-                    ref_path=where(got),
                     aux_shas=[g[0] for g in aux],
-                    aux_refs=[where(g) for g in aux] if local else [],
                 )
             )
         db.flush()
@@ -358,8 +445,6 @@ class _Restorer:
         line = f"新建声音「{profile.name}」({voice_pack_detail(pack)})→ 语音服务「{conn.name}」"
         if missing:
             line += f";{missing} 个文件包里没带(导出时语音机连不上),这个声音缺文件"
-        if not local:
-            line += ";语音服务在另一台电脑,要在声音编辑器里把文件导出来放过去"
         self.created.lines.append(line)
         return vid
 

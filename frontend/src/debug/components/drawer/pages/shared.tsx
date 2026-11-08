@@ -12,7 +12,7 @@ import { Icon } from '../../../studio/icons';
 import { useDrawerSkin } from '../skinContext';
 import { Tip } from '../Tip';
 import type { TipKey } from '../tips';
-import type { BlockControls, PresetControls } from './pageModel';
+import { optionGroups, type BlockControls, type PresetControls } from './pageModel';
 
 /**
  * 素材直接换(界面统一 10-25/26 用户定):「常用」第一行一个下拉框,库里全部的包都在里面,不分「她的 / 别人的」,
@@ -31,7 +31,8 @@ export function PackSwapRow({
   label: string;
   tip?: TipKey;
   ariaLabel: string;
-  options: readonly { id: string; name: string }[];
+  /** group 给了且不止一种时,下拉里按它分组(语音按语音服务分) */
+  options: readonly { id: string; name: string; group?: string }[];
   /** 这张卡现在用哪个包;没有是 null */
   value: string | null;
   /** 给了就多一个这个字的选项,选它相当于 onPick(null) */
@@ -55,11 +56,23 @@ export function PackSwapRow({
           >
             {voidChoice && <option value="">{voidChoice}</option>}
             {!voidChoice && !value && <option value="">{options.length ? '选一个' : '库里还没有'}</option>}
-            {options.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.name}
-              </option>
-            ))}
+            {optionGroups(options).map((g) =>
+              g.label === null ? (
+                g.items.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.name}
+                  </option>
+                ))
+              ) : (
+                <optgroup key={g.label} label={g.label}>
+                  {g.items.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.name}
+                    </option>
+                  ))}
+                </optgroup>
+              ),
+            )}
           </select>
         ),
       }}

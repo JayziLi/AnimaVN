@@ -16,6 +16,8 @@ import { IconBtn } from '../studio/ui';
 import type { ImportNotice } from '../studio/types';
 import { fileName } from './importModel';
 import { KindButtons } from './KindButtons';
+import { useVoiceDelivery } from './useVoiceDelivery';
+import { DeliveryInline } from './VoiceDelivery';
 import './importer.css';
 
 interface Props {
@@ -31,6 +33,7 @@ export function ImportBanner({ notice, onClose, onClassify }: Props) {
   const report = notice.report?.length ? notice.report.join('\n') : undefined;
   const unknown = notice.unknown;
   const canView = Boolean(onClassify && notice.jobId);
+  const delivery = useVoiceDelivery(notice.voices);
   return (
     <div className="st-notice" role="status">
       <Icon name="check_circle" size={16} />
@@ -42,6 +45,7 @@ export function ImportBanner({ notice, onClose, onClassify }: Props) {
           {notice.detail}
         </span>
       )}
+      <DeliveryInline items={delivery.items} onRetry={delivery.retry} />
       {unknown.length > 0 && (
         <>
           <span className="st-notice-sep" />

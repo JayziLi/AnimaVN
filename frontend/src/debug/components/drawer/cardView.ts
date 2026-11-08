@@ -98,7 +98,12 @@ export function cardFacts(raw: CardViewRaw): DrawerCardFacts {
   };
 }
 
-const ENGINE_NAME: Record<TtsApiType, string> = { gpt_sovits: 'GPT-SoVITS', indextts: 'IndexTTS-2.5' };
+const ENGINE_NAME: Record<TtsApiType, string> = {
+  gpt_sovits: 'GPT-SoVITS',
+  indextts: 'IndexTTS-2.5',
+  fish: 'Fish Audio',
+  openai: '中转站',
+};
 
 /** 「5090 · GPT-SoVITS」:连接名里已经有引擎名就不重复 */
 export function connectionLabel(c: TtsConnection): string {

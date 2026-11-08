@@ -26,7 +26,8 @@ import { cardFromStored, cardToFileJson } from '../../lib/cardStore';
 import { saveBlob } from '../../lib/download';
 import { Help } from '../../vn/ui/Help';
 import type { Notify } from '../../studio/types';
-import { absoluteUrl, bundleBody, busyNote, cardLine, fileNameOf, initialChecks, nextPreview, previewSrc, rowSize, voiceNotes } from './exportModel';
+import { absoluteUrl, bundleBody, cardLine, fileNameOf, initialChecks, nextPreview, previewSrc, pullLabel, pullLeftNote, packSize, rowSize, voiceNotes } from './exportModel';
+import { usePullVoice } from './usePullVoice';
 import { TransferDialog } from './TransferDialog';
 import '../../vn/vnPick.css';
 
@@ -41,6 +42,7 @@ const TIP = {
   json: '只存卡本身(.json):资料、开场白、世界书,连头像。立绘、声音、背景不带。',
   tavern: '酒馆的角色卡是一张 PNG(卡的资料写在图里),表情差分另外打成 zip。还没做。',
   shareNote: '对方导入完成时会看到这段话。',
+  compress: '立绘、背景、CG 转成 WebP,包小很多,画质几乎看不出区别。卡头像和 GIF 不动。',
   preset: '只当建议:对方导入时另建一套,不动他自己的。',
 };
 
@@ -77,12 +79,14 @@ export function ExportPaper({ cardId, cardName, notify, onClose }: Props) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [checks, setChecks] = useState<Record<string, boolean>>({});
   const [withPreset, setWithPreset] = useState(true);
+  const [compress, setCompress] = useState(true);
   const [note, setNote] = useState('');
   const [name, setName] = useState('');
   const [fmt, setFmt] = useState<Fmt>('bundle');
   const [preview, setPreview] = useState<ExportPreview>({ kind: 'avatar' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const puller = usePullVoice(cardId, setSummary);
 
   useEffect(() => {
     let alive = true;
@@ -117,7 +121,7 @@ export function ExportPaper({ cardId, cardName, notify, onClose }: Props) {
         saveBlob(new Blob([cardToFileJson(cardFromStored(row), avatar)], { type: 'application/json' }), file);
         notify('ok', `已存成 ${file}`);
       } else {
-        const body = bundleBody(summary, checks, withPreset, note, preview);
+        const body = bundleBody(summary, checks, withPreset, note, preview, compress);
         if (name.trim()) {
           // 起了名字:照这个名字存(后端回应头里的文件名是卡名)
           const res = await fetch(apiUrl(`/api/export/bundle/${encodeURIComponent(cardId)}`), {
@@ -142,7 +146,6 @@ export function ExportPaper({ cardId, cardName, notify, onClose }: Props) {
 
   const src = summary ? previewSrc(summary, preview, resolve) : null;
   const canSwitch = (summary?.previews.length ?? 0) > 1;
-  const waiting = busy && summary && fmt === 'bundle' ? busyNote(summary, checks) : null;
   const bundleTip = summary
     ? [
         TIP.bundle,
@@ -166,7 +169,7 @@ export function ExportPaper({ cardId, cardName, notify, onClose }: Props) {
       onCancel={cancel}
       foot={
         <>
-          {waiting ? <span className="tf-busy">{waiting}</span> : <span className="tf-file">导出为 - {file}</span>}
+          <span className="tf-file">导出为 - {file}</span>
           <span className="tf-flex" />
           <button type="button" className="av-btn" disabled={busy} onClick={cancel}>
             取消
@@ -293,6 +296,8 @@ export function ExportPaper({ cardId, cardName, notify, onClose }: Props) {
                           first={i === 0}
                           checked={checks[it.key] !== false}
                           busy={busy}
+                          puller={puller}
+                          compress={compress}
                           onCheck={(on) => setChecks((c) => ({ ...c, [it.key]: on }))}
                         />
                       )),
@@ -316,6 +321,11 @@ export function ExportPaper({ cardId, cardName, notify, onClose }: Props) {
                     </label>
                   )}
                 </div>
+                <label className="tf-cap tf-compress">
+                  <input type="checkbox" checked={compress} disabled={busy} onChange={(e) => setCompress(e.target.checked)} />
+                  压缩图片
+                  <Help tip={TIP.compress} />
+                </label>
                 <label className="tf-cap" htmlFor="tf-note">
                   分享说明
                   <Help tip={TIP.shareNote} />
@@ -355,16 +365,23 @@ function PackRow({
   first,
   checked,
   busy,
+  puller,
+  compress,
   onCheck,
 }: {
   item: ExportBundleItem;
   first: boolean;
   checked: boolean;
   busy: boolean;
+  puller: ReturnType<typeof usePullVoice>;
+  compress: boolean;
   onCheck: (on: boolean) => void;
 }) {
   const label = KIND[item.kind];
   const notes = voiceNotes(item);
+  const vid = item.voice_id;
+  const pulling = puller.pulling === vid;
+  const leftNote = vid && !pulling ? pullLeftNote(puller.left[vid] ?? 0) : null;
   const title = item.detail ? `${item.name} · ${item.detail}` : item.name;
   const thumb =
     item.kind === 'voice' ? (
@@ -389,10 +406,28 @@ function PackRow({
           <span>{title}</span>
           {item.current && <small>当前</small>}
           {notes.warn && <small className="warn">{notes.warn}</small>}
-          {notes.missing && <small>{notes.missing}</small>}
+          {notes.missing && (
+            <small>
+              {leftNote ?? notes.missing}
+              {vid && (
+                <button
+                  type="button"
+                  className="tf-pull"
+                  disabled={busy || puller.pulling !== null}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    void puller.pull(vid);
+                  }}
+                >
+                  {pullLabel(pulling)}
+                </button>
+              )}
+            </small>
+          )}
+          {vid && puller.pullError?.id === vid && <small className="warn">{puller.pullError.text}</small>}
         </span>
       </span>
-      <span className="sz">{rowSize(item.bytes)}</span>
+      <span className="sz">{packSize(item, compress)}</span>
     </label>
   );
 }

@@ -12,9 +12,9 @@
  * 「这一句」重播 / 重新生成,服务 / 模型,语音开关,音量,完整语音设置。
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { debugApi, type TtsConnection } from '../lib/api';
-import { normalizeVoiceConfig, type VoiceCast, type VoicePluginConfig } from '../plugins/voice';
+import { groupVoices, groupTitle, normalizeVoiceConfig, voidChoiceText, type VoiceCast, type VoicePluginConfig } from '../plugins/voice';
 import { PROBE_INTERVAL_MS } from './useVoiceLine';
 import { MAX_FAILURES, useVoice, voicePlayer } from './voice';
 import { VnSwitch } from './VnSwitch';
@@ -37,6 +37,8 @@ const FRESH_MS = 10_000;
 const API_NAMES: Record<TtsConnection['api_type'], string> = {
   gpt_sovits: 'GPT-SoVITS',
   indextts: 'IndexTTS',
+  fish: 'Fish Audio',
+  openai: '中转站',
 };
 
 interface Props {
@@ -66,7 +68,9 @@ interface Props {
   /** icon:「音色」那张短列表里的全部声音;不给 = 只显示现在用的,不能就地换 */
   profiles?: readonly VoiceProfile[];
   /** icon:点了列表里的一个声音(下一句起用它) */
-  onPickVoice?: (id: string) => void;
+  onPickVoice?: (id: string | null) => void;
+  /** icon:现在念的是「没配声音的卡用的默认声音」,不是这张卡自己绑的 */
+  voiceIsDefault?: boolean;
   /** icon:面板里「模型」那一行 */
   modelLabel?: string | null;
 }
@@ -98,6 +102,7 @@ export function VoiceQuick({
   onLineAction,
   profiles,
   onPickVoice,
+  voiceIsDefault = false,
   modelLabel,
 }: Props) {
   const voice = useVoice();
@@ -229,9 +234,14 @@ export function VoiceQuick({
               ? `已连接 · ${probe.ms} ms`
               : '还没检测';
     const dot = status === 'ok' ? ' good' : status === 'fail' ? ' bad' : status === 'testing' ? ' warn' : '';
-    const pick = (id: string) => {
+    // 分组:按连接,只有一组(或连接还没读到)时不画组标题;最上面一项是「不念」/「默认(名字)」= 解除这张卡的绑定
+    const groups = conns ? groupVoices(list, conns) : [{ id: '', name: '', voices: [...list] }];
+    const titled = groups.length > 1;
+    const defName = voiceIsDefault && main ? main.name : null;
+    const noBound = !main || voiceIsDefault;
+    const pick = (id: string | null) => {
       setListOpen(false);
-      if (id !== main?.id) onPickVoice?.(id);
+      if (id === null ? !noBound : id !== main?.id || voiceIsDefault) onPickVoice?.(id);
       window.setTimeout(() => pickRef.current?.focus({ preventScroll: true }), 30);
     };
     return (
@@ -277,23 +287,37 @@ export function VoiceQuick({
               aria-label={main ? `音色:${main.name}(点开换)` : '音色:还没有(点开选一个)'}
             >
               <span className="k">音色</span>
-              <span className="nm">{main ? main.name : '还没有音色'}</span>
+              <span className="nm">{main ? (voiceIsDefault ? voidChoiceText(main.name) : main.name) : '还没有音色'}</span>
               {main && langName(main.text_lang) && <span className="av-chip ga-vq-lg">{langName(main.text_lang)}</span>}
               <GameIcon name="down" size={16} />
             </button>
             <div className="ga-vq-list" role="listbox" aria-label="音色">
-              {list.map((v) => (
-                <button
-                  key={v.id}
-                  type="button"
-                  role="option"
-                  aria-selected={v.id === main?.id}
-                  className={`ga-vq-opt${v.id === main?.id ? ' on' : ''}`}
-                  onClick={() => pick(v.id)}
-                >
-                  <span className="nm">{v.name}</span>
-                  {langName(v.text_lang) && <span className="av-chip ga-vq-lg">{langName(v.text_lang)}</span>}
-                </button>
+              <button
+                type="button"
+                role="option"
+                aria-selected={noBound}
+                className={`ga-vq-opt${noBound ? ' on' : ''}`}
+                onClick={() => pick(null)}
+              >
+                <span className="nm">{voidChoiceText(voiceIsDefault ? defName : (config.defaultVoiceId && list.find((v) => v.id === config.defaultVoiceId)?.name) || null)}</span>
+              </button>
+              {groups.map((g) => (
+                <Fragment key={g.id || 'lost'}>
+                  {titled && <div className="ga-vq-grp">{groupTitle(g.name, conns?.find((c) => c.id === g.id)?.api_type)}</div>}
+                  {g.voices.map((v) => (
+                    <button
+                      key={v.id}
+                      type="button"
+                      role="option"
+                      aria-selected={!noBound && v.id === main?.id}
+                      className={`ga-vq-opt${!noBound && v.id === main?.id ? ' on' : ''}`}
+                      onClick={() => pick(v.id)}
+                    >
+                      <span className="nm">{v.name}</span>
+                      {langName(v.text_lang) && <span className="av-chip ga-vq-lg">{langName(v.text_lang)}</span>}
+                    </button>
+                  ))}
+                </Fragment>
               ))}
             </div>
           </div>

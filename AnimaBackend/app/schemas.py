@@ -580,23 +580,52 @@ class CardPrefOut(BaseModel):
 
 # ── 语音插件 ──────────────────────────────────────────────
 
-TtsApiType = Literal["gpt_sovits", "indextts"]
+TtsApiType = Literal["gpt_sovits", "indextts", "fish", "openai"]
 
 
 class TtsConnectionIn(BaseModel):
     name: str
     api_type: TtsApiType = "gpt_sovits"
-    base_url: str
+    # Fish 留空 = 官方地址;中转站可以留空再用 copy_from_llm 抄模型页那条的
+    base_url: str = ""
     sample_steps: int = Field(default=64, ge=4, le=128)
     # IndexTTS 的情绪强度;GSV 不用。用户试听:强度高的好,默认 1.0
     emo_alpha: float = Field(default=1.0, ge=0, le=1)
+    # GSV 小插件的配对码(启动窗口里显示);不装插件留空
+    pair_code: str = ""
+    # Fish、中转站的 key 和模型名(key 只存不回)
+    api_key: str = ""
+    model: str = ""
+    # 模型页连接的 id:把那条的 key 抄过来;地址只在上面没填时抄
+    copy_from_llm: str | None = None
 
 
 class TtsConnectionUpdate(BaseModel):
     name: str | None = None
+    # 改类型:连接上还有声音时后端拒绝
+    api_type: TtsApiType | None = None
     base_url: str | None = None
     sample_steps: int | None = Field(default=None, ge=4, le=128)
     emo_alpha: float | None = Field(default=None, ge=0, le=1)
+    pair_code: str | None = None
+    # 空字符串 = 不改;要清掉用 clear_api_key
+    api_key: str | None = None
+    clear_api_key: bool = False
+    model: str | None = None
+    copy_from_llm: str | None = None
+
+
+class TtsModelsPreviewIn(BaseModel):
+    """中转站还没保存时列模型:表单里的地址和 key。key 留空 + connection_id = 用那条存着的"""
+
+    base_url: str = ""
+    api_key: str = ""
+    copy_from_llm: str | None = None
+    connection_id: str | None = None
+
+
+class TtsModelsOut(BaseModel):
+    models: list[str]
 
 
 class TtsConnectionOut(BaseModel):
@@ -608,12 +637,27 @@ class TtsConnectionOut(BaseModel):
     emo_alpha: float
     # 用这个服务的声音有几个 —— 删之前心里有数
     profile_count: int
+    # 填过配对码(码本身不返回)
+    has_pair_code: bool = False
+    has_api_key: bool = False
+    model: str = ""
 
 
 class TtsTimingOut(BaseModel):
     """测试连接 / 预热花了多少毫秒"""
 
     ms: int
+
+
+class TtsTestOut(BaseModel):
+    """测试连接:花了多少毫秒;GSV 还回文件怎么送(same / plugin / none,问不到是 null)"""
+
+    ms: int
+    route: str | None = None
+    plugin: bool = False
+    pair_ok: bool = False
+    # 中转站:列出了几个模型
+    model_count: int | None = None
 
 
 class VoiceEmotionIn(BaseModel):
@@ -671,6 +715,8 @@ class VoiceParams(BaseModel):
     parallel_infer: bool | None = None
     # IndexTTS
     emo_alpha: float | None = Field(default=None, ge=0, le=1)
+    # 中转站:音色名
+    voice: str | None = Field(default=None, max_length=120)
 
 
 class VoiceProfileIn(BaseModel):
@@ -718,6 +764,9 @@ class VoiceProfileOut(BaseModel):
     source: str = ""
     license: str = ""
     files_missing: int = 0
+    # 导入时模型的原文件名(路径空、只有指纹时界面拿它当文件名显示;手填路径的声音是空的)
+    gpt_name: str = ""
+    sovits_name: str = ""
 
 
 class VoiceReorder(BaseModel):

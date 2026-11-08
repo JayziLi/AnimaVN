@@ -57,6 +57,7 @@ from app.models import (
     VoiceProfile,
     WordRecord,
 )
+from app.bundle import webp
 from app.storage import refs
 from app.storage.blobs import ext_of, sha_of, store
 from app.tts import files as voice_files
@@ -448,10 +449,39 @@ def _first_image(info: PackInfo) -> str | None:
     return pick["file"].split("/", 1)[1].split(".", 1)[0] if pick else None
 
 
+def _compress_images(c: _Collector, infos: list[PackInfo], keep: set[str]) -> dict[str, str]:
+    """立绘、背景、CG 的 PNG / JPEG 换成 WebP(app/bundle/webp.py):行里的 file / mime、包的文件清单、要放的文件都跟着换。
+    keep:别处(卡头像)还在用原路径的文件,原件留着。返回 旧路径 → 新路径(没转的不在里面)"""
+    moved: dict[str, str] = {}
+    tried: dict[str, FileSrc | None] = {}
+    for info in infos:
+        if info.kind not in ("sprite", "scene", "cg"):
+            continue
+        for item in info.data["items"]:
+            old = item.get("file")
+            if not old or old not in c.files:
+                continue
+            if old not in tried:
+                tried[old] = webp.compress(c.files[old])
+            new = tried[old]
+            if new is None:
+                continue
+            c.files.setdefault(new.path, new)
+            item["file"], item["mime"] = new.path, new.mime
+            if "size" in item:
+                item["size"] = new.size
+            moved[old] = new.path
+        info.paths = list(dict.fromkeys(moved.get(p, p) for p in info.paths))
+    for old in moved:
+        if old not in keep:
+            c.files.pop(old, None)
+    return moved
+
+
 # ── 单包 ──
 
 
-def collect_pack(db: Session, kind: str, pack_id: str) -> PackFile:
+def collect_pack(db: Session, kind: str, pack_id: str, compress_images: bool = False) -> PackFile:
     """一个包 → .animapack:pack.json 在根目录,认词记录也在 pack.json 里(立绘包才有)。
     声音的文件要先在仓库里(导出接口先 prefetch)"""
     if kind not in PACK_KINDS:
@@ -462,6 +492,8 @@ def collect_pack(db: Session, kind: str, pack_id: str) -> PackFile:
     c.fix_refs(info)
     if kind == "sprite":
         info.data["word_records"] = _pack_word_records(c, info)
+    if compress_images:
+        _compress_images(c, [info], set())
     out = PackFile(file_name=file_name(info.name, ".animapack"), pack=info)
     out.jsons[PACK_MANIFEST] = info.data
     out.files = c.files
@@ -648,9 +680,11 @@ def collect_card(
     with_preset: bool = True,
     note: str = "",
     preview: dict | None = None,
+    compress_images: bool = False,
 ) -> Bundle:
     """一张卡(连同整组状态)→ .animavn。exclude:不带的包,写成 "sprite:<id>" / "scene:<id>" / "cg:<id>"。
-    preview:{"kind": "avatar"} 或 {"kind": "sprite", "id": 立绘编号};不给 / 用不了时用主卡头像"""
+    preview:{"kind": "avatar"} 或 {"kind": "sprite", "id": 立绘编号};不给 / 用不了时用主卡头像。
+    compress_images:立绘、背景、CG 的 PNG / JPEG 转 WebP(卡头像和 GIF 不动)"""
     excluded = set(exclude)
     cards, main, group = _group_cards(db, card_id)
     card_ids = [c.id for c in cards]
@@ -750,6 +784,12 @@ def collect_card(
     if preview_path is None and sprite_previews:
         preview_path = c.add(c.file_of(refs.SPRITE, db.get(PackSprite, sprite_previews[0]["id"])))
 
+    if compress_images:
+        avatars = {e["avatar"] for e in entries if e["avatar"]}
+        moved = _compress_images(c, infos, avatars)
+        if preview_path in moved and preview_path not in avatars:
+            preview_path = moved[preview_path]
+
     state_group = None
     if group["group_id"] is not None:
         state_group = {
@@ -806,7 +846,7 @@ def summary(db: Session, card_id: str) -> dict:
             "thumb": _thumb(sha),
         }
         if info.kind == "voice":
-            item.update(missing=info.missing, warn=info.warn)
+            item.update(voice_id=info.id, missing=info.missing, warn=info.warn)
         items.append(item)
     follows = []
     if m["word_records"]:

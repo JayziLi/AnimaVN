@@ -28,6 +28,7 @@ import { popThemeClass } from '../vn/ui/logic';
 import { currentPaperTheme } from '../vn/vnSettings';
 import type { ImportTarget } from './dropTarget';
 import { ImportBundle } from './ImportBundle';
+import { ImportVoiceFolder } from './ImportVoiceFolder';
 import {
   applyBody,
   bundleOnly,
@@ -38,10 +39,14 @@ import {
   groupVoices,
   MODEL_CODE_WARN,
   planHasVoices,
+  voiceFolderDetail,
+  voiceFolderOnly,
+  voiceFolderPick,
   voiceLines,
   voiceTarget,
   type RowIcon,
   type TargetSprites,
+  type VoiceFolderEdit,
 } from './importModel';
 import { KindButtons } from './KindButtons';
 import { VoiceTargetPick } from './VoiceTargetPick';
@@ -90,6 +95,9 @@ function ConfirmBody({ plan, target, sprites, busy, error, source = null, onCanc
   const [presets, setPresets] = useState<Record<string, boolean>>(() => defaultBundlePresets(plan));
   const [voiceConns, setVoiceConns] = useState<Record<string, string>>(() => defaultVoiceConnections(plan));
   const pickVoiceConn = (key: string, id: string) => setVoiceConns((c) => ({ ...c, [key]: id }));
+  // 声音文件夹:名字、念哪种语言改过的(没改的不发,用后端认出来的)
+  const [folderEdits, setFolderEdits] = useState<Record<string, VoiceFolderEdit>>({});
+  const editFolder = (key: string, edit: VoiceFolderEdit) => setFolderEdits((e) => ({ ...e, [key]: { ...e[key], ...edit } }));
   // 带声音时读语音服务列表(下拉、看选的是不是本机);读不到就只写后端给的默认那个
   const hasVoices = planHasVoices(plan);
   const [connections, setConnections] = useState<TtsConnection[] | null>(null);
@@ -112,11 +120,16 @@ function ConfirmBody({ plan, target, sprites, busy, error, source = null, onCanc
   const conns = () =>
     Object.fromEntries(
       plan.groups.flatMap((g) => {
-        const id = groupVoices(g).length > 0 ? voiceTarget(g, voiceConns[g.key], connections).id : null;
+        const folder = voiceFolderDetail(g);
+        const id = folder
+          ? voiceFolderPick(folder, voiceConns[g.key])
+          : groupVoices(g).length > 0
+            ? voiceTarget(g, voiceConns[g.key], connections).id
+            : null;
         return id ? [[g.key, id] as const] : [];
       }),
     );
-  const confirm = () => onConfirm(applyBody(model, decisions, classify, makeCurrent, presets, conns()));
+  const confirm = () => onConfirm(applyBody(model, decisions, classify, makeCurrent, presets, conns(), folderEdits));
 
   // 拖进来的就是一个角色包:照画布 ImportBundle 画(作者的预览图、说明、会新建什么)
   const only = bundleOnly(plan);
@@ -129,6 +142,30 @@ function ConfirmBody({ plan, target, sprites, busy, error, source = null, onCanc
         onPreset={(on) => setPresets((p) => ({ ...p, [only.key]: on }))}
         voiceConnection={voiceConns[only.key]}
         onVoiceConnection={(id) => pickVoiceConn(only.key, id)}
+        connections={connections}
+        busy={busy}
+        error={error}
+        onCancel={cancel}
+        onConfirm={confirm}
+      />
+    );
+  }
+
+  // 拖进来的就是一个声音文件夹:照画布 Import 画(认出的模型、情绪、挂到哪条)
+  const folder = voiceFolderOnly(plan);
+  const folderDetail = folder && voiceFolderDetail(folder);
+  if (folder && folderDetail) {
+    const edit = folderEdits[folder.key];
+    return (
+      <ImportVoiceFolder
+        group={folder}
+        source={source}
+        name={edit?.name ?? folderDetail.name}
+        onName={(name) => editFolder(folder.key, { name })}
+        lang={edit?.lang ?? folderDetail.lang}
+        onLang={(lang) => editFolder(folder.key, { lang })}
+        connection={voiceConns[folder.key]}
+        onConnection={(id) => pickVoiceConn(folder.key, id)}
         connections={connections}
         busy={busy}
         error={error}

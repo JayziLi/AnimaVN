@@ -43,6 +43,7 @@ def _counts(db) -> dict:
 
 
 def _export(client, card_id: str, **body) -> bytes:
+    body.setdefault("compress_images", False)  # 往返要逐字节比;压缩另有 test_bundle_webp.py
     r = client.post(f"/api/export/bundle/{card_id}", json=body)
     assert r.status_code == 200, r.text
     return r.content
