@@ -275,6 +275,22 @@ export function applySceneTag(
 }
 
 /**
+ * 每条按条目记住:摘出来的标签,以及「走进这条时的状态 → 走完这条的状态」。生成中每来一段字只有正在写的那条是新对象,
+ * 前面的条目走进来时状态对得上就直接接着用,不用整段对话重摘一遍标签、重对一遍表
+ */
+interface EntryFold {
+  kinds: readonly TagKind[];
+  tags: ReturnType<typeof extractTags>['tags'];
+  assets: readonly SceneAsset[];
+  cgOk: ((cg: SceneAsset, entryIndex: number) => boolean) | undefined;
+  index: number;
+  from: SceneState;
+  to: SceneState;
+}
+const foldOfEntry = new WeakMap<ChatEntry, EntryFold>();
+const sameScene = (a: SceneState, b: SceneState) => a.bg === b.bg && a.bgm === b.bgm && a.bgmFrom === b.bgmFrom && a.cg === b.cg;
+
+/**
  * 整段对话末尾的状态 —— 组装提示词时 {{current_bg}} / {{current_bgm}} 用它。
  * 只摘标签、不切句:句子边界不影响标签的先后顺序。Jev 标的合并进来一起算。
  * cgOk:形态开着时,第 i 条那里这张 CG 能不能出(plugins/forms.ts 的 cgOkAt)。不能出的 CG 标签不算,
@@ -289,14 +305,21 @@ export function sceneAtEnd(
   let state = initialScene(assets);
   if (assets.length === 0) return state;
   entries.forEach((e, i) => {
-    if (e.role === 'assistant') {
-      for (const t of extractTags(jevText(e, kinds), kinds, false).tags) {
-        const next = applySceneTag(state, t, assets);
-        if (t.kind === 'cg' && cgOk && next.cg && next.cg !== state.cg && !cgOk(next.cg, i)) continue;
-        state = next;
-      }
+    const hit = foldOfEntry.get(e);
+    const sameTags = hit !== undefined && hit.kinds === kinds;
+    if (sameTags && hit.assets === assets && hit.cgOk === cgOk && hit.index === i && sameScene(hit.from, state)) {
+      state = hit.to;
+      return;
+    }
+    const from = state;
+    const tags = sameTags ? hit.tags : e.role === 'assistant' ? extractTags(jevText(e, kinds), kinds, false).tags : [];
+    for (const t of tags) {
+      const next = applySceneTag(state, t, assets);
+      if (t.kind === 'cg' && cgOk && next.cg && next.cg !== state.cg && !cgOk(next.cg, i)) continue;
+      state = next;
     }
     if (cgOk && state.cg && !cgOk(state.cg, i)) state = { ...state, cg: null };
+    foldOfEntry.set(e, { kinds, tags, assets, cgOk, index: i, from, to: state });
   });
   return state;
 }

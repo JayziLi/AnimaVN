@@ -818,9 +818,16 @@ export default function DebugApp() {
   // 切到不能出的形态时收起。视觉小说里按句算,见 VNScreen
   const { cgOkAt, cgOkNow } = forms;
   // 整段对话末尾是哪个场景、在放哪首、画面上有没有 CG —— {{current_bg}} / {{current_bgm}} / {{current_cg}}
-  const sceneNow = useMemo(
+  const sceneEnd = useMemo(
     () => sceneAtEnd(entries, sceneKinds, activeSceneAssets, cgOkAt),
     [entries, sceneKinds, activeSceneAssets, cgOkAt],
+  );
+  // 生成中每来一段字 entries 就变一次,上面每次都算出一份新的;场景、曲子、CG 都没换就沿用上一份 ——
+  // 不然下面的宏每段字都「变了」,输入框上方那份提示词跟着整份重拼(10-30 实测一条回复重拼 150 多遍)
+  const sceneNow = useMemo(
+    () => sceneEnd,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sceneEnd.bg, sceneEnd.bgm, sceneEnd.bgmFrom, sceneEnd.cg],
   );
   const sceneMacroValues = useMemo(
     () =>
@@ -2219,10 +2226,20 @@ export default function DebugApp() {
 
   // 发给模型的历史是「原文 + Jev 另外存的标注」(plugins/jevNotes.ts);现在是 Jev 模式的那几类,
   // 组装完再整个摘掉(assembleForSend)—— 切回 AI 写以后,以前 Jev 标的照样当示例
-  const history: ChatTurn[] = useMemo(
-    () => entries.map((e) => ({ role: e.role, content: historyText(e, vnKinds) })),
-    [entries, vnKinds],
+  // 每条按条目记住:生成中每来一段字只有正在写的那条是新对象,别的条目不用再合标注、摘日语
+  const turnCache = useRef(new WeakMap<ChatEntry, { kinds: typeof vnKinds; turn: ChatTurn }>());
+  /** 条目 → 发给模型的一条历史(合并了 Jev 的标注、摘掉藏起来的日语) */
+  const turnOf = useCallback(
+    (e: ChatEntry): ChatTurn => {
+      const hit = turnCache.current.get(e);
+      if (hit && hit.kinds === vnKinds) return hit.turn;
+      const turn = { role: e.role, content: historyText(e, vnKinds) };
+      turnCache.current.set(e, { kinds: vnKinds, turn });
+      return turn;
+    },
+    [vnKinds],
   );
+  const history: ChatTurn[] = useMemo(() => entries.map((e) => turnOf(e)), [entries, turnOf]);
 
   // 隐藏前文日语(plugins/jaHide.ts):外语插件页和视觉小说设置的「字幕」里各有一份按钮
   const jaHide: JaHideControls = useMemo(
@@ -2603,9 +2620,6 @@ export default function DebugApp() {
       macroExtra: macroExtraFor(type),
     });
   };
-
-  /** 条目 → 发给模型的一条历史(和 history 一样合并了 Jev 的标注、摘掉藏起来的日语) */
-  const turnOf = (e: ChatEntry): ChatTurn => ({ role: e.role, content: historyText(e, vnKinds) });
 
   // 设置 → 数据「表情认法」:Jev 的起始表情和舞台用同一种认法
   const timelineEngine = useTimelineEngine();

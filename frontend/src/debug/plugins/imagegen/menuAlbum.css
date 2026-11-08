@@ -125,6 +125,9 @@
   transition:
     box-shadow 0.16s,
     transform 0.16s;
+  /* 还没滚到的格子先不排版(10-30 实测:一百多格的字一次排完,慢电脑上点开这页卡 0.5 秒);格子本来就裁边,里面没有伸出去的东西 */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 215px;
 }
 .av-night .ma-tile {
   background: var(--av-paper-2);

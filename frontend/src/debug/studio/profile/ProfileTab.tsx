@@ -170,12 +170,24 @@ export function ProfileTab(props: ProfileTabProps) {
     };
   }, [view]);
 
+  // 菜单「角色」页里还没滚到的几节先不排版(vnMenuCard.css 的 content-visibility),高度是估的,照估的跳会停不准:
+  // 跳之前让每一节都排出来,停稳以后再撤。排过一次浏览器就记住真高度了,以后不排也准
+  const showAllTimer = useRef<number | undefined>(undefined);
+  const showAllSections = () => {
+    const main = mainRef.current;
+    if (!main) return;
+    main.classList.add('pf-show-all');
+    window.clearTimeout(showAllTimer.current);
+    showAllTimer.current = window.setTimeout(() => main.classList.remove('pf-show-all'), SETTLE_MS * 6);
+  };
+
   /** 滚到那一节(主区或整页),停稳之前滚动联动不改高亮 */
   const scrollTo = (key: ProfileKey) => {
     const el = sections.current.get(key);
     if (!el) return;
     window.clearTimeout(settling.current);
     settling.current = window.setTimeout(() => (settling.current = undefined), SETTLE_MS * 3);
+    showAllSections();
     el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
@@ -201,7 +213,9 @@ export function ProfileTab(props: ProfileTabProps) {
     if (!el) return;
     window.clearTimeout(settling.current);
     settling.current = window.setTimeout(() => (settling.current = undefined), SETTLE_MS * 3);
+    showAllSections();
     el.scrollIntoView({ block: 'start' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view]);
 
   const jump = (key: ProfileKey) => {

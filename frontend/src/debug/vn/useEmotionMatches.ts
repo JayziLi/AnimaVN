@@ -47,10 +47,14 @@ export function useEmotionMatches(
 
   // 要问的:精确匹配不上、长度合法的标签,去重
   const wanted = useMemo(() => {
+    // 同一个标签在整段对话里出现几百次,只对一次表(生成中每来一段字这里都要过一遍)
+    const seen = new Set<string>();
     const out = new Set<string>();
     for (const l of labels) {
       const tag = normTag(l);
-      if (!tag || tag.length > MAX_TAG_LEN || resolveByLabel(tag, candidates)) continue;
+      if (!tag || seen.has(tag)) continue;
+      seen.add(tag);
+      if (tag.length > MAX_TAG_LEN || resolveByLabel(tag, candidates)) continue;
       out.add(tag);
     }
     return [...out];

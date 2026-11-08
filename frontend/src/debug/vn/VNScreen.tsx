@@ -122,6 +122,7 @@ import { VNTitle, type TitleCard, type TitleScene } from './VNTitle';
 import { VNPick } from './VNPick';
 import { LineMenu } from './LineMenu';
 import { ModelError } from './ModelError';
+import { warmExtraFonts } from './fontWarm';
 import { holdsUserLine, userSaid, type GenFail } from './genFail';
 import { MOTION, useFadeLayer, useReducedMotion } from './ui/motion';
 import { toastPlace } from './ui/notice';
@@ -1195,6 +1196,10 @@ export function VNScreen({
     setTitleCold(true);
   }
   const firstLoad = shownCard !== currentCardId;
+  // 进了游戏(不是封面、不是等待页)再趁空闲把生僻字那份字体载好,别等第一次点开存档页时才卡那一下
+  useEffect(() => {
+    if (!firstLoad && !title) warmExtraFonts();
+  }, [firstLoad, title]);
 
   // 音乐关了:标题画面和剧情里都不放
   const playing = !switches.bgm ? null : title ? titleBgm : scene.bgm;

@@ -67,6 +67,10 @@
   font: inherit;
   text-align: left;
   cursor: pointer;
+  /* 还没滚到的格子先不排版(10-30 实测:二十几格的字一次排完,慢电脑上点开这页卡 0.6 秒);
+     「⋯」弹出的小菜单和删除确认在格子外层,不在这里面,不会被裁掉 */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 260px;
 }
 .vn-slot.current .vn-slot-open {
   cursor: default;
@@ -383,6 +387,7 @@
     grid-template-columns: 104px minmax(0, 1fr);
     align-items: center;
     gap: 12px;
+    contain-intrinsic-size: auto 86px;
   }
   .vn-slot-thumb {
     width: 104px;
@@ -442,7 +447,9 @@
     color: var(--av-ink);
   }
   .vn-slot-more {
-    position: static;
+    /* 不能是 static:按钮的放大点击区(::before,绝对定位)会改认整个格子当参照,盖住整格 ——
+       10-30 实测手机上点存档格子弹的是「重命名 / 删除」,读不了档 */
+    position: relative;
     width: 34px;
     height: 44px;
     border-radius: var(--av-r-btn);

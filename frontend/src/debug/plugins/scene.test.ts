@@ -147,4 +147,16 @@ describe('CG at the end of a chat', () => {
     expect(sceneAtEnd(more, kinds, ASSETS, back).cg).toBe(walk);
     expect(sceneAtEnd(more, kinds, ASSETS, (cg) => cg !== walk).cg).toBe(nap);
   });
+
+  it('follows the reply being written while the earlier replies are reused as they are', () => {
+    // 生成中:前面几条是同一批对象,只有最后那条每段字换一个新对象
+    const writing = (text: string): ChatEntry => ({ ...reply('w', text), streaming: true });
+    expect(sceneAtEnd([...chat, writing('「去')], kinds, ASSETS)).toMatchObject({ bg: spring, cg: nap });
+    expect(sceneAtEnd([...chat, writing('「去哪」<cg:温泉散步>')], kinds, ASSETS).cg).toBe(walk);
+    expect(sceneAtEnd([...chat, writing('「去哪」<bg:草庵>')], kinds, ASSETS)).toMatchObject({ bg: hut, bgm: daily, cg: nap });
+    // 前面一条改了(新对象):从那条起重算,后面没改的那条照样跟着新状态走
+    const edited = [chat[0], reply('b', '「走吧」'), chat[2]];
+    expect(sceneAtEnd(edited, kinds, ASSETS)).toMatchObject({ bg: hut, cg: nap });
+    expect(sceneAtEnd(chat, kinds, ASSETS)).toMatchObject({ bg: spring, cg: nap });
+  });
 });

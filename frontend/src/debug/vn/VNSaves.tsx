@@ -397,7 +397,8 @@ export function VNSaves({
                     {/* 和调试台的对话历史一样有条数;当前对话以内存为准,列表里的条数是上次拉列表时的 */}
                     <i className="vn-slot-count">{count} 条</i>
                   </span>
-                  <span className="vn-slot-line">{preview?.line || c.last_message || '……'}</span>
+                  {/* 格子里最多露三行(约 60 字):列表给的最后一条消息有两三百字,整段放进去每个字都要排一遍,截掉露不出来的部分 */}
+                  <span className="vn-slot-line">{(preview?.line || c.last_message).slice(0, 72) || '……'}</span>
                 </span>
               </button>
               {editing && (

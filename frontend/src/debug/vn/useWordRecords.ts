@@ -46,10 +46,14 @@ export function useWordRecords(
   const version = useSyncExternalStore(wordRecordStore.subscribe, () => wordRecordStore.version(listRef));
   // 要认的:名字和别名对不上、长度合法的词,去重
   const words = useMemo(() => {
+    // 同一个词在整段对话里出现几百次,只对一次表(生成中每来一段字这里都要过一遍)
+    const seen = new Set<string>();
     const out = new Set<string>();
     for (const l of labels) {
       const tag = normTag(l);
-      if (tag && tag.length <= MAX_TAG_LEN && !resolveByLabel(tag, candidates)) out.add(tag);
+      if (!tag || seen.has(tag)) continue;
+      seen.add(tag);
+      if (tag.length <= MAX_TAG_LEN && !resolveByLabel(tag, candidates)) out.add(tag);
     }
     return [...out];
   }, [labels, candidates]);

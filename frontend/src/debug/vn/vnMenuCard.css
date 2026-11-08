@@ -228,6 +228,14 @@
   box-shadow: inset 0 0 0 1px var(--av-hair);
   scroll-margin-top: 2px;
   transition: box-shadow 0.2s, background 0.2s;
+  /* 每次开菜单都先到这页:卡里描述、开场白这几大段加起来上万字,还没滚到的那几节先不排版
+     (10-30 实测:手机横屏开菜单卡 1 秒,几乎全花在排这些字上)。标签补全、「?」说明都是挂到页面最外层的,不会被裁 */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 240px;
+}
+/* 点目录跳过去的那一下全排出来(ProfileTab 的 showAllSections),停得准 */
+.vn-menu .vn-card-embed .pf-show-all .pf-sec {
+  content-visibility: visible;
 }
 .vn-menu .vn-card-embed .pf-sec.active {
   background: var(--av-paper);
