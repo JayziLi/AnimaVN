@@ -5,6 +5,7 @@
 
 import type { SpeakRequest } from '../lib/api';
 import { voiceKey } from '../plugins/voice';
+import { GameIcon } from './ui/GameIcon';
 import { MAX_FAILURES, useVoice, voicePlayer, type ClipState } from './voice';
 
 function replayTitle(st: ClipState | undefined, wanted: string | null, paused: boolean): string {
@@ -41,6 +42,67 @@ function RedoIcon() {
       <path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
       <path d="M19.5 4.5v4.3h-4.3" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
+  );
+}
+
+/** 手机输入框上面那两颗的样子:只放图标,放在语音细条里 */
+export function VoiceLineIconsView({
+  paused,
+  loading,
+  busy,
+  replayTitle: replayHint,
+  onReplay,
+  onRegenerate,
+}: {
+  /** 播放器连续失败、暂停了:两颗都点不了,先去喇叭面板里重连 */
+  paused: boolean;
+  /** 这句正在合成:重新生成先等着 */
+  loading: boolean;
+  /** 排队或合成中:重新生成那颗呼吸,点完有反应 */
+  busy: boolean;
+  replayTitle: string;
+  onReplay: () => void;
+  onRegenerate: () => void;
+}) {
+  return (
+    <>
+      <button type="button" onClick={onReplay} disabled={paused} title={replayHint} aria-label="重听这一句">
+        <GameIcon name="play" size={22} />
+      </button>
+      <button
+        type="button"
+        className={busy ? 'busy' : undefined}
+        onClick={onRegenerate}
+        disabled={paused || loading}
+        title="重新生成这句语音:每次念法都不一样,新的替换掉旧的"
+        aria-label="重新生成这句语音"
+      >
+        <GameIcon name="voice-regen" size={22} />
+      </button>
+    </>
+  );
+}
+
+/** 手机输入框上面那两颗:重听、重新生成这句语音。状态直接从播放器订阅,和 VoiceButtons 同一个判断 */
+export function VoiceLineIcons({ req, onAction }: { req: SpeakRequest; onAction?: () => void }) {
+  const snap = useVoice();
+  const st = snap.clips.get(voiceKey(req));
+  const paused = snap.failures >= MAX_FAILURES;
+  return (
+    <VoiceLineIconsView
+      paused={paused}
+      loading={st?.state === 'loading'}
+      busy={st?.state === 'queued' || st?.state === 'loading'}
+      replayTitle={replayTitle(st, req.emotion, paused)}
+      onReplay={() => {
+        onAction?.();
+        voicePlayer.replay(req);
+      }}
+      onRegenerate={() => {
+        onAction?.();
+        voicePlayer.regenerate(req);
+      }}
+    />
   );
 }
 

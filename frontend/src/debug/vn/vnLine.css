@@ -1224,6 +1224,7 @@
   .ga.can-replay.speaking .ga-wave path,
   .vn-vq-btn.speaking .av-ic path,
   .vn-vq-btn.busy .av-ic,
+  .vn-strip-voice > button.busy .av-ic,
   .ga-mark.next {
     animation: none;
   }
@@ -1405,9 +1406,12 @@
 
 /* ══════════ 第 9 段 手机竖屏(≤ 640px;设计稿 kit/scene.css「手机竖屏 · 对话区 A」.ga-ph,按 390×844 画的)══════════
    和电脑同一种对话区 A:细线、声波名字、四角细条都照电脑那份,这里只按竖屏重排位置、字号、点击区(手指点的地方 ≥ 40px)。
-   排法:右上 倍速 · 跳过 · ≡(状态栏下面),≡ 下面历史;左上「模型」;右下 画笔 · 语音 · 重来 · 隐藏,和左边那行「说点什么」同一排(最下面);
-   台词在那一排上面(名字 + 细线 + 日语 + 中文,上沿在 506 / 844);点开输入框:一条细线升到那一排上面,台词往上让 54px。
-   经典对话框:玻璃框贴在最下面那排上面,左右各留 10,字多了往上长。 */
+   排法(11-05 用户定,VNScreen 的 phoneBar):右上 倍速 · 跳过 · ≡(状态栏下面),≡ 下面一条竖着的 历史 · 隐藏;左上「模型」;
+   最下面一排:输入框一直露着,右边 画笔 · 重来(按钮条多宽看有没有画笔,--ga-tools-w,别写死);
+   输入框上面一排不带边框的 喇叭 · 重听 · 重新生成语音;‹ 4/4 › 在台词那行右边。
+   台词在这些上面(名字 + 细线 + 日语 + 中文,上沿在 506 / 844)。点进输入框(打字):语音那排和右下让开,输入框占满一排,
+   输入框多高(--ga-bar-h,VNScreen 量的)语音那排和台词就让多少。
+   经典对话框:玻璃框贴在语音那排上面,左右各留 10,字多了往上长。 */
 @media (max-width: 640px) {
   .vn-root {
     --vn-corner: 12px;
@@ -1443,6 +1447,49 @@
   .vn-strip > .vn-auto.on {
     padding-left: 12px;
   }
+  /* 历史下面接隐藏:同一条竖着放,格子之间一道横线 */
+  .vn-root.ga .vn-strip-hist {
+    flex-direction: column;
+    height: auto;
+  }
+  .vn-root.ga .vn-strip-hist > * + *::before {
+    left: 13px;
+    right: 13px;
+    top: 0;
+    bottom: auto;
+    width: auto;
+    height: 1px;
+  }
+  /* 输入框上面那排语音:不带边框,离左边和输入框里的字对齐 */
+  .vn-strip-voice {
+    --vn-strip-h: 40px;
+    left: calc(env(safe-area-inset-left) + 9px);
+    bottom: calc(var(--vn-ph-sab) + var(--ga-bar-h, 44px) + 2px);
+    background: none;
+    box-shadow: none;
+  }
+  .vn-strip-voice > button,
+  .vn-strip-voice .vn-vq-btn {
+    min-width: 40px;
+    padding: 0 9px;
+  }
+  .vn-strip-voice > * + *::before {
+    content: none;
+  }
+  .vn-strip-voice .av-ic {
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6));
+  }
+  .vn-strip-voice > button.busy .av-ic {
+    animation: vn-busy 0.9s ease-in-out infinite;
+  }
+  /* 语音面板从喇叭往上弹、靠左;「这一句」那行已经露在外面了,面板里不再放 */
+  .vn-strip-voice .ga-vq {
+    left: 5px;
+    right: auto;
+  }
+  .vn-strip-voice .ga-vq-line {
+    display: none;
+  }
   /* 模型名(设置 · 显示 · 模型标签)窄一点,别顶到右上那排 */
   .vn-model-name {
     max-width: 96px;
@@ -1476,6 +1523,9 @@
   .vn-root .vn-topbar {
     top: calc(env(safe-area-inset-top) + 110px);
     right: calc(env(safe-area-inset-right) + var(--vn-corner));
+  }
+  .vn-root.ga .vn-topbar {
+    top: calc(env(safe-area-inset-top) + 154px);
   }
 
   /* ---------- 发出去那句:top 36%,字小一点 ---------- */
@@ -1512,8 +1562,13 @@
 
   /* ---------- 细线:台词在最下面那排上面;左边让出 36(声波挂在名字左外侧),右边 20 ---------- */
   .vn-root.ga {
-    /* 对话区那块的底边 = 最下面那排(44)的上面再留 10 */
-    --ga-zb: calc(var(--vn-ph-sab) + 54px);
+    /* 右下那条有多宽:只有重来一格;有画笔两格(见下面 :has) */
+    --ga-tools-w: 42px;
+    /* 对话区那块的底边 = 输入框 + 语音那排(40)的上面再留 12;没语音时也留着,翻到下一句台词不跳 */
+    --ga-zb: calc(var(--vn-ph-sab) + var(--ga-bar-h, 44px) + 52px);
+  }
+  .vn-root.ga:has(.vn-strip-tools .vn-illus-btn > *) {
+    --ga-tools-w: 84px;
   }
   .ga-zone {
     left: 36px;
@@ -1525,16 +1580,24 @@
   .ga-zone::before {
     height: calc((100% + var(--ga-zb)) * 0.59953 - var(--vn-dialogue-height, 0px));
   }
-  .ga-say {
-    transition: translate 0.26s var(--av-ease);
-  }
-  .ga.bar-on .ga-say {
-    translate: 0 -54px;
-  }
   .ga-head {
     height: 42px;
     gap: 8px;
     padding-bottom: 8px;
+  }
+  /* 换版本 ‹ 4/4 ›:这句回复的版本,放在台词那行右边;字和图标跟台词同色(经典白玻璃上是深色) */
+  .ga-head .vn-versions {
+    flex: none;
+    height: 40px;
+    margin: 0 0 -12px auto;
+    color: inherit;
+  }
+  .ga-head .vn-versions button {
+    width: 34px;
+    height: 40px;
+  }
+  .ga:not(.dlg-classic) .ga-head .vn-versions .av-ic {
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
   }
   .ga-name {
     --ga-wv: 20px;
@@ -1590,17 +1653,18 @@
     height: 40px;
   }
 
-  /* 最下面一排:左边「说点什么 · 随时可以插话」(一行带下划线的淡字),右边那几个按钮 */
+  /* 最下面一排:输入框一直露着,右边让出按钮条 */
   .ga-input {
     left: 0;
     right: 0;
     width: auto;
   }
+  /* 那行淡字现在只有设置里的预览用(LivePreview) */
   .ga-ghost {
     left: 18px;
     bottom: var(--vn-ph-sab);
     translate: none;
-    max-width: calc(100% - 18px - 12px - 176px - 10px);
+    max-width: calc(100% - 36px);
     height: 44px;
     padding: 0 4px;
     overflow: hidden;
@@ -1609,23 +1673,46 @@
     line-height: 43px;
     letter-spacing: 0.04em;
   }
-  /* 点开:一条细线升到那一排上面(和电脑一样不要底、不要框);那排按钮留着(轮到你时还能「重来」) */
-  .ga-bar {
-    left: 14px;
-    right: 14px;
-    width: auto;
-    bottom: calc(var(--vn-ph-sab) + 54px);
-    min-height: 48px;
-    padding-bottom: 3px;
-    translate: 0 6px;
-  }
+  /* 和电脑一样不要底、不要框,底下一条细线 */
+  .ga-bar,
   .ga.bar-on .ga-bar {
-    translate: 0 0;
+    left: calc(env(safe-area-inset-left) + 14px);
+    right: calc(env(safe-area-inset-right) + var(--vn-corner) + var(--ga-tools-w) + 8px);
+    width: auto;
+    bottom: var(--vn-ph-sab);
+    min-height: 44px;
+    padding-bottom: 0;
+    translate: none;
+    opacity: 1;
+    visibility: visible;
+    transition: none;
   }
   .ga-form textarea {
     height: 44px;
     padding: 10px 6px;
     font-size: 16px; /* 不小于 16:iOS 点进去才不会把整页放大 */
+    scrollbar-width: none; /* 字太多时手指能滑,不露滚动条 */
+  }
+  /* 这条一直露着,提示字和电脑上那行淡字一样亮(经典对话框底下没有压暗,太淡压在立绘上看不清) */
+  .ga-form textarea::placeholder {
+    color: rgba(255, 255, 255, 0.9);
+  }
+  /* 提示字太长别折行,放不下就省略 */
+  .ga-form textarea:placeholder-shown {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  /* 打字:语音那排和右下让开,输入框占满一排,台词停在输入框上面 */
+  .vn-root.ga:has(.ga-bar:focus-within) .vn-strip-voice,
+  .vn-root.ga:has(.ga-bar:focus-within) .vn-strip-tools {
+    display: none;
+  }
+  .vn-root.ga:has(.ga-bar:focus-within) .ga-bar {
+    right: calc(env(safe-area-inset-right) + 14px);
+  }
+  .vn-root.ga:has(.ga-bar:focus-within) {
+    --ga-zb: calc(var(--vn-ph-sab) + var(--ga-bar-h, 44px) + 10px);
   }
   .ga-x,
   .ga-send {
@@ -1633,9 +1720,13 @@
     height: 42px;
   }
 
-  /* ---------- 经典对话框:玻璃框左右各留 10,贴在最下面那排(「说点什么」+ 四个按钮)上面,字多了往上长 ---------- */
-  .ga.dlg-classic {
-    --ga-zb: calc(var(--vn-ph-sab) + 54px);
+  /* ---------- 经典对话框:玻璃框左右各留 10,贴在语音那排上面,字多了往上长 ---------- */
+  .ga.dlg-classic .ga-head .vn-versions {
+    height: 36px;
+    margin: -6px -8px -2px auto;
+  }
+  .ga.dlg-classic .ga-head .vn-versions button {
+    height: 36px;
   }
   .ga.dlg-classic .ga-zone {
     left: 10px;
@@ -1691,6 +1782,12 @@
   .ga-say > .vn-err {
     left: 0;
     width: 100%;
+  }
+}
+/* 很窄的手机:‹ 4/4 › 收窄一点,别把名字挤成省略号 */
+@media (max-width: 360px) {
+  .ga-head .vn-versions button {
+    width: 28px;
   }
 }
 

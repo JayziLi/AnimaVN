@@ -85,7 +85,9 @@ import { fillMissingCell, usePairings } from './usePairings';
 import { useTimelineEngine } from './useTimelineEngine';
 import { useWordRecords } from './useWordRecords';
 import { useVoiceLine } from './useVoiceLine';
-import { VoiceButtons } from './VoiceButtons';
+import { VoiceButtons, VoiceLineIcons } from './VoiceButtons';
+import { tapOnlyClosesBar } from './phoneBar';
+import { usePhone } from './settings/usePhone';
 import { LineInspector } from './LineInspector';
 import type { PluginFocus, PluginSection } from '../components/PluginsDrawer';
 import { VNMenu, type MenuPage } from './VNMenu';
@@ -1804,10 +1806,11 @@ export function VNScreen({
     }
     tapScreen();
   };
-  // 点画面:点开了输入但没写字(也不是轮到你)先收起,不翻句;不然翻下一句
+  // 点画面:点开了输入但没写字(也不是轮到你)先收起,不翻句;不然翻下一句。手机上键盘弹着时这一下只收键盘(见 phoneBar.ts)
   const tapScreen = () => {
     if (barIdle.current) {
       setBarOpen(false);
+      inputRef.current?.blur();
       return;
     }
     advance();
@@ -1866,6 +1869,8 @@ export function VNScreen({
     if (!text || !canSend) return;
     setDraft('');
     setBarOpen(false);
+    // 手机:发出去就收键盘,按钮回来,接着看她写
+    if (phoneBar) inputRef.current?.blur();
     const said = playerSaid(text);
     setEcho(said ? { text: said, at: Date.now() } : null);
     audioBus.unlock();
@@ -1915,13 +1920,40 @@ export function VNScreen({
 
   // 输入框跟着内容长高,封顶四行左右,再多就在框里滚
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  useLayoutEffect(() => {
+  const fitInput = useCallback(() => {
     const el = inputRef.current;
     if (!el) return;
     el.style.height = 'auto';
     // 加上框线的厚度(老样子的输入框有 1px 边;对话区 A 的输入没有边,一行正好 40)
     el.style.height = `${Math.min(el.scrollHeight + el.offsetHeight - el.clientHeight, 132)}px`;
-  }, [draft]);
+  }, []);
+  useLayoutEffect(fitInput, [draft, fitInput]);
+  // 手机竖屏:输入框多高写到 .vn-root 的 --ga-bar-h(语音那排、台词跟着往上让);点进去时它变宽,字要重新折行
+  const phone = usePhone();
+  const barObserver = useRef<ResizeObserver | null>(null);
+  const measureBar = useCallback(
+    (el: HTMLDivElement | null) => {
+      barObserver.current?.disconnect();
+      barObserver.current = null;
+      const root = el?.closest<HTMLElement>('.vn-root');
+      if (!el || !root) return;
+      let width = -1;
+      const measure = () => {
+        if (el.offsetWidth !== width) {
+          width = el.offsetWidth;
+          fitInput();
+        }
+        root.style.setProperty('--ga-bar-h', `${el.offsetHeight}px`);
+      };
+      measure();
+      barObserver.current = new ResizeObserver(measure);
+      barObserver.current.observe(el);
+    },
+    [fitInput],
+  );
+  // 手机:点进输入框算「点开了」;键盘收起后过一小会儿才算收完,这样点画面收键盘的那一下不会顺手翻句(见 phoneBar.ts)
+  const blurTimer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(blurTimer.current), []);
 
   /**
    * 跳到某条回复的某一句,关掉菜单。立绘、背景、音乐都是按光标累计的,跟着回到那一句的样子
@@ -2105,6 +2137,9 @@ export function VNScreen({
   // 经典 = 玻璃框 + 名牌(boxSkin 那套)。输入条、四角按钮两种一样,所以细线也走玻璃那套行为(轮到你弹输入条)
   const dlgLine = settings.dlgStyle === 'line';
   const glass = dlgLine || settings.boxSkin !== 'classic';
+  // 手机竖屏的底部排法(11-05 用户定):输入框一直在最下面,右边 画笔 · 重来,上面一排不带边框的 喇叭 · 重听 · 重新生成语音;
+  // 隐藏接在历史下面,‹ 4/4 › 放在台词那行右边;打字时输入框占满一排。样式在 vnLine.css 第 9 段
+  const phoneBar = glass && phone;
   // 点名字重听这一句:她这句有语音时(你说话、报错停在你那句时没有);经典玻璃框点名牌也一样(设计稿 .dlg-classic)
   const canReplay = glass && voice.request !== null && !failedHold && !shown?.player;
   // 这一幕是白天还是夜里(场景名带「夜」「星空」):细线白天压暗深一点、日语小字亮一点(设计稿 .ga.is-day)
@@ -2124,13 +2159,13 @@ export function VNScreen({
   const pastHere = canSend && !onLatest && beat !== null;
   // 最下面那条输入浮上来没有(设计稿 .ga.bar-on):轮到你、或者点了那行淡字
   const barOn = glass && canSend && (myTurn || barOpen);
-  barIdle.current = glass && barOpen && !myTurn && !draft.trim();
-  // 轮到你:光标直接放进输入框(手机上不弹软键盘,等玩家自己点)
+  barIdle.current = glass && tapOnlyClosesBar({ phoneBar, barOpen, myTurn, hasDraft: Boolean(draft.trim()) });
+  // 轮到你:光标直接放进输入框(手机上不弹软键盘,等玩家自己点;窄窗口也不放,放进去右下的按钮就让开了)
   useEffect(() => {
-    if (!myTurn || softKeyboard) return;
+    if (!myTurn || softKeyboard || phoneBar) return;
     const t = window.setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 60);
     return () => window.clearTimeout(t);
-  }, [myTurn, softKeyboard]);
+  }, [myTurn, softKeyboard, phoneBar]);
   const ghostRef = useRef<HTMLButtonElement>(null);
   // 点那行淡字:整条浮上来、光标放进去。同一下点击里就聚焦(iOS 要在点击里聚焦才弹键盘),所以先同步画出来
   const openBar = () => {
@@ -2190,12 +2225,33 @@ export function VNScreen({
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           aria-label="你要说的话"
+          onFocus={
+            phoneBar
+              ? () => {
+                  window.clearTimeout(blurTimer.current);
+                  setBarOpen(true);
+                }
+              : undefined
+          }
+          onBlur={
+            phoneBar
+              ? () => {
+                  blurTimer.current = window.setTimeout(() => setBarOpen(false), 250);
+                }
+              : undefined
+          }
           placeholder={
             canSend
               ? glass
-                ? pastHere
-                  ? '在这里开口,会从这里分出一条新的故事线…'
-                  : '说点什么'
+                ? phoneBar
+                  ? pastHere
+                    ? '从这里分出新故事线…'
+                    : sending
+                      ? '随时插话…'
+                      : '说点什么'
+                  : pastHere
+                    ? '在这里开口,会从这里分出一条新的故事线…'
+                    : '说点什么'
                 : !onLatest && beat
                   ? '在这里开口,会从这里分出一条新的故事线…'
                   : sending
@@ -2233,7 +2289,8 @@ export function VNScreen({
             }
           }}
         />
-        {sending && !draft.trim() ? (
+        {/* 手机这条一直露着,生成时右边的重来已经变成停止,这里不再多放一个 */}
+        {sending && !draft.trim() && !phoneBar ? (
           <button type="button" className={glass ? 'ga-send stop' : 'vn-send stop'} onClick={onStop} title="停止" aria-label="停止">
             {glass ? <GameIcon name="stop" size={20} /> : '停止'}
           </button>
@@ -2242,6 +2299,8 @@ export function VNScreen({
             type="submit"
             className={glass ? 'ga-send' : 'vn-send'}
             disabled={!canSend || !draft.trim()}
+            // 手机:按下去别抢走光标。光标一走输入框马上变窄,按钮挪开,这一下就点空了
+            onMouseDown={phoneBar ? (e) => e.preventDefault() : undefined}
             title={glass ? '发送(回车)' : '发送'}
             aria-label="发送"
           >
@@ -2249,6 +2308,50 @@ export function VNScreen({
           </button>
         )}
       </form>
+  );
+  // 这三样电脑上都在右下那条里;手机竖屏分开放(见上面 phoneBar)
+  const voiceQuick =
+    showVoiceChip || (voice.paused && currentCardId !== null) ? (
+      <VoiceQuick
+        variant="icon"
+        speaking={voice.speaking}
+        cast={voiceCast}
+        config={voiceConfig}
+        onChangeConfig={onChangeVoiceConfig}
+        paused={voice.paused}
+        synthesizing={voice.synthesizing}
+        onRetry={voice.retry}
+        onOpenSettings={() => {
+          openMenu('config');
+          setSettingsTab('sound');
+        }}
+        onOpenVoice={openVoice}
+        theme={paperTheme}
+        request={failedHold ? null : voice.request}
+        onLineAction={voice.release}
+        profiles={voiceProfiles}
+        onPickVoice={onPickVoice}
+        modelLabel={modelLabel}
+      />
+    ) : null;
+  const versionSwitch = versions ? (
+    // 手机上它在台词那行里:点它、按住它都不算点台词(不翻句、不出长按菜单)
+    <div className="vn-versions" role="group" aria-label="换版本" onClick={stop} onPointerDown={stop}>
+      <button onClick={() => flip('left')} disabled={sending} aria-label="上一版" title="上一版">
+        <GameIcon name="left" size={18} />
+      </button>
+      <span className="n">
+        {versions.swipeIndex + 1}/{versions.swipes.length}
+      </span>
+      <button onClick={() => flip('right')} disabled={sending} aria-label="下一版" title="下一版(最后一版再往右 = 重来)">
+        <GameIcon name="right" size={18} />
+      </button>
+    </div>
+  ) : null;
+  const hideButton = (
+    <button onClick={() => setUiHidden(true)} aria-label="隐藏界面" title="隐藏界面,只看立绘和背景(右键也行)">
+      <GameIcon name="hide" size={22} />
+    </button>
   );
   // 对话区 A / 经典玻璃框挂在根上的状态(设计稿 .gm.ga 上的那些 class:旁白、你说话、能重听、在念、正在写、输入浮上来、思考展开、语音关了)
   const narr = glass && !speaker && !waiting && !genFail;
@@ -2397,45 +2500,18 @@ export function VNScreen({
           <button onClick={() => setWin('log')} aria-label="历史" title="历史(滚轮往上也行)">
             <GameIcon name="history" size={24} />
           </button>
+          {phoneBar && hideButton}
         </div>
+        {phoneBar && (
+          <div className="vn-strip vn-strip-voice" role="group" aria-label="语音">
+            {voiceQuick}
+            {canReplay && voiceConfig.enabled && <VoiceLineIcons req={voice.request!} onAction={voice.release} />}
+          </div>
+        )}
         <div className="vn-strip vn-strip-tools" role="group" aria-label="快捷">
           {illusButton}
-          {(showVoiceChip || (voice.paused && currentCardId !== null)) && (
-            <VoiceQuick
-              variant="icon"
-              speaking={voice.speaking}
-              cast={voiceCast}
-              config={voiceConfig}
-              onChangeConfig={onChangeVoiceConfig}
-              paused={voice.paused}
-              synthesizing={voice.synthesizing}
-              onRetry={voice.retry}
-              onOpenSettings={() => {
-                openMenu('config');
-                setSettingsTab('sound');
-              }}
-              onOpenVoice={openVoice}
-              theme={paperTheme}
-              request={failedHold ? null : voice.request}
-              onLineAction={voice.release}
-              profiles={voiceProfiles}
-              onPickVoice={onPickVoice}
-              modelLabel={modelLabel}
-            />
-          )}
-          {versions && (
-            <div className="vn-versions" role="group" aria-label="换版本">
-              <button onClick={() => flip('left')} disabled={sending} aria-label="上一版" title="上一版">
-                <GameIcon name="left" size={18} />
-              </button>
-              <span className="n">
-                {versions.swipeIndex + 1}/{versions.swipes.length}
-              </span>
-              <button onClick={() => flip('right')} disabled={sending} aria-label="下一版" title="下一版(最后一版再往右 = 重来)">
-                <GameIcon name="right" size={18} />
-              </button>
-            </div>
-          )}
+          {!phoneBar && voiceQuick}
+          {!phoneBar && versionSwitch}
           <button
             onClick={sending ? onStop : onRegenerate}
             disabled={!sending && (entries.length === 0 || !canSend)}
@@ -2444,9 +2520,7 @@ export function VNScreen({
           >
             <GameIcon name={sending ? 'stop' : 'retry'} size={22} />
           </button>
-          <button onClick={() => setUiHidden(true)} aria-label="隐藏界面" title="隐藏界面,只看立绘和背景(右键也行)">
-            <GameIcon name="hide" size={22} />
-          </button>
+          {!phoneBar && hideButton}
         </div>
       </div>
 
@@ -2540,6 +2614,7 @@ export function VNScreen({
                     {reasoning && settings.showThinking && <span className="more">{thinkOpen ? '收起' : '展开'}</span>}
                   </button>
                 )}
+                {phoneBar && versionSwitch}
               </div>
               <div className="ga-rule" aria-hidden="true" />
               <div className="ga-body">
@@ -2591,23 +2666,28 @@ export function VNScreen({
           {/* 输入(设计稿 .ga-input):平时画面正中、离底 22px 一行带下划线的淡字;点它 / 轮到你时整条
               (× 收起 + 输入框 + 发送)从 6px 下方淡入浮上来,两头淡出的细线点进去变亮;收起 / 发出去后回到那行字 */}
           <div className="ga-input" inert={covered}>
-            <button
-              ref={ghostRef}
-              type="button"
-              className="ga-ghost"
-              tabIndex={barOn ? -1 : 0}
-              disabled={!canSend}
-              onClick={(e) => {
-                e.stopPropagation();
-                openBar();
-              }}
-            >
-              {ghostText}
-            </button>
-            <div className={`ga-bar${draft.trim() ? ' has' : ''}`} inert={!barOn} onClick={stop}>
-              <button type="button" className="ga-x" onClick={closeBar} title="收起(点下面那行字还能再打开)" aria-label="收起输入框">
-                <GameIcon name="close" size={18} />
+            {/* 手机竖屏输入框一直露着(见 phoneBar),不要那行淡字和收起的 × */}
+            {!phoneBar && (
+              <button
+                ref={ghostRef}
+                type="button"
+                className="ga-ghost"
+                tabIndex={barOn ? -1 : 0}
+                disabled={!canSend}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openBar();
+                }}
+              >
+                {ghostText}
               </button>
+            )}
+            <div className={`ga-bar${draft.trim() ? ' has' : ''}`} ref={phoneBar ? measureBar : undefined} inert={!barOn && !phoneBar} onClick={stop}>
+              {!phoneBar && (
+                <button type="button" className="ga-x" onClick={closeBar} title="收起(点下面那行字还能再打开)" aria-label="收起输入框">
+                  <GameIcon name="close" size={18} />
+                </button>
+              )}
               {inputForm}
             </div>
           </div>
