@@ -299,7 +299,7 @@ interface Props {
   freshCardId?: string | null;
   onFreshSeen?: () => void;
   currentCardId: string | null;
-  onPickCard: (id: string, fresh: boolean) => void;
+  onPickCard: (id: string, fresh: boolean) => void | Promise<void>;
   /**
    * 检查器里只改这一句的表情(plugins/manualMarks.ts):记在 entryId 这条当前分支的第 line 句上;
    * pick 是 null 改回去。DebugApp 改条目、照常存盘
@@ -1283,6 +1283,9 @@ export function VNScreen({
   const [ctrlHeld, setCtrlHeld] = useState(false);
   const skipping = skip || ctrlHeld;
   const veil = useLoadingVeil(loading);
+  // 背景 / 立绘 / CG 直接换、不淡:跳过时;封面、菜单盖着时(含菜单淡出那一下 —— 开新故事、读档换的对话
+  // 和关菜单是同一帧到的),封面 / 菜单退场时底下已经只剩新的那张,不会透出上一段的表情
+  const swapNow = skipping || title || menuLayer.mounted;
   const accent = useVNAccent(settings.accent, sprites);
   // 主题「玻璃」:提示条、报错卡这些纸卡按这一幕的背景取色(--gl-*,写在 .vn-root 上)
   const paperTheme = settings.theme;
@@ -2248,7 +2251,7 @@ export function VNScreen({
         onContextMenu={onContextMenu}
       >
         {/* 背景 / 立绘在开关里关了:不画(背景留黑) */}
-        {switches.bg && <BackgroundLayer view={bgView} instant={skipping} />}
+        {switches.bg && <BackgroundLayer view={bgView} instant={swapNow} />}
         {switches.sprite && (
           <SpriteLayer
             view={spriteView}
@@ -2256,10 +2259,10 @@ export function VNScreen({
             fx={spriteFx}
             fxVolume={settings.spriteFxVolume}
             covered={cgOn}
-            instant={skipping}
+            instant={swapNow}
           />
         )}
-        <CgLayer view={shownCg} instant={skipping} />
+        <CgLayer view={shownCg} instant={swapNow} />
       </div>
       {/* 细线对话区:底部很淡的压暗,只为字看得清;出 CG 时从更低处开始(vnLine.css .ga-shade) */}
       {dlgLine && <div className="ga-shade" aria-hidden="true" />}
@@ -2876,11 +2879,8 @@ export function VNScreen({
           home={titleHome}
           cards={cards}
           onContinue={() => setTitle(false)}
-          onNewStory={() => {
-            if (!currentCardId) return;
-            setTitle(false);
-            onPickCard(currentCardId, true);
-          }}
+          // 封面等新对话建好了自己退场(VNTitle 的 newStory),这里不先收
+          onNewStory={() => (currentCardId ? onPickCard(currentCardId, true) : undefined)}
           onLoad={() => openMenu('save', 'cover')}
           onSettings={() => openMenu('config', 'cover')}
           onExit={onExit}

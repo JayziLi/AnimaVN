@@ -319,6 +319,10 @@
   padding: 1cqh 3cqh 1cqh 4.2cqh;
   text-align: left;
 }
+/* 「新的故事」在建对话,封面还没退场 */
+.vn-tt2-menu button[aria-busy='true'] {
+  cursor: progress;
+}
 .vn-tt2-menu button::before {
   content: '';
   position: absolute;

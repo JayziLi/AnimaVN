@@ -63,8 +63,8 @@ interface Props {
   home: TitleScene;
   cards: TitleCard[];
   onContinue: () => void;
-  /** 给当前角色开一段新对话 */
-  onNewStory: () => void;
+  /** 给当前角色开一段新对话;给回 Promise 的,等它好了封面才退场(和「继续」一样淡出) */
+  onNewStory: () => void | Promise<void>;
   onLoad: () => void;
   onSettings: () => void;
   onExit: () => void;
@@ -260,10 +260,22 @@ export function VNTitle({
     setLeaving(true);
     leaveTimer.current = window.setTimeout(onContinue, reduceMotion ? 0 : 380);
   };
+  // 「新的故事」:新对话建好了封面才退场。先收起的话,建对话那几次来回里露出来的是上一段对话的
+  // 台词和表情,接着才跳成新开场 —— 看着像从上一次跳到现在、立绘连换好几下
+  const [starting, setStarting] = useState(false);
+  const newStory = () => {
+    const done = onNewStory();
+    if (!done) return;
+    setStarting(true);
+    void done.finally(() => {
+      setStarting(false);
+      cont();
+    });
+  };
   const disabled = (m: TitleMood) => !hasCard && (m === 'continue' || m === 'load' || m === 'new');
-  // 点了「继续」正在退场:别的按钮点了不算,不然动画放到一半又开了新故事 / 读档。
+  // 点了「继续」正在退场、「新的故事」在建对话:别的按钮点了不算,不然动画放到一半又开了新故事 / 读档。
   const unlessLeaving = (fn: () => void) => () => {
-    if (!leaving) fn();
+    if (!leaving && !starting) fn();
   };
 
   const played = lastPlayed ? relTime(lastPlayed) : '';
@@ -333,7 +345,7 @@ export function VNTitle({
         <nav className="vn-tt2-menu">
           {[
             { mood: 'continue' as TitleMood, zh: '继续', en: 'Continue', run: cont, sub: contLine, isCont: true },
-            { mood: 'new' as TitleMood, zh: '新的故事', en: 'New Story', run: onNewStory },
+            { mood: 'new' as TitleMood, zh: '新的故事', en: 'New Story', run: newStory },
             { mood: 'load' as TitleMood, zh: '读档', en: 'Load', run: onLoad },
             { mood: 'continue' as TitleMood, zh: '角色', en: 'Heroine', run: onPick, sub: hasCard ? charName : '' },
             { mood: 'config' as TitleMood, zh: '设置', en: 'Config', run: onSettings },
@@ -342,6 +354,7 @@ export function VNTitle({
               key={m.zh}
               className={`${m.sub ? 'has-sub' : ''}${m.isCont ? ' has-cont' : ''}`}
               onClick={unlessLeaving(m.run)}
+              aria-busy={(starting && m.run === newStory) || undefined}
               onPointerEnter={() => {
                 hover(m.mood)();
                 if (m.isCont) setContHover(true);

@@ -4461,7 +4461,7 @@ export default function DebugApp() {
           currentCardId={cardId}
           onPickCard={(id, fresh) => {
             const row = savedCards.find((c) => c.id === id);
-            if (row) void selectCard(row, { fresh });
+            return row ? selectCard(row, { fresh }) : undefined;
           }}
           // 检查器里只改这一句的表情:记进这条当前分支的 swipe_info.vn.manual,persist effect 照常写库
           onSetManual={(id, line, pick) => patchEntry(id, (e) => setManual(e, line, pick))}
@@ -4557,14 +4557,10 @@ export default function DebugApp() {
                   canSave={Boolean(chatId) && !sending && entries.length > 0}
                   loadOnly={ctx.loadOnly}
                   onSaveHere={() => void saveBranch(ctx.currentMessageId, ctx.sceneNow)}
-                  onLoad={(id) => {
-                    ctx.enterGame();
-                    void loadChat(id);
-                  }}
-                  onNewStory={() => {
-                    ctx.enterGame();
-                    void newChat();
-                  }}
+                  // 读好 / 建好了再关菜单(从封面进来的连封面一起收):先关的话,来回那一下露出来的是上一段对话,
+                  // 接着才跳过去,立绘跟着连换好几下。读档失败就停在存档页
+                  onLoad={(id) => void loadChat(id).then((loaded) => loaded && ctx.enterGame())}
+                  onNewStory={() => void newChat().finally(ctx.enterGame)}
                   onRename={renameChat}
                   onDelete={removeChat}
                 />
