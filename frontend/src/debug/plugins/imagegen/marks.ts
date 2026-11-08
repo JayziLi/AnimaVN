@@ -71,6 +71,12 @@ export function markAt(
   return best;
 }
 
+/** 历史页用:不看这次打开的显示记录,当每张都在画的那句第一次显示,算第 line 句显示的那张;不记账 */
+export function markInHistory(entry: ChatEntry, line: number, holdLines = DEFAULT_HOLD_LINES): VnImageMark | null {
+  const shown = new Map(imagesOf(entry).map((m) => [m.id, m.line]));
+  return markAt(entry, line, holdLines, { drawn: new Map(), shown });
+}
+
 function withVn(entry: ChatEntry, swipe: number, edit: (vn: VnMarks) => void): ChatEntry {
   const info = entry.swipeInfo[swipe] ?? ({} as SwipeInfo);
   const vn: VnMarks = { ...info.vn };

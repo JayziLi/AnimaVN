@@ -46,16 +46,57 @@ const props = (over: Partial<VNHistoryProps> = {}): VNHistoryProps => ({
 });
 
 describe('VNHistory', () => {
-  it('一句一行:名字 + 台词,旁白没有名字,日语小字在中文上方,现在停的那句标「现在」', () => {
+  it('一条消息一块:头像和名字只在开头一次,她的台词不再写名字;日语小字在中文上方,现在停的那句标「现在」', () => {
     const html = renderToStaticMarkup(<VNHistory {...props()} />);
-    expect(html).toContain('旅行者');
+    expect(html.match(/class="vh-head/g)).toHaveLength(2);
+    expect(html).toContain('<span class="vh-nm me">旅行者</span>');
+    expect(html).toContain('<span class="vh-nm">星绘</span>');
     expect(html).toContain('「早」');
     expect(html.indexOf('おはよう')).toBeGreaterThan(-1);
     expect(html.indexOf('おはよう')).toBeLessThan(html.indexOf('「早」'));
     expect(html).toContain('现在');
     expect(html.match(/class="vh-ln /g)).toHaveLength(3);
-    // 旁白一行没有名字
-    expect(html.match(/class="vh-who"/g)).toHaveLength(2);
+    expect(html).not.toContain('class="vh-who');
+    // 「现在」是第一句:后面那句旁白还没播到,变淡
+    expect(html).toContain('vh-ln later narr');
+  });
+
+  it('AI 替你写的那句:你的名字 + 「AI 写的」;别人的台词写名字', () => {
+    const mixed: LogLines = {
+      lines: [say('「早」'), { speaker: '旅行者', text: '「嗯」', player: true }, { speaker: '店长', text: '「欢迎」' }],
+      plans: [null, null, null],
+      hits: [],
+      streaming: false,
+    };
+    const html = renderToStaticMarkup(<VNHistory {...props({ data: { ...data, of: (e) => (e.id === 'a' ? mixed : null) } })} />);
+    expect(html).toContain('AI 写的');
+    expect(html.match(/class="vh-who me"/g)).toHaveLength(1);
+    expect(html).toContain('<div class="vh-who">店长</div>');
+  });
+
+  it('最后一条回复有几版:名字后面 ‹ 2 / 3 ›;只有一版、没给 onSwipe 不显示', () => {
+    const three: ChatEntry = { ...entry('a', 'assistant', '「早」'), swipes: ['1', '「早」', '3'], swipeIndex: 1 };
+    const html = renderToStaticMarkup(<VNHistory {...props({ entries: [entry('u', 'user', '你好'), three], onSwipe: () => {} })} />);
+    expect(html).toContain('aria-label="换版本"');
+    expect(html).toContain('2 / 3');
+    expect(renderToStaticMarkup(<VNHistory {...props({ onSwipe: () => {} })} />)).not.toContain('换版本');
+    expect(renderToStaticMarkup(<VNHistory {...props({ entries: [entry('u', 'user', '你好'), three] })} />)).not.toContain('换版本');
+  });
+
+  it('换背景插横幅、CG 那几句画竖线,小图在线头那句左边一栏', () => {
+    const scene: HistoryData['scene'] = (_id, line) => ({
+      bg: { id: 'b1', label: '深夜卧室', src: '/bg.webp', focus: 50 },
+      cg: line === 1 ? { id: 'c1', thumb: '/cg.webp', full: '/cg-big.webp' } : null,
+    });
+    const html = renderToStaticMarkup(<VNHistory {...props({ data: { ...data, scene, pics: true } })} />);
+    expect(html).toContain('class="vh-list pics"');
+    expect(html.match(/class="vh-scene[ "]/g)).toHaveLength(1);
+    expect(html).toContain('深夜卧室');
+    expect(html).toContain('src="/cg.webp"');
+    // 小图在「现在」后面:跟着下面那句一起淡;悬停写着显示几句
+    expect(html).toContain('class="vh-cg alone later"');
+    expect(html).toContain('title="CG · 显示 1 句(点开看大图)"');
+    expect(html).toMatch(/class="vh-cg alone later">.*?<\/div><div class="vh-ln rail rs re later/);
   });
 
   it('每句都能「回到这里」;用户消息不能', () => {

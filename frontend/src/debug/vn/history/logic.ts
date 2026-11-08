@@ -19,13 +19,15 @@ export interface LogLines {
   streaming: boolean;
 }
 
-/** 历史里一句的头像:那句的表情差分,按脸裁(设计稿 AV.menuHistory 的 faceCrop) */
-export interface HistoryFace {
-  src: string;
-  /** 0–1 的脸框;没认出脸是 null(用默认位置) */
-  face: { x: number; y: number; w: number; h: number } | null;
-  /** 原图宽 / 高 */
-  aspect: number;
+/** 历史里一句(用户消息是那一刻)的画面:背景、CG。和舞台读同一份时间线(core/timeline.ts) */
+export interface HistoryScene {
+  /** 背景;没有是 null。src 是横幅用的小图 */
+  bg: { id: string; label: string; src: string | null; focus: number } | null;
+  /**
+   * 画面上的大图;没有是 null。thumb / full 是这一句显示的那一帧。
+   * 一般是 CG(构图);ai = AI 生图画的插图(它盖在 CG 上面,两个都有时算它)
+   */
+  cg: { id: string; thumb: string | null; full: string | null; ai?: boolean } | null;
 }
 
 /** VNScreen 递给历史页的数据 */
@@ -40,8 +42,10 @@ export interface HistoryData {
   jaHidden: (entry: ChatEntry) => boolean;
   /** 小窗口的 Esc 先问内容:在改原文就先退出编辑,返回 true = 这一下被用掉了 */
   esc: MutableRefObject<(() => boolean) | null>;
-  /** 她这一句(第 line 句;整条回复看原文时是 0)的头像;没有立绘就不给 / 返回 null,退回卡面头像或名字章 */
-  face?: (entryId: string, line: number) => HistoryFace | null;
+  /** 这一句(第 line 句;用户消息、整条看原文时是 0)那一刻的背景和 CG;没有时间线就不给 / 返回 null */
+  scene?: (entryId: string, line: number) => HistoryScene | null;
+  /** CG 或 AI 生图开着:列表左边留一栏放小图 */
+  pics?: boolean;
 }
 
 export type LineRole = 'char' | 'narr' | 'player';
@@ -137,6 +141,122 @@ export function entryRows(entry: ChatEntry, o: RowOptions): HistoryRow[] {
     ja: ja && ln.ja ? ln.ja : null,
     plan: got.plans[i] ?? null,
     current: i === cur,
+  }));
+}
+
+/** CG 竖线在这一行:on = 画线;start / end = 线从这行开始 / 到这行结束(只画半截) */
+export interface Rail {
+  on: boolean;
+  start: boolean;
+  end: boolean;
+}
+
+/**
+ * 一条消息里的一行:换场景横幅 / CG 小图 / 开头(头像 + 名字)/ 一句。
+ * cg 是小图,放在它下面那句的左边、不占行;span = 这张显示了几句(竖线连着的句子数,你的消息算一句);
+ * alone = 这条消息里这张图只连着线头那一句(图比一句高,要把那句撑高,不然压到下一张 / 被下一条消息盖住)
+ */
+export type BlockItem =
+  | { t: 'scene'; key: string; bg: NonNullable<HistoryScene['bg']>; rail: Rail; later: boolean }
+  | { t: 'cg'; key: string; cg: NonNullable<HistoryScene['cg']>; span: number; alone: boolean; rail: Rail; later: boolean }
+  | { t: 'head'; key: string; rail: Rail }
+  | { t: 'row'; key: string; row: HistoryRow; rail: Rail; later: boolean };
+
+/** 一条消息(调试台 / 酒馆那样:头像和名字只在开头一次,下面是这条的所有句子) */
+export interface HistoryBlock {
+  entry: ChatEntry;
+  user: boolean;
+  /** 整条都在「现在」后面(还没播到):字变淡 */
+  later: boolean;
+  items: BlockItem[];
+}
+
+const rowLine = (r: HistoryRow) => (r.kind === 'line' ? r.line : 0);
+
+/**
+ * 把要显示的条目排成一条条消息。
+ * - 「现在」那句后面的句子、后面的整条消息标 later(还没播到,变淡);at 是「现在」那条在 entries 里的下标,-1 = 不知道(都不淡)。
+ *   横幅和 CG 小图跟着它下面那句淡(还没看到的图不剧透)
+ * - 背景换了的地方(列表第一行也算)插一条横幅;CG 从出现那句到收起那句左边一条竖线,小图在线头左边。
+ *   竖线跨过中间的用户消息、横幅也连着;CG 恰好从一条回复的第一句开始时,线从那句起,不从头像那行起
+ */
+export function historyBlocks(entries: readonly ChatEntry[], first: number, at: number, o: RowOptions): HistoryBlock[] {
+  type Pre =
+    | { t: 'scene'; key: string; bg: NonNullable<HistoryScene['bg']>; cg: string | null; later: boolean }
+    | { t: 'cg'; key: string; cg: string; shot: NonNullable<HistoryScene['cg']>; later: boolean }
+    | { t: 'head'; key: string; cg: string | null }
+    | { t: 'row'; key: string; row: HistoryRow; cg: string | null; later: boolean };
+  const blocks: { entry: ChatEntry; user: boolean; later: boolean; items: Pre[] }[] = [];
+  const atLine = o.data.at?.line ?? -1;
+  let bgId: string | null | undefined;
+  let cgId: string | null = null;
+  entries.forEach((entry, k) => {
+    const rows = entryRows(entry, o);
+    if (rows.length === 0) return;
+    const i = first + k;
+    const later = at >= 0 && i > at;
+    const items: Pre[] = [];
+    const sceneOf = (r: HistoryRow) => o.data.scene?.(entry.id, rowLine(r)) ?? null;
+    // 换了背景:横幅放在这一行前面;竖线只在前后是同一张 CG 时穿过它。dim = 跟着下面那句淡不淡
+    const banner = (s: HistoryScene | null, key: string, dim: boolean) => {
+      const bg = s?.bg ?? null;
+      if (bg && bg.id !== bgId) items.push({ t: 'scene', key: `bg:${key}`, bg, cg: s?.cg?.id === cgId ? cgId : null, later: dim });
+      if (bg) bgId = bg.id;
+    };
+    const s0 = sceneOf(rows[0]);
+    banner(s0, entry.id, later);
+    // 开头那行:CG 接着上一条的才画线;这条第一句才出的 CG 从下面的小图起
+    items.push({ t: 'head', key: `head:${entry.id}`, cg: s0?.cg && s0.cg.id === cgId ? cgId : null });
+    rows.forEach((row, j) => {
+      const s = j === 0 ? s0 : sceneOf(row);
+      const rowLater = later || (i === at && row.kind === 'line' && row.line > atLine);
+      if (j > 0) banner(s, row.key, rowLater);
+      const cg = s?.cg ?? null;
+      if (cg && cg.id !== cgId) items.push({ t: 'cg', key: `cg:${row.key}`, cg: cg.id, shot: cg, later: rowLater });
+      cgId = cg?.id ?? null;
+      items.push({ t: 'row', key: row.key, row, cg: cgId, later: rowLater });
+    });
+    blocks.push({ entry, user: entry.role === 'user', later, items });
+  });
+  // 竖线:按排好的顺序看前后一行是不是同一张 CG;小图不占行,它下面那句是线头。顺便数每张连着几句
+  const flat = blocks.flatMap((b) => b.items);
+  const spans = new Map<Pre, number>();
+  let shot: Pre | null = null;
+  const rails = flat.map((it, n): Rail => {
+    if (it.t === 'cg') shot = it;
+    else if (it.t === 'row' && shot && it.cg === shot.cg) spans.set(shot, (spans.get(shot) ?? 0) + 1);
+    const id = it.cg;
+    const before = n > 0 ? flat[n - 1] : null;
+    const next = n < flat.length - 1 ? flat[n + 1].cg : null;
+    const start = id !== null && (it.t === 'cg' || before?.t === 'cg' || before?.cg !== id);
+    return { on: id !== null, start, end: id !== null && next !== id };
+  });
+  let n = 0;
+  return blocks.map((b) => ({
+    entry: b.entry,
+    user: b.user,
+    later: b.later,
+    items: b.items.map((it, j): BlockItem => {
+      const rail = rails[n++];
+      switch (it.t) {
+        case 'scene':
+          return { t: 'scene', key: it.key, bg: it.bg, rail, later: it.later };
+        case 'cg':
+          return {
+            t: 'cg',
+            key: it.key,
+            cg: it.shot,
+            span: spans.get(it) ?? 0,
+            alone: b.items[j + 2]?.cg !== it.cg,
+            rail,
+            later: it.later,
+          };
+        case 'head':
+          return { t: 'head', key: it.key, rail };
+        case 'row':
+          return { t: 'row', key: it.key, row: it.row, rail, later: it.later };
+      }
+    }),
   }));
 }
 

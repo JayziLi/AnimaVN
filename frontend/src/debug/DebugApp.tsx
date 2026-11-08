@@ -4451,6 +4451,7 @@ export default function DebugApp() {
           onBranch={(text, entryId, keep) => void branchFromHistory(text, entryId, keep)}
           onStop={() => abortRef.current?.abort()}
           onRegenerate={regenerateLast}
+          onSwipe={swipe}
           onExit={() => toggleVn(false)}
           cards={vnCards}
           onWantAvatar={(id) => wantAvatars([id])}
@@ -4529,9 +4530,11 @@ export default function DebugApp() {
                   charName={card?.name ?? ''}
                   userName={userName}
                   charAvatar={avatarUrl}
+                  userAvatar={avatarOf(activePersona)}
                   sending={sending}
                   onJump={ctx.jumpTo}
                   onEdit={editMessage}
+                  onSwipe={ctx.swipe}
                   editFirst={ctx.editFirst}
                   onEditDone={ctx.editDone}
                 />

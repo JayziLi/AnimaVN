@@ -74,6 +74,8 @@ const PATHS = {
     </>
   ),
   down: <path d="M6.5 9.5 12 15l5.5-5.5" />,
+  left: <path d="M14.5 6.5 9 12l5.5 5.5" />,
+  right: <path d="M9.5 6.5 15 12l-5.5 5.5" />,
   copy: (
     <>
       <rect x="8.5" y="8.5" width="11" height="11" rx="1.5" />

@@ -24,6 +24,7 @@ export function PopWindow({
   width,
   height,
   theme = 'white',
+  full = false,
   leaving = false,
   className,
   onClose,
@@ -40,6 +41,11 @@ export function PopWindow({
   /** 不给 = 跟着内容,最多比画面矮 48 */
   height?: number;
   theme?: PopTheme;
+  /**
+   * 铺满、没有纸(10-30 历史选的「透着游戏画面」):游戏画面轻轻虚化 + 压暗,内容直接浮在上面,
+   * 字用夜纸那套浅色(不跟设置里的主题);width / height 不看
+   */
+  full?: boolean;
   leaving?: boolean;
   className?: string;
   onClose: () => void;
@@ -107,7 +113,7 @@ export function PopWindow({
 
   return (
     <div
-      className={`vn-pw-layer${leaving ? ' leaving' : ''}${leaving && dropped ? ' dropped' : ''}${className ? ` ${className}` : ''}`}
+      className={`vn-pw-layer${full ? ' is-full' : ''}${leaving ? ' leaving' : ''}${leaving && dropped ? ' dropped' : ''}${className ? ` ${className}` : ''}`}
       // 淡出那 .18s 整层还接住点击,不让点穿到底下的游戏
       onClick={(e) => e.stopPropagation()}
       onContextMenu={(e) => {
@@ -118,13 +124,13 @@ export function PopWindow({
       <div className="vn-pw-veil" onClick={leaving ? undefined : onClose} />
       <div
         ref={winRef}
-        className={`vn-pw-win av-pcard ${popThemeClass(theme)}`}
+        className={`vn-pw-win av-pcard ${full ? 'av-night' : popThemeClass(theme)}`}
         role="dialog"
         aria-modal="true"
         aria-label={title}
         tabIndex={-1}
         inert={leaving}
-        style={{ width, height }}
+        style={full ? undefined : { width, height }}
       >
         <header
           className="vn-pw-head"

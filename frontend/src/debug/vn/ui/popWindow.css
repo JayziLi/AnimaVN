@@ -534,3 +534,55 @@
     translate: 0 16px;
   }
 }
+
+/* ---------- 铺满(PopWindow full,10-30 历史选的「透着游戏画面」):没有纸,游戏画面轻轻虚化 + 压暗,
+   内容直接浮在上面;字用夜纸那套浅色。压暗层的淡入用 backwards:fill-mode both 会让 backdrop-filter 失效 ---------- */
+.vn-pw-layer.is-full .vn-pw-veil {
+  background: rgba(8, 9, 16, 0.6);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+  animation-fill-mode: backwards;
+}
+.vn-pw-layer.is-full .vn-pw-win {
+  width: min(1180px, 100% - 96px);
+  height: calc(100% - 56px);
+  max-height: none;
+  padding: 26px 18px 0 22px;
+  border: none;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+.vn-pw-layer.is-full .vn-pw-head::after {
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.28) 60%, transparent);
+}
+.vn-pw-layer.is-full .vn-pw-title,
+.vn-pw-layer.is-full .vn-pw-where {
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+}
+.vn-pw-layer.is-full .vn-pw-x {
+  background: rgba(20, 20, 32, 0.4);
+}
+@media (min-width: 641px) {
+  .vn-pw-layer.is-full .vn-pw-win {
+    max-width: calc((100% - 96px) / var(--ga-k, 1));
+    max-height: calc((100% - 56px) / var(--ga-k, 1));
+  }
+}
+/* 手机:不从下面升半屏,整屏透明(顶上那条往下拉照样能关) */
+@media (max-width: 640px) {
+  .vn-pw-layer.is-full .vn-pw-veil {
+    background: rgba(8, 9, 16, 0.7);
+  }
+  .vn-pw-layer.is-full .vn-pw-win {
+    top: env(safe-area-inset-top);
+    width: 100%;
+    height: auto;
+    padding: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+    overflow: visible;
+  }
+}

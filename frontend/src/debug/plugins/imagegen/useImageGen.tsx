@@ -63,6 +63,7 @@ import {
   imagesOf,
   lastImageBefore,
   markAt,
+  markInHistory,
   newShowLog,
   noteBefore,
   patchImage,
@@ -790,6 +791,12 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
       viewAt: (entry, line) => {
         const m = store.shownAt(entry, line);
         return m ? { key: m.id, src: apiUrl(`/api/blobs/${m.sha}?w=${SHOW_WIDTH}`), focus: 50, place: store.config.place } : null;
+      },
+      historyAt: (entry, line) => {
+        const m = markInHistory(entry, line, store.config.holdLines);
+        return m
+          ? { key: m.id, thumb: apiUrl(`/api/blobs/${m.sha}?w=360`), full: apiUrl(`/api/blobs/${m.sha}?w=${SHOW_WIDTH}`) }
+          : null;
       },
       button: (ctx) => <IgButton store={store} ctx={ctx} />,
       stage: (ctx) => <IgStage store={store} ctx={ctx} />,

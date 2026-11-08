@@ -31,8 +31,8 @@ import { buildTimeline, stateAt, type TimelineCtx } from '../core/timeline';
 import {
   cardFaceUrl,
   sceneImageUrl,
+  sceneThumbUrl,
   spriteImageUrl,
-  spriteThumbUrl,
   type PackSprite,
   type SceneAsset,
   type SpeakRequest,
@@ -158,6 +158,8 @@ export interface PageContext {
   enterGame: () => void;
   /** 跳到某条回复的第 line 句(不给是第一句),并关掉菜单 */
   jumpTo: (entryId: string, line?: number) => void;
+  /** 换最后一条回复的版本(历史页最后一条回复开头的 ‹ 2/3 ›),游戏跟着从那一版第一句开始播 */
+  swipe: (dir: 'left' | 'right') => void;
   /** 「在当前位置存档」存到哪条消息为止 */
   currentMessageId: string | null;
   /** 现在这一句所在的场景(存档回执「已存档 · 夜路 · 33 条」的地名和小图);没有背景时都是 null */
@@ -285,6 +287,8 @@ interface Props {
   onBranch: (text: string, entryId: string, keep: string) => void;
   onStop: () => void;
   onRegenerate: () => void;
+  /** 换最后一条回复的版本(调试台的 ‹ ›,规则在 DebugApp.swipe:最后一版再往右 = 重来,开场白绕回第一版) */
+  onSwipe: (id: string, dir: 'left' | 'right') => void;
   onExit: () => void;
   renderPage: (page: HostPage, ctx: PageContext) => ReactNode;
   /** 标题画面上的角色头像 */
@@ -767,6 +771,7 @@ export function VNScreen({
   onBranch,
   onStop,
   onRegenerate,
+  onSwipe,
   onExit,
   renderPage,
   cards,
@@ -960,6 +965,8 @@ export function VNScreen({
   const beatId = beat?.entry.id ?? null;
   // 时间线(core/timeline.ts):每条回复每一句的画面,从第一条回复一路累计;每条回复按内容缓存,流式时只重算正在写的那条
   const timeline = useMemo(() => buildTimeline(beats, tctx), [beats, tctx]);
+  // 条目 id → 在对话里是第几条(时间线和条目一一对应,用户消息也有一份):历史页按它查每句的背景和 CG
+  const entryIndex = useMemo(() => new Map(beats.map((b, i) => [b.entry.id, i])), [beats]);
   // 光标这句的画面
   const cursorState = stateAt(timeline, beatIndex, line);
   // 对不上、还在问模型的标签不切图,保持上一张 —— 控制台里会写原因。
@@ -1921,6 +1928,19 @@ export function VNScreen({
     setMenu(null);
   };
 
+  /**
+   * 最后一条回复的版本(重来出的新版、卡里的其他开场白):只有一版时不显示。
+   * 换完光标停到这条的第一句 —— swipe 记成 -1,和条目的版本号对不上,渲染时就地纠正成新那一版的第一句
+   */
+  const tail = entries[entries.length - 1];
+  const versions = tail?.role === 'assistant' && tail.swipes.length > 1 ? tail : null;
+  const flip = (dir: 'left' | 'right') => {
+    if (!versions || sending) return;
+    setCursor({ id: versions.id, swipe: -1, line: 0 });
+    setUserStep(null);
+    onSwipe(versions.id, dir);
+  };
+
   // ---- 思考中 / 生成中 ----
 
   const info = beat ? currentInfo(beat.entry) : undefined;
@@ -2011,6 +2031,7 @@ export function VNScreen({
         setTitle(false);
       },
       jumpTo,
+      swipe: flip,
       currentMessageId,
       sceneNow: { label: scene.bg?.label || null, thumb: bgUrl },
       loadOnly: shownMenuFrom === 'cover',
@@ -2030,17 +2051,25 @@ export function VNScreen({
         showJa,
         jaHidden: jaHiddenOf,
         esc: logEsc,
-        // 历史里她每一句的头像:那句时间线上的表情差分,按脸裁(设计稿 AV.menuHistory 的 faceCrop)
-        face: (entryId, at) => {
-          const b = backlog.get(entryId);
-          const tl = b ? timeline.entries[b.index] : null;
-          if (!tl) return null;
-          const label = (tl.lines[at] ?? tl.empty).shownLabel;
-          const s = sprites.find((x) => x.label === label) ?? sprites[0];
-          const src = s ? spriteThumbUrl(s, 160) : null;
-          if (!s || !src) return null;
-          const fs = s.face_scan;
-          return { src, face: faces.get(s.id) ?? null, aspect: fs?.width && fs.height ? fs.width / fs.height : 0.5 };
+        pics: switches.cg || !!illustrations,
+        // 历史里每句那一刻的背景和 CG(时间线同一份):换背景的地方插横幅,CG 那几句左边一条竖线。
+        // AI 生图的插图盖在 CG 上面,同一条竖线
+        scene: (entryId, at) => {
+          const i = entryIndex.get(entryId);
+          const tl = i === undefined ? null : timeline.entries[i];
+          if (i === undefined || !tl) return null;
+          const s = tl.lines[at] ?? tl.empty;
+          const { bg, cg } = s.scene;
+          const frame = s.cgFrame ?? cg;
+          const pic = illustrations?.historyAt?.(beats[i].entry, at) ?? null;
+          return {
+            bg: bg ? { id: bg.id, label: bg.label, src: sceneThumbUrl(bg, 960), focus: bg.focus_x } : null,
+            cg: pic
+              ? { id: `ai:${pic.key}`, thumb: pic.thumb, full: pic.full, ai: true }
+              : cg && frame
+                ? { id: cg.id, thumb: sceneThumbUrl(frame, 360), full: sceneImageUrl(frame) }
+                : null,
+          };
         },
       },
   };
@@ -2389,6 +2418,19 @@ export function VNScreen({
               modelLabel={modelLabel}
             />
           )}
+          {versions && (
+            <div className="vn-versions" role="group" aria-label="换版本">
+              <button onClick={() => flip('left')} disabled={sending} aria-label="上一版" title="上一版">
+                <GameIcon name="left" size={18} />
+              </button>
+              <span className="n">
+                {versions.swipeIndex + 1}/{versions.swipes.length}
+              </span>
+              <button onClick={() => flip('right')} disabled={sending} aria-label="下一版" title="下一版(最后一版再往右 = 重来)">
+                <GameIcon name="right" size={18} />
+              </button>
+            </div>
+          )}
           <button
             onClick={sending ? onStop : onRegenerate}
             disabled={!sending && (entries.length === 0 || !canSend)}
@@ -2701,7 +2743,7 @@ export function VNScreen({
         </div>
       )}
 
-      {/* 游戏上的小窗口:历史(和菜单的历史页同一份内容)、模型 */}
+      {/* 游戏上的小窗口:历史(和菜单的历史页同一份内容;10-30 起铺满、透着游戏画面)、模型 */}
       {winLayer.mounted && lastWin.current === 'log' && (
         <PopWindow
           title="历史"
@@ -2710,6 +2752,7 @@ export function VNScreen({
           where={menuCrumb('', chatName, scene.bg?.label).split(' · ').slice(1).join(' · ') || undefined}
           width={900}
           height={640}
+          full
           className="vn-pw-hist"
           theme={paperTheme}
           leaving={winLayer.leaving}

@@ -219,6 +219,8 @@ export interface VnIllustrationContext {
 export interface VnIllustrations {
   /** 这条回复的第 line 句该显示的插图;没有是 null。要快:每次重画都调 */
   viewAt: (entry: ChatEntry, line: number) => IllustrationView | null;
+  /** 历史页:这条回复第 line 句那时显示的插图(小图 / 大图);不看这次打开的显示记录,也不记账。不给就不进历史 */
+  historyAt?: (entry: ChatEntry, line: number) => { key: string; thumb: string; full: string } | null;
   /** 游戏菜单「设置」里卡带自己那一页(视觉小说给它一个分页,名字是 settingsName) */
   settings: () => ReactNode;
   settingsName: string;

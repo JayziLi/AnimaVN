@@ -1,11 +1,15 @@
 /**
- * 历史页:一句一行的纸面列表(设计稿 kit/scene.js 的 AV.menuHistory,照星海的历史页)。
- * 菜单里的「历史」和游戏右上「历史」开的小窗口是同一份。
+ * 历史页(10-30 改版,设计稿 docs/superpowers/specs/2026-10-30-history-redesign.md)。
+ * 菜单里的「历史」(纸面大面板)和游戏右上「历史」(透着游戏画面铺满,PopWindow full)是同一份。
  *
- * - 一句一行:说话人名(她的名字用角色色)+ 台词;旁白没有名字;你说的话一行;日语小字在中文上方(字幕开着时)
+ * - 一条消息一块,像调试台 / 酒馆:头像(卡面头像 / 玩家头像)和名字只在开头一次,下面是这条的所有句子
+ * - 她的回复里:她的台词不再写名字;别人的台词写名字;AI 替你写的那句写你的名字 + 「AI 写的」;旁白字浅一点
+ * - 最后一条回复有几版时,名字后面 ‹ 2/3 › 换版本(游戏跟着从那一版第一句开始播)
  * - 每句右边:原文 · 重听 / 重新生成(要念的句子)· 回到这里
  * - 「显示原文」= 模型回来的原文(一个字不删,标签和宏露成浅色小字):点一下就地改,保存后从第一处改过的那句开始播
- * - 打开时停在最新那句;只先排最近几条回复,往上翻再接着载入;屏幕外的回复不排版(content-visibility)
+ * - 打开时「现在」那句放在正中间(它后面还没播到的句子变淡);现在就是最后一句时贴底
+ * - 换背景的地方插一条横幅;CG 从出现到收起左边一条竖线,开头一张小图,点开看大图
+ * - 只先排最近几条回复(至少排到「现在」那条),往上翻再接着载入;屏幕外的回复不排版(content-visibility)
  */
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
@@ -15,19 +19,21 @@ import type { TagKind } from '../script';
 import { DEFAULT_AVATAR } from '../fallbacks';
 import { stripTags } from '../tags';
 import { VoiceButtons } from '../VoiceButtons';
-import { FaceCrop } from '../ui/FaceCrop';
+import { GameIcon } from '../ui/GameIcon';
 import { usePhone } from '../settings/usePhone';
 import {
   FIRST_ENTRIES,
   MORE_ENTRIES,
   editNote,
-  entryRows,
   firstChanged,
+  historyBlocks,
   rawSegments,
   revoiceCount,
+  type BlockItem,
   type HistoryData,
   type HistoryRow,
   type LogLines,
+  type Rail,
   type RowOptions,
 } from './logic';
 import '../ui/ui.css';
@@ -37,6 +43,8 @@ import './history.css';
 const USER_EVENTS = ['wheel', 'touchstart', 'keydown', 'pointerdown'] as const;
 /** 离顶多近就接着载入更早的 */
 const LOAD_NEAR = 320;
+/** 打开时至少从「现在」那条往上再多排几条,上面有前文 */
+const ABOVE_NOW = 3;
 
 function Ic({ d, size = 17 }: { d: ReactNode; size?: number }) {
   return (
@@ -79,7 +87,7 @@ const ICON_EDIT = (
 
 export interface VNHistoryProps {
   entries: ChatEntry[];
-  /** 当前对话。换了(读档、新故事)就重新停在最底下 */
+  /** 当前对话。换了(读档、新故事)就重新停在「现在」那句 */
   chatKey: string | null;
   loading: boolean;
   /** 「显示原文」 */
@@ -89,13 +97,18 @@ export interface VNHistoryProps {
   macros: MacroContext;
   charName: string;
   userName: string;
+  /** 她的头像:卡面头像(和调试台一样) */
   charAvatar?: string | null;
-  /** 在生成回复:原文先不给改 */
+  /** 你的头像:玩家人设的头像(和调试台一样);没有就是名字章 */
+  userAvatar?: string | null;
+  /** 在生成回复:原文先不给改、版本先不给换 */
   sending: boolean;
   /** 回到这一句:关掉菜单 / 小窗口,游戏翻回去 */
   onJump: (entryId: string, line: number) => void;
   /** 改了某条回复的原文(存进这条回复当前分支) */
   onEdit: (entryId: string, text: string) => void;
+  /** 换最后一条回复的版本;不给就不显示 ‹ › */
+  onSwipe?: (dir: 'left' | 'right') => void;
   /**
    * 游戏里对着台词右键 / 长按「改原文」打开的:一打开这条回复就已经在改(设计稿 AV.menuHistory 的 edit)。
    * 只在打开(或换了对话)那一下看它
@@ -112,7 +125,7 @@ interface Editing {
   err: string;
 }
 
-/** 「改原文」进来的那条:还在、是她的回复、写完了、没在等回复才能改;改不了就 null(照常停在最底下) */
+/** 「改原文」进来的那条:还在、是她的回复、写完了、没在等回复才能改;改不了就 null(照常停在「现在」那句) */
 function firstEdit(entries: readonly ChatEntry[], id: string | null | undefined, sending: boolean): { at: number; ed: Editing } | null {
   const at = id ? entries.findIndex((e) => e.id === id) : -1;
   const e = at >= 0 ? entries[at] : null;
@@ -120,12 +133,21 @@ function firstEdit(entries: readonly ChatEntry[], id: string | null | undefined,
   return { at, ed: { id: e.id, draft: currentText(e), caret: null, err: '' } };
 }
 
+/** 一打开要排多少条:改原文那条、「现在」那条(再往上几条)都要排进来 */
+function openCount(entries: readonly ChatEntry[], editAt: number | null, nowAt: number): number {
+  let n = FIRST_ENTRIES;
+  if (editAt !== null) n = Math.max(n, entries.length - editAt);
+  if (nowAt >= 0) n = Math.max(n, entries.length - nowAt + ABOVE_NOW);
+  return n;
+}
+
+const railCls = (r: Rail) => (r.on ? ` rail${r.start ? ' rs' : ''}${r.end ? ' re' : ''}` : '');
+
 export function VNHistory(p: VNHistoryProps) {
   const { entries, data, onJump } = p;
   const scrollRef = useRef<HTMLDivElement>(null);
-  // 手机上没有悬停(设计稿 phone.css 的 .pf-hist):点一句才出 原文 / 重听 / 回到这里,再点收起;头像 34
+  // 手机上没有悬停(设计稿 phone.css 的 .pf-hist):点一句才出 原文 / 重听 / 回到这里,再点收起
   const phone = usePhone();
-  const avSize = phone ? 34 : 40;
   const [openRow, setOpenRow] = useState<string | null>(null);
   const tapRow = (key: string) => (e: MouseEvent) => {
     if (!phone) return;
@@ -133,14 +155,19 @@ export function VNHistory(p: VNHistoryProps) {
     setOpenRow((k) => (k === key ? null : key));
   };
   const openCls = (key: string) => (phone && openRow === key ? ' open' : '');
+  const nowAt = data.at ? entries.findIndex((e) => e.id === data.at?.entryId) : -1;
   // 一打开就在改的那条(游戏里「改原文」进来的):第一帧就是打字框,不闪一下列表
   const [opening] = useState(() => firstEdit(entries, p.editFirst, p.sending));
-  const [count, setCount] = useState(opening ? Math.max(FIRST_ENTRIES, entries.length - opening.at) : FIRST_ENTRIES);
+  const [count, setCount] = useState(() => openCount(entries, opening?.at ?? null, nowAt));
   const [one, setOne] = useState<ReadonlySet<string>>(() => new Set());
   const [editing, setEditing] = useState<Editing | null>(opening?.ed ?? null);
   const [notes, setNotes] = useState<Record<string, string>>({});
+  /** 点开看大图的 CG */
+  const [big, setBig] = useState<string | null>(null);
   const editingRef = useRef(editing);
   editingRef.current = editing;
+  const bigRef = useRef(big);
+  bigRef.current = big;
   /** 存了但新的句子还没回来:回来以后比对,从第一处改过的那句开始播 */
   const pending = useRef<{ id: string; text: string; old: LogLines | null; fromGame: boolean } | null>(null);
   const atBottom = useRef(true);
@@ -150,29 +177,35 @@ export function VNHistory(p: VNHistoryProps) {
   const start = Math.max(0, entries.length - count);
   const hasEntries = entries.length > 0;
 
-  // ---- 打开(或换了对话)时停在最新那句 ----
-  // 屏幕外的回复按估计高度占位、不排版,滚到底以后底部才排出真的高度:接着几帧继续贴底,
+  // ---- 打开(或换了对话)时停在「现在」那句 ----
+  // 「现在」那句放在正中间;它后面没有还没播的句子(就是最后一句)时贴底。
+  // 屏幕外的回复按估计高度占位、不排版,滚过去以后才排出真的高度:接着几帧继续摆,
   // 高度连着两帧不变就停;用户自己动了滚轮 / 键盘 / 手指就撒手
   // 「改原文」进来的:那条已经是打字框,停在它上面(长的顶头对齐,短的放在下半截,上面还看得到前文)
   const editFirst = useRef(p.editFirst ?? null);
   editFirst.current = p.editFirst ?? null;
   useLayoutEffect(() => {
     const first = firstEdit(entries, editFirst.current, p.sending);
-    setCount(first ? Math.max(FIRST_ENTRIES, entries.length - first.at) : FIRST_ENTRIES);
+    setCount(openCount(entries, first?.at ?? null, nowAt));
     setOne(new Set());
     // 同一条已经在改(第一帧给的)就别重新给,打了的字留着
     setEditing((cur) => (first ? (cur?.id === first.ed.id ? cur : first.ed) : null));
     atBottom.current = !first;
     const el = scrollRef.current;
     if (!el || !hasEntries) return;
+    const yOf = (x: HTMLElement) => x.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop;
     const target = () => {
       const ed = el.querySelector<HTMLElement>('.vh-ln.editing');
-      if (!ed) return el.scrollHeight;
-      const h = ed.offsetHeight;
-      const y = ed.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop;
-      return Math.max(0, y - (h > el.clientHeight * 0.6 ? 12 : el.clientHeight * 0.35));
+      if (ed) {
+        const h = ed.offsetHeight;
+        return Math.max(0, yOf(ed) - (h > el.clientHeight * 0.6 ? 12 : el.clientHeight * 0.35));
+      }
+      const cur = el.querySelector<HTMLElement>('.vh-ln.cur');
+      if (!cur || !el.querySelector('.vh-ln.later')) return el.scrollHeight;
+      return Math.max(0, yOf(cur) - (el.clientHeight - cur.offsetHeight) / 2);
     };
     el.scrollTop = target();
+    atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
     let raf = 0;
     let last = -1;
     let still = 0;
@@ -195,7 +228,7 @@ export function VNHistory(p: VNHistoryProps) {
       cancelAnimationFrame(raf);
       for (const t of USER_EVENTS) el.removeEventListener(t, stop);
     };
-    // 只在打开 / 换对话时摆一次;entries / sending 是那一刻的
+    // 只在打开 / 换对话时摆一次;entries / sending / nowAt 是那一刻的
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.chatKey, hasEntries]);
 
@@ -305,10 +338,14 @@ export function VNHistory(p: VNHistoryProps) {
     if (first >= 0) latest.current.onJump(pd.id, first);
     if (pd.fromGame) latest.current.onEditDone?.();
   }, [entries]);
-  // 小窗口里按 Esc:在改原文就先退出编辑(PopWindow 在捕获阶段接 Esc,先问这里)
+  // 小窗口里按 Esc:开着大图先关大图,在改原文就先退出编辑(PopWindow 在捕获阶段接 Esc,先问这里)
   const escRef = data.esc;
   useEffect(() => {
     escRef.current = () => {
+      if (bigRef.current) {
+        setBig(null);
+        return true;
+      }
       if (!editingRef.current) return false;
       setEditing(null);
       return true;
@@ -344,17 +381,13 @@ export function VNHistory(p: VNHistoryProps) {
       return n;
     });
 
-  const avatar = (kind: 'char' | 'user' | 'narr', name: string | null, at?: { id: string; line: number }): ReactNode => {
-    if (kind === 'narr') return <span className="vh-dia" aria-hidden="true" />;
-    // 她的台词:那一句的表情差分按脸裁(设计稿 AV.menuHistory)
-    const f = kind === 'char' && at && name === p.charName ? data.face?.(at.id, at.line) : null;
-    if (f) return <FaceCrop src={f.src} face={f.face ?? undefined} aspect={f.aspect} size={avSize} />;
-    if (kind === 'char' && p.charAvatar && p.charAvatar !== DEFAULT_AVATAR && name === p.charName) {
-      return <img className="vh-face" src={p.charAvatar} alt="" draggable={false} />;
-    }
+  /** 一条消息开头的头像:她 = 卡面头像,你 = 玩家头像(和调试台一样);没有图就是名字第一个字 */
+  const avatar = (user: boolean): ReactNode => {
+    const src = user ? p.userAvatar : p.charAvatar;
+    if (src && src !== DEFAULT_AVATAR) return <img className="vh-face" src={src} alt="" draggable={false} />;
     return (
-      <span className={`vh-stamp${kind === 'user' ? ' me' : ''}`} aria-hidden="true">
-        {(name ?? '').trim().slice(0, 1)}
+      <span className={`vh-stamp${user ? ' me' : ''}`} aria-hidden="true">
+        {(user ? p.userName : p.charName).trim().slice(0, 1)}
       </span>
     );
   };
@@ -377,33 +410,44 @@ export function VNHistory(p: VNHistoryProps) {
       <span>回到这里</span>
     </button>
   );
+  const now = <em className="vh-now">现在</em>;
 
-  const renderRow = (row: HistoryRow): ReactNode => {
+  const renderRow = (row: HistoryRow, rail: Rail, later: boolean): ReactNode => {
+    const base = `vh-ln${railCls(rail)}${later ? ' later' : ''}`;
+    const railEl = <span className="vh-rail" aria-hidden="true" />;
     switch (row.kind) {
       case 'user':
         return (
-          <div key={row.key} className="vh-ln user">
-            <span className="vh-av">{avatar('user', p.userName)}</span>
+          <div key={row.key} className={`${base} user`}>
+            {railEl}
             <div className="vh-tx">
-              <div className="vh-who">{p.userName}</div>
               <p className="vh-zh">{row.text}</p>
             </div>
           </div>
         );
       case 'line': {
-        const kind = row.role === 'narr' ? 'narr' : row.role === 'player' ? 'user' : 'char';
+        // 她自己的台词:名字在开头写过了;别人的台词写名字;AI 替你写的写你的名字 + 「AI 写的」
+        const who =
+          row.role === 'player' ? (
+            <div className="vh-who me">
+              {row.speaker}
+              <span className="vh-ai" title="这句是 AI 在回复里替你写的,不是你打的">
+                AI 写的
+              </span>
+            </div>
+          ) : row.role === 'char' && row.speaker !== p.charName ? (
+            <div className="vh-who">{row.speaker}</div>
+          ) : null;
         return (
-          <div key={row.key} className={`vh-ln ${row.role}${row.current ? ' cur' : ''}${openCls(row.key)}`} onClick={tapRow(row.key)}>
-            <span className="vh-av">{avatar(kind, row.speaker, { id: row.entryId, line: row.line })}</span>
+          <div key={row.key} className={`${base} ${row.role}${row.current ? ' cur' : ''}${openCls(row.key)}`} onClick={tapRow(row.key)}>
+            {railEl}
             <div className="vh-tx">
-              {row.role !== 'narr' && (
-                <div className="vh-who">
-                  {row.speaker}
-                  {row.current && <em>现在</em>}
-                </div>
-              )}
+              {who}
               {row.ja && <p className="vh-ja">{row.ja}</p>}
-              <p className="vh-zh">{row.text}</p>
+              <p className="vh-zh">
+                {row.text}
+                {row.current && now}
+              </p>
             </div>
             <div className="vh-acts">
               {rawBtn(row.entryId)}
@@ -415,14 +459,13 @@ export function VNHistory(p: VNHistoryProps) {
       }
       case 'plain':
         return (
-          <div key={row.key} className={`vh-ln char${row.current ? ' cur' : ''}${openCls(row.key)}`} onClick={tapRow(row.key)}>
-            <span className="vh-av">{avatar('char', p.charName, { id: row.entryId, line: 0 })}</span>
+          <div key={row.key} className={`${base} char${row.current ? ' cur' : ''}${openCls(row.key)}`} onClick={tapRow(row.key)}>
+            {railEl}
             <div className="vh-tx">
-              <div className="vh-who">
-                {p.charName}
-                {row.current && <em>现在</em>}
-              </div>
-              <p className="vh-zh">{row.text}</p>
+              <p className="vh-zh">
+                {row.text}
+                {row.current && now}
+              </p>
             </div>
             <div className="vh-acts">{backBtn(row.entryId, 0)}</div>
           </div>
@@ -434,15 +477,11 @@ export function VNHistory(p: VNHistoryProps) {
         return (
           <div
             key={row.key}
-            className={`vh-ln reply${row.current ? ' cur' : ''}${ed ? ' editing' : ''}${openCls(row.key)}`}
+            className={`${base} reply${row.current ? ' cur' : ''}${ed ? ' editing' : ''}${openCls(row.key)}`}
             onClick={tapRow(row.key)}
           >
-            <span className="vh-av">{avatar('char', p.charName, { id: row.entryId, line: 0 })}</span>
+            {railEl}
             <div className="vh-tx">
-              <div className="vh-who">
-                {p.charName}
-                {row.current && <em>现在</em>}
-              </div>
               {ed ? (
                 <EditBox ed={ed} onChange={(d) => setEditing({ ...ed, draft: d, err: '' })} onSave={saveEdit} onCancel={cancelEdit} />
               ) : (
@@ -491,26 +530,105 @@ export function VNHistory(p: VNHistoryProps) {
     }
   };
 
-  const blocks = entries.slice(start);
+  const shown = entries.slice(start);
+  const blocks = historyBlocks(shown, start, nowAt, rowOpts);
+  const lastId = last?.id;
+
+  const renderItem = (it: BlockItem, entry: ChatEntry, user: boolean): ReactNode => {
+    switch (it.t) {
+      case 'scene':
+        return (
+          <div key={it.key} className={`vh-scene${railCls(it.rail)}${it.later ? ' later' : ''}`}>
+            <span className="vh-rail" aria-hidden="true" />
+            <div className="vh-scene-strip">
+              {it.bg.src && (
+                <img src={it.bg.src} alt="" draggable={false} style={{ objectPosition: `${it.bg.focus}% 50%` }} />
+              )}
+              <span className="vh-scene-name">{it.bg.label}</span>
+            </div>
+          </div>
+        );
+      case 'cg': {
+        // 小图不占行:贴在下面那句左边那一栏,线从那句起
+        const what = it.cg.ai ? 'AI 生图' : 'CG';
+        return (
+          <div key={it.key} className={`vh-cg${it.alone ? ' alone' : ''}${it.later ? ' later' : ''}`}>
+            {it.cg.thumb && (
+              <button
+                type="button"
+                className="vh-cg-shot"
+                title={`${what}${it.span > 0 ? ` · 显示 ${it.span} 句` : ''}(点开看大图)`}
+                onClick={() => setBig(it.cg.full ?? it.cg.thumb)}
+              >
+                <img src={it.cg.thumb} alt={what} draggable={false} />
+              </button>
+            )}
+          </div>
+        );
+      }
+      case 'head': {
+        const versions = !user && entry.id === lastId && entry.swipes.length > 1 && p.onSwipe;
+        return (
+          <div key={it.key} className={`vh-head${railCls(it.rail)}`}>
+            <span className="vh-rail" aria-hidden="true" />
+            <span className="vh-av">{avatar(user)}</span>
+            <div className="vh-name">
+              <span className={`vh-nm${user ? ' me' : ''}`}>{user ? p.userName : p.charName}</span>
+              {versions && (
+                <span className="vh-ver" role="group" aria-label="换版本">
+                  <button type="button" disabled={p.sending} onClick={() => p.onSwipe?.('left')} aria-label="上一版" title="上一版">
+                    <GameIcon name="left" size={15} />
+                  </button>
+                  <span className="n">
+                    {entry.swipeIndex + 1} / {entry.swipes.length}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={p.sending}
+                    onClick={() => p.onSwipe?.('right')}
+                    aria-label="下一版"
+                    title="下一版(最后一版再往右 = 重来)"
+                  >
+                    <GameIcon name="right" size={15} />
+                  </button>
+                </span>
+              )}
+            </div>
+          </div>
+        );
+      }
+      case 'row':
+        return renderRow(it.row, it.rail, it.later);
+    }
+  };
 
   return (
     <div className="vh">
       <div className="vh-scroll av-scroll" ref={scrollRef}>
-        <div className="vh-list">
+        <div className={`vh-list${data.pics ? ' pics' : ''}`}>
           {p.loading && !hasEntries && <div className="vh-empty">读取对话……</div>}
           {!p.loading && !hasEntries && <div className="vh-empty">还没有对话</div>}
           {start > 0 && <div className="vh-top">往上翻,更早的会接着载入</div>}
-          {blocks.map((e, i) => {
-            const rows = entryRows(e, rowOpts);
-            if (rows.length === 0) return null;
+          {blocks.map((b, i) => {
+            const at = start + shown.indexOf(b.entry);
+            const near = i >= blocks.length - 6 || (nowAt >= 0 && Math.abs(at - nowAt) <= ABOVE_NOW);
             return (
-              <section key={e.id} className={`vh-entry${i >= blocks.length - 6 ? ' near' : ''}`} data-id={e.id}>
-                {rows.map(renderRow)}
+              <section
+                key={b.entry.id}
+                className={`vh-entry ${b.user ? 'me' : 'her'}${b.later ? ' later' : ''}${near ? ' near' : ''}`}
+                data-id={b.entry.id}
+              >
+                {b.items.map((it) => renderItem(it, b.entry, b.user))}
               </section>
             );
           })}
         </div>
       </div>
+      {big && (
+        <div className="vh-big" role="dialog" aria-label="CG" onClick={() => setBig(null)}>
+          <img src={big} alt="CG" draggable={false} />
+        </div>
+      )}
     </div>
   );
 }

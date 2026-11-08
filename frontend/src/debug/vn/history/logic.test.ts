@@ -6,10 +6,13 @@ import {
   editNote,
   entryRows,
   firstChanged,
+  historyBlocks,
   rawSegments,
   revoiceCount,
   showsRaw,
+  type BlockItem,
   type HistoryData,
+  type HistoryScene,
   type LogLines,
   type RowOptions,
 } from './logic';
@@ -177,5 +180,97 @@ describe('rawSegments(原文里的标签和宏标成浅色小字)', () => {
     expect(rawSegments('你好', kinds)).toEqual([{ text: '你好', mark: false }]);
     expect(rawSegments('<x>', [{ kind: 'bg', pattern: null, prefix: '' }])).toEqual([{ text: '<x>', mark: false }]);
     expect(rawSegments('', kinds)).toEqual([]);
+  });
+});
+
+describe('historyBlocks', () => {
+  const bg = (id: string): HistoryScene['bg'] => ({ id, label: id, src: null, focus: 50 });
+  const cg = (id: string): HistoryScene['cg'] => ({ id, thumb: `/${id}`, full: null });
+  // a(两句) · 你 · b(两句):a 第 2 句出 CG,一直到 b 第 1 句;b 第 2 句换了背景
+  const entries = [entry('a', 'assistant', 'x'), entry('u', 'user', '继续'), entry('b', 'assistant', 'y')];
+  const scenes: Record<string, HistoryScene[]> = {
+    a: [{ bg: bg('卧室'), cg: null }, { bg: bg('卧室'), cg: cg('床') }],
+    u: [{ bg: bg('卧室'), cg: cg('床') }],
+    b: [{ bg: bg('卧室'), cg: cg('床') }, { bg: bg('天台'), cg: null }],
+  };
+  const data = dataOf(
+    { a: ll([say('「一」'), narr('二')]), b: ll([say('「三」'), narr('四')]) },
+    { scene: (id, line) => scenes[id]?.[line] ?? null },
+  );
+  const tag = (it: BlockItem) =>
+    `${it.t}${it.t === 'row' ? `:${it.key}` : ''}${it.rail.on ? `|${it.rail.start ? 's' : ''}${it.rail.end ? 'e' : ''}` : ''}`;
+
+  it('一条消息一块:开头一行,下面是句子;背景换了插横幅(列表第一行也算)', () => {
+    const blocks = historyBlocks(entries, 0, -1, opts(data));
+    expect(blocks.map((b) => [b.entry.id, b.user])).toEqual([
+      ['a', false],
+      ['u', true],
+      ['b', false],
+    ]);
+    expect(blocks.flatMap((b) => b.items).filter((it) => it.t === 'scene').map((it) => it.t === 'scene' && it.bg.id)).toEqual([
+      '卧室',
+      '天台',
+    ]);
+  });
+
+  it('CG 竖线从出现那句起(小图放在它左边,不占行),跨过你的消息,到收起前那句止', () => {
+    const blocks = historyBlocks(entries, 0, -1, opts(data));
+    expect(blocks.map((b) => b.items.map(tag))).toEqual([
+      ['scene', 'head', 'row:a:0', 'cg|s', 'row:a:1|s'],
+      ['head|', 'row:u|'],
+      ['head|', 'row:b:0|e', 'scene', 'row:b:1'],
+    ]);
+    // 线头那句是这条的最后一句:要撑高
+    const shots = blocks.flatMap((x) => x.items).flatMap((it) => (it.t === 'cg' ? [[it.span, it.alone]] : []));
+    expect(shots).toEqual([[3, true]]);
+  });
+
+  it('直接换成下一张:前一张到这句止,下一张从下一句起;小图记着显示几句', () => {
+    const two = { a: [{ bg: null, cg: cg('A') }, { bg: null, cg: { ...cg('B')!, ai: true } }, { bg: null, cg: null }] };
+    const d = dataOf(
+      { a: ll([say('「一」'), narr('二'), narr('三')]) },
+      { scene: (id, line) => two[id as 'a']?.[line] ?? null },
+    );
+    const [b] = historyBlocks([entry('a', 'assistant', 'x')], 0, -1, opts(d));
+    expect(b.items.map(tag)).toEqual(['head', 'cg|s', 'row:a:0|se', 'cg|s', 'row:a:1|se', 'row:a:2']);
+    expect(b.items.flatMap((it) => (it.t === 'cg' ? [[it.span, it.alone]] : []))).toEqual([
+      [1, true],
+      [1, true],
+    ]);
+  });
+
+  it('CG 从一条回复的第一句开始:线从小图起,开头那行不画', () => {
+    const only = { a: [{ bg: null, cg: cg('床') }, { bg: null, cg: cg('床') }] };
+    const d = dataOf({ a: ll([say('「一」'), narr('二')]) }, { scene: (id, line) => only[id as 'a']?.[line] ?? null });
+    const [b] = historyBlocks([entry('a', 'assistant', 'x')], 0, -1, opts(d));
+    expect(b.items.map(tag)).toEqual(['head', 'cg|s', 'row:a:0|s', 'row:a:1|e']);
+    expect(b.items.flatMap((it) => (it.t === 'cg' ? [it.alone] : []))).toEqual([false]);
+  });
+
+  it('「现在」后面的句子和整条消息标 later;不知道现在在哪就都不淡', () => {
+    const now = dataOf({ a: ll([say('「一」'), narr('二')]), b: ll([say('「三」')]) }, { at: { entryId: 'a', line: 0 } });
+    const blocks = historyBlocks(entries, 0, 0, opts(now));
+    const later = (b: (typeof blocks)[number]) => b.items.flatMap((it) => (it.t === 'row' ? [it.later] : []));
+    expect(blocks.map((b) => b.later)).toEqual([false, true, true]);
+    expect(later(blocks[0])).toEqual([false, true]);
+    expect(later(blocks[2])).toEqual([true]);
+    expect(historyBlocks(entries, 0, -1, opts(now)).every((b) => !b.later)).toBe(true);
+  });
+
+  it('「现在」后面的 CG 小图、横幅也标 later(还没看到的图不剧透)', () => {
+    const now = dataOf(
+      { a: ll([say('「一」'), narr('二')]), b: ll([say('「三」'), narr('四')]) },
+      { at: { entryId: 'a', line: 0 }, scene: (id, line) => scenes[id]?.[line] ?? null },
+    );
+    const flat = historyBlocks(entries, 0, 0, opts(now)).flatMap((b) => b.items);
+    const pics = flat.flatMap((it) => (it.t === 'cg' || it.t === 'scene' ? [`${it.t}:${it.later}`] : []));
+    expect(pics).toEqual(['scene:false', 'cg:true', 'scene:true']);
+  });
+
+  it('只排后面几条时(first > 0)下标照整段对话算', () => {
+    const now = dataOf({ b: ll([say('「三」'), narr('四')]) }, { at: { entryId: 'b', line: 0 } });
+    const [b] = historyBlocks([entries[2]], 2, 2, opts(now));
+    expect(b.later).toBe(false);
+    expect(b.items.flatMap((it) => (it.t === 'row' ? [it.later] : []))).toEqual([false, true]);
   });
 });

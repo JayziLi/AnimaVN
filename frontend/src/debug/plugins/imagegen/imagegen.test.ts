@@ -30,6 +30,7 @@ import {
   imagesOf,
   lastImageBefore,
   markAt,
+  markInHistory,
   newShowLog,
   noteBefore,
   noteOf,
@@ -244,6 +245,18 @@ describe('生图卡带 · 图挂在消息上', () => {
     const g = patchImage(f, 0, 'b', (x) => ({ ...x, hidden: true }));
     expect(markAt(g, 16, 3, log)?.id).toBe('old');
     expect(markAt(patchImage(g, 0, 'old', (x) => ({ ...x, hidden: true })), 16, 3, log)).toBeNull();
+  });
+
+  it('历史里:每张从画的那句显示到结束句,至少挂够最少句数;后画的顶掉先画的', () => {
+    const e = entry('e', 'assistant', [{ ...m(2, 'a'), until: 2 }, { ...m(10, 'b'), until: 12 }, m(11, 'c')]);
+    expect(markInHistory(e, 1, 3)).toBeNull();
+    expect(markInHistory(e, 4, 3)?.id).toBe('a');
+    expect(markInHistory(e, 5, 3)).toBeNull();
+    expect(markInHistory(e, 10, 3)?.id).toBe('b');
+    expect(markInHistory(e, 11, 3)?.id).toBe('c');
+    expect(markInHistory(e, 13, 3)?.id).toBe('c');
+    expect(markInHistory(e, 14, 3)).toBeNull();
+    expect(markInHistory(patchImage(e, 0, 'c', (x) => ({ ...x, hidden: true })), 12, 3)).toBeNull();
   });
 
   it('记号的增改', () => {
