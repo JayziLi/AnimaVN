@@ -77,6 +77,7 @@ export function PickTile({
         </span>
         <span className="cap">
           <b>{card.name}</b>
+          {card.version && <small>{card.version}</small>}
           <i className="ul" />
         </span>
         <img className="mk" src="/anima-logo.svg" alt="" draggable={false} />

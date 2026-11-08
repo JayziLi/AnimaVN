@@ -247,6 +247,8 @@ def _gsv_spec(profile: VoiceProfile, row: VoiceEmotion | None) -> tuple[VoiceSpe
     两个权重都得填:留空时语音服务沿用上一次加载的模型,念出来是上一个角色的声音,
     还会按「没填权重」进缓存,以后换了模型也命中这份错的(P21)。零样本就填底模的路径"""
     if not (profile.gpt_weights and profile.sovits_weights):
+        if profile.files_at == "pending":  # 导进来了,文件还没放到语音机上
+            raise HTTPException(400, f"声音「{profile.name}」的文件还没放到语音机上:去声音编辑器把文件放过去")
         raise HTTPException(
             400,
             f"声音「{profile.name}」没填 GPT / SoVITS 权重:留空会沿用语音服务上一次加载的模型,"

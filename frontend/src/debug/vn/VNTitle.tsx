@@ -33,6 +33,10 @@ export interface TitleCard {
   id: string;
   name: string;
   avatar: string | null;
+  /** 卡的版本号(character_version);空串不显示 */
+  version: string;
+  /** 卡的标签:只用来搜,界面上不显示 */
+  tags: string[];
   /** 有上次玩到的对话 —— 点头像是接着上次,没有就开一段新的 */
   hasLastChat: boolean;
 }

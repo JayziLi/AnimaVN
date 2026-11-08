@@ -66,8 +66,8 @@ def test_round_trip_into_the_same_library_is_identical_up_to_ids_and_name_suffix
     after = canon.canonical(db, new_main)
     assert after == before
 
-    # 名字撞了接「 2」;同一组的两张卡都叫「刻晴 2」
-    assert [db.get(TavernCard, c).name for c in created.cards] == ["刻晴 2", "刻晴 2"]
+    # 卡名撞了也原样保留(照酒馆);包和预设的名字照旧接「 2」
+    assert [db.get(TavernCard, c).name for c in created.cards] == ["刻晴", "刻晴"]
     assert db.get(SpritePack, created.sprite_packs[0]).name == "刻晴 · 玉衡星 2"
     assert db.get(PromptPreset, created.presets[0]).name == "刻晴 DeepSeek 2"
     # 小记号不留在库里
@@ -139,7 +139,7 @@ def test_builtin_word_records_only_fill_gaps(db, tmp_path):
     db.commit()
     assert db.scalar(select(func.count()).select_from(WordRecord).where(WordRecord.list_ref == "builtin")) == 2
     assert len(created.word_records) == 1
-    assert db.get(TavernCard, created.main_card).name == "路人 2"
+    assert db.get(TavernCard, created.main_card).name == "路人"
     assert db.get(CardState, created.main_card) is None
 
 

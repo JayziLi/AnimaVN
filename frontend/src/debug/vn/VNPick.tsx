@@ -197,7 +197,7 @@ export function VNPick({
 
   const list = useMemo(() => {
     const rows = cards
-      .filter((c) => matchCard(c.name, details.get(c.id)?.card?.creator, query))
+      .filter((c) => matchCard(c.name, details.get(c.id)?.card?.creator, query, [c.version, ...c.tags]))
       .map((c) => ({ ...c, updatedAt: details.get(c.id)?.card?.updated_at ?? '' }));
     const sorted = sortCards(rows, sort, currentCardId);
     // 刚导进来的那张排在「最近」最前面
@@ -263,7 +263,7 @@ export function VNPick({
     <label className="pk-search">
       {/* 放大镜只有手机竖屏有(phone.html 的 .pf-sbox);桌面照组件库 .av-input,不带图标 */}
       {portrait && <PickIcon name="search" size={16} />}
-      <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索名字、作者" aria-label="搜索角色" />
+      <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索名字、作者、版本" aria-label="搜索角色" />
     </label>
   );
   const grid = (

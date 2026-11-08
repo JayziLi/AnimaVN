@@ -5,7 +5,7 @@
 
 - 全部换新编号:包、包里的每一行、卡、角色位、状态组、配对表;包内包间的引用(默认曲、封面曲、差分的构图、认词记录的那一项、
   配对表的 target 和格子)按 key 换掉,指不到的写 null(配对表的格子、认词记录指不到就不建)。
-- 重复导入一律另存一份:卡、包、预设重名时名字后面接「 2」「 3」。同一组的几张卡按导入前的库算名字,原来同名的还是同名。
+- 重复导入一律另存一份:包、声音、预设重名时名字后面接「 2」「 3」;卡名原样保留(照酒馆,{{char}} 读它)。
 - 卡里的小记号 extensions.animavn 不存进库。
 - 绑定走 app/bindings.py(旧表照样写一份);状态组、按卡设置(只收 plugin.*)、认词记录、配对表、预设和它的绑定
   (app_settings 的 preset.bindings)都建上。内置名单(builtin)的认词记录只补库里还没有的词,不改你自己的。
@@ -529,7 +529,7 @@ class _Restorer:
 
     # ── 卡 ──
 
-    def card(self, key: str, body: dict, avatar_rel: str | None, taken: set[str]) -> str:
+    def card(self, key: str, body: dict, avatar_rel: str | None) -> str:
         db = self.db
         avatar = None
         if avatar_rel:
@@ -540,7 +540,7 @@ class _Restorer:
         ext = dict(payload.get("extensions") or {})
         ext.pop("animavn", None)
         payload["extensions"] = ext
-        payload["name"] = _unique_name(payload["name"] or "角色", taken)
+        payload["name"] = payload["name"] or "角色"  # 卡名原样保留,照酒馆;{{char}} 读它
         card = TavernCard(id=_new_id(), **payload)
         db.add(card)
         db.flush()
@@ -697,11 +697,10 @@ def restore_bundle(
     for pack in packs:
         r.pack(pack)
 
-    taken = {n.casefold() for n in db.scalars(select(TavernCard.name)).all()}
     entries = {e["key"]: e for e in data.get("cards") or []}
     order = [data["main_card"], *[k for k in entries if k != data["main_card"]]]
     for key in order:
-        r.card(key, manifest.cards[key], entries[key].get("avatar"), taken)
+        r.card(key, manifest.cards[key], entries[key].get("avatar"))
     # 主卡排第一(撤销时先删主卡,状态卡跟着删);报告里卡写在包前面
     r.created.main_card = r.cards[data["main_card"]]
     states = {s["card"]: s.get("name") for s in (data.get("state_group") or {}).get("states") or []}

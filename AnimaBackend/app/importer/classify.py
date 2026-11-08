@@ -1049,14 +1049,13 @@ def _bundle_groups(tree: StagedTree, db: Session) -> tuple[list[PlanGroup], list
                 continue  # 角色包里每个包的 pack.json;包里又套的包
             found.append((folder, f))
     groups, notes = [], []
-    taken = {n.casefold() for n in db.scalars(select(TavernCard.name)).all()}
     for folder, f in found:
         root = tree.path(folder) if folder else tree.root
         label = folder.rsplit("/", 1)[-1] if folder else _basename(f.path)
         size = sum(x.size for x in tree.files if _under(x.path, folder))
         try:
             if f.kind == "bundle_manifest":
-                groups.append(_bundle_group(tree, db, folder, f, bundle_read.read_manifest(root), size, taken, len(groups) + 1))
+                groups.append(_bundle_group(tree, db, folder, f, bundle_read.read_manifest(root), size, len(groups) + 1))
             else:
                 pack = bundle_read.read_pack(root)
                 detail = {**_pack_out(tree, folder, pack), "bytes": size, "folder": folder}
@@ -1089,7 +1088,6 @@ def _bundle_group(
     f: StagedFile,
     m: bundle_read.Manifest,
     size: int,
-    taken: set[str],
     n: int,
 ) -> PlanGroup:
     data = m.data
@@ -1098,10 +1096,7 @@ def _bundle_group(
     cards = []
     for key in order:
         name = normalize(m.cards[key])["name"].strip() or "角色"
-        new, i = name, 2
-        while new.casefold() in taken:
-            new, i = f"{name} {i}", i + 1
-        cards.append({"name": name, "new_name": new, "state": states.get(key)})
+        cards.append({"name": name, "state": states.get(key)})
     packs = [m.packs[p["key"]] for p in data.get("packs") or [] if p.get("key") in m.packs]
     voices = [voice_out(db, p) for p in packs if p["kind"] == "voice"]
     preview = data.get("preview")

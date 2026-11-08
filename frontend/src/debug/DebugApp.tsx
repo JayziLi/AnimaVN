@@ -3934,6 +3934,8 @@ export default function DebugApp() {
         id: c.id,
         name: c.name,
         avatar: cardAvatars.get(c.id) ?? null,
+        version: c.character_version,
+        tags: c.tags,
         hasLastChat: Boolean(c.last_chat_id),
       })),
     [listedCards, cardAvatars],

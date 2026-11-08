@@ -8,9 +8,10 @@ import type { ExportBundleBody, ExportBundleItem, ExportBundleSummary, ExportPac
 /** 每个包勾没勾:key → true 带 / false 不带 */
 export type ExportChecks = Readonly<Record<string, boolean>>;
 
-/** 打开面板时全都勾着 */
+/** 打开面板时都勾着;旧的立绘包(不是现在用的那套)默认不勾。没有哪套标着现在用的,就都勾着,免得整套立绘被漏掉 */
 export function initialChecks(summary: ExportBundleSummary): Record<string, boolean> {
-  return Object.fromEntries(summary.items.map((it) => [it.key, true]));
+  const hasCurrent = summary.items.some((it) => it.kind === 'sprite' && it.current);
+  return Object.fromEntries(summary.items.map((it) => [it.key, !(hasCurrent && it.kind === 'sprite' && !it.current)]));
 }
 
 /** 点掉的包(发给后端的 exclude) */

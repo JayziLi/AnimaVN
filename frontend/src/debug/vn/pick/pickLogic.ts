@@ -1,15 +1,15 @@
 /**
  * 选角色页的纯逻辑(不碰网络、不碰 React,好测):搜索、排序、右边「一条一条的素材」、名字下面「上次」那行。
- * 10-23 定的新版:不写作品名、不放角色台词、不按标签筛 —— 搜索只认名字和作者。
+ * 10-23 定的新版:不写作品名、不放角色台词、不按标签筛 —— 搜索认名字、作者、版本号和标签(标签只拿来搜,不显示)。
  */
 
 import { relTime } from '../../lib/time';
 
-/** 搜索:名字、作者(标签不参与,玩家不会自觉给角色建标签,10-20) */
-export function matchCard(name: string, creator: string | undefined, query: string): boolean {
+/** 搜索:名字、作者,再加 more(版本号、标签) */
+export function matchCard(name: string, creator: string | undefined, query: string, more: string[] = []): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
-  return [name, creator ?? ''].some((s) => s.toLowerCase().includes(q));
+  return [name, creator ?? '', ...more].some((s) => s.toLowerCase().includes(q));
 }
 
 export type PickSort = 'recent' | 'name';

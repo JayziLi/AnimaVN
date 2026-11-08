@@ -638,12 +638,6 @@
   border-radius: 5px;
   object-position: center;
 }
-.imp-b-warn {
-  flex: none;
-  max-width: 50%;
-  color: var(--imp-amber);
-  font-size: 11.5px;
-}
 .imp-b-preset {
   display: flex;
   align-items: center;
@@ -676,11 +670,6 @@
   }
   .imp-b-row {
     flex-wrap: wrap;
-  }
-  .imp-b-warn {
-    max-width: none;
-    width: 100%;
-    padding-left: 66px;
   }
   .imp-bundle .st-modal-foot {
     flex-wrap: wrap;

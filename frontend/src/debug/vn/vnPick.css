@@ -448,6 +448,21 @@
   letter-spacing: 0.08em;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
 }
+/* 名字下面的版本号:小一号、淡一点。同名卡靠它认,后半截常常是区别所在,所以放两行再截断 */
+.pk-tile .cap small {
+  display: -webkit-box;
+  overflow: hidden;
+  margin-top: 3px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  word-break: keep-all; /* 在空格处换行,别把「日语配音」拆开;没有空格的长串照样能断 */
+  overflow-wrap: anywhere;
+  font: 500 11px / 1.3 var(--av-serif);
+  letter-spacing: 0.04em;
+  opacity: 0.88;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
 /* 选中:名字下一道白色短线 */
 .pk-tile .cap .ul {
   display: block;

@@ -7,8 +7,8 @@ import { VNPick } from './VNPick';
 import { VNTitle, type TitleCard } from './VNTitle';
 
 const cards: TitleCard[] = [
-  { id: 'c1', name: '星绘', avatar: null, hasLastChat: true },
-  { id: 'c2', name: 'DeepSeek娘', avatar: null, hasLastChat: false },
+  { id: 'c1', name: '星绘', avatar: null, version: '', tags: [], hasLastChat: true },
+  { id: 'c2', name: 'DeepSeek娘', avatar: null, version: 'v2.0', tags: [], hasLastChat: false },
 ];
 
 describe('VNPick:选角色(10-23 新版)', () => {
@@ -23,8 +23,8 @@ describe('VNPick:选角色(10-23 新版)', () => {
       onWantAvatar={() => {}}
     />,
   );
-  it('搜索框占位「搜索名字、作者」,没有按标签筛选那一排', () => {
-    expect(html).toContain('placeholder="搜索名字、作者"');
+  it('搜索框占位「搜索名字、作者、版本」,没有按标签筛选那一排', () => {
+    expect(html).toContain('placeholder="搜索名字、作者、版本"');
     expect(html).not.toContain('按标签筛选');
     expect(html).not.toContain('标签');
   });

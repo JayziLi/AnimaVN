@@ -93,7 +93,7 @@ export function ImportDoneCard({
       <div className="tf-db two">
         <span className="tf-cf tf-who" aria-hidden="true">
           <PickTile
-            card={{ id: cardId, name, avatar, hasLastChat: false }}
+            card={{ id: cardId, name, avatar, version: '', tags: [], hasLastChat: false }}
             detail={detail ?? undefined}
             selected={false}
             current={false}

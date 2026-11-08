@@ -215,6 +215,22 @@ def test_speak_refuses_a_gsv_voice_without_weights(client: TestClient, gsv):
     assert gsv.calls == []
 
 
+def test_speak_says_files_not_on_the_voice_machine_yet_for_pending_voice(client: TestClient, gsv):
+    """导进来的声音文件还没放到语音机上:别报「没填权重」,告诉用户去放文件"""
+    from app.db import get_db
+    from app.main import app
+    from app.models import VoiceProfile
+
+    _, voice = setup_voice(client)
+    client.put(f"/api/voices/{voice['id']}", json={"sovits_weights": ""})
+    db = next(app.dependency_overrides[get_db]())
+    db.get(VoiceProfile, voice["id"]).files_at = "pending"
+    db.commit()
+    r = speak(client, voice["id"])
+    assert (r.status_code, r.json()["detail"]) == (400, "声音「阿米娅」的文件还没放到语音机上:去声音编辑器把文件放过去")
+    assert gsv.calls == []
+
+
 def test_speak_rejects_punctuation_only_text(client: TestClient, gsv):
     _, voice = setup_voice(client)
     r = speak(client, voice["id"], text="……！")

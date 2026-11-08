@@ -6,7 +6,7 @@
  *             分享说明
  *             「原神刻晴,日语配音……」
  *   会新建这些  都是另存的一份,不动你已有的
- *     角色卡     刻晴 2              你已经有一张「刻晴」,这张叫「刻晴 2」
+ *     角色卡     刻晴
  *     立绘       [缩][缩] 玉衡星 · 14 张、…
  *     背景 · BGM [缩] 原神 · 璃月 · 16 张背景、7 首 BGM
  *     跟着走     认词记录、配对表、立绘位置和特效
@@ -129,7 +129,6 @@ export function ImportBundle({
                 ))}
                 <span className="imp-b-text">{r.text}</span>
               </span>
-              {r.warn && <span className="imp-b-warn">{r.warn}</span>}
             </div>
           ))}
           {voices.map((l, i) => (

@@ -1912,8 +1912,8 @@ export interface ImportBundleDetail {
   note: string;
   /** 作者选的预览图(暂存目录里的地址);没有是 null */
   preview: string | null;
-  /** 会新建的卡:new_name 是撞名后接了「 2」的名字(没撞名就和 name 一样);state = 状态卡的状态名 */
-  cards: { name: string; new_name: string; state: string | null }[];
+  /** 会新建的卡(重名也原样叫 name);state = 状态卡的状态名 */
+  cards: { name: string; state: string | null }[];
   packs: ImportPackDetail[];
   /** 「认词记录 32 条」「配对表 2 张」 */
   follows: string[];

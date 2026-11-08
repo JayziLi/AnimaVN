@@ -24,7 +24,7 @@ const NONE: ImportTarget = { cardId: null, cardName: null, kind: null };
 const detail = (over: Partial<ImportBundleDetail> = {}): ImportBundleDetail => ({
   note: '  原神刻晴,日语配音。 ',
   preview: '/api/import/pl/file?path=assets/a.png',
-  cards: [{ name: '刻晴', new_name: '刻晴 2', state: null }],
+  cards: [{ name: '刻晴', state: null }],
   packs: [
     { kind: 'sprite', name: '玉衡星', detail: '14 张', thumbs: ['t1', 't2'] },
     { kind: 'sprite', name: '玉衡星(平涂)', detail: '15 张', thumbs: ['t3', 't4'] },
@@ -70,11 +70,11 @@ describe('bundleView', () => {
   it('lists the new card, packs grouped by kind, and what follows', () => {
     const v = bundleView(bundle());
     expect(v.note).toBe('原神刻晴,日语配音。');
-    expect(v.rows.map((r) => [r.label, r.text, r.warn])).toEqual([
-      ['角色卡', '刻晴 2', '你已经有一张「刻晴」,这张叫「刻晴 2」'],
-      ['立绘', '玉衡星 · 14 张、玉衡星(平涂) · 15 张', null],
-      ['背景 · BGM', '原神 · 璃月 · 16 张背景、7 首 BGM', null],
-      ['跟着走', '认词记录 32 条、配对表 2 张', null],
+    expect(v.rows.map((r) => [r.label, r.text])).toEqual([
+      ['角色卡', '刻晴'],
+      ['立绘', '玉衡星 · 14 张、玉衡星(平涂) · 15 张'],
+      ['背景 · BGM', '原神 · 璃月 · 16 张背景、7 首 BGM'],
+      ['跟着走', '认词记录 32 条、配对表 2 张'],
     ]);
     // 一类最多三张缩略图;背景是横的
     expect(v.rows[1].thumbs).toEqual(['t1', 't2', 't3']);
@@ -90,8 +90,8 @@ describe('bundleView', () => {
       bundle(
         detail({
           cards: [
-            { name: '爱弥斯', new_name: '爱弥斯', state: '普通' },
-            { name: '爱弥斯', new_name: '爱弥斯', state: '约会' },
+            { name: '爱弥斯', state: '普通' },
+            { name: '爱弥斯', state: '约会' },
           ],
           packs: [],
           follows: [],
@@ -100,9 +100,9 @@ describe('bundleView', () => {
         }),
       ),
     );
-    expect(v.rows.map((r) => [r.label, r.text, r.warn])).toEqual([
-      ['角色卡', '爱弥斯(普通)', null],
-      ['', '爱弥斯(约会)', null],
+    expect(v.rows.map((r) => [r.label, r.text])).toEqual([
+      ['角色卡', '爱弥斯(普通)'],
+      ['', '爱弥斯(约会)'],
     ]);
     expect(v.badge).toBe('普通 / 约会');
     expect(v.preset).toBeNull();

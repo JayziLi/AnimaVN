@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { boardScale, isPortrait } from './useBoxSize';
 import { EMPTY_BIND, hasPlayed, lastLineText, matchCard, pickRows, sortCards } from './pickLogic';
 
-describe('matchCard:搜索只认名字、作者,不认标签', () => {
+describe('matchCard:搜索认名字、作者、版本号和标签', () => {
   it('空搜索都显示', () => {
     expect(matchCard('星绘', 'AnimaVN', '')).toBe(true);
     expect(matchCard('星绘', undefined, '   ')).toBe(true);
@@ -11,6 +11,11 @@ describe('matchCard:搜索只认名字、作者,不认标签', () => {
     expect(matchCard('DeepSeek娘', undefined, 'deepseek')).toBe(true);
     expect(matchCard('星绘', 'AnimaVN(本地)', 'animavn')).toBe(true);
     expect(matchCard('星绘', 'AnimaVN', '刻晴')).toBe(false);
+  });
+  it('版本号、标签也能搜', () => {
+    expect(matchCard('星绘', undefined, 'v2', ['v2.0', '恋爱'])).toBe(true);
+    expect(matchCard('星绘', undefined, '恋爱', ['v2.0', '恋爱'])).toBe(true);
+    expect(matchCard('星绘', undefined, '恋爱', ['v2.0'])).toBe(false);
   });
 });
 

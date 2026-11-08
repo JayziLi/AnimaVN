@@ -312,6 +312,7 @@
   width: 15px;
   height: 15px;
   margin: 0;
+  color-scheme: light; /* 外层是深色底,不写的话没勾的框会是个黑方块,看着像勾上了 */
   accent-color: var(--av-ctl);
 }
 .tf-erow .k b,

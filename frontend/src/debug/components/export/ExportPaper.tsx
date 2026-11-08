@@ -387,6 +387,7 @@ function PackRow({
         {thumb}
         <span className="t">
           <span>{title}</span>
+          {item.current && <small>当前</small>}
           {notes.warn && <small className="warn">{notes.warn}</small>}
           {notes.missing && <small>{notes.missing}</small>}
         </span>

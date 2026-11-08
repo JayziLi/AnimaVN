@@ -43,11 +43,25 @@ const summary = (over: Partial<ExportBundleSummary> = {}): ExportBundleSummary =
 });
 
 describe('checks, exclude and total', () => {
-  it('starts with everything ticked and nothing excluded', () => {
+  it('starts with everything ticked and nothing excluded when every pack is current', () => {
     const s = summary();
+    s.items[1] = { ...s.items[1], current: true };
     const checks = initialChecks(s);
     expect(excludeOf(s, checks)).toEqual([]);
     expect(totalBytes(s, checks, true)).toBe(412_000 + 21_300_000 + 18_500_000 + 17_500_000 + 90_000);
+  });
+
+  it('leaves old sprite packs unticked by default, ticks the current one and every other kind', () => {
+    const s = summary();
+    const checks = initialChecks(s);
+    expect(checks).toEqual({ 'sprite:a': true, 'sprite:b': false, 'scene:s': true });
+    expect(excludeOf(s, checks)).toEqual(['sprite:b']);
+  });
+
+  it('keeps every sprite pack ticked when none is marked current, so the sprites are not lost', () => {
+    const s = summary();
+    s.items[0] = { ...s.items[0], current: false };
+    expect(excludeOf(s, initialChecks(s))).toEqual([]);
   });
 
   it('puts unticked packs into exclude and leaves them out of the size', () => {

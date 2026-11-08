@@ -69,8 +69,8 @@ def test_bundle_round_trip_through_import_and_undo(lib):
     d = g["detail"]
     assert d["note"] == "一起看花火" and d["has_voice"] is True and d["bytes"] > 0
     assert d["cards"] == [
-        {"name": "刻晴", "new_name": "刻晴 2", "state": "普通"},
-        {"name": "刻晴", "new_name": "刻晴 2", "state": "夜晚"},
+        {"name": "刻晴", "state": "普通"},
+        {"name": "刻晴", "state": "夜晚"},
     ]
     assert [(p["kind"], p["name"], p["detail"]) for p in d["packs"]] == [
         ("sprite", "刻晴 · 玉衡星", "2 张"),
@@ -91,7 +91,7 @@ def test_bundle_round_trip_through_import_and_undo(lib):
     assert len(out["created"]["presets"]) == 1 and len(out["created"]["state_groups"]) == 1
     assert out["card_id"] == out["created"]["cards"][0]
     assert "已自动绑定配套的立绘、背景、BGM、CG" in out["notice"]["title"]
-    assert any(line.startswith("新建角色卡「刻晴 2」") for line in out["report"])
+    assert any(line.startswith("新建角色卡「刻晴」") for line in out["report"])
     db.expire_all()
     assert canon.canonical(db, out["card_id"]) == canon_before
     assert _counts(db) != before

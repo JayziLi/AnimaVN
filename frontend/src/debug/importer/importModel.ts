@@ -156,8 +156,6 @@ export interface BundleRow {
   /** 左边那一格:「角色卡」「立绘」;同一类第二行起是空的 */
   label: string;
   text: string;
-  /** 黄字:「你已经有一张「刻晴」,这张叫「刻晴 2」」 */
-  warn: string | null;
   thumbs: string[];
   /** 背景、CG 的缩略图是横的 */
   wide: boolean;
@@ -190,8 +188,7 @@ export function bundleView(g: ImportGroup): BundleView {
     (c, i): BundleRow => ({
       key: `card-${i}`,
       label: i === 0 ? '角色卡' : '',
-      text: c.state ? `${c.new_name}(${c.state})` : c.new_name,
-      warn: c.new_name !== c.name ? `你已经有一张「${c.name}」,这张叫「${c.new_name}」` : null,
+      text: c.state ? `${c.name}(${c.state})` : c.name,
       thumbs: [],
       wide: false,
     }),
@@ -205,7 +202,6 @@ export function bundleView(g: ImportGroup): BundleView {
         key: `pack-${kind}`,
         label: PACK_LABEL[kind],
         text: packs.map((p) => (p.detail ? `${p.name} · ${p.detail}` : p.name)).join('、'),
-        warn: null,
         thumbs: packs.flatMap((p) => p.thumbs).slice(0, MAX_THUMBS),
         wide: kind !== 'sprite',
       },
@@ -213,7 +209,7 @@ export function bundleView(g: ImportGroup): BundleView {
   });
   const follows: BundleRow[] =
     d.follows.length > 0
-      ? [{ key: 'follows', label: '跟着走', text: d.follows.join('、'), warn: null, thumbs: [], wide: false }]
+      ? [{ key: 'follows', label: '跟着走', text: d.follows.join('、'), thumbs: [], wide: false }]
       : [];
   const states = d.cards.map((c) => c.state).filter((s): s is string => !!s);
   return {
@@ -270,7 +266,7 @@ export const planHasVoices = (plan: ImportPlan) => plan.groups.some((g) => group
 /** 选了这个语音服务以后会怎样 */
 export const VOICE_LOCAL = '导完就能念';
 export const VOICE_REMOTE = '语音服务在另一台电脑,导完要把文件放过去';
-export const VOICE_NO_SERVICE = '还没有语音服务:先去插件页添加,导完在声音编辑器里选';
+export const VOICE_NO_SERVICE = '没有语音服务:会自动连本机 GPT-SoVITS(127.0.0.1:9880),没装也能先导进来';
 
 /** 声音那一行要画的 */
 export interface VoiceLine {
