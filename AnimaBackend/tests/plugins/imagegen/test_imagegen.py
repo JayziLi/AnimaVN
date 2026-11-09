@@ -431,7 +431,9 @@ def test_note_is_read_leniently_but_must_say_something():
 def fake_nai(monkeypatch):
     sent = []
 
-    async def generate(token, body, tries=3, wait=2.0):
+    async def generate(token, body, tries=3, wait=2.0, host=nai.HOST, on_start=None):
+        if on_start is not None:
+            on_start()
         sent.append((token, body))
         return png_bytes()
 
@@ -476,6 +478,7 @@ def test_paid_sizes_are_refused_unless_allowed(client: TestClient, fake_nai):
     client.put("/api/imagegen/token", json={"token": "pst-x"})
     r = client.post("/api/imagegen/generate", json=generate_payload(width=1536, height=1024))
     assert r.status_code == 400 and "Anlas" in r.json()["detail"]
+    assert "「画面」" in r.json()["detail"]
     assert client.post("/api/imagegen/generate", json=generate_payload(width=1536, height=1024, allow_paid=True)).status_code == 200
 
 
@@ -751,6 +754,81 @@ def test_ask_falls_back_to_the_connections_own_thinking(monkeypatch):
     assert text == "{}" and calls == ["off", None]
 
 
+def _slow_then_fast(calls: list, waits: list[float], answers: list):
+    """第 n 次调用先等 waits[n] 秒,再回 answers[n](是异常就抛)"""
+    import asyncio
+
+    async def call():
+        n = len(calls)
+        calls.append(n)
+        await asyncio.sleep(waits[n])
+        if isinstance(answers[n], Exception):
+            raise answers[n]
+        return answers[n]
+
+    return call
+
+
+def test_ask_resends_when_the_first_is_stuck_and_takes_whichever_answers():
+    import asyncio
+
+    calls = []
+    call = _slow_then_fast(calls, [5, 0.01], ["first", "second"])
+    text = asyncio.run(writer._first_answer(call, resend_after=0.05, give_up_after=1))
+    assert text == "second" and calls == [0, 1]
+
+
+def test_ask_does_not_resend_a_quick_answer_or_a_quick_error():
+    import asyncio
+
+    from app.llm.errors import LLMError
+
+    calls = []
+    assert asyncio.run(writer._first_answer(_slow_then_fast(calls, [0.01], ["ok"]), 0.05, 1)) == "ok"
+    assert calls == [0]
+    calls = []
+    try:
+        asyncio.run(writer._first_answer(_slow_then_fast(calls, [0.01], [LLMError("401")]), 0.05, 1))
+        raise AssertionError("should raise")
+    except LLMError as e:
+        assert e.message == "401"
+    assert calls == [0]
+
+
+def test_ask_takes_the_slow_first_one_if_it_still_answers_first():
+    import asyncio
+
+    calls = []
+    call = _slow_then_fast(calls, [0.1, 5], ["first", "second"])
+    assert asyncio.run(writer._first_answer(call, resend_after=0.05, give_up_after=1)) == "first"
+    assert calls == [0, 1]
+
+
+def test_ask_gives_up_when_neither_answers():
+    import asyncio
+
+    from app.llm.errors import LLMError
+
+    calls = []
+    call = _slow_then_fast(calls, [5, 5], ["first", "second"])
+    try:
+        asyncio.run(writer._first_answer(call, resend_after=0.05, give_up_after=0.2))
+        raise AssertionError("should raise")
+    except LLMError as e:
+        assert "没回" in e.message
+    assert calls == [0, 1]
+
+
+def test_ask_waits_for_the_resend_when_the_stuck_one_then_fails():
+    import asyncio
+
+    from app.llm.errors import LLMError
+
+    calls = []
+    call = _slow_then_fast(calls, [0.1, 0.2], [LLMError("502"), "second"])
+    assert asyncio.run(writer._first_answer(call, resend_after=0.05, give_up_after=1)) == "second"
+
+
 def test_look_reads_the_card(client: TestClient, make_card, make_connection, monkeypatch):
     card = make_card(name="Mira", description="粉色长发,侧边细辫,紫色眼睛")
     make_connection()
@@ -784,3 +862,65 @@ def test_look_names_a_known_character(client: TestClient, make_card, make_connec
 
 def test_imagegen_api_module_does_not_print_tokens():
     assert "print(" not in open(imagegen_api.__file__, encoding="utf-8").read()
+
+
+# ── 画图连接(11-07)──
+
+
+def test_the_body_is_the_same_with_or_without_a_connection(client: TestClient, fake_nai, monkeypatch):
+    monkeypatch.delenv("NOVELAI_TOKEN", raising=False)
+    client.put("/api/imagegen/token", json={"token": "pst-x"})
+    conn = client.get("/api/imagegen/connections").json()[0]
+    assert client.post("/api/imagegen/generate", json=generate_payload(seed=7)).status_code == 200
+    assert client.post("/api/imagegen/generate", json=generate_payload(seed=7, connection_id=conn["id"])).status_code == 200
+    # token 和发给 NovelAI 的请求体都一样
+    assert fake_nai[0] == fake_nai[1] == ("pst-x", fake_nai[0][1])
+
+
+def test_a_chosen_connection_uses_its_own_key_and_timing_is_recorded(client: TestClient, fake_nai, monkeypatch):
+    monkeypatch.setenv("NOVELAI_TOKEN", "pst-env")
+    c = client.post("/api/imagegen/connections", json={"kind": "novelai", "name": "小号", "api_key": "pst-alt"}).json()
+    r = client.post("/api/imagegen/generate", json=generate_payload(connection_id=c["id"], plan_ms=2400))
+    assert r.status_code == 200, r.text
+    assert fake_nai[-1][0] == "pst-alt"
+    p = r.json()["params"]
+    assert p["connection"] == {"id": c["id"], "name": "小号", "kind": "novelai"}
+    assert p["timing"]["plan"] == 2400 and set(p["timing"]) == {"plan", "queue", "draw", "fetch"}
+
+
+def test_a_novelai_connection_without_a_key_uses_the_env_token(client: TestClient, fake_nai, monkeypatch):
+    monkeypatch.setenv("NOVELAI_TOKEN", "pst-env")
+    c = client.post("/api/imagegen/connections", json={"kind": "novelai"}).json()
+    assert client.post("/api/imagegen/generate", json=generate_payload(connection_id=c["id"])).status_code == 200
+    assert fake_nai[-1][0] == "pst-env"
+
+
+def test_a_test_draw_returns_the_image_without_saving_it(client: TestClient, fake_nai, make_card):
+    import base64
+
+    card = make_card(name="Mira")
+    c = client.post("/api/imagegen/connections", json={"kind": "novelai", "api_key": "pst-x"}).json()
+    r = client.post(f"/api/imagegen/connections/{c['id']}/test", json=generate_payload(card["id"]))
+    assert r.status_code == 200, r.text
+    out = r.json()
+    assert base64.b64decode(out["b64"]) == png_bytes() and out["mime"] == "image/png"
+    assert out["prompt"].startswith("1girl, solo, riverbank") and out["params"]["connection"]["id"] == c["id"]
+    assert client.get(f"/api/imagegen/images?card_id={card['id']}").json() == []
+
+
+def test_check_reads_the_subscription_and_reports_errors_as_text(client: TestClient, monkeypatch):
+    async def account(token, host=nai.HOST):
+        assert token == "pst-x"
+        return {"tier": 3, "active": True, "anlas": 1200, "v5_percent": 80, "v5_next_percent_s": 0}
+
+    monkeypatch.setattr(nai, "account", account)
+    c = client.post("/api/imagegen/connections", json={"kind": "novelai", "api_key": "pst-x"}).json()
+    r = client.post(f"/api/imagegen/connections/{c['id']}/check").json()
+    assert r["ok"] is True and r["message"] == "Opus · Anlas 1200"
+
+    async def bad(token, host=nai.HOST):
+        raise nai.NaiError(401, "NovelAI token 无效或过期了,到插件页重新填")
+
+    monkeypatch.setattr(nai, "account", bad)
+    r = client.post(f"/api/imagegen/connections/{c['id']}/check").json()
+    assert r["ok"] is False and "token" in r["message"]

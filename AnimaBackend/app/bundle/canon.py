@@ -27,6 +27,7 @@ from app.bundle.collect import (
     PLUGIN_PREFIX,
     PRESET_FIELDS,
     _preset_of,
+    imagegen_bundle_fields,
     parse_data_url,
 )
 from app.models import (
@@ -333,6 +334,8 @@ def canonical(db: Session, card_id: str, exclude: Iterable[str] = (), files: boo
         if not pref.key.startswith(PLUGIN_PREFIX):
             continue
         value = copy.deepcopy(pref.value)
+        if pref.key == IMAGEGEN_KEY:
+            value = imagegen_bundle_fields(value)
         if pref.key == IMAGEGEN_KEY and isinstance(value, dict) and isinstance(value.get("ref"), dict):
             ref_id = value["ref"].get("id")
             if ref_id is not None:

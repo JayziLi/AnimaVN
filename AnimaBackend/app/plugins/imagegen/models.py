@@ -61,6 +61,23 @@ class ImagegenRef(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
+class ImageConnection(Base):
+    """画图连接(11-07 设计 docs/superpowers/specs/2026-11-07-imagegen-backends-design.md 第 2 节):
+    地址和 key 只填一次,每张卡在自己的 imagegen.setup 里选用哪条。
+    kind:novelai / sdapi(A1111 接口)/ openai(中转和其他 OpenAI 兼容的)。api_key 只写不读;options 是每种类型自己的几个选项"""
+
+    __tablename__ = "imagegen_connections"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    name: Mapped[str] = mapped_column(String(100), default="")
+    kind: Mapped[str] = mapped_column(String(16))
+    # NovelAI 留空 = 官方地址
+    base_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    api_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    options: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 # 文件清理只认登记过的列:不登记,只挂在消息上的图 24 小时后会被当成没人要的删掉
 IMAGE_REF = BlobRef("生成的图", GeneratedImage, "data", "data_sha", mime="mime")
 UPLOAD_REF = BlobRef("生图参考图", ImagegenRef, "data", "data_sha", mime="mime")

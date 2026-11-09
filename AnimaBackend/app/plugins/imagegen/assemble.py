@@ -25,7 +25,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from app.plugins.imagegen.nai import SFW_OF, CharPrompt
+from app.plugins.imagegen.backends.base import CharPrompt
+from app.plugins.imagegen.nai import SFW_OF
 
 QUALITY = "very aesthetic, masterpiece, no text"
 ADULT_GUARD = "loli, child, chibi, aged down"
@@ -136,6 +137,34 @@ def _wears(person: Person, look: Look | None, nsfw: bool) -> tuple[str, str]:
     face = "" if look is None or look.ref else look.tags
     outfit = person.clothes or ("" if nsfw or look is None else look.outfit)
     return face, outfit
+
+
+_NAI_WEIGHT = re.compile(r"(-?\d+(?:\.\d+)?)::(.*?)::")
+
+
+def plain_words(text: str) -> str:
+    """自然语言模型不认加权:1.4::x:: → x(权重 ≤ 0 的去掉),花括号方括号去掉,artist:x → x"""
+    out = _NAI_WEIGHT.sub(lambda m: m.group(2) if float(m.group(1)) > 0 else "", text or "")
+    out = out.translate(str.maketrans("", "", "{}[]")).replace("artist:", "")
+    return " ".join(join(out).split())
+
+
+def natural(plan: Plan, looks: dict[str, Look], style: Style) -> str:
+    """中转这类读自然语言的模型:构图 + 每个人 + 场景 + 画风,拼成一段。不发反向,保护词也不塞进正面(可能被审核拒绝)"""
+    nsfw = plan.nsfw or explicit(plan)
+    who = [p for p in plan.people if not (plan.pov and looks.get(p.who) and looks[p.who].player)]
+    people: list[str] = []
+    for person in who:
+        face, outfit = _wears(person, looks.get(person.who), nsfw)
+        people.append(f"{person.who}: {plain_words(join(face, outfit, person.tags))}")
+    parts = [
+        "First-person view." if plan.pov else "",
+        sentence_of(plan.composition),
+        "; ".join(people),
+        plain_words(plan.scene),
+        plain_words(style.tags),
+    ]
+    return ". ".join(x.rstrip(" .") for x in parts if x) or "scenery"
 
 
 def assemble(

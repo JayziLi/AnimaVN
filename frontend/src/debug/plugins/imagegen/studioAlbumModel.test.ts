@@ -188,6 +188,33 @@ describe('右栏的字', () => {
     expect(paramRows(img('b')).map((r) => r.value)).toEqual(['—', '—', '— · —', '—', '没用(只有 V4.5 能用)']);
   });
 
+  it('11-07 起记的连接和用时接在后面;老图没记就不显示', () => {
+    const rows = paramRows(
+      img('c', {
+        params: {
+          model: 'nai-diffusion-4-5-full',
+          connection: { id: 'c1', name: 'NovelAI · Opus', kind: 'novelai' },
+          timing: { queue: 0, draw: 2800, fetch: 300, plan: 2412 },
+        },
+      }),
+    );
+    expect(rows.slice(5)).toEqual([
+      { label: '连接', value: 'NovelAI · Opus' },
+      { label: '用时', value: '构思 2.4 · 排队 0.0 · 画 2.8 · 传回 0.3 秒' },
+    ]);
+    expect(paramRows(img('b'))).toHaveLength(5);
+  });
+
+  it('测试出图、换一张没有构思那段(plan 是 null);只记了一样的只多一行', () => {
+    const timing = { queue: 0, draw: 2800, fetch: 300, plan: null };
+    expect(paramRows(img('d', { params: { timing } })).slice(5)).toEqual([
+      { label: '用时', value: '排队 0.0 · 画 2.8 · 传回 0.3 秒' },
+    ]);
+    expect(
+      paramRows(img('e', { params: { connection: { id: null, name: 'NovelAI · Opus', kind: 'novelai' } } })).slice(5),
+    ).toEqual([{ label: '连接', value: 'NovelAI · Opus' }]);
+  });
+
   it('提示词:主提示词 + 每个人的,空的不要', () => {
     expect(
       promptText(
@@ -244,24 +271,21 @@ describe('舞台「放在哪」', () => {
 describe('设置摘要', () => {
   const config: ImageGenConfig = { ...DEFAULT_IMAGEGEN_CONFIG, model: 'nai-diffusion-5-full' };
 
-  it('角色名、画风(跟全局)、参考图(V5 不生效)、自动出图', () => {
+  it('角色名、画风、参考图(V5 不生效)、自动出图', () => {
     const cells = settingsCells(config, { ...DEFAULT_CARD_PREFS, nameTag: 'keqing (genshin impact)' });
     expect(cells.map((c) => [c.label, c.value])).toEqual([
       ['角色名', 'keqing (genshin impact)'],
-      ['画风', '跟「画面」里的 · fuzichoco + rella'],
+      ['画风', 'fuzichoco + rella'],
       ['参考图', '用立绘 · V5 不生效'],
       ['自动出图', '开'],
     ]);
     expect(cells[2].help).toBeTruthy();
   });
 
-  it('这张卡另选的画风、V4.5 的参考图、关掉的自动出图、没填角色名', () => {
-    const v45 = { ...config, model: 'nai-diffusion-4-5-full' };
-    const cells = settingsCells(v45, { ...DEFAULT_CARD_PREFS, styleId: 'sketch', autoOff: true, ref: { ...DEFAULT_CARD_PREFS.ref, kind: 'upload', id: 'u' } });
-    expect(cells.map((c) => c.value)).toEqual(['没填(原创角色)', '这张卡另选 · 速写漫画 · 黑白点色', '用上传的图', '这张卡关了']);
-    expect(settingsCells({ ...config, auto: { ...config.auto, enabled: false } }, { ...DEFAULT_CARD_PREFS, ref: { ...DEFAULT_CARD_PREFS.ref, kind: 'off' } }).map((c) => c.value).slice(2)).toEqual([
-      '不用',
-      '关(全局)',
-    ]);
+  it('11-07 起画风、自动出图都是这张卡自己的:选的画风、V4.5 的参考图、关掉的自动出图、没填角色名', () => {
+    const mine = { ...config, model: 'nai-diffusion-4-5-full', styleId: 'sketch', auto: { ...config.auto, enabled: false } };
+    const cells = settingsCells(mine, { ...DEFAULT_CARD_PREFS, ref: { ...DEFAULT_CARD_PREFS.ref, kind: 'upload', id: 'u' } });
+    expect(cells.map((c) => c.value)).toEqual(['没填(原创角色)', '速写漫画 · 黑白点色', '用上传的图', '关']);
+    expect(settingsCells(config, { ...DEFAULT_CARD_PREFS, ref: { ...DEFAULT_CARD_PREFS.ref, kind: 'off' } })[2].value).toBe('不用');
   });
 });

@@ -555,8 +555,21 @@ def voice_ids_of_card(db: Session, card_id: str, exclude: Iterable[str] = ()) ->
     return out
 
 
+# 生图按卡设置里随角色包走的:角色本身的样子和参考图。
+# 画风、画师串、自动出图 11-07 起搬进不导出的 imagegen.setup;老库里还没搬的也不带。
+# 「只画全年龄」(sfwOnly)也不带:11-07 用户「我们现在不分瑟瑟和普通」
+IMAGEGEN_BUNDLE_FIELDS = ("nameTag", "look", "outfit", "negative", "gender", "ref")
+
+
+def imagegen_bundle_fields(value: Any) -> Any:
+    if not isinstance(value, dict):
+        return value
+    return {k: v for k, v in value.items() if k in IMAGEGEN_BUNDLE_FIELDS}
+
+
 def _imagegen_pref(value: Any, sprite_keys: set[str]) -> Any:
-    """生图卡带的按卡设置:ref.id 指着导出的立绘就留着;指着别的(没导出的立绘、上传的图)去掉 ref。没选(null)的照旧"""
+    """生图卡带的按卡设置:只留外观那几个字段;ref.id 指着导出的立绘就留着,指着别的(没导出的立绘、上传的图)去掉 ref。没选(null)的照旧"""
+    value = imagegen_bundle_fields(value)
     if not isinstance(value, dict) or not isinstance(value.get("ref"), dict):
         return value
     ref_id = value["ref"].get("id")

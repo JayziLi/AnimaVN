@@ -11,6 +11,7 @@ import {
   lineText,
   ORPHAN_GROUP,
   whereLine,
+  viewerMeta,
   type JumpWorld,
 } from './menuAlbumModel';
 import { albumEntries, type AlbumEntry } from './studioAlbumModel';
@@ -246,5 +247,34 @@ describe('landingOf(跨存档跳转读完档以后)', () => {
 
   it('老图没记位置:不跳', () => {
     expect(landingOf(of({ line: null }), 'c2', loaded({ e5: 1 }))).toMatchObject({ note: expect.stringContaining('没记') });
+  });
+});
+
+describe('看大图下面那行', () => {
+  it('时间 · 怎么来的 · 用时 · 哪条连接;老图只有总用时', () => {
+    const at = '2026-11-07T06:56:00Z';
+    const head = `${dayText(at)} ${clockText(at)}`;
+    expect(viewerMeta(img('a', { created_at: at }))).toBe(`${head} · 手动 · 4.0 秒`);
+    expect(
+      viewerMeta(
+        img('b', {
+          created_at: at,
+          trigger: 'auto',
+          params: {
+            connection: { id: 'c1', name: 'NovelAI · Opus', kind: 'novelai' },
+            timing: { queue: 100, draw: 2800, fetch: 0, plan: 2400 },
+          },
+        }),
+      ),
+    ).toBe(`${head} · 自动 · 构思 2.4 · 排队 0.1 · 画 2.8 · 传回 0.0 秒 · NovelAI · Opus`);
+  });
+
+  it('换一张没有构思那段(plan 是 null);老图 ms 也是 0 就不写用时', () => {
+    const at = '2026-11-07T06:56:00Z';
+    const head = `${dayText(at)} ${clockText(at)}`;
+    expect(
+      viewerMeta(img('c', { created_at: at, trigger: 'reroll', params: { timing: { queue: 0, draw: 2800, fetch: 300, plan: null } } })),
+    ).toBe(`${head} · 换一张 · 排队 0.0 · 画 2.8 · 传回 0.3 秒`);
+    expect(viewerMeta(img('d', { created_at: at, ms: 0 }))).toBe(`${head} · 手动`);
   });
 });

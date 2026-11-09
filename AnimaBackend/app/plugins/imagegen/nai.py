@@ -18,11 +18,13 @@ import base64
 import io
 import math
 import zipfile
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 import httpx
 
 from app.llm.http_client import make_http_client
+from app.plugins.imagegen.backends.base import CharPrompt
 
 HOST = "https://image.novelai.net"
 V5_FULL = "nai-diffusion-5-full"
@@ -123,16 +125,6 @@ class NaiError(Exception):
         super().__init__(message)
         self.status = status
         self.message = message
-
-
-@dataclass(frozen=True)
-class CharPrompt:
-    """分角色提示词:一个人一条,x / y 是这个人大概在画面哪里(0–1)"""
-
-    prompt: str
-    negative: str = ""
-    x: float = 0.5
-    y: float = 0.5
 
 
 @dataclass(frozen=True)
@@ -303,11 +295,13 @@ def unzip_png(raw: bytes) -> bytes:
         raise NaiError(502, "NovelAI 回的不是图片压缩包") from e
 
 
-async def _send(method: str, path: str, token: str, body: dict | None = None, timeout: float = 120.0) -> httpx.Response:
+async def _send(
+    method: str, path: str, token: str, body: dict | None = None, timeout: float = 120.0, host: str = HOST
+) -> httpx.Response:
     async with make_http_client() as client:
         try:
             return await client.request(
-                method, HOST + path, json=body, headers={**_HEADERS, "Authorization": f"Bearer {token}"}, timeout=timeout
+                method, host + path, json=body, headers={**_HEADERS, "Authorization": f"Bearer {token}"}, timeout=timeout
             )
         except httpx.TimeoutException as e:
             raise NaiError(504, "NovelAI 超时没回") from e
@@ -315,11 +309,20 @@ async def _send(method: str, path: str, token: str, body: dict | None = None, ti
             raise NaiError(503, f"连不上 NovelAI:{e}") from e
 
 
-async def generate(token: str, body: dict, tries: int = 3, wait: float = 2.0) -> bytes:
-    """画一张,返回 PNG。排队:同一时间只发一个"""
+async def generate(
+    token: str,
+    body: dict,
+    tries: int = 3,
+    wait: float = 2.0,
+    host: str = HOST,
+    on_start: Callable[[], None] | None = None,
+) -> bytes:
+    """画一张,返回 PNG。排队:同一时间只发一个;轮到这一张时调 on_start(算排队用时)"""
     async with _lock:
+        if on_start is not None:
+            on_start()
         for i in range(tries):
-            r = await _send("POST", "/ai/generate-image", token, body)
+            r = await _send("POST", "/ai/generate-image", token, body, host=host)
             if r.status_code == 200:
                 return unzip_png(r.content)
             if r.status_code in RETRY_CODES and i < tries - 1:
@@ -329,9 +332,9 @@ async def generate(token: str, body: dict, tries: int = 3, wait: float = 2.0) ->
     raise NaiError(502, "NovelAI 没画出来")  # 走不到这里
 
 
-async def account(token: str) -> dict:
+async def account(token: str, host: str = HOST) -> dict:
     """账户:等级(3 = Opus)、Anlas、V5 免费额度还剩百分之几、下一个百分点还要几秒"""
-    r = await _send("GET", "/user/subscription", token, timeout=20.0)
+    r = await _send("GET", "/user/subscription", token, timeout=20.0, host=host)
     if r.status_code != 200:
         raise NaiError(r.status_code, _explain(r.status_code, r.text))
     s = r.json()

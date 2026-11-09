@@ -1,10 +1,13 @@
 /**
- * 生图卡带的设置。全局一份存 app_settings 的 plugin.imagegen;按卡的一份(外貌、画风另选、只画全年龄、这张卡关自动)
- * 存 card_prefs 的同一个键,卡带自己读写、自己合并(不走 cardPrefs.ts 的字段白名单:那边是「全局之上改几项」,
- * 外貌这类本来就只属于一张卡)。纯函数,有测试。
+ * 生图卡带的设置。11-07 起分三份(设计 docs/superpowers/specs/2026-11-07-imagegen-backends-design.md 第 3 节):
+ * - 全局 app_settings 的 plugin.imagegen:只存画风库(styles、stylesVersion)
+ * - 卡的 card_prefs imagegen.setup:这张卡其余的设置,和画风库合成设置页用的 ImageGenConfig(setup.ts)
+ * - 卡的 card_prefs plugin.imagegen:长相那份(CardImagePrefs),卡带自己读写、随角色包走
+ * 纯函数,有测试。
  */
 
 import { DEFAULT_HOLD_LINES } from './marks';
+import { normalizeLoras, type LoraPick } from './loras';
 
 export const IMAGEGEN_SETTING_KEY = 'plugin.imagegen';
 
@@ -175,7 +178,12 @@ export interface ImageGenConfig {
   custom: Size;
   steps: number;
   scale: number;
+  /** NovelAI 是 SAMPLERS 里的值;本地 SD 是服务上的名字,空串 = 服务默认 */
   sampler: string;
+  /** 调度器(只本地 SD 有);空串 = 服务默认 */
+  scheduler: string;
+  /** 这张卡在这条连接下的 LoRA(只本地 SD 有) */
+  loras: LoraPick[];
   noise: NoiseSchedule;
   /** 种子;null = 每张随机 */
   seed: number | null;
@@ -199,6 +207,8 @@ export interface ImageGenConfig {
   allowPaid: boolean;
   styles: ImageStyle[];
   styleId: string;
+  /** 这张卡的画师串(11-07 以前在卡的长相那份里);空 = 跟画风 */
+  artists: string;
   writer: { connectionId: string | null; thinking: WriterThinking };
   /** 改写过的说明书;null = 用后端默认的 */
   skills: {
@@ -229,6 +239,8 @@ export const DEFAULT_IMAGEGEN_CONFIG: ImageGenConfig = {
   steps: 23,
   scale: 7,
   sampler: 'k_euler_ancestral',
+  scheduler: '',
+  loras: [],
   noise: 'karras',
   seed: null,
   rescale: 0,
@@ -242,6 +254,7 @@ export const DEFAULT_IMAGEGEN_CONFIG: ImageGenConfig = {
   allowPaid: false,
   styles: BUILTIN_STYLES.map((s) => ({ ...s })),
   styleId: DEFAULT_STYLE_ID,
+  artists: '',
   writer: { connectionId: null, thinking: 'off' },
   skills: {
     manual: null,
@@ -279,13 +292,7 @@ export interface CardImagePrefs {
   outfit: string;
   negative: string;
   gender: Gender;
-  /** 画风另选;null = 跟全局 */
-  styleId: string | null;
   sfwOnly: boolean;
-  /** 这张卡不自动出图 */
-  autoOff: boolean;
-  /** 画师串;空 = 跟画风 */
-  artists: string;
   ref: CardRef;
 }
 
@@ -295,10 +302,7 @@ export const DEFAULT_CARD_PREFS: CardImagePrefs = {
   outfit: '',
   negative: '',
   gender: 'female',
-  styleId: null,
   sfwOnly: false,
-  autoOff: false,
-  artists: '',
   ref: DEFAULT_CARD_REF,
 };
 
@@ -377,9 +381,11 @@ export function normalizeImageGenConfig(raw: unknown): ImageGenConfig {
   const auto = isObj(raw.auto) ? raw.auto : {};
   const player = isObj(raw.player) ? raw.player : {};
   const custom = isObj(raw.custom) ? raw.custom : {};
-  const sampler = typeof raw.sampler === 'string' && SAMPLERS.some((s) => s.value === raw.sampler) ? raw.sampler : d.sampler;
+  // 本地 SD 的采样器名、空串(服务默认)照留;只把 NovelAI 下架的换回默认
+  const sampler = typeof raw.sampler === 'string' && (!raw.sampler.startsWith('k_') || SAMPLERS.some((s) => s.value === raw.sampler)) ? raw.sampler.slice(0, 40) : d.sampler;
   return {
-    model: typeof raw.model === 'string' && MODELS.some((m) => m.id === raw.model) ? raw.model : d.model,
+    // 别的连接的模型名(中转站、本地 SD)不在 MODELS 里,照留;只把已经下架的 NovelAI 模型换回默认
+    model: typeof raw.model === 'string' && raw.model.trim() && (!raw.model.startsWith('nai-') || MODELS.some((m) => m.id === raw.model)) ? raw.model : d.model,
     size: SIZE_KEYS.includes(raw.size as SizeKey) ? (raw.size as SizeKey) : d.size,
     // 以前没有预设:横是 1344×768、竖 832×1216,宽屏最接近
     res: isRes(raw.res) ? raw.res : d.res,
@@ -387,6 +393,8 @@ export function normalizeImageGenConfig(raw: unknown): ImageGenConfig {
     steps: Math.round(num(raw.steps, d.steps, 1, 50)),
     scale: Math.round(num(raw.scale, d.scale, 0, 10) * 10) / 10,
     sampler,
+    scheduler: str(raw.scheduler, '', 40),
+    loras: normalizeLoras(raw.loras),
     noise: isNoise(raw.noise) ? raw.noise : noiseFor(sampler),
     seed: typeof raw.seed === 'number' && Number.isInteger(raw.seed) && raw.seed >= 0 && raw.seed <= 4294967295 ? raw.seed : null,
     rescale: Math.round(num(raw.rescale, d.rescale, 0, 1) * 100) / 100,
@@ -399,6 +407,7 @@ export function normalizeImageGenConfig(raw: unknown): ImageGenConfig {
     allowPaid: bool(raw.allowPaid, d.allowPaid),
     styles,
     styleId,
+    artists: str(raw.artists, ''),
     writer: {
       connectionId: typeof writer.connectionId === 'string' && writer.connectionId ? writer.connectionId : null,
       thinking: writer.thinking === 'conn' ? 'conn' : 'off',
@@ -442,21 +451,22 @@ export function normalizeCardPrefs(raw: unknown): CardImagePrefs {
     outfit: str(raw.outfit, d.outfit),
     negative: str(raw.negative, d.negative),
     gender: gender(raw.gender, d.gender),
-    styleId: typeof raw.styleId === 'string' && raw.styleId ? raw.styleId : null,
     sfwOnly: bool(raw.sfwOnly, d.sfwOnly),
-    autoOff: bool(raw.autoOff, d.autoOff),
-    artists: str(raw.artists, d.artists),
     ref: normalizeRef(raw.ref),
   };
 }
 
-/** 这张卡用哪个画风:卡另选的(还在)> 全局选的 > 第一个 */
-export function styleFor(config: ImageGenConfig, prefs: CardImagePrefs): ImageStyle {
-  return (
-    config.styles.find((s) => s.id === prefs.styleId) ??
-    config.styles.find((s) => s.id === config.styleId) ??
-    config.styles[0]
-  );
+/** 改画风库时写回全局 plugin.imagegen 的那份:只换画风库,别的字段(11-07 以前的老设置)原样留着,回滚用得上 */
+export function withStyleLibrary(
+  stored: unknown,
+  library: Pick<ImageGenConfig, 'styles' | 'stylesVersion'>,
+): Record<string, unknown> {
+  return { ...(isObj(stored) ? stored : {}), styles: library.styles, stylesVersion: library.stylesVersion };
+}
+
+/** 这张卡用哪个画风:这张卡选的(还在)> 第一个。选哪个存在这张卡的 imagegen.setup 里 */
+export function styleFor(config: ImageGenConfig): ImageStyle {
+  return config.styles.find((s) => s.id === config.styleId) ?? config.styles[0];
 }
 
 /** 指导模型读卡写的外貌并进这张卡的设置:角色名没认出来时留着原来的,衣服没写时也留着 */
@@ -467,9 +477,10 @@ export function withLook(
   return { ...prefs, look: r.tags, outfit: r.outfit || prefs.outfit, gender: r.gender, nameTag: r.name_tag || prefs.nameTag };
 }
 
-/** 出图用的画风:卡另选的 > 全局的(styleFor) */
+/** 出图用的画风:这张卡选的(styleFor) */
 export function drawStyle(config: ImageGenConfig, prefs: CardImagePrefs): ImageStyle {
-  return styleFor(config, prefs);
+  void prefs; // 公开版没有上面那段,用不到 prefs;参数留着,两个版本调用的地方一样
+  return styleFor(config);
 }
 
 /** 出图用的模型:只画全年龄的卡换成 Curated(后端也会换,结果一样) */
@@ -478,9 +489,9 @@ export function drawModel(config: ImageGenConfig, prefs: CardImagePrefs): string
   return config.model;
 }
 
-/** 这张卡用的画师串:卡上填了用卡的,没填跟这次用的画风 */
+/** 这张卡用的画师串:这张卡填了用它的(imagegen.setup 外层的 artists),没填跟这次用的画风 */
 export function artistsFor(config: ImageGenConfig, prefs: CardImagePrefs): string {
-  return prefs.artists.trim() || drawStyle(config, prefs).artists;
+  return config.artists.trim() || drawStyle(config, prefs).artists;
 }
 
 /** 角色参考只有 V4.5 能用(10-09 实测 V5 发了回 500) */

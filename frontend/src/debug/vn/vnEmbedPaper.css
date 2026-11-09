@@ -49,6 +49,16 @@
   background: var(--av-paper);
   color: var(--av-ink);
 }
+/* 菜单插件页里的生图设置:下拉和输入框原来是配深色玻璃的(灰底、选项深底),字换成墨色以后选项就看不清了 */
+:is(.vn-menu, .vn-pw-win) .vn-embed .ig-settings :is(.vn-set-select, .ig-input) {
+  background: var(--av-paper);
+  border-color: var(--av-hair);
+  color: var(--av-ink);
+}
+:is(.vn-menu, .vn-pw-win) .vn-embed .ig-settings .vn-set-select option {
+  background: var(--av-paper);
+  color: var(--av-ink);
+}
 :is(.vn-menu, .vn-pw-win) .vn-plugin-embed .sp-nav {
   background: var(--av-paper-2);
 }

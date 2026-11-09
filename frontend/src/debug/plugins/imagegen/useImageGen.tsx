@@ -3,10 +3,12 @@
  * 和视觉小说要的几样(某句显示哪张图、「画」按钮、舞台上那一层、回复写完时的自动出图)。
  * 两边用同一份状态(ImageGenStore):插件页里一改,视觉小说里下一张就跟着。
  *
- * 一张图的流程:指导模型(/plan)写画面 → NovelAI(/generate)画 → 记号挂在那条消息上(marks.ts),
+ * 一张图的流程:指导模型(/plan)写画面 → 这张卡选的画图连接(/generate,带 connection_id)画 → 记号挂在那条消息上(marks.ts),
  * DebugApp 照常把消息写库。同一个 NovelAI 账号一次只能画一张,后端排队;这里只记「正在画几张」给画面看。
  * 每条回复写完还让指导模型记一次状态笔记(/note,也挂在那条消息上),画下一张时把前一条的笔记带给它
  * (docs/superpowers/specs/2026-10-22-imagegen-state-notes-design.md)。
+ * 11-07 起设置每张卡一份(imagegen.setup,useCardSetup.ts / setup.ts),全局 plugin.imagegen 只存画风库;
+ * 画图连接是全局的(/api/imagegen/connections),每张卡选用哪条。
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -24,29 +26,27 @@ import type {
   VnIllustrationContext,
   VnIllustrations,
 } from '../cartridges';
-import { usePluginConfig } from '../usePluginConfig';
 import {
   imagegenApi,
+  type CheckResult,
   type GeneratedImage,
+  type ConnKind,
+  type ImageConn,
+  type ImageConnIn,
+  type ImageConnPatch,
   type ImageGenDefaults,
-  type ImageGenStatus,
   type KeepResult,
-  type LookIn,
   type NaiAccount,
   type Picture,
   type Drawn,
   type PlanRequest,
   type PlanResult,
+  type TrialResult,
 } from './api';
 import {
-  artistsFor,
   DEFAULT_CARD_PREFS,
-  drawModel,
-  drawStyle,
-  DEFAULT_IMAGEGEN_CONFIG,
   IMAGEGEN_SETTING_KEY,
   normalizeCardPrefs,
-  normalizeImageGenConfig,
   sizeOf,
   usesReference,
   withLook,
@@ -55,6 +55,11 @@ import {
   type ImageGenConfig,
   type SizeKey,
 } from './config';
+import { BLOCK_TEXT, drawBlockOf, kindsOf, without, type DrawBlock } from './connModel';
+import { newJobId, openPreview, previewAt, previewBlur, type LivePreview, type PreviewFrame } from './preview';
+import { buildGenerate, buildTrial } from './request';
+import type { ImageSetup } from './setup';
+import { useCardSetup, useStyleLibrary } from './useCardSetup';
 // 设置页、相册改成点开才下载了(文件末尾 lazyPage 那些);它们原来带进来的样式照原位置引,样式表先后不变(DebugApp.tsx 开头)
 import './imagegen.css';
 import '../../vn/settings/settingRow.css';
@@ -130,9 +135,14 @@ export interface Job {
 }
 
 export interface ImageGenStore {
+  /**
+   * 这张卡的生图设置:全局画风库 + 这张卡的 imagegen.setup(外层 + 选的那条连接下的那份),怎么合成见 setup.ts;
+   * 没选卡、还没读到是默认值
+   */
   config: ImageGenConfig;
+  /** 改了拆回这张卡的 setup(停手半秒写库)和全局画风库(改了画风才写) */
   changeConfig: (next: ImageGenConfig) => void;
-  /** 这张卡自己的那份;没选卡时是默认值 */
+  /** 这张卡的长相那份(card_prefs 的 plugin.imagegen,随角色包走);没选卡、还没读到是默认值 */
   prefs: CardImagePrefs;
   changePrefs: (next: CardImagePrefs) => void;
   cardId: string | null;
@@ -140,13 +150,42 @@ export interface ImageGenStore {
   charName: string;
   userName: string;
   connections: IllustrationsInput['connections'];
-  status: ImageGenStatus | null;
-  saveToken: (token: string) => Promise<void>;
+  /** 改一条连接的模型(和主模型窗口改的是同一个字段,10-31 用户:指导模型照主模型那样);改完让 DebugApp 重读连接 */
+  setConnectionModel: (connectionId: string, model: string) => Promise<void>;
+  /** 重新拉一条连接的模型列表 */
+  refreshModels: (connectionId: string) => Promise<void>;
+  modelsRefreshing: boolean;
   defaults: ImageGenDefaults | null;
-  /** NovelAI 账户(等级、Anlas、V5 额度条);没查过 / 查不到是 null,查不到时 accountError 是原因 */
-  account: NaiAccount | null;
-  accountError: string | null;
-  checkAccount: () => Promise<void>;
+  /** NovelAI 连接的账户(等级、Anlas、V5 额度条),按连接编号存;没查过的不在里面 */
+  accounts: Readonly<Record<string, NaiAccount>>;
+  /** 查不到的原因(接口原文),按连接编号存 */
+  accountErrors: Readonly<Record<string, string>>;
+  checkAccount: (connId: string) => Promise<void>;
+  /** 画图连接(全局一份,每张卡在 setup.conn 里选用哪条);还没读到是 null */
+  imageConns: readonly ImageConn[] | null;
+  /** 每条连接有几张卡在用(连接页写在地址旁边) */
+  usage: Readonly<Record<string, number>>;
+  /** 重读连接列表和「几张卡在用」 */
+  reloadConns: () => Promise<void>;
+  /** 加 / 改一条连接;失败抛错(接口原文在 message 里),成了连接列表跟着重读 */
+  addConn: (body: ImageConnIn) => Promise<ImageConn>;
+  updateConn: (id: string, patch: ImageConnPatch) => Promise<ImageConn>;
+  /** 删一条:先把这张卡没写库的设置写掉,删完重读连接和这张卡的设置(后端会替用它的卡换连接) */
+  deleteConn: (id: string) => Promise<void>;
+  /** 查连接(不花钱) */
+  checkConn: (id: string) => Promise<CheckResult>;
+  /** 这张卡的 imagegen.setup;没选卡、还没读到是 null */
+  setup: ImageSetup | null;
+  /** 这张卡选的画图连接;没选、被删了是 null */
+  conn: ImageConn | null;
+  /** 换这张卡用的连接(模型、步数这些换成这张卡在那条连接下的那份) */
+  setConn: (id: string | null) => void;
+  /** 为什么画不了(connModel.drawBlockOf);能画是 null */
+  drawBlock: DrawBlock;
+  /** 这张卡在某条连接下的设置(测试出图、加完连接画一张试试) */
+  configFor: (connId: string) => ImageGenConfig;
+  /** 测试出图:固定一幕、这张卡的长相,不经过指导模型、不进相册;失败抛错。本地 SD 边画边回调 onFrame,signal 取消后不再收 */
+  testDraw: (connId: string, onFrame?: (f: PreviewFrame) => void, signal?: AbortSignal) => Promise<TrialResult>;
   /** 正在问指导模型 / 正在画的 */
   jobs: readonly Job[];
   /** 画好一张就加一(相册跟着重读) */
@@ -164,6 +203,12 @@ export interface ImageGenStore {
   /** 视觉小说里「画」的小面板开着 */
   panelOpen: boolean;
   setPanelOpen: (open: boolean) => void;
+  /** 游戏里点画笔、还一条画图连接都没有时,画笔上方那句「还没接画图 · 去加」 */
+  nudge: boolean;
+  setNudge: (open: boolean) => void;
+  /** 游戏里开着的「加一条连接」小窗(从「去加」开的) */
+  adding: boolean;
+  setAdding: (open: boolean) => void;
   /** 发送右边的画笔(量它所在的对话框,小面板放在框上方) */
   anchor: HTMLElement | null;
   setAnchor: (el: HTMLElement | null) => void;
@@ -184,6 +229,8 @@ export interface ImageGenStore {
       trigger?: 'manual' | 'auto' | 'reroll';
       /** 显示到这条回复的第几句(含);不传按默认句数收 */
       until?: number | null;
+      /** 问指导模型花了几毫秒(PlanResult.ms),记进相册的用时;没问(换一张)不传 */
+      planMs?: number | null;
     },
   ) => Promise<GeneratedImage | null>;
   /** 问指导模型再画(不看提示词) */
@@ -210,19 +257,48 @@ function userTextBefore(entries: readonly ChatEntry[], entryId: string): string 
 
 export function useImageGen(input: IllustrationsInput): IllustrationsState {
   const { notify, cardId, cardName, chatId, charName, userName, entries, patchEntry, connections, onKept } = input;
-  const { config, change: changeConfig } = usePluginConfig<ImageGenConfig>(
-    IMAGEGEN_SETTING_KEY,
-    normalizeImageGenConfig,
-    DEFAULT_IMAGEGEN_CONFIG,
-    notify,
-    { load: '生图设置读取失败', save: '生图设置保存失败' },
+  const connectionsChanged = useRef(input.onConnectionsChanged);
+  connectionsChanged.current = input.onConnectionsChanged;
+  const setConnectionModel = useCallback(
+    async (connectionId: string, model: string) => {
+      try {
+        await debugApi.updateConnection(connectionId, { model });
+      } catch (e) {
+        notify('error', `切换模型失败: ${errText(e)}`);
+      }
+      connectionsChanged.current?.();
+    },
+    [notify],
   );
+  const [modelsRefreshing, setModelsRefreshing] = useState(false);
+  const refreshModels = useCallback(
+    async (connectionId: string) => {
+      setModelsRefreshing(true);
+      try {
+        const list = await debugApi.refreshConnectionModels(connectionId);
+        notify('ok', `拉到 ${list.length} 个模型`);
+      } catch (e) {
+        notify('error', `模型列表拉取失败: ${errText(e)}`);
+      } finally {
+        setModelsRefreshing(false);
+        connectionsChanged.current?.();
+      }
+    },
+    [notify],
+  );
+  // ---- 这张卡的设置(imagegen.setup)+ 全局画风库:11-07 起全局 plugin.imagegen 只存画风库 ----
+  const { library, changeLibrary } = useStyleLibrary(notify);
+  const cardSetup = useCardSetup(cardId, library, changeLibrary, notify);
+  const { config, changeConfig, setup } = cardSetup;
+  const setupReady = setup !== null;
 
-  // ---- 这张卡的那份(card_prefs 的 plugin.imagegen):换卡重读,改了停手半秒写库 ----
+  // ---- 这张卡的长相那份(card_prefs 的 plugin.imagegen):换卡重读,改了停手半秒写库 ----
+  // 等 imagegen.setup 读到再读:第一次读 setup 时,后端会把老字段(画风、画师串、不自动出图)从这里搬走
   const [cardPrefs, setCardPrefs] = useState<{ cardId: string; prefs: CardImagePrefs } | null>(null);
+  const prefsLoaded = Boolean(cardId) && cardPrefs?.cardId === cardId;
   const prefs = cardPrefs && cardPrefs.cardId === cardId ? cardPrefs.prefs : DEFAULT_CARD_PREFS;
   useEffect(() => {
-    if (!cardId) return;
+    if (!cardId || !setupReady) return;
     let live = true;
     debugApi
       .cardPrefs(cardId)
@@ -233,11 +309,12 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
     return () => {
       live = false;
     };
-  }, [cardId, notify]);
+  }, [cardId, setupReady, notify]);
   const prefsTimer = useRef<number | undefined>(undefined);
   const changePrefs = useCallback(
     (next: CardImagePrefs) => {
-      if (!cardId) return;
+      // 还没读到这张卡存的那份就别写:不然拿默认值盖掉
+      if (!cardId || !prefsLoaded) return;
       setCardPrefs({ cardId, prefs: next });
       window.clearTimeout(prefsTimer.current);
       prefsTimer.current = window.setTimeout(() => {
@@ -246,38 +323,82 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
           .catch((e: unknown) => notify('error', `这张卡的生图设置保存失败: ${errText(e)}`));
       }, 500);
     },
-    [cardId, notify],
+    [cardId, prefsLoaded, notify],
   );
 
-  // ---- token、默认说明书 ----
-  const [status, setStatus] = useState<ImageGenStatus | null>(null);
+  // ---- 默认说明书、NovelAI 账户(按连接存:两个 NovelAI 号各查各的) ----
   const [defaults, setDefaults] = useState<ImageGenDefaults | null>(null);
   useEffect(() => {
-    imagegenApi.status().then(setStatus, () => setStatus(null));
     imagegenApi.defaults().then(setDefaults, () => setDefaults(null));
   }, []);
-  const [account, setAccount] = useState<NaiAccount | null>(null);
-  const [accountError, setAccountError] = useState<string | null>(null);
-  const checkAccount = useCallback(async () => {
-    setAccountError(null);
+  const [accounts, setAccounts] = useState<Record<string, NaiAccount>>({});
+  const [accountErrors, setAccountErrors] = useState<Record<string, string>>({});
+  const checkAccount = useCallback(async (connId: string) => {
+    setAccountErrors((m) => without(m, connId));
     try {
-      setAccount(await imagegenApi.account());
+      const a = await imagegenApi.connectionAccount(connId);
+      setAccounts((m) => ({ ...m, [connId]: a }));
     } catch (e) {
-      setAccount(null);
-      setAccountError(errText(e));
+      setAccounts((m) => without(m, connId));
+      setAccountErrors((m) => ({ ...m, [connId]: errText(e) }));
     }
   }, []);
-  const saveToken = useCallback(
-    async (token: string) => {
-      try {
-        setStatus(await imagegenApi.putToken(token));
-        notify('ok', token.trim() ? 'NovelAI token 已保存' : 'NovelAI token 已删除');
-      } catch (e) {
-        notify('error', `保存 token 失败: ${errText(e)}`);
-      }
+
+  // ---- 画图连接(全局一份,每张卡在 setup.conn 里选用哪条)----
+  const [imageConns, setImageConns] = useState<ImageConn[] | null>(null);
+  const [usage, setUsage] = useState<Record<string, number>>({});
+  const reloadConns = useCallback(async () => {
+    try {
+      const [list, used] = await Promise.all([imagegenApi.connections(), imagegenApi.connectionUsage()]);
+      setImageConns(list);
+      setUsage(used);
+    } catch (e) {
+      notify('error', `画图连接读取失败: ${errText(e)}`);
+    }
+  }, [notify]);
+  useEffect(() => {
+    void reloadConns();
+  }, [reloadConns]);
+  const kinds = useMemo(() => kindsOf(imageConns), [imageConns]);
+  const conn = imageConns?.find((c) => c.id === setup?.conn) ?? null;
+  const drawBlock = drawBlockOf(imageConns, setup, Boolean(cardId));
+  const { flush: flushSetup, reload: reloadSetup, setConn: setCardConn, configFor: cardConfigFor } = cardSetup;
+  const setConn = useCallback((id: string | null) => setCardConn(id, kinds), [setCardConn, kinds]);
+  const configFor = useCallback((id: string) => cardConfigFor(id, kinds), [cardConfigFor, kinds]);
+  const [nudge, setNudge] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const addConn = useCallback(
+    async (body: ImageConnIn) => {
+      const c = await imagegenApi.addConnection(body);
+      await reloadConns();
+      // 有连接了,画笔上方那句「还没接画图」不算数了(可能是从设置页加的)
+      setNudge(false);
+      return c;
     },
-    [notify],
+    [reloadConns],
   );
+  const updateConn = useCallback(
+    async (id: string, patch: ImageConnPatch) => {
+      const c = await imagegenApi.updateConnection(id, patch);
+      // 先用接口回的这条(改了地址 key 可能被清掉):下面重读失败,界面也不会还写着「已保存」
+      setImageConns((list) => list && list.map((x) => (x.id === id ? c : x)));
+      await reloadConns();
+      return c;
+    },
+    [reloadConns],
+  );
+  const deleteConn = useCallback(
+    async (id: string) => {
+      // 先把这张卡没写库的那次写掉(不然写的时候连接已经没了,后端回 400)
+      await flushSetup();
+      await imagegenApi.deleteConnection(id);
+      await reloadConns();
+      // 后端会替选了它的卡换连接(只剩一条就用那条):重读这张卡的
+      reloadSetup();
+    },
+    [flushSetup, reloadConns, reloadSetup],
+  );
+  const checkConn = useCallback((id: string): Promise<CheckResult> => imagegenApi.checkConnection(id), []);
 
   // ---- 进行中 ----
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -337,10 +458,38 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
   );
 
   // 异步回来时对话可能已经换了:按最新的比
-  const latest = useRef({ chatId, entries, config, prefs, onKept, album: albumNow });
+  const connId = setup?.conn ?? null;
+  const connKind: ConnKind | null = conn?.kind ?? null;
+  const latest = useRef({ cardId, chatId, entries, config, prefs, prefsLoaded, onKept, album: albumNow, drawBlock, connId, connKind });
   useEffect(() => {
-    latest.current = { chatId, entries, config, prefs, onKept, album: albumNow };
+    latest.current = { cardId, chatId, entries, config, prefs, prefsLoaded, onKept, album: albumNow, drawBlock, connId, connKind };
   });
+
+  // ---- 本地 SD 的过程预览:发 /generate 之前开、画完关;插图的位置先显示它(模糊一点),真图出来替换掉 ----
+  const [previews, setPreviews] = useState<LivePreview[]>([]);
+  const previewStops = useRef(new Set<() => void>());
+  const startPreview = useCallback((jobId: string, entryId: string, swipe: number, line: number) => {
+    const close = openPreview(jobId, (f) =>
+      setPreviews((list) => {
+        const item: LivePreview = { ...f, jobId, entryId, swipe, line };
+        return list.some((p) => p.jobId === jobId) ? list.map((p) => (p.jobId === jobId ? item : p)) : [...list, item];
+      }),
+    );
+    const stop = () => {
+      close();
+      previewStops.current.delete(stop);
+      setPreviews((list) => (list.some((p) => p.jobId === jobId) ? list.filter((p) => p.jobId !== jobId) : list));
+    };
+    previewStops.current.add(stop);
+    return stop;
+  }, []);
+  // 换卡、卸载:连接都关掉,预览收起来(图照常画完进相册)
+  useEffect(() => {
+    const stops = previewStops.current;
+    return () => {
+      for (const stop of [...stops]) stop();
+    };
+  }, [cardId]);
 
   // 前后已经画过的图(给指导模型接上连贯,10-18 用户:「要知道之后画了什么、前面画了什么」):
   // 这条回复里画过的(收起的不算)+ 上一条有图的回复的最后一张。line 换成给它的那段剧情里的编号(offset = 那段从第几句开始)。
@@ -380,7 +529,7 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
   const lookAsked = useRef(new Set<string>());
   const ensureLook = useCallback(async (): Promise<CardImagePrefs> => {
     const { config: c, prefs: p } = latest.current;
-    if (!cardId || p.look.trim() || usesReference(c, p) || lookAsked.current.has(cardId)) return p;
+    if (!cardId || !latest.current.prefsLoaded || p.look.trim() || usesReference(c, p) || lookAsked.current.has(cardId)) return p;
     lookAsked.current.add(cardId);
     try {
       const r = await track('记住她的样子', () =>
@@ -403,32 +552,6 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
       { name: charName, gender: p.gender, look: p.look, outfit: p.outfit },
       { name: userName, gender: c.player.gender, look: c.player.look, outfit: c.player.outfit, player: true },
     ];
-  }, [charName, userName]);
-
-  const looks = useCallback((p: CardImagePrefs): Record<string, LookIn> => {
-    const c = latest.current.config;
-    const player: LookIn = {
-      tags: c.player.look,
-      outfit: c.player.outfit,
-      negative: c.player.negative,
-      gender: c.player.gender,
-      player: true,
-    };
-    // 指导模型偶尔把玩家写成「玩家」「你」:都当玩家
-    return {
-      [charName]: {
-        tags: p.look,
-        outfit: p.outfit,
-        negative: p.negative,
-        gender: p.gender,
-        name_tag: p.nameTag,
-        // 模型用不了参考图时后端自己跳过,这里照卡上的设置带
-        ref: p.ref.kind === 'off' ? null : { kind: p.ref.kind, id: p.ref.id, style: p.ref.style, strength: p.ref.strength },
-      },
-      [userName]: player,
-      玩家: player,
-      你: player,
-    };
   }, [charName, userName]);
 
   const targetOf = useCallback(
@@ -478,66 +601,79 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
   const draw = useCallback<ImageGenStore['draw']>(
     async (target, o) => {
       const chatAtStart = latest.current.chatId;
-      const p = await ensureLook();
-      const c = latest.current.config;
-      const size =
-        typeof o.size === 'string' ? sizeOf(c, o.size, { width: window.innerWidth, height: window.innerHeight }) : o.size;
-      const style = drawStyle(c, p);
-      const swipe = target.entry.swipeIndex;
-      let img: GeneratedImage;
-      try {
-        img = await track('Drawing', () =>
-          imagegenApi.generate({
-            card_id: cardId,
-            chat_id: chatAtStart,
-            entry_id: target.entry.id,
-            swipe,
-            line: target.line,
-            trigger: o.trigger ?? 'manual',
-            title: o.title,
-            description: o.description,
-            picture: o.picture,
-            looks: looks(p),
-            style: { tags: style.tags, negative: style.negative, artists: artistsFor(c, p) },
-            model: drawModel(c, p),
-            width: size.w,
-            height: size.h,
-            steps: c.steps,
-            scale: c.scale,
-            sampler: c.sampler,
-            noise_schedule: c.noise,
-            cfg_rescale: c.rescale,
-            variety: c.variety,
-            ...(c.seed !== null ? { seed: c.seed } : {}),
-            quality: c.quality,
-            uc_preset: c.ucPreset,
-            uc: c.uc,
-            sfw_only: p.sfwOnly,
-            allow_paid: c.allowPaid,
-          }),
-        );
-      } catch (e) {
-        notify('error', `没画出来: ${errText(e)}`);
+      // 这张卡还画不了(没有连接、没选、选的那种还不能出图)、构思的时候换了卡:说一声,不发请求
+      const whyNot = () => {
+        const now = latest.current;
+        if (now.cardId !== cardId) return '已经换了角色卡,这张没画';
+        return now.drawBlock ? BLOCK_TEXT[now.drawBlock] : null;
+      };
+      const blocked = whyNot();
+      if (blocked) {
+        notify('error', blocked);
         return null;
       }
-      setDrawn((n) => n + 1);
-      if (!img.sha) return img;
-      if (latest.current.chatId !== chatAtStart) {
-        notify('ok', '图画好了,但已经换到别的对话:在插件页「AI 生图」的画过的图里');
-        return img;
+      const p = await ensureLook();
+      // 读长相要几秒:连接和设置都等它写完再取,这两样才是同一条连接的
+      const stillBlocked = whyNot();
+      if (stillBlocked) {
+        notify('error', stillBlocked);
+        return null;
       }
-      const until = typeof o.until === 'number' ? o.until : undefined;
-      showLog.current.drawn.set(img.id, Date.now());
-      patchEntry(target.entry.id, (e) => addImage(e, swipe, { line: target.line, until, id: img.id, sha: img.sha ?? '' }));
-      return img;
+      const { config: c, connId: connectionId, connKind: kind } = latest.current;
+      const size =
+        typeof o.size === 'string' ? sizeOf(c, o.size, { width: window.innerWidth, height: window.innerHeight }) : o.size;
+      const swipe = target.entry.swipeIndex;
+      const jobId = kind === 'sdapi' ? newJobId() : undefined;
+      // 预览在 /generate 之前开,一开始的几帧才收得到
+      const stopPreview = jobId ? startPreview(jobId, target.entry.id, swipe, target.line) : undefined;
+      try {
+        let img: GeneratedImage;
+        try {
+          img = await track('Drawing', () =>
+            imagegenApi.generate(
+              buildGenerate(c, p, { cardId, charName, userName }, {
+                chatId: chatAtStart,
+                entryId: target.entry.id,
+                swipe,
+                line: target.line,
+                trigger: o.trigger ?? 'manual',
+                title: o.title,
+                description: o.description,
+                picture: o.picture,
+                size,
+                connectionId,
+                planMs: o.planMs,
+                connKind: kind,
+                jobId,
+              }),
+            ),
+          );
+        } catch (e) {
+          notify('error', `没画出来: ${errText(e)}`);
+          return null;
+        }
+        setDrawn((n) => n + 1);
+        if (!img.sha) return img;
+        if (latest.current.chatId !== chatAtStart) {
+          notify('ok', '图画好了,但已经换到别的对话:在插件页「AI 生图」的画过的图里');
+          return img;
+        }
+        const until = typeof o.until === 'number' ? o.until : undefined;
+        showLog.current.drawn.set(img.id, Date.now());
+        patchEntry(target.entry.id, (e) => addImage(e, swipe, { line: target.line, until, id: img.id, sha: img.sha ?? '' }));
+        return img;
+      } finally {
+        // 和上面挂图同一轮收掉:不会先闪回没有图的样子
+        stopPreview?.();
+      }
     },
-    [cardId, ensureLook, looks, notify, patchEntry, track],
+    [cardId, charName, userName, ensureLook, notify, patchEntry, startPreview, track],
   );
 
   const drawNow = useCallback(
     async (target: DrawTarget, want: string, size: SizeKey, camera?: Camera) => {
       const p = await plan(target, want, camera);
-      if (p) await draw(target, { picture: p.picture, title: p.title, description: p.description, size, until: p.until });
+      if (p) await draw(target, { picture: p.picture, title: p.title, description: p.description, size, until: p.until, planMs: p.ms });
     },
     [plan, draw],
   );
@@ -641,14 +777,15 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
   const onReplyDone = useCallback(
     async (entry: ChatEntry, lines: readonly VNLine[], place: VnIllustrationContext['place']) => {
       const { config: c, prefs: p, entries: es, chatId: chatNow } = latest.current;
-      if (!status?.has_token || !cardId || lines.length === 0) return;
+      // 没接画图、没选连接、选的那种还不能出图:自动出图不打扰
+      if (latest.current.drawBlock || !cardId || lines.length === 0) return;
       const key = `${entry.id}:${entry.swipeIndex}`;
       if (autoBusy.current.has(key)) return;
       autoBusy.current.add(key);
       try {
         // 笔记和自动出图一起跑:自动出图用的是上一条回复的笔记
         void takeNote(entry, lines, place);
-        if (!c.auto.enabled || p.autoOff) return;
+        if (!c.auto.enabled) return;
         const index = es.findIndex((e) => e.id === entry.id);
         const since = repliesSinceImage(es, index < 0 ? es.length : index);
         const drawn = await drawnNear(entry, 0);
@@ -685,13 +822,40 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
             size: c.size,
             trigger: 'auto',
             until: r.until,
+            planMs: r.ms,
           },
         );
       } finally {
         autoBusy.current.delete(key);
       }
     },
-    [cardId, cast, draw, drawnNear, notify, status?.has_token, takeNote, track, writerConnection],
+    [cardId, cast, draw, drawnNear, notify, takeNote, track, writerConnection],
+  );
+
+  // 测试出图:用这张卡在那条连接下的设置和长相画固定一幕(request.buildTrial)
+  const testDraw = useCallback(
+    async (id: string, onFrame?: (f: PreviewFrame) => void, signal?: AbortSignal): Promise<TrialResult> => {
+      const kind = kinds[id];
+      const jobId = kind === 'sdapi' && onFrame ? newJobId() : undefined;
+      const stop = jobId && onFrame ? openPreview(jobId, onFrame) : undefined;
+      if (stop) signal?.addEventListener('abort', stop, { once: true });
+      try {
+        return await imagegenApi.testConnection(
+          id,
+          buildTrial(
+            configFor(id),
+            latest.current.prefs,
+            { cardId, charName, userName },
+            id,
+            { width: window.innerWidth, height: window.innerHeight },
+            { connKind: kind, jobId },
+          ),
+        );
+      } finally {
+        stop?.();
+      }
+    },
+    [configFor, kinds, cardId, charName, userName],
   );
 
   const store: ImageGenStore = useMemo(
@@ -705,12 +869,26 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
       charName,
       userName,
       connections,
-      status,
-      saveToken,
+      setConnectionModel,
+      refreshModels,
+      modelsRefreshing,
       defaults,
-      account,
-      accountError,
+      accounts,
+      accountErrors,
       checkAccount,
+      imageConns,
+      usage,
+      reloadConns,
+      addConn,
+      updateConn,
+      deleteConn,
+      checkConn,
+      setup,
+      conn,
+      setConn,
+      drawBlock,
+      configFor,
+      testDraw,
       jobs,
       drawn,
       album: albumNow,
@@ -719,6 +897,10 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
       removeImage,
       panelOpen,
       setPanelOpen,
+      nudge,
+      setNudge,
+      adding,
+      setAdding,
       anchor,
       setAnchor,
       shownAt,
@@ -742,12 +924,26 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
       charName,
       userName,
       connections,
-      status,
-      saveToken,
+      setConnectionModel,
+      refreshModels,
+      modelsRefreshing,
       defaults,
-      account,
-      accountError,
+      accounts,
+      accountErrors,
       checkAccount,
+      imageConns,
+      usage,
+      reloadConns,
+      addConn,
+      updateConn,
+      deleteConn,
+      checkConn,
+      setup,
+      conn,
+      setConn,
+      drawBlock,
+      configFor,
+      testDraw,
       jobs,
       drawn,
       albumNow,
@@ -755,6 +951,8 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
       reloadAlbum,
       removeImage,
       panelOpen,
+      nudge,
+      adding,
       anchor,
       shownAt,
       targetOf,
@@ -813,6 +1011,11 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
     () => ({
       viewAt: (entry, line) => {
         const m = store.shownAt(entry, line);
+        const live = previewAt(previews, entry.id, entry.swipeIndex, line);
+        // 这句往后又有画好的新图时,那张优先
+        if (live && !(m && m.line > live.line)) {
+          return { key: `preview:${live.jobId}`, src: live.src, focus: 50, place: store.config.place, blur: previewBlur(live.progress) };
+        }
         return m ? { key: m.id, src: apiUrl(`/api/blobs/${m.sha}?w=${SHOW_WIDTH}`), focus: 50, place: store.config.place } : null;
       },
       historyAt: (entry, line) => {
@@ -833,7 +1036,7 @@ export function useImageGen(input: IllustrationsInput): IllustrationsState {
       studio,
       album: menuAlbum,
     }),
-    [store, onReplyDone, studio, menuAlbum],
+    [store, previews, onReplyDone, studio, menuAlbum],
   );
 
   return useMemo(() => ({ panel, vn }), [panel, vn]);

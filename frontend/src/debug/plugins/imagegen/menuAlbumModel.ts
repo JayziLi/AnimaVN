@@ -13,7 +13,9 @@
 import { parseUtc, two } from '../../lib/time';
 import type { SaveLanding } from '../cartridges';
 import { saveTitle } from '../../vn/menuLabel';
-import type { AlbumEntry } from './studioAlbumModel';
+import type { GeneratedImage } from './api';
+import { connectionText, timingText } from './connModel';
+import { triggerName, type AlbumEntry } from './studioAlbumModel';
 
 /** 这张卡的一个存档(对话),相册分组用它的名字 */
 export interface AlbumSave {
@@ -97,6 +99,13 @@ export function clockText(iso: string): string {
   if (Number.isNaN(t)) return '';
   const d = new Date(t);
   return `${two(d.getHours())}:${two(d.getMinutes())}`;
+}
+
+/** 看大图下面那行小字:「11-07 14:56 · 手动 · 4.0 秒 · NovelAI · Opus」。11-07 起记了每段用时的,总用时换成分段的 */
+export function viewerMeta(img: GeneratedImage): string {
+  const time = `${dayText(img.created_at)} ${clockText(img.created_at)}`.trim();
+  const took = timingText(img.params.timing) || (img.ms > 0 ? `${(img.ms / 1000).toFixed(1)} 秒` : '');
+  return [time, triggerName(img.trigger), took, connectionText(img.params)].filter(Boolean).join(' · ');
 }
 
 /** 按时间分组:一天一组,新的在前(组头是日期) */

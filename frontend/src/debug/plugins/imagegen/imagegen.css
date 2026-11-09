@@ -459,6 +459,15 @@
   font-weight: 700;
 }
 /* 一行里几个东西(下拉框 + 按钮、输入框 + 按钮) */
+/* 指导模型的连接卡片(样子在 vn/ui/popWindow.css 的 .vn-mw-*):连接多了只让这一块自己滚 */
+.ig-writer-conns {
+  width: 100%;
+  max-height: 300px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* 选中那条的墨线、浮起的影子在滚动框里不被切掉 */
+  padding: 2px 4px 4px 2px;
+}
 .ig-inline {
   display: flex;
   flex-wrap: wrap;
@@ -475,6 +484,12 @@
 }
 .ig-settings .vn-set-select {
   max-width: 100%;
+}
+/* 画面页选连接的下拉:大一号(展开的选项跟着这个字号),连接名长一点也放得下 */
+.ig-settings .vn-set-select.ig-conn-pick {
+  width: 320px;
+  padding: 9px 16px;
+  font-size: 16px;
 }
 /* NovelAI 网页上的叫法:名字下面一行小字(组名里跟在后面) */
 .ig-en {
@@ -803,4 +818,641 @@
 }
 .ig-panel.av-pcard .ig-check input {
   accent-color: var(--av-ink);
+}
+
+/* ── 画图连接(11-07,效果图 1):连接页一行一条,点开就地改;颜色都走 --vn-*(调试台深色底、游戏设置的纸面各有一份) ── */
+.ig-conns {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+.ig-cc {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 10px;
+  padding: 8px 12px 8px 10px;
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 1px var(--vn-border);
+}
+.ig-cc.on {
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 0 0 1.5px var(--vn-text);
+}
+.vn-sp .ig-settings .ig-cc.on {
+  background: var(--av-paper);
+}
+.ig-cc-h {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  column-gap: 14px;
+  align-items: center;
+  min-height: 38px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ig-cc-ic {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 7px;
+  box-shadow: inset 0 0 0 1px var(--vn-border);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--vn-text-dim);
+}
+.ig-cc-tx {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.ig-cc-tx b {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-size: 14.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.ig-cc-tx small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--vn-text-dim);
+}
+/* 查连接的结果:通了一行小字,没通是接口原文,等宽、能选中复制 */
+.ig-cc-st {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+  padding: 5px 0 1px 50px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--vn-text-dim);
+}
+.ig-cc-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  transform: translateY(-1px);
+  background: var(--av-good-ink, #8fc49a);
+}
+.ig-cc-st.bad .ig-cc-dot {
+  background: var(--vn-miss, #ff9d9d);
+}
+.ig-cc-st.bad .ig-cc-msg,
+.vn-set-error.ig-raw {
+  color: var(--vn-miss, #ff9d9d);
+  font-family: var(--vn-mono, ui-monospace, Consolas, monospace);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.ig-cc-edit {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 10px;
+  padding: 14px 0 4px 50px;
+  border-top: 1px solid var(--vn-border);
+}
+.ig-cc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.ig-push {
+  margin-left: auto;
+}
+.ig-cc-new {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+  padding: 10px 12px;
+  border: 1px dashed var(--vn-border);
+  border-radius: 8px;
+  background: none;
+  color: var(--vn-text-dim);
+  font: inherit;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  text-align: left;
+  cursor: pointer;
+}
+.ig-cc-new:hover {
+  color: var(--vn-text);
+  background: rgba(var(--vn-accent-rgb), 0.05);
+}
+.ig-cc-new b {
+  font-size: 17px;
+  font-weight: 400;
+  line-height: 1;
+}
+/* 两栏的表单:连接页展开那块、加一条连接小窗;窄屏一栏 */
+.ig-fgrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 18px;
+}
+.ig-fgrid .ig-span {
+  grid-column: 1 / -1;
+}
+.ig-fgrid .ig-field > span {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+}
+/* 改过还没保存的那一项:名字前一个小点 */
+.ig-changed::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--vn-accent);
+}
+/* 删除点两下:第一下变红底「再点一下删除」。纸面按钮的底色写得更重(vnSettingsPage.css),这里压过去 */
+.vn-pill.ig-danger {
+  color: var(--vn-miss, #ff9d9d);
+}
+.ig-settings .vn-pill.ig-danger.armed,
+.ig-settings .vn-pill.ig-danger.armed:hover:not(:disabled) {
+  border-color: var(--vn-miss, #ff9d9d);
+  background: var(--vn-miss, #ff9d9d);
+  color: var(--vn-accent-ink, #1a1012);
+}
+/* 设置页顶上「这张卡 · 星绘 ?」 */
+.ig-this-card {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+/* 小窗(加一条连接、测试出图):盖住设置页 / 游戏画面、居中,样子照「画这一幕」那块 */
+.ig-dialog-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(12, 12, 22, 0.32);
+  pointer-events: auto;
+  cursor: auto;
+}
+.ig-panel.ig-dialog {
+  position: relative;
+  top: auto;
+  left: auto;
+  width: min(460px, 100%);
+  max-height: calc(100dvh - 32px);
+  outline: none;
+}
+.ig-panel.ig-dialog.wide {
+  width: min(640px, 100%);
+}
+.ig-where {
+  font-size: 12px;
+  color: var(--vn-text-dim);
+}
+.ig-panel.av-pcard .ig-where {
+  color: var(--av-dim);
+}
+.ig-kbd {
+  margin-left: 2px;
+  font-size: 10.5px;
+  opacity: 0.6;
+}
+@media (pointer: coarse) {
+  .ig-kbd {
+    display: none;
+  }
+}
+.ig-good {
+  color: var(--av-good-ink, #8fc49a);
+}
+.ig-panel.av-pcard .ig-note.ig-good {
+  color: var(--av-good-ink, #4c7a58);
+}
+/* 小窗里三选一:连接卡片(.vn-mw-*)排成一横排 */
+.ig-kinds .vn-mw-conns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.ig-kinds .vn-mw-conn {
+  grid-template-columns: 30px minmax(0, 1fr);
+  column-gap: 10px;
+  min-height: 0;
+  padding: 9px 10px;
+}
+.ig-kinds .vn-mw-ic {
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  font-size: 11px;
+}
+.ig-kinds .vn-mw-conn b {
+  font-size: 13.5px;
+}
+.ig-kinds .vn-mw-conn small {
+  font-size: 11.5px;
+}
+.ig-kinds .vn-mw-now {
+  display: none;
+}
+@media (max-width: 640px) {
+  .ig-fgrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ig-cc-st,
+  .ig-cc-edit {
+    padding-left: 0;
+  }
+  .ig-kinds .vn-mw-conn {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 6px;
+    justify-items: start;
+  }
+  .ig-kinds .vn-mw-conn small {
+    display: none;
+  }
+}
+/* 画面页:「更多」后面那行摘要、「测试出图 · 免费」那一条(效果图 3,照 .ig-cost 的底条) */
+.ig-more-sum {
+  margin-left: 6px;
+  font-size: 12px;
+  color: var(--vn-text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.ig-testbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-top: 14px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--vn-border);
+}
+/* 测试出图小窗(效果图 4):图、三段用时的横条(排队 / 画 / 传回)、提示词 */
+.ig-trial-img {
+  display: block;
+  width: 100%;
+  max-height: 46dvh;
+  object-fit: contain;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.25);
+}
+.ig-timing {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ig-tbar {
+  display: flex;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+}
+.ig-tbar i {
+  display: block;
+  height: 100%;
+}
+.ig-tbar .queue,
+.ig-tlabels .queue::before {
+  background: var(--vn-text-faint, rgba(255, 255, 255, 0.35));
+}
+.ig-tbar .draw,
+.ig-tlabels .draw::before {
+  background: var(--vn-accent);
+}
+.ig-tbar .fetch,
+.ig-tlabels .fetch::before {
+  background: rgba(var(--vn-accent-rgb), 0.45);
+}
+.ig-tlabels {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  font-size: 12px;
+  color: var(--vn-text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.ig-tlabels span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.ig-tlabels span:not(.sum)::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+.ig-tlabels .sum {
+  margin-left: auto;
+}
+.ig-code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ig-dialog .ig-code {
+  max-height: 150px;
+  overflow: auto;
+  user-select: text;
+}
+.ig-trial-err {
+  display: flex;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 1px var(--vn-miss, #ff9d9d);
+  color: var(--vn-miss, #ff9d9d);
+}
+.ig-trial-err > i {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  border-radius: 50%;
+  background: var(--vn-miss, #ff9d9d);
+  color: var(--vn-accent-ink, #1a1012);
+  font: 700 10px/1 var(--vn-sans, sans-serif);
+  font-style: normal;
+}
+.ig-trial-err > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ig-trial-err pre {
+  margin: 0;
+  font-family: var(--vn-mono, ui-monospace, Consolas, monospace);
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--vn-text-dim);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+/* 小窗是纸卡时(游戏设置页、调试台夜纸):颜色换成纸面那套 */
+.ig-panel.av-pcard .ig-tbar {
+  background: var(--av-hair);
+}
+.ig-panel.av-pcard .ig-tbar .draw,
+.ig-panel.av-pcard .ig-tlabels .draw::before {
+  background: var(--av-ink);
+}
+.ig-panel.av-pcard .ig-tbar .queue,
+.ig-panel.av-pcard .ig-tlabels .queue::before {
+  background: var(--av-dim);
+}
+.ig-panel.av-pcard .ig-tbar .fetch,
+.ig-panel.av-pcard .ig-tlabels .fetch::before {
+  background: var(--av-ink-2);
+  opacity: 0.45;
+}
+.ig-panel.av-pcard .ig-tlabels,
+.ig-panel.av-pcard .ig-trial-err pre {
+  color: var(--av-ink-2);
+}
+.ig-panel.av-pcard .ig-trial-err {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--av-bad) 45%, transparent);
+  background: var(--av-paper-2);
+  color: var(--av-bad-ink);
+}
+.ig-panel.av-pcard .ig-trial-err > i {
+  background: var(--av-bad);
+  color: var(--av-paper);
+}
+/* 游戏里的小窗在 .vn-illus 里:这一层比对话区、四角细条低,小窗开着时抬上去,不然被它们压住 */
+.vn-illus:has(.ig-dialog-layer) {
+  z-index: 60;
+}
+/* 点画笔、还没有连接:画笔上方一小条「还没接画图 · 去加」(效果图 6) */
+.ig-panel.ig-nudge {
+  flex-direction: row;
+  align-items: center;
+  gap: 16px;
+  width: max-content;
+  max-height: none;
+  overflow: visible;
+  padding: 12px 12px 12px 18px;
+}
+.ig-panel.ig-nudge .ig-title {
+  flex: none;
+  font: 600 14.5px/1.3 var(--av-serif);
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+}
+/* 对着画笔的小尖角 */
+.ig-tail {
+  position: absolute;
+  bottom: -6px;
+  width: 10px;
+  height: 10px;
+  background: inherit;
+  border-right: 1px solid var(--vn-border);
+  border-bottom: 1px solid var(--vn-border);
+  rotate: 45deg;
+}
+/* 「画这一幕」里「用:连接 ▾」那个下拉(效果图 5) */
+.ig-row .ig-conn-select {
+  flex: 0 1 220px;
+  min-width: 0;
+  width: auto;
+  height: 28px;
+  padding: 0 8px;
+  font-size: 12.5px;
+}
+/* 下拉展开的那一列是浏览器画的:底色、字色要自己给,不然浅字配白底 / 深字配深底 */
+.ig-conn-select option {
+  background: var(--vn-glass-strong);
+  color: var(--vn-text);
+}
+.ig-panel.av-pcard .ig-conn-select option {
+  background: var(--av-paper);
+  color: var(--av-ink);
+}
+/* LoRA 小标签(效果图 3、5):点一下开关,开着的有实心点;「⋯」调权重和触发词,最后的「+」加一个 */
+.ig-loras {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.ig-lora {
+  display: inline-flex;
+  align-items: stretch;
+  max-width: 100%;
+  border-radius: 6px;
+  border: 1px solid var(--vn-border);
+  color: var(--vn-text-dim);
+  transition: background 0.16s, border-color 0.16s, color 0.16s;
+}
+.ig-lora.on {
+  border-color: var(--vn-text);
+  color: var(--vn-text);
+  background: rgba(var(--vn-accent-rgb), 0.08);
+}
+.ig-lora button {
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+.ig-lora-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+.ig-lora-name {
+  overflow: hidden;
+  max-width: 180px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ig-lora-w {
+  flex: none;
+}
+.ig-lora-main i {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-left: 2px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px currentColor;
+}
+.ig-lora.on .ig-lora-main i {
+  background: currentColor;
+}
+.ig-lora-more {
+  flex: none;
+  padding: 0 8px;
+  border-left: 1px solid var(--vn-border) !important;
+  line-height: 1;
+}
+.ig-lora-add {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 6px;
+  border: 1px dashed var(--vn-border);
+  background: none;
+  color: var(--vn-text-dim);
+  cursor: pointer;
+  font-size: 17px;
+  line-height: 1;
+}
+.ig-loras.sm .ig-lora-main {
+  height: 26px;
+  padding: 0 9px;
+  font-size: 12px;
+}
+.ig-loras.sm .ig-lora-name {
+  max-width: 120px;
+}
+.ig-row .ig-loras {
+  flex: 1 1 auto;
+  justify-content: flex-end;
+}
+/* 调权重、加一个:排在标签下面占一块地方,不浮起来,窄屏、抽屉里都不会被裁 */
+.ig-lora-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--vn-border);
+  max-width: 420px;
+}
+.ig-lora-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.ig-lora-line .ig-input {
+  min-width: 0;
+}
+.ig-lora-line.ig-lora-end {
+  justify-content: flex-end;
+}
+.ig-lora-k {
+  flex: none;
+  width: 3.2em;
+  font-size: 12.5px;
+  color: var(--vn-text-dim);
+}
+.ig-lora-v {
+  flex: none;
+  width: 2.6em;
+  text-align: right;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--vn-text);
+}
+.ig-lora-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 200px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.ig-lora-list button {
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--vn-text);
+  cursor: pointer;
+  text-align: left;
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+.ig-lora-list button:hover {
+  background: rgba(var(--vn-accent-rgb), 0.1);
+}
+/* 测试出图小窗里还在画的那张:越画越清楚 */
+.ig-trial-img.ig-live {
+  transition: filter 0.6s;
+}
+/* 游戏设置页:小窗开着时,设置那一栏抬到右边「实机预览」上面(不然预览压住小窗右边的按钮) */
+.vn-sp-page:has(.ig-dialog-layer) {
+  z-index: 3;
 }

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from app.plugins import Cartridge
 from app.plugins.imagegen.api import router
+from app.plugins.imagegen.connections import router as connections_router
 from app.plugins.imagegen.models import IMAGE_REF, UPLOAD_REF
 from app.storage import refs
 
@@ -20,4 +21,4 @@ def _load() -> None:
     refs.register(UPLOAD_REF)
 
 
-CARTRIDGE = Cartridge(id="imagegen", routers=[router], on_load=_load)
+CARTRIDGE = Cartridge(id="imagegen", routers=[router, connections_router], on_load=_load)
