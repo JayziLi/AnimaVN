@@ -9,6 +9,7 @@ from app import bindings
 from app.config import settings
 from app.models import (
     ApiConnection,
+    AppSetting,
     CardPref,
     PackSprite,
     Persona,
@@ -19,6 +20,10 @@ from app.models import (
 from app.storage import refs
 
 _SEED_DATA = Path(__file__).resolve().parent / "seed_data"
+# 哪些自带角色已经给过这个库(app_settings):给过的不再给,所以删掉的不会回来,以后新加的会在更新后补上
+_SEEDED_KEY = "seed.bundled"
+# 还没有这个记号的老版本只带过她一个:老库第一次遇到记号时当她已经给过
+_SEEDED_BEFORE_MARKER = ("deepseek-chan",)
 
 
 def seed_default_persona(db: Session) -> None:
@@ -137,14 +142,38 @@ def _seed_sprites(db: Session, card: TavernCard, folder: Path, meta: dict) -> No
 
 
 def seed_default_tavern_data(db: Session) -> None:
-    """First run only: the bundled characters (DeepSeek娘, Gemini娘 —— each with her sprite pack) + default
-    Chat Completion preset, so a fresh install has someone to talk to before any import."""
+    """The bundled characters (DeepSeek娘, Gemini娘 —— each with her sprite pack) + default Chat Completion
+    preset, so a fresh install has someone to talk to before any import.
+
+    空库(第一次启动,或者卡全删光了):自带角色全部种一遍。
+    库里已经有卡:只补还没给过这个库的自带角色 —— 更新后新加的角色会自己出现,
+    以前给过又被删掉的不会回来;库里已经有同名的卡就不再放一张。"""
+    bundled = _bundled_characters()
+    marker = db.get(AppSetting, _SEEDED_KEY)
     if db.scalars(select(TavernCard)).first() is None:
-        for folder, meta in _bundled_characters():
-            card = _seed_card(db, folder)
-            _seed_sprites(db, card, folder, meta)
-            for key, value in meta.get("card_prefs", {}).items():
-                db.add(CardPref(card_id=card.id, key=key, value=value))
+        pending = bundled
+    else:
+        if marker is None:
+            given = set(_SEEDED_BEFORE_MARKER)
+        else:
+            # 记号坏了(不是这里写的样子)就当都给过,不往别人的库里乱补
+            ok = isinstance(marker.value, dict) and isinstance(marker.value.get("seeded"), list)
+            given = set(marker.value["seeded"]) if ok else {folder.name for folder, _ in bundled}
+        pending = [(folder, meta) for folder, meta in bundled if folder.name not in given]
+    for folder, meta in pending:
+        raw = json.loads((folder / "card.json").read_text(encoding="utf-8"))
+        name = raw.get("data", raw).get("name")
+        if name and db.scalars(select(TavernCard).where(TavernCard.name == name)).first() is not None:
+            continue
+        card = _seed_card(db, folder)
+        _seed_sprites(db, card, folder, meta)
+        for key, value in meta.get("card_prefs", {}).items():
+            db.add(CardPref(card_id=card.id, key=key, value=value))
+    seeded = {"seeded": [folder.name for folder, _ in bundled]}
+    if marker is None:
+        db.add(AppSetting(key=_SEEDED_KEY, value=seeded))
+    elif marker.value != seeded:
+        marker.value = seeded
 
     if db.scalars(select(PromptPreset)).first() is None:
         raw = json.loads((_SEED_DATA / "default-preset.json").read_text(encoding="utf-8"))
