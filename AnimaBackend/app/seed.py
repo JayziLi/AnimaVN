@@ -19,12 +19,6 @@ from app.models import (
 from app.storage import refs
 
 _SEED_DATA = Path(__file__).resolve().parent / "seed_data"
-# 自带的角色:卡 + 头像 + 一个立绘包,素材授权见目录里的 CREDITS.txt
-_DEFAULT_CHAR = _SEED_DATA / "deepseek-chan"
-# 换过一次图(16 张旧图 → 10 张重画的),包名跟着换:老库里留着的旧包不会被当成新包挂回去
-_DEFAULT_PACK_NAME = "DeepSeek娘 · 女仆 v2"
-# 自带角色的按卡设置:台词语言设成日语(日中对照)—— 没装声音也写日语、配中文字幕(11-05,前端 plugins/lang.ts 的 CardLang)
-_DEFAULT_CARD_PREFS = {"plugin.lang": {"lang": "ja"}}
 
 
 def seed_default_persona(db: Session) -> None:
@@ -71,11 +65,25 @@ def seed_default_connections(db: Session) -> None:
     db.commit()
 
 
-def _seed_default_card(db: Session) -> TavernCard:
-    raw = json.loads((_DEFAULT_CHAR / "card.json").read_text(encoding="utf-8"))
+def _bundled_characters() -> list[tuple[Path, dict]]:
+    """自带角色:seed_data 下每个带 seed.json 的文件夹是一个(卡 card.json + 头像 avatar.webp + 立绘包 sprites.json /
+    sprites/,授权见各自的 CREDITS.txt),按 seed.json 的 order 排。加一个角色 = 放一个这样的文件夹进来,不用改代码。
+
+    seed.json:sprite_pack {name, description}(包名换图时也要换:老库里留着的旧包不会被当成新包挂回去);
+    card_prefs 按卡设置(比如 plugin.lang 设成 ja = 没装声音也写日中对照,前端 plugins/lang.ts 的 CardLang)"""
+    found = []
+    for folder in _SEED_DATA.iterdir():
+        meta_file = folder / "seed.json"
+        if meta_file.is_file():
+            found.append((folder, json.loads(meta_file.read_text(encoding="utf-8"))))
+    return sorted(found, key=lambda it: (it[1].get("order", 0), it[0].name))
+
+
+def _seed_card(db: Session, folder: Path) -> TavernCard:
+    raw = json.loads((folder / "card.json").read_text(encoding="utf-8"))
     # V2/V3 keep the real fields under `data`; V1 is flat
     d = raw.get("data", raw)
-    avatar = base64.b64encode((_DEFAULT_CHAR / "avatar.webp").read_bytes()).decode("ascii")
+    avatar = base64.b64encode((folder / "avatar.webp").read_bytes()).decode("ascii")
     card = TavernCard(
         name=d.get("name", ""),
         description=d.get("description", ""),
@@ -100,15 +108,16 @@ def _seed_default_card(db: Session) -> TavernCard:
     return card
 
 
-def _seed_default_sprites(db: Session, card: TavernCard) -> None:
+def _seed_sprites(db: Session, card: TavernCard, folder: Path, meta: dict) -> None:
     """自带角色的立绘包。删了卡又重新种的时候,同名的包还在就直接挂回去,不再建一个。
     脸的位置是导出时就算好的(sprites.json 的 face_scan),首启不用再跑一遍找脸。"""
-    pack = db.scalars(select(SpritePack).where(SpritePack.name == _DEFAULT_PACK_NAME)).first()
+    info = meta["sprite_pack"]
+    pack = db.scalars(select(SpritePack).where(SpritePack.name == info["name"])).first()
     if pack is None:
-        pack = SpritePack(name=_DEFAULT_PACK_NAME, description="AnimaVN 自带角色 DeepSeek娘的女仆装立绘")
+        pack = SpritePack(name=info["name"], description=info.get("description", ""))
         db.add(pack)
         db.flush()
-        rows = json.loads((_DEFAULT_CHAR / "sprites.json").read_text(encoding="utf-8"))
+        rows = json.loads((folder / "sprites.json").read_text(encoding="utf-8"))
         for i, row in enumerate(rows):
             sprite = PackSprite(
                 pack_id=pack.id,
@@ -121,20 +130,21 @@ def _seed_default_sprites(db: Session, card: TavernCard) -> None:
                 effect=row.get("effect"),
             )
             # 和上传的立绘一样走 refs.save:文件仓库开着时只进仓库,库里不存原件
-            refs.save(refs.SPRITE, sprite, (_DEFAULT_CHAR / "sprites" / row["file"]).read_bytes(), "image/webp", db)
+            refs.save(refs.SPRITE, sprite, (folder / "sprites" / row["file"]).read_bytes(), "image/webp", db)
             db.add(sprite)
     db.flush()
     bindings.replace(db, card.id, bindings.SPRITE, [pack.id], pack.id)
 
 
 def seed_default_tavern_data(db: Session) -> None:
-    """First run only: the bundled DeepSeek娘 card (with her sprite pack) + default
+    """First run only: the bundled characters (DeepSeek娘, Gemini娘 —— each with her sprite pack) + default
     Chat Completion preset, so a fresh install has someone to talk to before any import."""
     if db.scalars(select(TavernCard)).first() is None:
-        card = _seed_default_card(db)
-        _seed_default_sprites(db, card)
-        for key, value in _DEFAULT_CARD_PREFS.items():
-            db.add(CardPref(card_id=card.id, key=key, value=value))
+        for folder, meta in _bundled_characters():
+            card = _seed_card(db, folder)
+            _seed_sprites(db, card, folder, meta)
+            for key, value in meta.get("card_prefs", {}).items():
+                db.add(CardPref(card_id=card.id, key=key, value=value))
 
     if db.scalars(select(PromptPreset)).first() is None:
         raw = json.loads((_SEED_DATA / "default-preset.json").read_text(encoding="utf-8"))

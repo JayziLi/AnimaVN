@@ -1,4 +1,4 @@
-"""自带角色(app/seed.py):空库第一次启动种进去的 DeepSeek娘 —— 日中对照的卡、立绘包、按卡设置里语言是日语。"""
+"""自带角色(app/seed.py):空库第一次启动种进去的 DeepSeek娘 和 Gemini娘 —— 日中对照的卡、各自的立绘包、按卡设置里语言是日语。"""
 
 import re
 
@@ -23,8 +23,7 @@ def _fresh_db():
 def test_seeds_bilingual_deepseek_with_language_set_to_japanese():
     db = _fresh_db()
     seed_default_tavern_data(db)
-    card = db.scalars(select(TavernCard)).one()
-    assert card.name == "DeepSeek娘"
+    card = db.scalars(select(TavernCard).where(TavernCard.name == "DeepSeek娘")).one()
     assert "日语配音" in card.character_version
     # 开场白、备用开场白、示例都是一行日语一行中文;不带场景包,所以没有 <bg> / <bgm>
     for text in [card.first_mes, *card.alternate_greetings, card.mes_example]:
@@ -38,9 +37,33 @@ def test_seeds_bilingual_deepseek_with_language_set_to_japanese():
     assert pack_id and len(db.scalars(select(PackSprite).where(PackSprite.pack_id == pack_id)).all()) == 10
 
 
+def test_seeds_gemini_as_the_second_bundled_character():
+    db = _fresh_db()
+    seed_default_tavern_data(db)
+    assert {c.name for c in db.scalars(select(TavernCard))} == {"DeepSeek娘", "Gemini娘"}
+    card = db.scalars(select(TavernCard).where(TavernCard.name == "Gemini娘")).one()
+    assert "日语配音" in card.character_version
+    # 开场白一行日语一行中文;不带场景包,所以没有 <bg> / <bgm>
+    for text in [card.first_mes, *card.alternate_greetings]:
+        assert KANA.search(text)
+        assert "<bg" not in text
+    # 自带的是全年龄版
+    for word in ("擦边", "色色"):
+        assert word not in card.description
+    assert card.character_book and len(card.character_book["entries"]) == 11
+    pref = db.get(CardPref, (card.id, "plugin.lang"))
+    assert pref is not None and pref.value == {"lang": "ja"}
+    # 她自己的立绘包,15 个表情,脸的位置随包带着
+    pack_id = bindings.primary(db, card.id, bindings.SPRITE)
+    sprites = db.scalars(select(PackSprite).where(PackSprite.pack_id == pack_id)).all()
+    assert len(sprites) == 15
+    assert all(s.face_scan and s.face_scan.get("face") for s in sprites)
+    assert pack_id != bindings.primary(db, db.scalars(select(TavernCard).where(TavernCard.name == "DeepSeek娘")).one().id, bindings.SPRITE)
+
+
 def test_second_start_does_not_seed_again():
     db = _fresh_db()
     seed_default_tavern_data(db)
     seed_default_tavern_data(db)
-    assert len(db.scalars(select(TavernCard)).all()) == 1
-    assert len(db.scalars(select(CardPref)).all()) == 1
+    assert len(db.scalars(select(TavernCard)).all()) == 2
+    assert len(db.scalars(select(CardPref)).all()) == 2

@@ -38,7 +38,7 @@ AnimaVN 是一个跑在浏览器里的 AI 视觉小说。你拿一张角色卡�
 - AI 觉得该换地方了就换**背景**，气氛变了就换 **BGM**
 - 角色用 **GPT-SoVITS 训练的声音念台词**，可以日语配音 + 中文字幕
 - 底部对话框点一下下一句，**读到一半随时插话**，存档、读档、回看历史都有
-- 装好就自带一个角色 **DeepSeek娘**（10 个表情立绘、世界书都配好了），填上 API 就能玩
+- 装好就自带两个角色 **DeepSeek娘** 和 **Gemini娘**（表情立绘、世界书都配好了），填上 API 就能玩
 
 它的提示词部分照着 SillyTavern（酒馆）做：**酒馆的角色卡、卡里的世界书、Chat Completion 预设、宏、人设、聊天记录都能直接导入**，组出来的请求和酒馆 1.18 逐条对过答案。你在酒馆里调好的卡和预设，拿过来就能当视觉小说玩。
 
@@ -61,7 +61,7 @@ AnimaVN 是一个跑在浏览器里的 AI 视觉小说。你拿一张角色卡�
 
 ### 🎭 角色展示
 
-DeepSeek娘之外，导入你自己的卡就能玩。下面是作者本机导入的几张卡（这些卡和素材不随仓库分发）：
+自带的 DeepSeek娘、Gemini娘 之外，导入你自己的卡就能玩。下面是作者本机导入的几张卡（这些卡和素材不随仓库分发）：
 
 <table>
   <tr>
@@ -81,7 +81,7 @@ DeepSeek娘之外，导入你自己的卡就能玩。下面是作者本机导入
 | ![设置](docs/images/settings.webp) 设置：右边实机预览，改了马上看到 | ![预设](docs/images/preset.webp) 局内菜单 · 预设：拖动排序、开关、改内容，底下是上下文预算 |
 | ![相册](docs/images/album.webp) 相册：AI 画的插图按存档分组，点一张能跳回那句台词 | ![调试台](docs/images/console.webp) 调试台：左边预设块、中间带标签的原文、右边角色卡，和酒馆一个思路 |
 | ![世界书](docs/images/worldbook.webp) 卡内世界书：每条右边写着下次会不会触发、为什么 | ![完整提示词](docs/images/prompt-inspector.webp) 完整提示词：发给模型的每一条消息、来源、token 数 |
-| ![新装后的选角色页](docs/images/first-run.webp) 刚装好时的选角色页：只有自带的 DeepSeek娘 | <img src="docs/images/mobile-vn.webp" width="49%"> <img src="docs/images/mobile-select.webp" width="49%"><br>手机竖屏 |
+| ![新装后的选角色页](docs/images/first-run.webp) 刚装好时的选角色页：自带的角色已经在里面（截图是只带 DeepSeek娘 时拍的） | <img src="docs/images/mobile-vn.webp" width="49%"> <img src="docs/images/mobile-select.webp" width="49%"><br>手机竖屏 |
 
 </details>
 
@@ -308,6 +308,8 @@ cd frontend; npm install; cd ..
 
 点顶栏 **视觉小说** 进标题画面 → **角色**，库里已经有一张自带的 **DeepSeek娘**：住在你家的鲸鱼女仆，本体就是 DeepSeek，聪明、嘴甜、有点小傲娇，和你是彼此喜欢的关系。立绘（10 个表情）、世界书、开场白都配好了，点 **开始** 就能玩。
 
+旁边还有一张 **Gemini娘**（外号哈基米）：Gemini 化成的猫娘千金，傲娇、爱捉弄人，暗恋你但不承认，15 个表情。
+
 <img src="docs/images/first-run.webp" alt="刚装好时的选角色页" width="720">
 
 ### 3. 导入你的酒馆卡
@@ -495,8 +497,9 @@ GPT-SoVITS 需要 NVIDIA 显卡才快。没有的话先不开语音，其它功�
 - [bge-small-zh-v1.5](https://huggingface.co/BAAI/bge-small-zh-v1.5)（BAAI，MIT；ONNX 版来自 [Xenova](https://huggingface.co/Xenova/bge-small-zh-v1.5)）：立绘表情兜底匹配
 - [lbpcascade_animeface](https://github.com/nagadomi/lbpcascade_animeface)（MIT）：立绘找脸对齐
 - 自带角色 DeepSeek娘：形象原型是上善的原创角色[《溟月》](https://www.pixiv.net/users/62155430)，女仆鲸鱼娘设计来自 [ZipZipPipe](https://www.pixiv.net/artworks/148186519)，10 个表情差分由 AnimaVN 以原图为参考重画。立绘按 **CC BY-NC-SA 4.0**（署名、非商用、相同方式共享）发布，详见 [`AnimaBackend/app/seed_data/deepseek-chan/CREDITS.txt`](AnimaBackend/app/seed_data/deepseek-chan/CREDITS.txt)
+- 自带角色 Gemini娘：同人形象来自 [ZipZipPipe](https://www.pixiv.net/artworks/148186519) 的「AI娘化」，15 个表情由 AnimaVN 以原图为参考绘制。按作者说明**署名、不可商用**，详见 [`AnimaBackend/app/seed_data/gemini-chan/CREDITS.txt`](AnimaBackend/app/seed_data/gemini-chan/CREDITS.txt)。非官方同人，与 Google 无关
 - 示例素材：Ren'Py 示例游戏 *The Question* 的立绘和背景（MIT），Kevin MacLeod 的曲子（CC BY 4.0），详见 [`frontend/public/vn/CREDITS.txt`](frontend/public/vn/CREDITS.txt)
 
-**关于截图**：DeepSeek娘的立绘见上面的授权；截图里的背景、刻晴、爱丽丝、爱弥斯等角色来自各自的游戏，版权归原作者，只用来展示界面，不随仓库分发。仓库里除了 DeepSeek娘和上面的示例素材，**不带别的角色卡、立绘或声音模型**，请用你自己有权使用的素材。
+**关于截图**：DeepSeek娘、Gemini娘的立绘见上面的授权；截图里的背景、刻晴、爱丽丝、爱弥斯等角色来自各自的游戏，版权归原作者，只用来展示界面，不随仓库分发。仓库里除了 DeepSeek娘、Gemini娘和上面的示例素材，**不带别的角色卡、立绘或声音模型**，请用你自己有权使用的素材。
 
-代码以 [MIT](LICENSE) 协议开源；DeepSeek娘的立绘不在 MIT 范围内，按 CC BY-NC-SA 4.0。
+代码以 [MIT](LICENSE) 协议开源；DeepSeek娘的立绘不在 MIT 范围内，按 CC BY-NC-SA 4.0；Gemini娘的立绘同样不在 MIT 范围内，署名、不可商用。

@@ -1,0 +1,12 @@
+{
+  "order": 3,
+  "sprite_pack": {
+    "name": "Gemini娘 · 星空礼装",
+    "description": "AnimaVN 自带角色 Gemini娘的星空礼装立绘（同人形象原作 ZipZipPipe）"
+  },
+  "card_prefs": {
+    "plugin.lang": {
+      "lang": "ja"
+    }
+  }
+}
