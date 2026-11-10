@@ -6,9 +6,9 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app import bindings
+from app import bindings, seed
 from app.db import Base
-from app.models import CardPref, PackSprite, TavernCard
+from app.models import AppSetting, CardPref, PackSprite, SpritePack, TavernCard
 from app.seed import seed_default_tavern_data
 
 KANA = re.compile(r"[ぁ-ゖァ-ヺー]")
@@ -67,3 +67,86 @@ def test_second_start_does_not_seed_again():
     seed_default_tavern_data(db)
     assert len(db.scalars(select(TavernCard)).all()) == 2
     assert len(db.scalars(select(CardPref)).all()) == 2
+
+
+# ---- 老用户更新:库里已经有卡,只补还没给过的自带角色 ----
+
+
+def _names(db):
+    return sorted(c.name for c in db.scalars(select(TavernCard)))
+
+
+def _old_install_db():
+    """更新前的库:只带过 DeepSeek娘,还没有「给过哪些自带角色」的记号"""
+    db = _fresh_db()
+    folder, meta = next(it for it in seed._bundled_characters() if it[0].name == "deepseek-chan")
+    card = seed._seed_card(db, folder)
+    seed._seed_sprites(db, card, folder, meta)
+    db.commit()
+    return db
+
+
+def test_update_adds_the_new_bundled_character_to_an_existing_library():
+    db = _old_install_db()
+    old_id = db.scalars(select(TavernCard)).one().id
+    seed_default_tavern_data(db)
+    assert _names(db) == ["DeepSeek娘", "Gemini娘"]
+    # 原来那张没动,新来的带着自己的立绘包和语言设置
+    assert db.scalars(select(TavernCard).where(TavernCard.name == "DeepSeek娘")).one().id == old_id
+    card = db.scalars(select(TavernCard).where(TavernCard.name == "Gemini娘")).one()
+    pack_id = bindings.primary(db, card.id, bindings.SPRITE)
+    assert len(db.scalars(select(PackSprite).where(PackSprite.pack_id == pack_id)).all()) == 15
+    assert db.get(CardPref, (card.id, "plugin.lang")).value == {"lang": "ja"}
+    # 再启动一次不会再来一张
+    seed_default_tavern_data(db)
+    assert _names(db) == ["DeepSeek娘", "Gemini娘"]
+    assert len(db.scalars(select(SpritePack)).all()) == 2
+
+
+def test_update_does_not_bring_back_a_bundled_character_deleted_before():
+    """老用户早就把 DeepSeek娘 删了、只留自己的卡:更新后只多出新角色"""
+    db = _fresh_db()
+    db.add(TavernCard(name="我自己的卡"))
+    db.commit()
+    seed_default_tavern_data(db)
+    assert _names(db) == ["Gemini娘", "我自己的卡"]
+
+
+def test_new_bundled_character_deleted_after_update_stays_deleted():
+    db = _old_install_db()
+    seed_default_tavern_data(db)
+    db.delete(db.scalars(select(TavernCard).where(TavernCard.name == "Gemini娘")).one())
+    db.commit()
+    seed_default_tavern_data(db)
+    assert _names(db) == ["DeepSeek娘"]
+
+
+def test_update_does_not_add_a_second_card_with_the_same_name():
+    """库里已经有一张叫 Gemini娘 的卡(自己导入的,或者新装时已经带上):不再放一张,以后也不放"""
+    db = _old_install_db()
+    db.add(TavernCard(name="Gemini娘", description="我自己导入的"))
+    db.commit()
+    seed_default_tavern_data(db)
+    seed_default_tavern_data(db)
+    assert _names(db) == ["DeepSeek娘", "Gemini娘"]
+    assert db.scalars(select(TavernCard).where(TavernCard.name == "Gemini娘")).one().description == "我自己导入的"
+    assert [p.name for p in db.scalars(select(SpritePack))] == ["DeepSeek娘 · 女仆 v2"]
+
+
+def test_a_broken_record_adds_nothing_and_is_rewritten():
+    db = _old_install_db()
+    db.add(AppSetting(key="seed.bundled", value="oops"))
+    db.commit()
+    seed_default_tavern_data(db)
+    assert _names(db) == ["DeepSeek娘"]
+    assert db.get(AppSetting, "seed.bundled").value == {"seeded": ["deepseek-chan", "gemini-chan"]}
+
+
+def test_characters_added_later_are_seeded_from_the_record():
+    """记号里只记着 DeepSeek娘(= 上次启动时只有她):这次多出来的角色补进来,记号跟着更新"""
+    db = _old_install_db()
+    db.add(AppSetting(key="seed.bundled", value={"seeded": ["deepseek-chan"]}))
+    db.commit()
+    seed_default_tavern_data(db)
+    assert _names(db) == ["DeepSeek娘", "Gemini娘"]
+    assert db.get(AppSetting, "seed.bundled").value == {"seeded": ["deepseek-chan", "gemini-chan"]}
