@@ -1,0 +1,10 @@
+{
+  "order": 1,
+  "sprite_pack": {
+    "name": "DeepSeek娘 · 女仆 v2",
+    "description": "AnimaVN 自带角色 DeepSeek娘的女仆装立绘"
+  },
+  "card_prefs": {
+    "plugin.lang": { "lang": "ja" }
+  }
+}

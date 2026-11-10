@@ -62,25 +62,27 @@ def test_first_start_seeds_every_resource_needed_for_offline_use(start_app):
     assert [item["name"] for item in data["connections"]] == ["Mock（本地测试）"]
     assert data["connections"][0]["is_active"] is True
     assert data["connections"][0]["model"] == "mock"
-    assert [item["name"] for item in data["cards"]] == ["DeepSeek娘"]
-    assert data["cards"][0]["has_avatar"] is True
+    assert sorted(item["name"] for item in data["cards"]) == ["DeepSeek娘", "Gemini娘"]
+    assert all(item["has_avatar"] for item in data["cards"])
     assert [item["name"] for item in data["presets"]] == ["默认预设"]
 
 
 def test_bundled_card_comes_with_its_sprite_pack(start_app):
     with start_app() as client:
-        card = client.get("/api/tavern/cards").json()[0]
+        card = next(c for c in client.get("/api/tavern/cards").json() if c["name"] == "DeepSeek娘")
         bound = client.get(f"/api/tavern/cards/{card['id']}/sprite-packs").json()
         packs = client.get("/api/sprite-packs").json()
         sprites = client.get(f"/api/tavern/cards/{card['id']}/sprites").json()
         image = client.get(f"/api/sprite-packs/{bound['current']}/sprites/{sprites[0]['id']}/image")
         preset = client.get("/api/tavern/presets").json()[0]
 
-    assert [(p["name"], p["sprite_count"], p["card_count"]) for p in packs] == [
-        ("DeepSeek娘 · 女仆 v2", 10, 1)
+    assert sorted((p["name"], p["sprite_count"], p["card_count"]) for p in packs) == [
+        ("DeepSeek娘 · 女仆 v2", 10, 1),
+        ("Gemini娘 · 星空礼装", 15, 1),
     ]
-    assert bound["pack_ids"] == [packs[0]["id"]]
-    assert bound["current"] == packs[0]["id"]
+    mine = next(p for p in packs if p["name"] == "DeepSeek娘 · 女仆 v2")
+    assert bound["pack_ids"] == [mine["id"]]
+    assert bound["current"] == mine["id"]
     # 排第一的是默认表情;脸的位置随包带着,首启不用再找
     assert sprites[0]["label"] == "微笑"
     assert all(s["face_scan"] and s["face_scan"].get("face") for s in sprites)
@@ -99,7 +101,7 @@ def test_bundled_sprites_go_only_into_the_file_store(start_app):
         client.get("/api/health")
     with db_module.SessionLocal() as s:
         rows = s.execute(text("SELECT image IS NULL, image_sha FROM pack_sprites")).all()
-    assert len(rows) == 10
+    assert len(rows) == 25
     assert all(empty and sha for empty, sha in rows)
 
 
@@ -118,7 +120,7 @@ def test_restarting_app_is_idempotent_and_preserves_user_edits(start_app):
     assert {key: len(value) for key, value in second.items()} == {
         "personas": 1,
         "connections": 1,
-        "cards": 1,
+        "cards": 2,
         "presets": 1,
     }
     assert second["personas"][0]["id"] == persona_id
@@ -150,33 +152,46 @@ def test_environment_connections_are_seeded_once_and_real_connection_is_preferre
     assert "openai-test-key" not in str(first)
 
 
-def test_deleted_bundled_card_is_recreated_without_overwriting_existing_preset(start_app):
-    with start_app() as client:
-        card = client.get("/api/tavern/cards").json()[0]
-        preset = client.get("/api/tavern/presets").json()[0]
-        assert client.delete(f"/api/tavern/cards/{card['id']}").status_code == 204
-
+def test_deleted_bundled_cards_are_recreated_without_overwriting_existing_preset(start_app):
+    """库里一张卡都不剩才重新种(删掉一张、另一张还在,不补)"""
     with start_app() as client:
         cards = client.get("/api/tavern/cards").json()
+        preset = client.get("/api/tavern/presets").json()[0]
+        for card in cards:
+            assert client.delete(f"/api/tavern/cards/{card['id']}").status_code == 204
+
+    with start_app() as client:
+        again = client.get("/api/tavern/cards").json()
         presets = client.get("/api/tavern/presets").json()
 
-    assert len(cards) == 1
-    assert cards[0]["name"] == "DeepSeek娘"
-    assert cards[0]["id"] != card["id"]
+    assert sorted(c["name"] for c in again) == ["DeepSeek娘", "Gemini娘"]
+    assert not {c["id"] for c in again} & {c["id"] for c in cards}
     assert len(presets) == 1
     assert presets[0]["id"] == preset["id"]
 
 
-def test_recreated_bundled_card_reuses_the_existing_sprite_pack(start_app):
+def test_one_deleted_bundled_card_is_not_brought_back(start_app):
     with start_app() as client:
-        card = client.get("/api/tavern/cards").json()[0]
-        pack = client.get("/api/sprite-packs").json()[0]
+        card = next(c for c in client.get("/api/tavern/cards").json() if c["name"] == "DeepSeek娘")
         assert client.delete(f"/api/tavern/cards/{card['id']}").status_code == 204
 
     with start_app() as client:
-        new_card = client.get("/api/tavern/cards").json()[0]
-        packs = client.get("/api/sprite-packs").json()
-        bound = client.get(f"/api/tavern/cards/{new_card['id']}/sprite-packs").json()
+        cards = client.get("/api/tavern/cards").json()
 
-    assert [p["id"] for p in packs] == [pack["id"]]
-    assert bound["current"] == pack["id"]
+    assert [c["name"] for c in cards] == ["Gemini娘"]
+
+
+def test_recreated_bundled_cards_reuse_the_existing_sprite_packs(start_app):
+    with start_app() as client:
+        cards = client.get("/api/tavern/cards").json()
+        packs = {p["name"]: p["id"] for p in client.get("/api/sprite-packs").json()}
+        for card in cards:
+            assert client.delete(f"/api/tavern/cards/{card['id']}").status_code == 204
+
+    with start_app() as client:
+        new_cards = client.get("/api/tavern/cards").json()
+        packs_after = {p["name"]: p["id"] for p in client.get("/api/sprite-packs").json()}
+        bound = {c["name"]: client.get(f"/api/tavern/cards/{c['id']}/sprite-packs").json()["current"] for c in new_cards}
+
+    assert packs_after == packs
+    assert bound == {"DeepSeek娘": packs["DeepSeek娘 · 女仆 v2"], "Gemini娘": packs["Gemini娘 · 星空礼装"]}
