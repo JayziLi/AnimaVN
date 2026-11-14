@@ -1,6 +1,6 @@
 /**
  * 生图的全部设置,像游戏设置那样分页(10-12 用户:「设置都在一面,像游戏那样分页设置」):
- * 画面 / 角色 / 自动出图 / 服务 / 高级 / 相册。
+ * 画面 / 角色 / 自动出图 / 连接 / 高级 / 相册(11-07「服务」改成「连接」,除了连接和相册,改的都是当前这张卡)。
  * 游戏里在「菜单 → 设置 → AI 生图」,调试台插件页「AI 生图」也是这一套;place="console" 时自带一块深色底和视觉小说的配色变量。
  * 设计见 docs/superpowers/specs/2026-10-11-novelai-image-gen-design.md。
  */
@@ -40,18 +40,28 @@ import {
 import './imagegen.css';
 import { IG_TIPS } from './tips';
 import { ConsoleTips } from './consoleTips';
+import { ConnPage } from './ConnPage';
+import { AddConnDialog, TrialDialog } from './dialogs';
+import { connectionText, connOption, costPending, modelOf, moreSummary, novelaiCost, qualityChoices, relaySizes, sdMoreSummary, sentSize, timingText, trialCost } from './connModel';
+import { RelayModelPick } from './RelayParts';
+import { LoraRow, SdModelRow, SdSamplerRows } from './SdParts';
+import { useSdOptions } from './useSdOptions';
 import { Group, Para, Row, Seg, Toggle } from './ui';
 import type { ImageGenStore } from './useImageGen';
 
-type Page = 'picture' | 'cast' | 'auto' | 'service' | 'advanced' | 'album';
+type Page = 'picture' | 'cast' | 'auto' | 'conn' | 'advanced' | 'album';
 const PAGES: readonly { key: Page; name: string }[] = [
   { key: 'picture', name: '画面' },
   { key: 'cast', name: '角色' },
   { key: 'auto', name: '自动出图' },
-  { key: 'service', name: '服务' },
+  { key: 'conn', name: '连接' },
   { key: 'advanced', name: '高级' },
   { key: 'album', name: '相册' },
 ];
+/** 没选卡也能用的两页(11-07 设计第 11 节):连接是全局的,相册自己会说先选卡 */
+const NO_CARD_OK: ReadonlySet<Page> = new Set<Page>(['conn', 'album']);
+/** 设置页上开着的小窗 */
+type Dialog = { kind: 'add' } | { kind: 'trial'; connId: string } | null;
 // 关掉再打开(游戏里换页、调试台换插件)回到上次那一页
 let lastPage: Page = 'picture';
 
@@ -63,10 +73,9 @@ const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 // ── 画面 ──
 
-function StyleRows({ config, onChange }: { config: ImageGenConfig; onChange: (next: ImageGenConfig) => void }) {
+/** 用哪个画风(首屏那一行):下拉 + 新建 / 删掉这个 / 恢复默认。画风库是全局的,用哪个是这张卡的 */
+function StylePick({ config, onChange }: { config: ImageGenConfig; onChange: (next: ImageGenConfig) => void }) {
   const style = config.styles.find((s) => s.id === config.styleId) ?? config.styles[0];
-  const setStyle = (patch: Partial<ImageStyle>) =>
-    onChange({ ...config, styles: config.styles.map((s) => (s.id === style.id ? { ...s, ...patch } : s)) });
   const add = () => {
     const id = `s${Date.now().toString(36)}`;
     onChange({ ...config, styles: [...config.styles, { id, name: '新画风', tags: '', negative: '', artists: '' }], styleId: id });
@@ -83,43 +92,65 @@ function StyleRows({ config, onChange }: { config: ImageGenConfig; onChange: (ne
       builtin.name !== style.name ||
       builtin.artists !== style.artists);
   return (
-    <>
-      <Row label="用哪个画风">
-        <div className="ig-inline">
-          <select className="vn-set-select" value={style.id} onChange={(e) => onChange({ ...config, styleId: e.target.value })}>
-            {config.styles.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-          <button className="vn-pill" onClick={add}>
-            新建
+    <Row label="画风">
+      <div className="ig-inline">
+        <select
+          className="vn-set-select"
+          value={style.id}
+          aria-label="画风"
+          onChange={(e) => onChange({ ...config, styleId: e.target.value })}
+        >
+          {config.styles.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+        <button className="vn-pill" onClick={add}>
+          新建
+        </button>
+        {config.styles.length > 1 && (
+          <button className="vn-pill" onClick={remove}>
+            删掉这个
           </button>
-          {config.styles.length > 1 && (
-            <button className="vn-pill" onClick={remove}>
-              删掉这个
-            </button>
-          )}
-          {changed && (
-            <button className="vn-pill" onClick={() => setStyle(builtin)}>
-              恢复默认
-            </button>
-          )}
-        </div>
-      </Row>
+        )}
+        {changed && (
+          <button
+            className="vn-pill"
+            onClick={() => onChange({ ...config, styles: config.styles.map((s) => (s.id === style.id ? { ...s, ...builtin } : s)) })}
+          >
+            恢复默认
+          </button>
+        )}
+      </div>
+    </Row>
+  );
+}
+
+/** 这个画风里写了什么(「基础提示词」那一组)。改的是全局画风库:别的卡用同一个画风也跟着变 */
+function StyleDetail({ config, onChange, relay }: { config: ImageGenConfig; onChange: (next: ImageGenConfig) => void; relay: boolean }) {
+  const style = config.styles.find((s) => s.id === config.styleId) ?? config.styles[0];
+  const setStyle = (patch: Partial<ImageStyle>) =>
+    onChange({ ...config, styles: config.styles.map((s) => (s.id === style.id ? { ...s, ...patch } : s)) });
+  return (
+    <>
       <Row label="名字">
         <input className="ig-input" value={style.name} onChange={(e) => setStyle({ name: e.target.value })} />
       </Row>
       <Row label="画风标签" tip={IG_TIPS.style_tags}>
         <textarea className="ig-input" rows={2} value={style.tags} onChange={(e) => setStyle({ tags: e.target.value })} />
       </Row>
-      <Row label="画师串" tip={IG_TIPS.artists}>
-        <input className="ig-input" value={style.artists} onChange={(e) => setStyle({ artists: e.target.value })} />
-      </Row>
-      <Row label="不想要的">
-        <input className="ig-input" value={style.negative} onChange={(e) => setStyle({ negative: e.target.value })} />
-      </Row>
+      {/* 中转站的提示词是一段话,只用画风标签 */}
+      {!relay && (
+        <>
+          <Row label="画师串" tip={IG_TIPS.artists}>
+            <input className="ig-input" value={style.artists} onChange={(e) => setStyle({ artists: e.target.value })} />
+          </Row>
+          <Row label="不想要的">
+            <input className="ig-input" value={style.negative} onChange={(e) => setStyle({ negative: e.target.value })} />
+          </Row>
+        </>
+      )}
     </>
   );
 }
@@ -130,34 +161,70 @@ function short(text: string, n = 48) {
   return t.length > n ? `${t.slice(0, n)}…` : t;
 }
 
-/** 画面:照 NovelAI 网页的顺序排(模型 → 基础提示词 → 反向 → 角色提示词 → 参考图 → 图像设置),
- *  名字下面小字是网页上的叫法。两个人、参考图只放摘要,改在「角色」页(不放两份开关) */
-function PicturePage({ store, go }: { store: ImageGenStore; go: (p: Page) => void }) {
-  const { config, changeConfig: set, prefs, defaults, account } = store;
+/** 连接下拉里「加一条连接…」那一项的值 */
+const ADD_CONN = '__add';
+
+/**
+ * 画面(11-07 效果图 3 的 A):首屏是 连接(下拉)、模型、画风、尺寸、测试出图,步数、引导、采样器这些收进「更多」;
+ * 下面照旧是 NovelAI 网页那几组(基础提示词 → 反向 → 角色提示词 → 参考图)和「在游戏里怎么显示」。
+ * 改的都是这张卡:画风、尺寸、镜头换连接不变;模型、步数这些是这张卡在这条连接下的那份。
+ * NovelAI 专有的那几项(Variety+、噪声调度、Rescale、费用)只在 NovelAI 连接下显示;本地 SD 多一排 LoRA(SdParts.tsx)
+ */
+function PicturePage({
+  store,
+  go,
+  onAdd,
+  onTrial,
+}: {
+  store: ImageGenStore;
+  go: (p: Page) => void;
+  onAdd: () => void;
+  onTrial: (connId: string) => void;
+}) {
+  const { config, changeConfig: set, prefs, defaults, conn } = store;
+  const nai = conn?.kind === 'novelai';
+  const naiId = nai && conn ? conn.id : null;
+  const account = conn ? store.accounts[conn.id] : undefined;
+  const accountError = conn ? store.accountErrors[conn.id] : undefined;
   const v5 = !supportsReference(config.model);
-  const size = sizeOf(config, config.size, { width: window.innerWidth, height: window.innerHeight });
+  const viewport = { width: window.innerWidth, height: window.innerHeight };
+  const relay = conn?.kind === 'openai';
+  const sd = conn?.kind === 'sdapi';
+  const sdOptions = useSdOptions(sd && conn ? conn.id : null);
+  const size = sentSize(conn?.kind ?? null, sizeOf(config, config.size, viewport), conn && relay ? relaySizes(conn) : '');
   // 账户查不到时按 Opus 算(免费范围、「允许扣 Anlas」也都是照 Opus 的)
   const opus = account ? account.tier === 3 : true;
   const cost = anlasCost({ model: config.model, w: size.w, h: size.h, steps: config.steps, opus });
-  const withRef = Boolean(store.cardId) && usesReference(config, prefs);
-  const total = cost + (withRef ? REFERENCE_ANLAS : 0);
-  const asked = useRef(false);
+  const withRef = Boolean(store.cardId) && (relay ? prefs.ref.kind !== 'off' : usesReference(config, prefs));
+  const total = novelaiCost(config, size, opus, withRef);
+  // 选的是 NovelAI:查一次这条连接的账户(算扣不扣 Anlas、V5 额度条还剩多少)
+  const asked = useRef<string | null>(null);
+  const { checkAccount } = store;
   useEffect(() => {
-    if (asked.current || !store.status?.has_token || account) return;
-    asked.current = true;
-    void store.checkAccount();
-  }, [store, account]);
+    if (!naiId || asked.current === naiId || account) return;
+    asked.current = naiId;
+    void checkAccount(naiId);
+  }, [naiId, account, checkAccount]);
+  // 这张卡上次用这条连接画的那张花了多久(写在测试出图旁边)
+  const last = conn ? store.album?.find((x) => x.params.connection?.id === conn.id) : undefined;
 
   // 只画全年龄的卡画的时候换成 Curated:预设原文照那个模型的显示
   const model = prefs.sfwOnly ? (SFW_MODEL[config.model] ?? config.model) : config.model;
-  const qualityValue = qualityOptions(config.model).some((q) => q.value === config.quality) ? config.quality : 'standard';
+  const qualityOpts = conn ? qualityChoices(conn.kind, config.model) : qualityOptions(config.model);
+  const qualityValue = qualityOpts.some((q) => q.value === config.quality) ? config.quality : 'standard';
   const qualities = defaults?.quality_presets[model];
   const qualityText = qualityValue === 'none' ? '' : (qualities?.[qualityValue] ?? qualities?.standard ?? '');
   const ucText = defaults?.uc_presets[model]?.[config.ucPreset] ?? '';
   const scaleDefault = defaultScale(config.model);
   const custom = config.res === 'custom';
   const setSide = (k: 'w' | 'h', v: number) => set({ ...config, custom: { ...config.custom, [k]: v } });
-  const refText = v5
+  const refText = relay
+    ? !store.cardId
+      ? '先选一张角色卡'
+      : prefs.ref.kind === 'off'
+        ? '不用'
+        : `${prefs.ref.kind === 'upload' ? '上传的那张' : '立绘'} · 和文字一起发给模型`
+    : v5
     ? 'V5 用不了参考图:画的时候用写的长相(要用就换 V4.5)'
     : !store.cardId
       ? '先选一张角色卡'
@@ -176,91 +243,62 @@ function PicturePage({ store, go }: { store: ImageGenStore; go: (p: Page) => voi
         : 'Opus 免费范围'
       : `${size.w}×${size.h}、${config.steps} 步${opus ? ',超出 Opus 免费范围(面积 ≤ 1024×1024、≤ 28 步)' : ''}`,
     withRef ? `含参考图 ${REFERENCE_ANLAS}` : '',
-    account ? `余额 ${account.anlas}` : store.accountError ? '没查到账户,按 Opus 算' : '',
+    account ? `余额 ${account.anlas}` : accountError ? '没查到账户,按 Opus 算' : '',
   ]
     .filter(Boolean)
     .join(' · ');
 
   return (
     <div className="vn-set-list">
-      <Row
-        label="模型"
-        en="Model"
-        tip={v5 ? IG_TIPS.model_v5 : IG_TIPS.model_v45}
-      >
-        <select className="vn-set-select" value={config.model} onChange={(e) => set({ ...config, model: e.target.value })}>
-          {MODELS.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.name}
+      <Row label="连接" tip={IG_TIPS.conn_pick}>
+        <select
+          className="vn-set-select ig-conn-pick"
+          aria-label="画图连接"
+          value={conn?.id ?? ''}
+          onChange={(e) => (e.target.value === ADD_CONN ? onAdd() : store.setConn(e.target.value || null))}
+        >
+          {!conn && (
+            <option value="" disabled>
+              {store.imageConns?.length ? '先选一条' : '还没有画图连接'}
+            </option>
+          )}
+          {(store.imageConns ?? []).map((c) => (
+            <option key={c.id} value={c.id}>
+              {connOption(c)}
             </option>
           ))}
+          <option value={ADD_CONN}>加一条连接…</option>
         </select>
       </Row>
-
-      <Group title="基础提示词" en="Base Prompt" tip={IG_TIPS.base} />
-      <StyleRows config={config} onChange={set} />
-      <Row label="质量词" en="Quality Tags" note={qualityText ? `加在最后:${qualityText}` : '不加'}>
-        <Seg options={qualityOptions(config.model)} value={qualityValue} onPick={(v) => set({ ...config, quality: v })} />
-      </Row>
-
-      <Group title="反向" en="Undesired Content" />
-      <Row label="反向预设" en="UC Preset" note={ucText ? `加在最前:${ucText}` : '不加预设'}>
-        <Seg options={UC_PRESETS} value={config.ucPreset} onPick={(v) => set({ ...config, ucPreset: v })} />
-      </Row>
-      <Row label="另外加的" tip={IG_TIPS.uc_extra}>
-        <textarea className="ig-input" rows={2} value={config.uc} onChange={(e) => set({ ...config, uc: e.target.value })} />
-      </Row>
-
-      <Group title="角色提示词" en="Character Prompts" tip={IG_TIPS.char_prompts} />
-      <Row label={store.cardId ? `她 · ${store.cardName}` : '她'}>
-        <div className="ig-inline">
-          <span className="ig-grow vn-set-note">{herText}</span>
-          {store.cardId && (
-            <button className="vn-pill" onClick={() => go('cast')}>
-              去「角色」改
-            </button>
-          )}
-        </div>
-      </Row>
-      <Row label="你">
-        <div className="ig-inline">
-          <span className="ig-grow vn-set-note">
-            {config.camera === 'pov' ? '第一人称:不画你,只画你的手' : short(config.player.look)}
-          </span>
-          <button className="vn-pill" onClick={() => go('cast')}>
-            去「角色」改
-          </button>
-        </div>
-      </Row>
-      <Row
-        label="镜头"
-        tip={IG_TIPS.camera}
-      >
-        <Seg options={CAMERAS} value={config.camera} onPick={(v) => set({ ...config, camera: v })} />
-      </Row>
-
-      <Group title="参考图" en="Character Reference" />
-      <Row label="她的参考图">
-        <div className="ig-inline">
-          <span className="ig-grow vn-set-note">{refText}</span>
-          {store.cardId && !v5 && (
-            <button className="vn-pill" onClick={() => go('cast')}>
-              去「角色」改
-            </button>
-          )}
-        </div>
-      </Row>
-
-      <Group title="图像设置" en="Image Settings" />
-      <Row
-        label="分辨率"
-        en="Resolution"
-        note={`现在这张:${size.w} × ${size.h}${custom ? '(自定义的宽高按方向对调,方的取同样面积)' : ''}`}
-      >
+      {nai ? (
+        <Row label="模型" en="Model" tip={v5 ? IG_TIPS.model_v5 : IG_TIPS.model_v45}>
+          <select className="vn-set-select" value={config.model} onChange={(e) => set({ ...config, model: e.target.value })}>
+            {MODELS.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+              </option>
+            ))}
+          </select>
+        </Row>
+      ) : conn?.kind === 'openai' ? (
+        <Row label="模型" en="Model" note={store.drawBlock === 'model' ? '选了模型才能画' : undefined}>
+          <RelayModelPick connId={conn.id} model={modelOf(conn.kind, config.model)} onModel={(m) => set({ ...config, model: m })} />
+        </Row>
+      ) : sd ? (
+        <SdModelRow config={config} onChange={set} sd={sdOptions} />
+      ) : conn ? (
+        <Row label="模型" en="Model">
+          <span className="vn-set-note">这种连接还不能出图</span>
+        </Row>
+      ) : null}
+      <StylePick config={config} onChange={set} />
+      {sd && <LoraRow config={config} onChange={set} sd={sdOptions} />}
+      <Row label="尺寸" en="Resolution" tip={custom ? IG_TIPS.size_custom : undefined} note={`实际发出 ${size.w} × ${size.h}`}>
         <div className="ig-inline">
           <select
             className="vn-set-select"
             value={config.res}
+            aria-label="分辨率"
             onChange={(e) => {
               const res = e.target.value as ResPreset;
               set({ ...config, res, size: orientsOf(res).includes(config.size) ? config.size : 'landscape' });
@@ -286,103 +324,196 @@ function PicturePage({ store, go }: { store: ImageGenStore; go: (p: Page) => voi
           </div>
         )}
       </Row>
-      <Row label="步数" en="Steps" value={String(config.steps)}>
-        <input
-          type="range"
-          min={1}
-          max={50}
-          value={config.steps}
-          aria-label="步数"
-          onChange={(e) => set({ ...config, steps: Number(e.target.value) })}
-        />
-      </Row>
-      <Row label="引导" en="Prompt Guidance" value={config.scale.toFixed(1)}>
-        <input
-          type="range"
-          min={0}
-          max={10}
-          step={0.1}
-          value={config.scale}
-          aria-label="引导"
-          onChange={(e) => set({ ...config, scale: Number(e.target.value) })}
-        />
-      </Row>
-      {config.scale !== scaleDefault && (
-        <div className="ig-inline ig-under">
-          <button className="vn-pill" onClick={() => set({ ...config, scale: scaleDefault })}>
-            引导恢复这个模型的默认({scaleDefault})
+      {(nai || sd) && (
+        <details className="ig-more">
+          <summary>
+            更多 <span className="ig-more-sum">{sd ? sdMoreSummary(config) : moreSummary(config)}</span>
+          </summary>
+          <Row label="步数" en="Steps" value={String(config.steps)}>
+            <input
+              type="range"
+              min={1}
+              max={50}
+              value={config.steps}
+              aria-label="步数"
+              onChange={(e) => set({ ...config, steps: Number(e.target.value) })}
+            />
+          </Row>
+          <Row label="引导" en="Prompt Guidance" value={config.scale.toFixed(1)}>
+            <input
+              type="range"
+              min={0}
+              max={10}
+              step={0.1}
+              value={config.scale}
+              aria-label="引导"
+              onChange={(e) => set({ ...config, scale: Number(e.target.value) })}
+            />
+          </Row>
+          {nai && config.scale !== scaleDefault && (
+            <div className="ig-inline ig-under">
+              <button className="vn-pill" onClick={() => set({ ...config, scale: scaleDefault })}>
+                引导恢复这个模型的默认({scaleDefault})
+              </button>
+            </div>
+          )}
+          <Row label="种子" en="Seed" tip={IG_TIPS.seed}>
+            <div className="ig-inline">
+              <input
+                className="ig-input ig-seed"
+                inputMode="numeric"
+                placeholder="随机"
+                aria-label="种子"
+                value={config.seed ?? ''}
+                onChange={(e) => {
+                  const t = e.target.value.replace(/\D/g, '');
+                  set({ ...config, seed: t ? Math.min(4294967295, Number(t)) : null });
+                }}
+              />
+              {config.seed !== null && (
+                <button className="vn-pill" onClick={() => set({ ...config, seed: null })}>
+                  改回随机
+                </button>
+              )}
+            </div>
+          </Row>
+          {sd ? (
+            <SdSamplerRows config={config} onChange={set} sd={sdOptions} />
+          ) : (
+            <>
+              <Row label="采样器" en="Sampler">
+                <select
+                  className="vn-set-select"
+                  value={config.sampler}
+                  onChange={(e) => set({ ...config, sampler: e.target.value, noise: noiseFor(e.target.value) })}
+                >
+                  {SAMPLERS.map((s) => (
+                    <option key={s.value} value={s.value}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </Row>
+              <Row label="引导重缩放" en="Guidance Rescale" value={config.rescale.toFixed(2)}>
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.02}
+                  value={config.rescale}
+                  aria-label="引导重缩放"
+                  onChange={(e) => set({ ...config, rescale: Number(e.target.value) })}
+                />
+              </Row>
+              {v5 ? (
+                <p className="vn-set-note ig-pad">V5 没有噪声调度(固定 Karras)和 Variety+。</p>
+              ) : (
+                <>
+                  <Row label="噪声调度" en="Noise Schedule">
+                    <Seg options={NOISES} value={config.noise} onPick={(v) => set({ ...config, noise: v })} />
+                  </Row>
+                  <Row label="Variety+">
+                    <Toggle checked={config.variety} onChange={(v) => set({ ...config, variety: v })}>
+                      构图更多变化(前几步不按提示词引导)
+                    </Toggle>
+                  </Row>
+                </>
+              )}
+              <Row label="扣费" tip={IG_TIPS.nai}>
+                <Toggle checked={config.allowPaid} onChange={(v) => set({ ...config, allowPaid: v })}>
+                  允许超出免费范围(每张扣 Anlas)
+                </Toggle>
+              </Row>
+            </>
+          )}
+        </details>
+      )}
+      {conn && !store.drawBlock && (
+        <div className="ig-testbar">
+          <button
+            className="vn-pill accent"
+            disabled={costPending(conn, store.accounts, store.accountErrors)}
+            onClick={() => onTrial(conn.id)}
+          >
+            测试出图 · {trialCost(conn, config, prefs, account, Boolean(store.cardId), viewport)}
           </button>
+          <Tip text={IG_TIPS.trial} />
+          {last && last.ms > 0 && <span className="vn-set-note">上次 {(last.ms / 1000).toFixed(1)} 秒</span>}
         </div>
       )}
-      <Row label="种子" en="Seed" tip={IG_TIPS.seed}>
+      {nai && (
+        <>
+          <div className={`ig-cost${total > 0 ? ' paid' : ''}`}>
+            <span>
+              画一张 <b>{total} Anlas</b>
+            </span>
+            <span className="vn-set-note">{costNote}</span>
+          </div>
+          {cost > 0 && opus && !config.allowPaid && (
+            <p className="vn-set-error">超出免费范围要扣 Anlas:不在上面「更多」里打开「允许超出免费范围」就画不了。</p>
+          )}
+        </>
+      )}
+
+      <Group title="基础提示词" en="Base Prompt" tip={IG_TIPS.base} />
+      <StyleDetail config={config} onChange={set} relay={relay} />
+      {(nai || sd) && (
+        <Row label="质量词" en="Quality Tags" note={nai ? (qualityText ? `加在最后:${qualityText}` : '不加') : undefined}>
+          <Seg options={qualityOpts} value={qualityValue} onPick={(v) => set({ ...config, quality: v })} />
+        </Row>
+      )}
+
+      {(nai || sd) && (
+        <>
+          <Group title="反向" en="Undesired Content" />
+          <Row label="反向预设" en="UC Preset" note={nai ? (ucText ? `加在最前:${ucText}` : '不加预设') : undefined}>
+            <Seg options={UC_PRESETS} value={config.ucPreset} onPick={(v) => set({ ...config, ucPreset: v })} />
+          </Row>
+          <Row label="另外加的" tip={IG_TIPS.uc_extra}>
+            <textarea className="ig-input" rows={2} value={config.uc} onChange={(e) => set({ ...config, uc: e.target.value })} />
+          </Row>
+        </>
+      )}
+
+      <Group title="角色提示词" en="Character Prompts" tip={sd ? IG_TIPS.char_prompts_sd : IG_TIPS.char_prompts} />
+      <Row label={store.cardId ? `她 · ${store.cardName}` : '她'}>
         <div className="ig-inline">
-          <input
-            className="ig-input ig-seed"
-            inputMode="numeric"
-            placeholder="随机"
-            aria-label="种子"
-            value={config.seed ?? ''}
-            onChange={(e) => {
-              const t = e.target.value.replace(/\D/g, '');
-              set({ ...config, seed: t ? Math.min(4294967295, Number(t)) : null });
-            }}
-          />
-          {config.seed !== null && (
-            <button className="vn-pill" onClick={() => set({ ...config, seed: null })}>
-              改回随机
+          <span className="ig-grow vn-set-note">{herText}</span>
+          {store.cardId && (
+            <button className="vn-pill" onClick={() => go('cast')}>
+              去「角色」改
             </button>
           )}
         </div>
       </Row>
-      <Row label="采样器" en="Sampler">
-        <select
-          className="vn-set-select"
-          value={config.sampler}
-          onChange={(e) => set({ ...config, sampler: e.target.value, noise: noiseFor(e.target.value) })}
-        >
-          {SAMPLERS.map((s) => (
-            <option key={s.value} value={s.value}>
-              {s.name}
-            </option>
-          ))}
-        </select>
+      <Row label="你">
+        <div className="ig-inline">
+          <span className="ig-grow vn-set-note">
+            {config.camera === 'pov' ? '第一人称:不画你,只画你的手' : short(config.player.look)}
+          </span>
+          <button className="vn-pill" onClick={() => go('cast')}>
+            去「角色」改
+          </button>
+        </div>
       </Row>
-      <details className="ig-more">
-        <summary>更多</summary>
-        <Row label="引导重缩放" en="Guidance Rescale" value={config.rescale.toFixed(2)}>
-          <input
-            type="range"
-            min={0}
-            max={1}
-            step={0.02}
-            value={config.rescale}
-            aria-label="引导重缩放"
-            onChange={(e) => set({ ...config, rescale: Number(e.target.value) })}
-          />
-        </Row>
-        {v5 ? (
-          <p className="vn-set-note ig-pad">V5 没有噪声调度(固定 Karras)和 Variety+。</p>
-        ) : (
-          <>
-            <Row label="噪声调度" en="Noise Schedule">
-              <Seg options={NOISES} value={config.noise} onPick={(v) => set({ ...config, noise: v })} />
-            </Row>
-            <Row label="Variety+">
-              <Toggle checked={config.variety} onChange={(v) => set({ ...config, variety: v })}>
-                构图更多变化(前几步不按提示词引导)
-              </Toggle>
-            </Row>
-          </>
-        )}
-      </details>
-      <div className={`ig-cost${total > 0 ? ' paid' : ''}`}>
-        <span>
-          画一张 <b>{total} Anlas</b>
-        </span>
-        <span className="vn-set-note">{costNote}</span>
-      </div>
-      {cost > 0 && opus && !config.allowPaid && (
-        <p className="vn-set-error">超出免费范围要扣 Anlas:不在「服务」里打开「允许超出免费范围」就画不了。</p>
+      <Row label="镜头" tip={IG_TIPS.camera}>
+        <Seg options={CAMERAS} value={config.camera} onPick={(v) => set({ ...config, camera: v })} />
+      </Row>
+
+      {(nai || relay) && (
+        <>
+          <Group title="参考图" en="Character Reference" />
+          <Row label="她的参考图">
+            <div className="ig-inline">
+              <span className="ig-grow vn-set-note">{refText}</span>
+              {store.cardId && (relay || !v5) && (
+                <button className="vn-pill" onClick={() => go('cast')}>
+                  去「角色」改
+                </button>
+              )}
+            </div>
+          </Row>
+        </>
       )}
 
       <Group title="在游戏里怎么显示" />
@@ -482,7 +613,7 @@ function ReferenceRows({ store }: { store: ImageGenStore }) {
     <>
       <Row
         label="参考图"
-        tip={supportsReference(config.model) ? IG_TIPS.ref : IG_TIPS.ref_unsupported}
+        tip={store.conn?.kind === 'openai' ? IG_TIPS.ref_relay : supportsReference(config.model) ? IG_TIPS.ref : IG_TIPS.ref_unsupported}
       >
         <div className="ig-inline">
           <Seg
@@ -610,30 +741,16 @@ function CastPage({ store }: { store: ImageGenStore }) {
           <Row label="性别">
             <Seg options={GENDERS} value={prefs.gender} onPick={(v) => changePrefs({ ...prefs, gender: v })} />
           </Row>
-          <Row label="画风">
-            <select
-              className="vn-set-select"
-              value={prefs.styleId ?? ''}
-              onChange={(e) => changePrefs({ ...prefs, styleId: e.target.value || null })}
-            >
-              <option value="">跟「画面」里的</option>
-              {config.styles.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-          </Row>
           <Row label="画师串" tip={IG_TIPS.card_artists}>
-            <input className="ig-input" value={prefs.artists} onChange={(e) => changePrefs({ ...prefs, artists: e.target.value })} />
+            <input className="ig-input" value={config.artists} onChange={(e) => set({ ...config, artists: e.target.value })} />
           </Row>
-          <ReferenceRows store={store} />
+          {store.conn?.kind !== 'sdapi' && <ReferenceRows store={store} />}
           <Row label="不想画出来的">
             <input className="ig-input" value={prefs.negative} onChange={(e) => changePrefs({ ...prefs, negative: e.target.value })} />
           </Row>
           <Row label="全年龄">
             <Toggle checked={prefs.sfwOnly} onChange={(v) => changePrefs({ ...prefs, sfwOnly: v })}>
-              这张卡只画全年龄(换成 Curated 模型、挡掉成人向的标签)
+              这张卡只画全年龄(挡掉成人向的标签;NovelAI 换成 Curated 模型)
             </Toggle>
           </Row>
         </>
@@ -670,7 +787,7 @@ const AUTO_WHEN = ['第一次到某地', '身体接触', '强烈情绪', '换衣
 AUTO_WHEN.push('你说想看');
 
 function AutoPage({ store }: { store: ImageGenStore }) {
-  const { config, changeConfig: set, prefs, changePrefs } = store;
+  const { config, changeConfig: set } = store;
   return (
     <div className="vn-set-list">
       <Group
@@ -698,101 +815,6 @@ function AutoPage({ store }: { store: ImageGenStore }) {
         />
       </Row>
       <Para text={IG_TIPS.cooldown} />
-      {store.cardId && (
-        <Row label="这张卡">
-          <Toggle checked={prefs.autoOff} onChange={(v) => changePrefs({ ...prefs, autoOff: v })}>
-            {store.cardName} 不自动出图
-          </Toggle>
-          <Tip k="card_only" />
-        </Row>
-      )}
-    </div>
-  );
-}
-
-// ── 服务 ──
-
-function ServicePage({ store }: { store: ImageGenStore }) {
-  const { config, changeConfig: set } = store;
-  const [token, setToken] = useState('');
-  const [checking, setChecking] = useState(false);
-  const { account, accountError: error } = store;
-  const has = store.status?.has_token;
-  const check = async () => {
-    setChecking(true);
-    await store.checkAccount();
-    setChecking(false);
-  };
-  const writerMissing = config.writer.connectionId !== null && !store.connections.some((c) => c.id === config.writer.connectionId);
-  return (
-    <div className="vn-set-list">
-      <Group title="NovelAI" tip={IG_TIPS.nai} />
-      <Row label="Token" tip={IG_TIPS.token}>
-        <div className="ig-inline">
-          <input
-            className="ig-input ig-grow"
-            type="password"
-            autoComplete="off"
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
-            placeholder={has ? (store.status?.source === 'env' ? '用的是环境变量 NOVELAI_TOKEN' : '已保存(留空保持不变)') : 'pst- 开头的那串'}
-          />
-          <button className="vn-pill accent" disabled={!token.trim()} onClick={() => void store.saveToken(token).then(() => setToken(''))}>
-            保存
-          </button>
-          {has && store.status?.source === 'settings' && (
-            <button className="vn-pill" onClick={() => void store.saveToken('')}>
-              删除
-            </button>
-          )}
-        </div>
-      </Row>
-      <Row label="额度">
-        <div className="ig-inline">
-          <button className="vn-pill" disabled={!has || checking} onClick={() => void check()}>
-            {checking ? '查询中…' : '查额度'}
-          </button>
-          {account && (
-            <span className="vn-set-note ig-account">
-              {account.tier === 3 ? 'Opus' : `等级 ${account.tier ?? '?'}`} · Anlas {account.anlas}
-              {account.v5_percent !== null && ` · V5 额度还剩 ${account.v5_percent}%`}
-            </span>
-          )}
-        </div>
-        {error && <span className="vn-set-error">{error}</span>}
-      </Row>
-      <Row label="扣费">
-        <Toggle checked={config.allowPaid} onChange={(v) => set({ ...config, allowPaid: v })}>
-          允许超出免费范围(每张扣 Anlas)
-        </Toggle>
-      </Row>
-
-      <Group title="指导模型" tip={IG_TIPS.writer} />
-      <Row label="用哪个连接" note={writerMissing ? '选的连接不在了,现在跟聊天用同一个' : undefined}>
-        <select
-          className="vn-set-select"
-          value={config.writer.connectionId ?? ''}
-          onChange={(e) => set({ ...config, writer: { ...config.writer, connectionId: e.target.value || null } })}
-        >
-          <option value="">跟聊天用同一个</option>
-          {store.connections.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-              {c.model ? ` · ${c.model}` : ''}
-            </option>
-          ))}
-        </select>
-      </Row>
-      <Row label="思考" tip={IG_TIPS.thinking}>
-        <Seg
-          options={[
-            { value: 'off' as const, name: '关(推荐)' },
-            { value: 'conn' as const, name: '照连接的设置' },
-          ]}
-          value={config.writer.thinking}
-          onPick={(v) => set({ ...config, writer: { ...config.writer, thinking: v } })}
-        />
-      </Row>
     </div>
   );
 }
@@ -834,6 +856,15 @@ function SkillRow({
 // 质量词、反向预设 10-12 照 NovelAI 网页挪到「画面」里了
 function AdvancedPage({ store }: { store: ImageGenStore }) {
   const { config, changeConfig: set, defaults } = store;
+  // 说明书是这张卡在每条连接下各存一份的(设计第 9 节):没选连接时没地方存
+  if (!store.conn) {
+    return (
+      <div className="vn-set-list">
+        <Group title="说明书" tip={IG_TIPS.manual} />
+        <p className="vn-set-note ig-pad">先在「画面」里选画图连接。</p>
+      </div>
+    );
+  }
   return (
     <div className="vn-set-list">
       <Group title="说明书" tip={IG_TIPS.manual} />
@@ -897,7 +928,14 @@ function AlbumPage({ store }: { store: ImageGenStore }) {
                 {img.description || '(没有说明)'}
               </span>
               <span className="vn-set-note">
-                {new Date(img.created_at).toLocaleString()} · {img.trigger === 'auto' ? '自动' : img.trigger === 'reroll' ? '换一张' : '手动'}
+                {[
+                  new Date(img.created_at).toLocaleString(),
+                  img.trigger === 'auto' ? '自动' : img.trigger === 'reroll' ? '换一张' : '手动',
+                  connectionText(img.params),
+                  timingText(img.params.timing),
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
               </span>
               <div className="ig-album-actions">
                 <button className="vn-pill" disabled={Boolean(img.kept_asset_id)} onClick={() => void store.keep(img.id)}>
@@ -917,10 +955,14 @@ function AlbumPage({ store }: { store: ImageGenStore }) {
 
 export function ImageGenSettings({ store, place }: { store: ImageGenStore; place: 'game' | 'console' }) {
   const [page, setPageState] = useState<Page>(lastPage);
+  const [dialog, setDialog] = useState<Dialog>(null);
   const setPage = (p: Page) => {
     lastPage = p;
     setPageState(p);
   };
+  const needCard = !store.cardId && !NO_CARD_OK.has(page);
+  // 小窗用纸卡:游戏设置页跟外面的主题(变量往下传);调试台是深色底,用夜纸
+  const dialogPaper = place === 'game' ? 'av-pcard' : 'av-pcard av-night';
   return (
     <ConsoleTips.Provider value={place === 'console'}>
       <div className={`ig-settings ${place}`}>
@@ -934,7 +976,13 @@ export function ImageGenSettings({ store, place }: { store: ImageGenStore; place
         )}
         {place === 'game' && (
           <p className="st-note ig-intro">
-            点对话框里发送右边的画笔,指导模型读剧情写这一幕画什么,NovelAI 画出来,在那一句像 CG 一样淡入;右键画笔先设置再画。
+            点对话框里发送右边的画笔,指导模型读剧情写这一幕画什么,这张卡选的画图连接画出来,在那一句像 CG 一样淡入;右键画笔先设置再画。
+          </p>
+        )}
+        {store.cardId && (
+          <p className="vn-set-note ig-this-card">
+            <span className="ig-card-tag">这张卡 · {store.cardName}</span>
+            <Tip text={IG_TIPS.this_card} />
           </p>
         )}
         <div className={place === 'game' ? 'vn-sp-tabs ig-subtabs-paper' : 'ig-subtabs'} role="tablist">
@@ -951,12 +999,36 @@ export function ImageGenSettings({ store, place }: { store: ImageGenStore; place
             </button>
           ))}
         </div>
-        {page === 'picture' && <PicturePage store={store} go={setPage} />}
-        {page === 'cast' && <CastPage store={store} />}
-        {page === 'auto' && <AutoPage store={store} />}
-        {page === 'service' && <ServicePage store={store} />}
-        {page === 'advanced' && <AdvancedPage store={store} />}
-        {page === 'album' && <AlbumPage store={store} />}
+        {needCard ? (
+          <p className="vn-set-note ig-pad">先选一张角色卡。</p>
+        ) : (
+          <>
+            {page === 'picture' && (
+              <PicturePage
+                store={store}
+                go={setPage}
+                onAdd={() => setDialog({ kind: 'add' })}
+                onTrial={(connId) => setDialog({ kind: 'trial', connId })}
+              />
+            )}
+            {page === 'cast' && <CastPage store={store} />}
+            {page === 'auto' && <AutoPage store={store} />}
+            {page === 'conn' && <ConnPage store={store} onAdd={() => setDialog({ kind: 'add' })} />}
+            {page === 'advanced' && <AdvancedPage store={store} />}
+            {page === 'album' && <AlbumPage store={store} />}
+          </>
+        )}
+        {dialog?.kind === 'add' && (
+          <AddConnDialog
+            store={store}
+            paperClass={dialogPaper}
+            onClose={() => setDialog(null)}
+            onTrial={(connId) => setDialog({ kind: 'trial', connId })}
+          />
+        )}
+        {dialog?.kind === 'trial' && (
+          <TrialDialog store={store} connId={dialog.connId} paperClass={dialogPaper} onClose={() => setDialog(null)} />
+        )}
       </div>
     </ConsoleTips.Provider>
   );

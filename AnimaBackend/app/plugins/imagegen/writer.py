@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import time
@@ -495,16 +496,56 @@ def _with_thinking(conn: ApiConnection, thinking: str | None) -> ApiConnection:
     )
 
 
+# 10-31 用户:DeepSeek 偶尔一卡几分钟(10-30 一次 5 分钟,SDK 默认要等满 10 分钟)。
+# 这么久没回就再发一份,两份谁先回用谁;第一份不打断,本来就慢的模型照样能用
+RESEND_AFTER = 10.0
+GIVE_UP_AFTER = 60.0
+
+
+async def _first_answer(call, resend_after: float = RESEND_AFTER, give_up_after: float = GIVE_UP_AFTER) -> str:
+    """先发一份;resend_after 秒还没回就再发一份,谁先回用谁、剩下的取消。
+    出错不算「没回」:只有一份时直接报;两份都出错报后一个;give_up_after 秒都没回报超时"""
+    loop = asyncio.get_running_loop()
+    start = loop.time()
+    pending = {asyncio.ensure_future(call())}
+    resent = False
+    error: BaseException | None = None
+    try:
+        while pending:
+            until = start + (give_up_after if resent else resend_after)
+            done, pending = await asyncio.wait(
+                pending, timeout=max(0.0, until - loop.time()), return_when=asyncio.FIRST_COMPLETED
+            )
+            for task in done:
+                if task.exception() is None:
+                    return task.result()
+                error = task.exception()
+            if not done and not resent:
+                resent = True
+                pending.add(asyncio.ensure_future(call()))
+            elif not done:
+                raise LLMError(f"等了 {give_up_after:g} 秒没回({resend_after:g} 秒时重发过一次)")
+        raise error
+    finally:
+        for task in pending:
+            task.cancel()
+
+
 async def ask(conn: ApiConnection, messages: list[ChatMessage], thinking: str | None = "off") -> tuple[str, int]:
-    """问一次,返回 (回的原文, 毫秒)。thinking 是 "conn" 时照连接自己的设置;关思考被拒时退回连接自己的再问一次"""
+    """问一次,返回 (回的原文, 毫秒)。thinking 是 "conn" 时照连接自己的设置;关思考被拒时退回连接自己的再问一次。
+    卡住了照 _first_answer 重发"""
     if conn.api_type != "mock" and not conn.model:
         raise LLMError(f"连接「{conn.name}」还没有填写模型名")
     started = time.perf_counter()
     first = conn if thinking == "conn" or thinking == conn.thinking else _with_thinking(conn, thinking)
-    try:
-        text = await provider_for(first).complete(messages, conn.model)
-    except LLMError:
-        if first is conn:
-            raise
-        text = await provider_for(conn).complete(messages, conn.model)
+
+    async def once() -> str:
+        try:
+            return await provider_for(first).complete(messages, conn.model)
+        except LLMError:
+            if first is conn:
+                raise
+            return await provider_for(conn).complete(messages, conn.model)
+
+    text = await _first_answer(once)
     return text, round((time.perf_counter() - started) * 1000)

@@ -18,7 +18,7 @@ import type { DrawerCardFacts } from '../components/drawer/cardView';
 import type { TipKey } from '../components/drawer/tips';
 import type { Notify } from '../components/pluginRunner';
 import type { FormsLens } from '../core/timeline';
-import type { SceneAsset, VoiceExplain, VoiceProfile } from '../lib/api';
+import type { DebugConnection, SceneAsset, VoiceExplain, VoiceProfile } from '../lib/api';
 import type { ChatEntry } from '../lib/chatEntry';
 import type { SlotKey } from '../studio/types';
 import type { VNLine } from '../vn/script';
@@ -195,6 +195,8 @@ export interface IllustrationView {
   focus: number;
   /** above = 对话框上方完整居中显示;screen 或不给 = 等比填满屏幕,比例不同时裁切边缘 */
   place?: 'screen' | 'above';
+  /** 还在画的过程预览:模糊几个像素;不给 = 成品 */
+  blur?: number;
 }
 
 /** 视觉小说给插图卡带看的「现在在哪」 */
@@ -306,8 +308,13 @@ export interface IllustrationsInput {
   entries: readonly ChatEntry[];
   /** 改当前对话的一条消息(DebugApp 的 setEntries,改完它会写库) */
   patchEntry: (id: string, fn: (e: ChatEntry) => ChatEntry) => void;
-  /** 聊天连接(指导模型从里面挑) */
-  connections: readonly { id: string; name: string; model: string }[];
+  /** 聊天连接(指导模型从里面挑;模型下拉用连接上次拉到的列表,和主模型窗口一样) */
+  connections: readonly Pick<
+    DebugConnection,
+    'id' | 'name' | 'api_type' | 'model' | 'is_active' | 'cached_models' | 'cached_models_at'
+  >[];
+  /** 生图设置里改了连接的模型、重新拉了模型列表以后:DebugApp 重读连接,主模型窗口跟着变 */
+  onConnectionsChanged?: () => void;
   /**
    * 收藏进 CG 包以后(可能新建并绑上了「AI 生图 · 卡名」包):DebugApp 重读这张卡的 CG 绑定和包列表,
    * 游戏里马上选得到、卡编辑器马上看得到,不用重选这张卡。游戏里、卡编辑器里收藏都走它

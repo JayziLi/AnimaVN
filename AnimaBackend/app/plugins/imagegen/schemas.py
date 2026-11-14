@@ -183,6 +183,13 @@ class StyleIn(BaseModel):
     artists: str = Field("", max_length=2000)
 
 
+class LoraIn(BaseModel):
+    name: str = Field(max_length=200)
+    weight: float = Field(1.0, ge=0, le=2)
+    trigger: str = Field("", max_length=200)
+    on: bool = True
+
+
 class GenerateIn(BaseModel):
     card_id: str | None = None
     chat_id: str | None = None
@@ -218,6 +225,14 @@ class GenerateIn(BaseModel):
     sfw_only: bool = False
     # 超出免费范围(面积 > 1024²、步数 > 28)也画:每张扣 Anlas
     allow_paid: bool = False
+    # 用哪条画图连接;不传 = 老前端,照以前用 NovelAI token
+    connection_id: str | None = Field(None, max_length=32)
+    # 本地 SD 才用:调度器、这张卡在这条连接下的 LoRA、过程预览的编号
+    scheduler: str = Field("", max_length=40)
+    loras: list[LoraIn] = Field(default_factory=list, max_length=20)
+    job_id: str | None = Field(None, max_length=64)
+    # 问指导模型花了几毫秒(前端带来,记进 params.timing.plan)
+    plan_ms: int | None = Field(None, ge=0, le=600_000)
 
 
 class CharOut(BaseModel):
@@ -275,3 +290,58 @@ class RefImageOut(BaseModel):
     id: str
     sha: str | None
     mime: str
+
+
+# ── 画图连接(11-07)──
+
+ConnKind = Literal["novelai", "sdapi", "openai"]
+
+
+class ImageConnIn(BaseModel):
+    name: str = Field("", max_length=100)
+    kind: ConnKind
+    base_url: str | None = Field(None, max_length=500)
+    api_key: str | None = Field(None, max_length=2000)
+    options: dict = Field(default_factory=dict)
+
+
+class ImageConnPatch(BaseModel):
+    """没传的字段不动;api_key 传空串 = 清掉。改了 base_url 又没一起传 api_key,旧 key 清掉"""
+
+    name: str | None = Field(None, max_length=100)
+    base_url: str | None = Field(None, max_length=500)
+    api_key: str | None = Field(None, max_length=2000)
+    options: dict | None = None
+
+
+class ImageConnOut(BaseModel):
+    id: str
+    name: str
+    kind: str
+    base_url: str | None
+    has_key: bool
+    options: dict
+    created_at: datetime
+
+
+class CheckOut(BaseModel):
+    ok: bool
+    # 连上了:档位之类;没连上:接口回的原文
+    message: str
+    ms: int
+
+
+class SetupIn(BaseModel):
+    value: dict
+
+
+class TrialOut(BaseModel):
+    """测试出图:图直接回 base64,不进相册"""
+
+    mime: str
+    b64: str
+    prompt: str
+    negative: str
+    chars: list[CharOut]
+    params: dict
+    ms: int

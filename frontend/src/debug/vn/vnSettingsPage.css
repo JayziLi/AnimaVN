@@ -298,6 +298,15 @@
 .vn-sp .ig-settings .vn-pill:hover:not(:disabled) {
   background: var(--av-paper-3);
 }
+/* 主按钮(测试出图、保存)别被上面的浅底盖掉:字是纸色,底要留墨色 */
+.vn-sp .ig-settings .vn-pill.accent {
+  background: var(--av-ink);
+  border-color: var(--av-ink);
+  color: var(--av-paper);
+}
+.vn-sp .ig-settings .vn-pill.accent:hover:not(:disabled) {
+  background: var(--av-ink-2);
+}
 .vn-sp .ig-settings select option {
   background: var(--av-paper);
   color: var(--av-ink);

@@ -10,6 +10,8 @@ import { Help } from './ui/Help';
 import { PaperButton } from './ui/PaperButton';
 import { Seg } from './ui/Seg';
 import { Switch } from './ui/Switch';
+// .vn-mw-* 在这里:生图设置里也用连接卡片和模型下拉,那边不一定开过小窗口
+import './ui/popWindow.css';
 
 export interface ModelQuick {
   connections: readonly { id: string; name: string; type: string; model: string; active: boolean }[];
@@ -42,63 +44,100 @@ const STREAM_TIP = '边生成边显示,思维链单独渲染。有些中转站�
 
 const iconOf = (name: string) => name.replace(/[（(].*$/, '').trim().slice(0, 2).toUpperCase() || '?';
 
+/** 连接一行一条,点一条 = 选它(选中那条右边写 now)。生图设置的「指导模型」也用这一块(10-31 用户:做成和主模型一样) */
+export function ConnectionCards({
+  connections,
+  now = '当前启用',
+  onPick,
+}: {
+  connections: ModelQuick['connections'];
+  now?: string;
+  onPick: (id: string) => void;
+}) {
+  return (
+    <div className="vn-mw-conns" role="radiogroup" aria-label="连接">
+      {connections.map((c) => (
+        <button
+          key={c.id}
+          type="button"
+          role="radio"
+          aria-checked={c.active}
+          className={`vn-mw-conn${c.active ? ' on' : ''}`}
+          onClick={() => !c.active && onPick(c.id)}
+        >
+          <span className="vn-mw-ic" aria-hidden="true">
+            {iconOf(c.name)}
+          </span>
+          <span className="tx">
+            <b>{c.name}</b>
+            <small>
+              {c.type ? `${c.type} · ` : ''}
+              {c.model || '未设模型'}
+            </small>
+          </span>
+          {c.active && <span className="vn-mw-now">{now}</span>}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** 模型下拉(只从这条连接上次拉到的列表里选)+ 重新拉取 */
+export function ModelSelect({
+  models,
+  model,
+  refreshing,
+  refreshedAt,
+  onModel,
+  onRefresh,
+}: Pick<ModelQuick, 'models' | 'model' | 'refreshing' | 'refreshedAt' | 'onModel' | 'onRefresh'>) {
+  const inList = models.includes(model);
+  return (
+    <div className="vn-mw-c">
+      <select className="vn-mw-model" value={model} aria-label="模型" onChange={(e) => onModel(e.target.value)}>
+        {!inList && (
+          <option value={model} disabled>
+            {model || '未设模型'}
+            {model && models.length > 0 ? '(不在列表中)' : ''}
+          </option>
+        )}
+        {models.map((m) => (
+          <option key={m} value={m}>
+            {m}
+          </option>
+        ))}
+      </select>
+      <PaperButton
+        className={`vn-mw-ref${refreshing ? ' busy' : ''}`}
+        disabled={refreshing}
+        onClick={onRefresh}
+        aria-label="重新拉取模型列表"
+        title={refreshedAt ? `重新拉取模型列表(上次 ${new Date(refreshedAt).toLocaleString()})` : '拉取这条连接的模型列表'}
+      >
+        <GameIcon name="retry" size={16} />
+      </PaperButton>
+    </div>
+  );
+}
+
 export function ModelWindowBody({ q, onMore }: { q: ModelQuick; onMore: () => void }) {
-  const inList = q.models.includes(q.model);
   return (
     <div className="vn-mw">
       <section>
         <h4 className="vn-mw-gh">连接</h4>
-        <div className="vn-mw-conns" role="radiogroup" aria-label="连接">
-          {q.connections.map((c) => (
-            <button
-              key={c.id}
-              type="button"
-              role="radio"
-              aria-checked={c.active}
-              className={`vn-mw-conn${c.active ? ' on' : ''}`}
-              onClick={() => !c.active && q.onConnection(c.id)}
-            >
-              <span className="vn-mw-ic" aria-hidden="true">
-                {iconOf(c.name)}
-              </span>
-              <span className="tx">
-                <b>{c.name}</b>
-                <small>
-                  {c.type} · {c.model || '未设模型'}
-                </small>
-              </span>
-              {c.active && <span className="vn-mw-now">当前启用</span>}
-            </button>
-          ))}
-        </div>
+        <ConnectionCards connections={q.connections} onPick={q.onConnection} />
       </section>
       <section>
         <div className="vn-mw-row">
           <span className="vn-mw-k">模型</span>
-          <div className="vn-mw-c">
-            <select className="vn-mw-model" value={q.model} aria-label="模型" onChange={(e) => q.onModel(e.target.value)}>
-              {!inList && (
-                <option value={q.model} disabled>
-                  {q.model || '未设模型'}
-                  {q.model && q.models.length > 0 ? '(不在列表中)' : ''}
-                </option>
-              )}
-              {q.models.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
-            <PaperButton
-              className={`vn-mw-ref${q.refreshing ? ' busy' : ''}`}
-              disabled={q.refreshing}
-              onClick={q.onRefresh}
-              aria-label="重新拉取模型列表"
-              title={q.refreshedAt ? `重新拉取模型列表(上次 ${new Date(q.refreshedAt).toLocaleString()})` : '拉取这条连接的模型列表'}
-            >
-              <GameIcon name="retry" size={16} />
-            </PaperButton>
-          </div>
+          <ModelSelect
+            models={q.models}
+            model={q.model}
+            refreshing={q.refreshing}
+            refreshedAt={q.refreshedAt}
+            onModel={q.onModel}
+            onRefresh={q.onRefresh}
+          />
         </div>
         {!q.mock && (
           <div className="vn-mw-row">

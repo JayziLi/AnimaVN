@@ -23,8 +23,6 @@ import { Seg } from '../../vn/ui/Seg';
 import { saveTitle } from '../../vn/menuLabel';
 import type { MenuAlbumContext } from '../cartridges';
 import {
-  clockText,
-  dayText,
   drawnOnly,
   groupByDay,
   groupBySave,
@@ -32,6 +30,7 @@ import {
   landingOf,
   lineText,
   whereLine,
+  viewerMeta,
   type AlbumGroup,
   type JumpTarget,
 } from './menuAlbumModel';
@@ -393,11 +392,7 @@ function Viewer({
 
   const target = jumpTargetOf(entry, world);
   const chatName = img?.chat_id ? saveName.get(img.chat_id) : undefined;
-  const meta = img
-    ? [`${dayText(img.created_at)} ${clockText(img.created_at)}`.trim(), triggerName(img.trigger), img.ms > 0 ? `${(img.ms / 1000).toFixed(1)} 秒` : '']
-        .filter(Boolean)
-        .join(' · ')
-    : '';
+  const meta = img ? viewerMeta(img) : '';
   const here = [chatName, lineText(img?.line)].filter(Boolean).join(' · ');
 
   if (!img || !menu) return null;

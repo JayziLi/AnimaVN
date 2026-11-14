@@ -166,7 +166,8 @@ export function useSettledView<T extends { key: string; src: string | null }>(vi
   const ok = !view.src || settled.has(view.src) || view.key === shown.key;
   useEffect(() => {
     // 只在换了图时记下来:同一张图的 view 对象每次渲染可能都是新的,每次都存会死循环
-    const keep = () => setShown((s) => (s.key === view.key ? s : view));
+    // 同一个 key 换了 src(生成插图的过程预览一帧帧换)也要记下来,等下一张下载时留着的才是最新一帧
+    const keep = () => setShown((s) => (s.key === view.key && s.src === view.src ? s : view));
     if (ok) {
       keep();
       return;

@@ -6,7 +6,7 @@
  * 两边用哪一套由 ConsoleTips 这个 context 认(插件抽屉传 true,游戏设置页传 false,见 ImageGenSettings.tsx)。
  */
 
-import { useContext, type ReactNode } from 'react';
+import { useContext, useEffect, useState, type ReactNode } from 'react';
 import { Tip } from '../../components/drawer/Tip';
 import { Seg as KernelSeg } from '../../vn/ui/Seg';
 import { SettingGroupHead, SettingRow } from '../../vn/settings/SettingRow';
@@ -138,5 +138,32 @@ export function Toggle({
       <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
       {children}
     </label>
+  );
+}
+
+/** 删除要点两下:第一下变成「再点一下删除」,三秒不点、或者点了别处就变回去(11-07 效果图) */
+export function DeleteTwice({ onConfirm }: { onConfirm: () => void }) {
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (!armed) return;
+    const t = window.setTimeout(() => setArmed(false), 3000);
+    return () => window.clearTimeout(t);
+  }, [armed]);
+  return (
+    <button
+      type="button"
+      className={`vn-pill ig-danger${armed ? ' armed' : ''}`}
+      onBlur={() => setArmed(false)}
+      onClick={() => {
+        if (!armed) {
+          setArmed(true);
+          return;
+        }
+        setArmed(false);
+        onConfirm();
+      }}
+    >
+      {armed ? '再点一下删除' : '删除'}
+    </button>
   );
 }

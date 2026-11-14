@@ -232,7 +232,9 @@ def seed(db: Session) -> dict:
     db.add(AppSetting(key="secret.jev_key", value=SECRET))
     db.add(AppSetting(key="plugin.sprite", value={"tag": "[表情:{x}]"}))
     db.add(CardPref(card_id=main.id, key="plugin.imagegen",
-                    value={"look": "purple hair", "ref": {"kind": "sprite", "id": s1.id, "sha": None, "style": False}}))
+                    value={"look": "purple hair", "ref": {"kind": "sprite", "id": s1.id, "sha": None, "style": False},
+                           "sfwOnly": True, "styleId": "anime", "artists": "artist:someone", "autoOff": True}))
+    db.add(CardPref(card_id=main.id, key="imagegen.setup", value={"v": 1, "conn": "c1", "byConn": {"c1": {"steps": 6}}}))
     db.add(CardPref(card_id=state.id, key="plugin.cg", value={"jev": {"threshold": 0.75}}))
     db.add(CardPref(card_id=main.id, key="beta.voice-sfx", value={"on": True}))
     db.commit()

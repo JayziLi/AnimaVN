@@ -155,6 +155,8 @@ def test_follows_word_records_pairings_prefs_and_preset(db, tmp_path):
     prefs = {(c["card"], c["key"]): c["value"] for c in m["card_prefs"]}
     assert set(prefs) == {(ids["main"], "plugin.imagegen"), (ids["state"], "plugin.cg")}  # 只带 plugin.*
     assert prefs[(ids["main"], "plugin.imagegen")]["ref"]["id"] == ids["s1"]
+    # 画风、画师串、自动出图 11-07 起是这台机器的设置,不进角色包;只画全年龄这期不管,也不带;外观、参考图照带
+    assert set(prefs[(ids["main"], "plugin.imagegen")]) == {"look", "ref"}
 
     assert m["preset"]["name"] == "刻晴 DeepSeek"
     assert sorted(m["preset"]["cards"]) == sorted([ids["main"], ids["state"]])

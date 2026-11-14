@@ -3,7 +3,8 @@
  * - 发送右边的画笔(IgButton):点一下直接画这一句,右键 / 长按开「画这一幕」的设置,正在画时角上一个小点;
  * - 舞台上那一层(IgStage):右下角细条上方一条同样的细条 —— 正在画时写进度(构思画面 › Drawing · 几秒 | 等待 N),
  *   这句有图时放操作(标题 · 换一张 / 收藏 / 收起 / 这张图),只用图标、悬停有说明;
- *   「画这一幕」小面板(对话框正上方靠右:尺寸、想看什么、先看提示词)、提示词详情。
+ *   「画这一幕」小面板(对话框正上方靠右:用哪条连接、尺寸、想看什么、先看提示词)、提示词详情;
+ * - 还没有画图连接时点画笔:画笔上方「还没接画图 · 去加」,「去加」开加一条连接的小窗(dialogs.tsx)。
  * 点这些东西不能让对话往下走:外层都拦掉点击。
  */
 
@@ -18,7 +19,10 @@ import {
   type Camera,
   type SizeKey,
 } from './config';
+import { BLOCK_TEXT, connOption } from './connModel';
+import { AddConnDialog, TrialDialog } from './dialogs';
 import './imagegen.css';
+import { LoraToggles } from './SdParts';
 import { Seg } from './ui';
 import type { DrawTarget, ImageGenStore } from './useImageGen';
 
@@ -39,7 +43,7 @@ function BrushIcon() {
 export function IgButton({ store, ctx }: { store: ImageGenStore; ctx: VnIllustrationContext }) {
   const busy = store.jobs.length > 0;
   const classes = ['ig-btn'];
-  if (store.panelOpen) classes.push('on');
+  if (store.panelOpen || store.nudge) classes.push('on');
   if (busy) classes.push('busy');
   // 点一下画的是什么(悬停提示里写)
   const what = ['画这一幕'];
@@ -48,6 +52,11 @@ export function IgButton({ store, ctx }: { store: ImageGenStore; ctx: VnIllustra
   const unpress = () => {
     if (pressTimer.current !== null) window.clearTimeout(pressTimer.current);
     pressTimer.current = null;
+  };
+  // 开「画这一幕」:「还没接画图」那句先收起,不然关面板时它又冒出来
+  const openPanel = () => {
+    store.setNudge(false);
+    store.setPanelOpen(true);
   };
   const click = () => {
     if (longPressed.current) {
@@ -58,10 +67,15 @@ export function IgButton({ store, ctx }: { store: ImageGenStore; ctx: VnIllustra
       store.setPanelOpen(false);
       return;
     }
+    // 还一条画图连接都没有:画笔上方弹一句「还没接画图 · 去加」,再点一下收起(自动出图这时不打扰)
+    if (store.drawBlock === 'none') {
+      store.setNudge(!store.nudge);
+      return;
+    }
     const target = store.targetOf(ctx);
-    // 没填 token、还没有回复:开设置,里面写着为什么画不了
-    if (!store.status?.has_token || !target) {
-      store.setPanelOpen(true);
+    // 这张卡还画不了(没选连接、选的那种还不能出图、设置还没读完)、还没有回复:开设置,里面写着为什么画不了
+    if (store.drawBlock || !target) {
+      openPanel();
       return;
     }
     void store.drawNow(target, '', store.config.size);
@@ -75,7 +89,7 @@ export function IgButton({ store, ctx }: { store: ImageGenStore; ctx: VnIllustra
       onContextMenu={(e) => {
         e.preventDefault();
         e.stopPropagation();
-        store.setPanelOpen(true);
+        openPanel();
       }}
       // iOS 长按不发 contextmenu:自己数 0.5 秒
       onPointerDown={(e) => {
@@ -83,13 +97,13 @@ export function IgButton({ store, ctx }: { store: ImageGenStore; ctx: VnIllustra
         unpress();
         pressTimer.current = window.setTimeout(() => {
           longPressed.current = true;
-          store.setPanelOpen(true);
+          openPanel();
         }, 500);
       }}
       onPointerUp={unpress}
       onPointerLeave={unpress}
       onPointerCancel={unpress}
-      aria-pressed={store.panelOpen}
+      aria-pressed={store.panelOpen || store.nudge}
       aria-label="画这一幕(AI 生图 BETA)"
       title={
         busy
@@ -288,6 +302,66 @@ interface Preview {
 /** 对话框里显示的这句:去掉台词外层的引号 */
 const unquote = (s: string) => s.replace(/^\s*[「『“"]/, '').replace(/[」』”"]\s*$/, '');
 
+/** 「还没接画图」放在画笔正上方,右边和画笔对齐,小尖角对着画笔。量不到就用 CSS 里的左上角 */
+function useNudgeAt(anchor: HTMLElement | null): { style: React.CSSProperties; tail: number } | null {
+  const [at, setAt] = useState<{ style: React.CSSProperties; tail: number } | null>(null);
+  useLayoutEffect(() => {
+    const root = anchor?.closest('.vn-root');
+    if (!anchor || !root) return;
+    const measure = () => {
+      const a = anchor.getBoundingClientRect();
+      const r = root.getBoundingClientRect();
+      setAt({
+        style: { top: 'auto', left: 'auto', right: r.right - a.right, bottom: r.bottom - a.top + 10 },
+        tail: a.width / 2 - 5,
+      });
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [anchor]);
+  return at;
+}
+
+/** 点画笔、还没有画图连接(效果图 6):「还没接画图」+「去加」,「去加」直接开加一条连接的小窗;再点画笔或 Esc 收起 */
+function Nudge({ store, paperClass }: { store: ImageGenStore; paperClass?: string }) {
+  const at = useNudgeAt(store.anchor);
+  const { setNudge, setAdding } = store;
+  // Esc 在捕获阶段接住(不然游戏里的 Esc 会顺带开菜单)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.isComposing) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      setNudge(false);
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [setNudge]);
+  return (
+    <div
+      className={`ig-panel ig-nudge${at ? ' ig-pop' : ''}${paperClass ? ` ${paperClass}` : ''}`}
+      style={at?.style}
+      role="dialog"
+      aria-label="还没接画图"
+      onClick={stop}
+    >
+      <span className="ig-title">还没接画图</span>
+      <button
+        type="button"
+        className="vn-pill accent"
+        onClick={() => {
+          setNudge(false);
+          setAdding(true);
+        }}
+      >
+        去加
+      </button>
+      {at && <i className="ig-tail" style={{ right: at.tail }} aria-hidden="true" />}
+    </div>
+  );
+}
+
 function DrawPanel({ store, ctx }: { store: ImageGenStore; ctx: VnIllustrationContext }) {
   const [want, setWant] = useState('');
   const [size, setSize] = useState<SizeKey>(store.config.size);
@@ -322,6 +396,7 @@ function DrawPanel({ store, ctx }: { store: ImageGenStore; ctx: VnIllustrationCo
       description: preview.description,
       size,
       until: preview.plan.until,
+      planMs: preview.plan.ms,
     });
   };
 
@@ -331,6 +406,38 @@ function DrawPanel({ store, ctx }: { store: ImageGenStore; ctx: VnIllustrationCo
       ...preview,
       picture: { ...preview.picture, people: preview.picture.people.map((p, k) => (k === i ? { ...p, ...patch } : p)) },
     });
+
+  // 用哪条画图连接(效果图 5):改的是这张卡的 setup.conn,和设置页「画面」里那个是同一个。
+  // 选了暂时不能出图的连接,这一行还在,好换回来
+  const connRow = store.setup && store.imageConns && store.imageConns.length > 0 && (
+    <div className="ig-row">
+      <span className="ig-label">用</span>
+      <select
+        className="ig-input ig-conn-select"
+        aria-label="画图连接"
+        value={store.conn?.id ?? ''}
+        onChange={(e) => store.setConn(e.target.value || null)}
+      >
+        {!store.conn && (
+          <option value="" disabled>
+            先选一条
+          </option>
+        )}
+        {store.imageConns.map((c) => (
+          <option key={c.id} value={c.id}>
+            {connOption(c)}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+  // 本地 SD 连接下那排 LoRA 开关(效果图 5):和设置页同一份,只开关不增删
+  const loraRow = store.conn?.kind === 'sdapi' && store.config.loras.length > 0 && (
+    <div className="ig-row">
+      <span className="ig-label">LoRA</span>
+      <LoraToggles config={store.config} onChange={store.changeConfig} />
+    </div>
+  );
 
   return (
     <div className={`ig-panel${at ? ' ig-pop' : ''}${ctx.paperClass ? ` ${ctx.paperClass}` : ''}`} style={at} role="dialog" aria-label="画这一幕" onClick={stop}>
@@ -352,10 +459,30 @@ function DrawPanel({ store, ctx }: { store: ImageGenStore; ctx: VnIllustrationCo
           关
         </button>
       </div>
-      {!store.status?.has_token ? (
-        <p className="ig-note">还没填 NovelAI token:点上面「全部设置」→ 服务。</p>
+      {store.drawBlock === 'none' ? (
+        <p className="ig-note">
+          还没接画图。{' '}
+          <button
+            type="button"
+            className="vn-pill accent"
+            onClick={() => {
+              close();
+              store.setAdding(true);
+            }}
+          >
+            去加
+          </button>
+        </p>
+      ) : store.drawBlock ? (
+        <>
+          {connRow}
+          <p className="ig-note">{store.drawBlock === 'pick' && connRow ? '先在上面选一条画图连接。' : BLOCK_TEXT[store.drawBlock]}</p>
+        </>
       ) : !target ? (
-        <p className="ig-note">还没有回复可以画。</p>
+        <>
+          {connRow}
+          <p className="ig-note">还没有回复可以画。</p>
+        </>
       ) : preview ? (
         <>
           <p className="ig-note">
@@ -438,6 +565,8 @@ function DrawPanel({ store, ctx }: { store: ImageGenStore; ctx: VnIllustrationCo
               {unquote(here.text).slice(0, 60)}
             </p>
           )}
+          {connRow}
+          {loraRow}
           <div className="ig-row">
             <span className="ig-label">方向</span>
             <Seg
@@ -502,7 +631,8 @@ function Info({ id, store, onClose, paperClass }: { id: string; store: ImageGenS
             </p>
           )}
           <p className="ig-note">
-            {img.params.model} · {img.params.width}×{img.params.height} · {img.params.steps} 步 · 种子 {img.params.seed} ·{' '}
+            {img.params.model} · {img.params.width}×{img.params.height} ·{' '}
+            {img.params.seed !== undefined && `${img.params.steps} 步 · 种子 ${img.params.seed} · `}
             {(img.ms / 1000).toFixed(1)} 秒 · {img.trigger === 'auto' ? '自动' : img.trigger === 'reroll' ? '换一张' : '手动'}
             {img.picture.pov ? ' · 第一人称' : ''}
             {img.params.reference ? ' · 带参考图' : ''}
@@ -530,6 +660,8 @@ function Info({ id, store, onClose, paperClass }: { id: string; store: ImageGenS
 
 export function IgStage({ store, ctx }: { store: ImageGenStore; ctx: VnIllustrationContext }) {
   const [info, setInfo] = useState<string | null>(null);
+  // 游戏里「加一条连接」以后「画一张试试」开的测试出图(连接编号)
+  const [trial, setTrial] = useState<string | null>(null);
   const mark = ctx.entry ? store.shownAt(ctx.entry, ctx.line) : null;
   // 平时只有一颗小按钮(插图 / 正在画时带个小点);鼠标指上去、或点一下才展开那一条
   const [pinned, setPinned] = useState(false);
@@ -542,12 +674,29 @@ export function IgStage({ store, ctx }: { store: ImageGenStore; ctx: VnIllustrat
   useEffect(() => () => {
     if (leaveTimer.current !== null) window.clearTimeout(leaveTimer.current);
   }, []);
-  const show = (mark || busy) && !store.panelOpen && !info;
+  // 弹出来的东西(画这一幕、还没接画图、加连接、测试出图)开着时,不放插图那一条
+  const popped = store.panelOpen || store.nudge || store.adding || trial !== null;
+  const show = (mark || busy) && !popped && !info;
   if (!show) {
+    // 小窗里的连接卡片是纸面配色:经典框没有纸卡皮时用深色纸,不然深字配深底
+    const dialogPaper = ctx.paperClass ?? 'av-pcard av-night';
     return (
       <>
         {store.panelOpen && <DrawPanel store={store} ctx={ctx} />}
-        {info && !store.panelOpen && <Info id={info} store={store} paperClass={ctx.paperClass} onClose={() => setInfo(null)} />}
+        {store.nudge && !store.panelOpen && <Nudge store={store} paperClass={ctx.paperClass} />}
+        {store.adding && (
+          <AddConnDialog
+            store={store}
+            paperClass={dialogPaper}
+            onClose={() => store.setAdding(false)}
+            onTrial={(id) => {
+              store.setAdding(false);
+              setTrial(id);
+            }}
+          />
+        )}
+        {trial && <TrialDialog store={store} connId={trial} paperClass={dialogPaper} onClose={() => setTrial(null)} />}
+        {info && !popped && <Info id={info} store={store} paperClass={ctx.paperClass} onClose={() => setInfo(null)} />}
       </>
     );
   }

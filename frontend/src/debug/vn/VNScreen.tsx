@@ -350,6 +350,8 @@ interface CgView {
   whole?: boolean;
   /** 整张放在对话框上面那一块里(--vn-window-h 是对话框量出来的高) */
   above?: boolean;
+  /** 生成插图还在画:模糊几个像素 */
+  blur?: number;
 }
 
 const NO_CG: CgView = { key: 'none', src: null, group: null, focus: 50 };
@@ -701,10 +703,11 @@ function CgImage({ view, panFrom }: { view: CgView; panFrom: number }) {
   // 挂上时定一次:panFrom 只在换成别的 CG 时变,那时这张会换成新的一张,不用跟着改
   const [delay] = useState(() => `${-((Date.now() - panFrom) % (CG_PAN_MS * 2))}ms`);
   if (view.whole) {
+    const blur: CSSProperties | undefined = view.blur === undefined ? undefined : { filter: `blur(${view.blur}px)`, transition: 'filter 0.6s' };
     return (
       <>
         {view.above && <img className="vn-cg vn-cg-backdrop" src={view.src ?? undefined} alt="" draggable={false} />}
-        <img className={`vn-cg whole${view.above ? ' above' : ''}`} src={view.src ?? undefined} alt="" draggable={false} />
+        <img className={`vn-cg whole${view.above ? ' above' : ''}`} style={blur} src={view.src ?? undefined} alt="" draggable={false} />
       </>
     );
   }
@@ -1044,12 +1047,13 @@ export function VNScreen({
   const illusSrc = illusView?.src ?? null;
   const illusFocus = illusView?.focus ?? 50;
   const illusAbove = illusView?.place === 'above';
+  const illusBlur = illusView?.blur;
   const shownCg: CgView = useMemo(
     () =>
       illusKey && illusSrc
-        ? { key: illusKey, src: illusSrc, group: illusKey, focus: illusFocus, whole: true, above: illusAbove }
+        ? { key: illusKey, src: illusSrc, group: illusKey, focus: illusFocus, whole: true, above: illusAbove, blur: illusBlur }
         : cgView,
-    [illusKey, illusSrc, illusFocus, illusAbove, cgView],
+    [illusKey, illusSrc, illusFocus, illusAbove, illusBlur, cgView],
   );
   const cgOn = Boolean(shownCg.src);
   // 对话框有多高(含底下的留白):写到 .vn-root 的 --vn-window-h,插图「放在对话框上面」时让开这一块

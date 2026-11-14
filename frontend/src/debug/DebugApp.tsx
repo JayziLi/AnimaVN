@@ -828,6 +828,8 @@ export default function DebugApp() {
     entries,
     patchEntry,
     connections,
+    // 生图设置里改了指导模型那条连接的模型:顶栏、左上「模型」窗口跟着变
+    onConnectionsChanged: () => void refreshConnections(),
     // 收藏进 CG 包以后重读这张卡的 CG 绑定和包列表:第一次收藏新建的「AI 生图 · 卡名」包马上绑上,
     // 游戏里马上选得到,卡编辑器里马上算进去(以前要重选这张卡)
     onKept: () => {

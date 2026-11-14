@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChatEntry, SwipeInfo, VnImageMark, VnImageNote } from '../../lib/chatEntry';
 // 先加载登记处(它再加载各卡带),和内核加载的顺序一样
 import { cartridge, extension } from '../cartridges';
@@ -22,6 +22,7 @@ import {
   UC_LIGHT,
   usesReference,
   withLook,
+  withStyleLibrary,
 } from './config';
 import {
   addImage,
@@ -38,6 +39,8 @@ import {
   repliesSinceImage,
   withNote,
 } from './marks';
+import { blankSetup, type ImageSetup } from './setup';
+import { createSetupWriter } from './useCardSetup';
 
 const entry = (id: string, role: 'user' | 'assistant', images?: VnImageMark[], swipes = 1): ChatEntry => ({
   id,
@@ -48,6 +51,106 @@ const entry = (id: string, role: 'user' | 'assistant', images?: VnImageMark[], s
     i === swipes - 1 && images ? ({ sendDate: '', vn: { images } } as SwipeInfo) : ({ sendDate: '' } as SwipeInfo),
   ),
   overswipe: 'regenerate',
+});
+
+describe('每张卡的设置怎么写库(停手半秒、换卡不串)', () => {
+  const setupOf = (name: string): ImageSetup => ({ ...blankSetup(), artists: name });
+  const fakeWrites = () => {
+    const writes: [string, unknown][] = [];
+    const put = vi.fn(async (cardId: string, setup: ImageSetup) => {
+      writes.push([cardId, setup.artists]);
+    });
+    return { writes, put };
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('停手半秒才写,连着改只写最后一次', async () => {
+    const { writes, put } = fakeWrites();
+    const w = createSetupWriter(put);
+    w.schedule('星绘', setupOf('1'), vi.fn());
+    await vi.advanceTimersByTimeAsync(400);
+    w.schedule('星绘', setupOf('2'), vi.fn());
+    await vi.advanceTimersByTimeAsync(400);
+    expect(writes).toEqual([]);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(writes).toEqual([['星绘', '2']]);
+  });
+
+  it('换卡时马上写掉上一张的:写到它自己头上,不丢、不串,定时器也不会再写一次', async () => {
+    const { writes, put } = fakeWrites();
+    const w = createSetupWriter(put);
+    w.schedule('星绘', setupOf('星绘改的'), vi.fn());
+    await w.flush();
+    expect(writes).toEqual([['星绘', '星绘改的']]);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(writes).toHaveLength(1);
+  });
+
+  it('手上压着 A 卡的又来了 B 卡的(两处设置页各看一张):A 的先写掉,各写各的', async () => {
+    const { writes, put } = fakeWrites();
+    const w = createSetupWriter(put);
+    w.schedule('星绘', setupOf('a'), vi.fn());
+    w.schedule('香奈美', setupOf('b'), vi.fn());
+    await vi.advanceTimersByTimeAsync(500);
+    expect(writes).toEqual([
+      ['星绘', 'a'],
+      ['香奈美', 'b'],
+    ]);
+  });
+
+  it('没东西要写时 flush 什么也不发(没选卡)', async () => {
+    const { put } = fakeWrites();
+    await createSetupWriter(put).flush();
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  it('按先后写;flush 等前面的写完才算完(读要排在写后面,不然读到写之前的旧值)', async () => {
+    const order: string[] = [];
+    let release = () => {};
+    const put = vi.fn((_: string, setup: ImageSetup) => {
+      order.push(`写 ${String(setup.artists)}`);
+      return setup.artists === '1'
+        ? new Promise<void>((resolve) => {
+            release = () => {
+              order.push('写完 1');
+              resolve();
+            };
+          })
+        : Promise.resolve();
+    });
+    const w = createSetupWriter(put);
+    w.schedule('星绘', setupOf('1'), vi.fn());
+    void w.flush();
+    w.schedule('星绘', setupOf('2'), vi.fn());
+    const read = w.flush().then(() => order.push('读'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(order).toEqual(['写 1']);
+    release();
+    await read;
+    expect(order).toEqual(['写 1', '写完 1', '写 2', '读']);
+  });
+
+  it('写失败提示一声,后面的照写', async () => {
+    const put = vi.fn(async (_: string, setup: ImageSetup) => {
+      if (setup.artists === 'bad') throw new Error('选的画图连接不在了');
+    });
+    const report = vi.fn();
+    const w = createSetupWriter(put);
+    w.schedule('星绘', setupOf('bad'), report);
+    await w.flush();
+    expect(report).toHaveBeenCalledTimes(1);
+    expect((report.mock.calls[0][0] as Error).message).toBe('选的画图连接不在了');
+    w.schedule('星绘', setupOf('ok'), report);
+    await w.flush();
+    expect(put).toHaveBeenCalledTimes(2);
+    expect(report).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('生图卡带 · 设置', () => {
@@ -64,7 +167,7 @@ describe('生图卡带 · 设置', () => {
 
   it('不认识的值退回默认,数字压进范围', () => {
     const c = normalizeImageGenConfig({
-      model: 'sd15',
+      model: 'nai-diffusion-1',
       size: 'huge',
       steps: 99,
       scale: -3,
@@ -76,6 +179,7 @@ describe('生图卡带 · 设置', () => {
       player: { gender: 'x' },
     });
     expect(c.model).toBe('nai-diffusion-5-curated');
+    expect(normalizeImageGenConfig({ model: 'gpt-image-2' }).model).toBe('gpt-image-2');
     expect(c.size).toBe('screen');
     expect(c.steps).toBe(50);
     expect(c.scale).toBe(0);
@@ -90,11 +194,23 @@ describe('生图卡带 · 设置', () => {
     expect(c.player.gender).toBe('male');
   });
 
-  it('这张卡的那份:画风另选还在就用它,删掉了退回全局', () => {
-    const c = normalizeImageGenConfig(undefined);
+  it('画风是这张卡自己选的(在 imagegen.setup 里),选的删掉了退回默认;长相那份不再带画风、画师串、不自动出图', () => {
     expect(normalizeCardPrefs(null)).toEqual(DEFAULT_CARD_PREFS);
-    expect(styleFor(c, normalizeCardPrefs({ styleId: 'anime' })).id).toBe('anime');
-    expect(styleFor(c, normalizeCardPrefs({ styleId: 'deleted' })).id).toBe('fuzi_rella');
+    expect(styleFor(normalizeImageGenConfig({ styleId: 'anime' })).id).toBe('anime');
+    expect(styleFor(normalizeImageGenConfig({ styleId: 'deleted' })).id).toBe('fuzi_rella');
+    const old = normalizeCardPrefs({ look: 'silver hair', styleId: 'anime', artists: 'artist:foo', autoOff: true });
+    expect(old.look).toBe('silver hair');
+    expect(['styleId', 'artists', 'autoOff'].filter((k) => k in old)).toEqual([]);
+  });
+
+  it('全局那份只换画风库:库里别的老字段原样留着,卡的字段不写进去', () => {
+    const stored = { model: 'old-model', auto: { enabled: false }, styleId: 'anime', styles: [], stylesVersion: 1 };
+    const library = { styles: normalizeImageGenConfig(undefined).styles, stylesVersion: 4 };
+    expect(withStyleLibrary(stored, library)).toEqual({ ...stored, ...library });
+    expect(stored.styles).toEqual([]);
+    // 库里没有、读到的不是对象:只写画风库
+    expect(withStyleLibrary(null, library)).toEqual(library);
+    expect(withStyleLibrary('乱的', library)).toEqual(library);
   });
 
   it('尺寸:分辨率预设 × 方向;跟屏幕走时竖屏用竖图;宽屏和 Normal 都在免费范围里', () => {
@@ -130,11 +246,11 @@ describe('生图卡带 · 设置', () => {
     expect(anlasCost({ model: 'nai-diffusion-4-5-full', w: 1536, h: 1024, steps: 23, opus: true })).toBeGreaterThan(0);
   });
 
-  it('出图用的模型和画风:只画全年龄的卡换成 Curated;画风卡另选的优先', () => {
+  it('出图用的模型和画风:只画全年龄的卡换成 Curated;画风用这张卡选的', () => {
     const c = { ...normalizeImageGenConfig(undefined), model: 'nai-diffusion-4-5-full' };
     expect(drawModel(c, DEFAULT_CARD_PREFS)).toBe('nai-diffusion-4-5-full');
     expect(drawModel(c, { ...DEFAULT_CARD_PREFS, sfwOnly: true })).toBe('nai-diffusion-4-5-curated');
-    expect(drawStyle(c, { ...DEFAULT_CARD_PREFS, styleId: 'yd_hiten' }).id).toBe('yd_hiten');
+    expect(drawStyle({ ...c, styleId: 'yd_hiten' }, DEFAULT_CARD_PREFS).id).toBe('yd_hiten');
     expect(artistsFor(c, DEFAULT_CARD_PREFS)).toContain('fuzichoco');
   });
 
@@ -187,17 +303,18 @@ describe('生图卡带 · 设置', () => {
     expect(normalizeCardPrefs({ ref: { kind: 'upload', id: '', strength: 0.5 } }).ref).toMatchObject({ kind: 'sprite', strength: 0.5 });
   });
 
-  it('镜头只有一个全局设置,默认第一人称;不认识的值退回默认,卡上不存镜头', () => {
+  it('镜头默认第一人称;不认识的值退回默认;长相那份里不存镜头', () => {
     expect(normalizeImageGenConfig(undefined).camera).toBe('pov');
     expect(normalizeImageGenConfig({ camera: 'auto' }).camera).toBe('auto');
     expect(normalizeImageGenConfig({ camera: 'fisheye' }).camera).toBe('pov');
     expect('camera' in normalizeCardPrefs({ camera: 'third' })).toBe(false);
   });
 
-  it('画师串:卡上填了用卡的,没填跟画风;读卡写的外貌认不出角色名时留着原来的', () => {
+  it('画师串:这张卡填了用它的,没填跟画风;读卡写的外貌认不出角色名时留着原来的', () => {
     const c = normalizeImageGenConfig({ styles: [{ id: 'a', name: 'A', tags: '', negative: '', artists: 'artist:foo' }], styleId: 'a' });
     expect(artistsFor(c, DEFAULT_CARD_PREFS)).toBe('artist:foo');
-    expect(artistsFor(c, { ...DEFAULT_CARD_PREFS, artists: 'artist:bar' })).toBe('artist:bar');
+    expect(artistsFor({ ...c, artists: 'artist:bar' }, DEFAULT_CARD_PREFS)).toBe('artist:bar');
+    expect(artistsFor({ ...c, artists: '   ' }, DEFAULT_CARD_PREFS)).toBe('artist:foo');
     expect(normalizeImageGenConfig({ styles: [{ id: 'b', name: 'B' }] }).styles.find((x) => x.id === 'b')?.artists).toBe('');
     const prefs = { ...DEFAULT_CARD_PREFS, nameTag: 'keqing (genshin impact)', outfit: 'dress' };
     expect(withLook(prefs, { tags: 'purple hair', outfit: '', gender: 'female', name_tag: '' })).toEqual({

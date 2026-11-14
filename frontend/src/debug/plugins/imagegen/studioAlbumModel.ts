@@ -11,6 +11,7 @@ import { cgNarration } from '../../studio/editors/cgEdit';
 import { TERMS } from '../../studio/terms';
 import type { GeneratedImage } from './api';
 import { MODELS, styleFor, supportsReference, type CardImagePrefs, type ImageGenConfig } from './config';
+import { connectionText, timingText } from './connModel';
 
 export type AlbumFilter = 'all' | 'manual' | 'auto' | 'kept';
 
@@ -140,16 +141,21 @@ export function referenceText(params: GeneratedImage['params']): string {
 
 const dash = (v: number | string | undefined | null) => (v === undefined || v === null || v === '' ? '—' : String(v));
 
-/** 「生成参数」那几行 */
+/** 「生成参数」那几行;11-07 起记了哪条连接、每段用时的,接在后面(老图没有就不显示) */
 export function paramRows(image: GeneratedImage): { label: string; value: string }[] {
   const p = image.params;
-  return [
+  const rows = [
     { label: '模型', value: modelName(p.model) },
     { label: '尺寸', value: p.width && p.height ? `${p.width} × ${p.height}` : '—' },
     { label: '步数 · 引导', value: `${dash(p.steps)} · ${dash(p.scale)}` },
     { label: '种子', value: dash(p.seed) },
     { label: '参考图', value: referenceText(p) },
   ];
+  const conn = connectionText(p);
+  if (conn) rows.push({ label: '连接', value: conn });
+  const took = timingText(p.timing);
+  if (took) rows.push({ label: '用时', value: took });
+  return rows;
 }
 
 /** 提示词:主提示词,后面接每个人各自的(NovelAI 的角色提示词),空的不要 */
@@ -208,20 +214,17 @@ export interface SettingsCell {
   help?: string;
 }
 
-/** 底下那排设置摘要:角色名、画风、参考图、自动出图(点了打开生图设置去改) */
+/** 底下那排设置摘要:角色名、画风、参考图、自动出图(点了打开生图设置去改)。11-07 起画风、自动出图都是这张卡自己的 */
 export function settingsCells(config: ImageGenConfig, prefs: CardImagePrefs): SettingsCell[] {
-  const own = prefs.styleId ? config.styles.find((s) => s.id === prefs.styleId) : undefined;
-  const style = own ? `这张卡另选 · ${own.name}` : `跟「画面」里的 · ${styleFor(config, prefs).name}`;
   const kind = prefs.ref.kind;
   const ref =
     kind === 'off'
       ? '不用'
       : `${kind === 'upload' ? '用上传的图' : '用立绘'}${supportsReference(config.model) ? '' : ' · V5 不生效'}`;
-  const auto = !config.auto.enabled ? '关(全局)' : prefs.autoOff ? '这张卡关了' : '开';
   return [
     { label: '角色名', value: prefs.nameTag.trim() || '没填(原创角色)' },
-    { label: '画风', value: style },
+    { label: '画风', value: styleFor(config).name },
     { label: '参考图', value: ref, help: TERMS.genRef },
-    { label: '自动出图', value: auto },
+    { label: '自动出图', value: config.auto.enabled ? '开' : '关' },
   ];
 }
