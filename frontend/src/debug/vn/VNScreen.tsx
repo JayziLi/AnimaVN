@@ -112,7 +112,14 @@ import { isNightLabel, pickBannerScene } from './settings/banner';
 import { FALLBACK_BACKGROUND } from './fallbacks';
 import { skipChipLabel } from './skipChip';
 import { typedParts } from './typedParts';
-import { BG_FADE_MS, SPRITE_FADE_MS, useStackedLayers, useStackedLayersCtl, type StackLayer } from './stackedLayers';
+import {
+  BG_FADE_MS,
+  SPRITE_FADE_MS,
+  spriteFade,
+  useStackedLayers,
+  useStackedLayersCtl,
+  type StackLayer,
+} from './stackedLayers';
 import { imageRatio, isSettled, loadImage, useAssetGate, useSettledView, type GateItem } from './assetGate';
 import { spriteForMood, type TitleMood } from './titleArt';
 import type { FormsState, VnIllustrationContext, VnIllustrations } from '../plugins/cartridges';
@@ -463,7 +470,8 @@ function useLoadingVeil(loading: boolean): boolean {
 const sameSprite = (a: SpriteView, b: SpriteView) => a === b;
 const sameBg = (a: BgView, b: BgView) => a.focus === b.focus;
 
-/** 立绘层:新表情叠在旧表情上 .2s 淡入(useStackedLayers),旧的一直不透明,不会闪空白、也不会重影 */
+/** 立绘层:新旧表情 .2s 真交叉淡化(新的淡入、旧的同时淡出,vn.css 里两张 plus-lighter 叠成逐像素混合),
+ *  不透背景、旧姿势不残留、阴影不叠两份;浏览器不支持时退回「新的叠在不透明的旧图上淡入」 */
 function SpriteLayer({
   view: next,
   charName,
@@ -485,7 +493,7 @@ function SpriteLayer({
   const view = useSettledView(next);
   const reduceMotion = useReducedMotion();
   const played = useRef(0);
-  const { layers, settle } = useStackedLayersCtl(view, instant, SPRITE_FADE_MS, sameSprite, true);
+  const { layers, settle } = useStackedLayersCtl(view, instant, SPRITE_FADE_MS, sameSprite, true, true);
   const cur = layers[layers.length - 1].view;
 
   // 切换特效:等要的那张图换上来再放 —— 动作、气泡和音效一起出。
@@ -516,9 +524,9 @@ function SpriteLayer({
     return () => window.clearTimeout(t);
   }, [playing]);
 
-  const render = (l: StackLayer<SpriteView>) => {
+  const render = (l: StackLayer<SpriteView>, i: number) => {
     const v = l.view;
-    const cls = l.enter ? 'entering' : '';
+    const cls = spriteFade(layers, i);
     return v.src ? (
       <img
         key={l.id}

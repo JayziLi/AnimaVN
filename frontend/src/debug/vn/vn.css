@@ -134,9 +134,26 @@
   color: var(--vn-text);
 }
 
-/* 换表情:新图叠在旧图上 .2s 淡入,旧图一直不透明(不会两张半透明叠成重影) */
+/* 换表情:真交叉淡化(和 Ren'Py 的 dissolve 一个原理,2026-11-19 用户在对比页挑的 C2)。
+   新图 .entering 0→1、旧图 .leaving 1→0,同一条曲线、同一帧开始,两张透明度加起来一直是 1;
+   两张都用 plus-lighter 叠,算出来正好是同一个像素从旧颜色变成新颜色 —— 不透背景,
+   旧姿势多出来的手臂、翅膀跟着淡掉(以前旧图一直不透明,淡完才一下子没了,看着像残留),阴影也不叠两份。
+   容器必须隔离,不然 plus-lighter 会把背景也加进来、发白。占位框(.vn-sprite-ph)带毛玻璃,不给它混合模式。
+   浏览器不认 plus-lighter 时退回老写法:旧图不淡,新图叠在上面淡入 */
 .vn-sprite.entering {
   animation: vn-fade-in 0.2s cubic-bezier(0, 0, 0.2, 1) both;
+}
+@supports (mix-blend-mode: plus-lighter) {
+  .vn-sprite-fx {
+    isolation: isolate;
+  }
+  .vn-sprite.leaving {
+    animation: vn-fade-out 0.2s cubic-bezier(0, 0, 0.2, 1) both;
+  }
+  img.vn-sprite.entering,
+  img.vn-sprite.leaving {
+    mix-blend-mode: plus-lighter;
+  }
 }
 
 /* 立绘切换特效:动作(VNScreen 的 SPRITE_MOTIONS)播在这一层上,缩放以脚底为准 */
@@ -228,7 +245,8 @@
 /* 减少动态效果:换背景 / 表情只淡,而且快 */
 @media (prefers-reduced-motion: reduce) {
   .vn-bg.entering,
-  .vn-sprite.entering {
+  .vn-sprite.entering,
+  .vn-sprite.leaving {
     animation-duration: 0.16s;
   }
 }
