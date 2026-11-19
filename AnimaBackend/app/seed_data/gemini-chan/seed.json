@@ -8,5 +8,13 @@
     "plugin.lang": {
       "lang": "ja"
     }
+  },
+  "scene_packs": {
+    "bg": [
+      "modern-daily"
+    ],
+    "bgm": [
+      "music-c"
+    ]
   }
 }

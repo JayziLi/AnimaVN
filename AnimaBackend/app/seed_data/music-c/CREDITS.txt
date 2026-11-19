@@ -1,0 +1,15 @@
+音乐包「AnimaVN-默认音乐包C · 爵士都市」—— AnimaVN 自带
+========================================
+
+bgm/daily.mp3         「Lovely Day」 OtoLogic  https://otologic.jp/free/bgm/bossanova01.html
+bgm/warm.mp3          「ほっこりティータイム」 OtoLogic  https://otologic.jp/free/bgm/bossanova01.html
+bgm/playful.mp3       「娯楽委員会」 OtoLogic  https://otologic.jp/free/bgm/pop-music-piano01.html
+bgm/romance.mp3       「Pieces of a Dream」 OtoLogic  https://otologic.jp/free/bgm/jazz01.html
+bgm/night.mp3         「In That Mood」 OtoLogic  https://otologic.jp/free/bgm/jazz01.html
+bgm/sad.mp3           「悲しみに咲く花」 OtoLogic  https://otologic.jp/free/bgm/pop-music-piano01.html
+bgm/tense.mp3         「悪巧み」 OtoLogic  https://otologic.jp/free/bgm/pop-music01.html
+bgm/rain.mp3          「Someday in the Rain」 OtoLogic  https://otologic.jp/free/bgm/jazz01.html
+
+作者:OtoLogic(https://otologic.jp)
+授权:Creative Commons 署名 4.0(CC BY 4.0) https://creativecommons.org/licenses/by/4.0/
+修改:文件名改成情绪的英文名。

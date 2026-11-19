@@ -62,7 +62,7 @@ def test_first_start_seeds_every_resource_needed_for_offline_use(start_app):
     assert [item["name"] for item in data["connections"]] == ["Mock（本地测试）"]
     assert data["connections"][0]["is_active"] is True
     assert data["connections"][0]["model"] == "mock"
-    assert sorted(item["name"] for item in data["cards"]) == ["DeepSeek娘", "Gemini娘"]
+    assert sorted(item["name"] for item in data["cards"]) == ["Claude娘", "DeepSeek娘", "Gemini娘"]
     assert all(item["has_avatar"] for item in data["cards"])
     assert [item["name"] for item in data["presets"]] == ["默认预设"]
 
@@ -77,6 +77,7 @@ def test_bundled_card_comes_with_its_sprite_pack(start_app):
         preset = client.get("/api/tavern/presets").json()[0]
 
     assert sorted((p["name"], p["sprite_count"], p["card_count"]) for p in packs) == [
+        ("Claude娘 · 礼裙", 10, 1),
         ("DeepSeek娘 · 女仆 v2", 10, 1),
         ("Gemini娘 · 星空礼装", 15, 1),
     ]
@@ -101,7 +102,7 @@ def test_bundled_sprites_go_only_into_the_file_store(start_app):
         client.get("/api/health")
     with db_module.SessionLocal() as s:
         rows = s.execute(text("SELECT image IS NULL, image_sha FROM pack_sprites")).all()
-    assert len(rows) == 25
+    assert len(rows) == 35
     assert all(empty and sha for empty, sha in rows)
 
 
@@ -120,7 +121,7 @@ def test_restarting_app_is_idempotent_and_preserves_user_edits(start_app):
     assert {key: len(value) for key, value in second.items()} == {
         "personas": 1,
         "connections": 1,
-        "cards": 2,
+        "cards": 3,
         "presets": 1,
     }
     assert second["personas"][0]["id"] == persona_id
@@ -164,7 +165,7 @@ def test_deleted_bundled_cards_are_recreated_without_overwriting_existing_preset
         again = client.get("/api/tavern/cards").json()
         presets = client.get("/api/tavern/presets").json()
 
-    assert sorted(c["name"] for c in again) == ["DeepSeek娘", "Gemini娘"]
+    assert sorted(c["name"] for c in again) == ["Claude娘", "DeepSeek娘", "Gemini娘"]
     assert not {c["id"] for c in again} & {c["id"] for c in cards}
     assert len(presets) == 1
     assert presets[0]["id"] == preset["id"]
@@ -178,7 +179,7 @@ def test_one_deleted_bundled_card_is_not_brought_back(start_app):
     with start_app() as client:
         cards = client.get("/api/tavern/cards").json()
 
-    assert [c["name"] for c in cards] == ["Gemini娘"]
+    assert sorted(c["name"] for c in cards) == ["Claude娘", "Gemini娘"]
 
 
 def test_recreated_bundled_cards_reuse_the_existing_sprite_packs(start_app):
@@ -194,4 +195,37 @@ def test_recreated_bundled_cards_reuse_the_existing_sprite_packs(start_app):
         bound = {c["name"]: client.get(f"/api/tavern/cards/{c['id']}/sprite-packs").json()["current"] for c in new_cards}
 
     assert packs_after == packs
-    assert bound == {"DeepSeek娘": packs["DeepSeek娘 · 女仆 v2"], "Gemini娘": packs["Gemini娘 · 星空礼装"]}
+    assert bound == {
+        "Claude娘": packs["Claude娘 · 礼裙"],
+        "DeepSeek娘": packs["DeepSeek娘 · 女仆 v2"],
+        "Gemini娘": packs["Gemini娘 · 星空礼装"],
+    }
+
+
+def test_bundled_backgrounds_and_music_are_ready_on_first_start(start_app):
+    """自带的背景(现代日常、校园)和三个默认音乐包首启就在场景包里,自带角色各挂一个音乐包,文件都能取"""
+    with start_app() as client:
+        packs = {p["name"]: p for p in client.get("/api/scene-packs").json()}
+        cards = {c["name"]: c["id"] for c in client.get("/api/tavern/cards").json()}
+        bound = {name: client.get(f"/api/tavern/cards/{cid}/scene-packs").json() for name, cid in cards.items()}
+        daily = packs["现代日常"]["id"]
+        assets = client.get(f"/api/scene-packs/{daily}/assets").json()
+        image = client.get(f"/api/scene-packs/{daily}/assets/{assets[0]['id']}/file")
+        music = packs["AnimaVN-默认音乐包A · 钢琴流行"]["id"]
+        track = next(a for a in client.get(f"/api/scene-packs/{music}/assets").json() if a["kind"] == "bgm")
+        audio = client.get(f"/api/scene-packs/{music}/assets/{track['id']}/file")
+
+    assert {
+        "现代日常",
+        "校园",
+        "AnimaVN-默认音乐包A · 钢琴流行",
+        "AnimaVN-默认音乐包B · 八音盒治愈",
+        "AnimaVN-默认音乐包C · 爵士都市",
+    } <= set(packs)
+    assert len(assets) == 22
+    assert image.status_code == 200 and image.headers["content-type"].startswith("image/")
+    assert audio.status_code == 200 and audio.headers["content-type"] == "audio/mpeg"
+    music_of = {"DeepSeek娘": "A · 钢琴流行", "Claude娘": "B · 八音盒治愈", "Gemini娘": "C · 爵士都市"}
+    for name, scenes in bound.items():
+        assert scenes["bg"] == [daily], name
+        assert scenes["bgm"] == [packs[f"AnimaVN-默认音乐包{music_of[name]}"]["id"]], name

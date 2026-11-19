@@ -1,0 +1,28 @@
+Claude娘 —— AnimaVN 自带的示例角色
+==================================
+
+第一次启动时自动导入:角色卡(card.json + avatar.webp)和立绘包「Claude娘 · 礼裙」
+(sprites.json + sprites/*.webp,10 个表情),背景挂自带的「现代日常」,音乐挂自带的默认音乐包 B · 八音盒治愈。
+卡是日语配音版:开场白和示例日中对照,台词语言默认设成日语(没装声音也写日语、配中文字幕;
+设置 → 文字 → 语言 可以改成只写中文)。
+声音不在仓库里:到 https://github.com/JayziLi/AnimaVN/releases/tag/voice-packs
+下载 AnimaVN-voice-Claude-ja.animapack(声音名 Claude娘(日语)),开着 GPT-SoVITS 拖进游戏窗口导入,再在局内「音色」选它。
+
+非官方同人,与 Anthropic 无关。
+
+形象与立绘
+----------
+
+  同人形象  ZipZipPipe 的 Claude娘(和 DeepSeek 女仆鲸鱼娘同一组)
+            https://www.pixiv.net/artworks/148186519
+            作者说明:方便所有人取用,需要标注作者,不可商用
+  立绘      AnimaVN 以 ZipZipPipe 的形象为参考绘制,10 个表情
+
+这一目录里的图片不属于 AnimaVN 代码的 MIT 授权范围:可以自由使用、修改、再分发,
+但要署上面的名字、不能商用。
+
+角色设定
+--------
+
+人设、开场白、示例对话和世界书由 AnimaVN 编写,梗来自网上流传的 Claude 社区梗
+(「你说得完全正确」、额度、写代码等)。

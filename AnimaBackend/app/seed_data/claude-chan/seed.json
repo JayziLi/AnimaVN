@@ -1,0 +1,14 @@
+{
+  "order": 2,
+  "sprite_pack": {
+    "name": "Claude娘 · 礼裙",
+    "description": "AnimaVN 自带角色 Claude娘的礼裙立绘（同人形象原作 ZipZipPipe）"
+  },
+  "card_prefs": {
+    "plugin.lang": { "lang": "ja" }
+  },
+  "scene_packs": {
+    "bg": ["modern-daily"],
+    "bgm": ["music-b"]
+  }
+}

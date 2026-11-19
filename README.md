@@ -38,7 +38,7 @@ AnimaVN 是一个跑在浏览器里的 AI 视觉小说。你拿一张角色卡�
 - AI 觉得该换地方了就换**背景**，气氛变了就换 **BGM**
 - 角色用 **GPT-SoVITS 训练的声音念台词**，可以日语配音 + 中文字幕
 - 底部对话框点一下下一句，**读到一半随时插话**，存档、读档、回看历史都有
-- 装好就自带两个角色 **DeepSeek娘** 和 **Gemini娘**（表情立绘、世界书都配好了），填上 API 就能玩
+- 装好就自带三个角色 **DeepSeek娘**、**Claude娘**、**Gemini娘**（表情立绘、世界书、背景和音乐都配好了），填上 API 就能玩；想听她们配音，到 [声音包](https://github.com/JayziLi/AnimaVN/releases/tag/voice-packs) 下载
 
 它的提示词部分照着 SillyTavern（酒馆）做：**酒馆的角色卡、卡里的世界书、Chat Completion 预设、宏、人设、聊天记录都能直接导入**，组出来的请求和酒馆 1.18 逐条对过答案。你在酒馆里调好的卡和预设，拿过来就能当视觉小说玩。
 
@@ -61,7 +61,7 @@ AnimaVN 是一个跑在浏览器里的 AI 视觉小说。你拿一张角色卡�
 
 ### 🎭 角色展示
 
-自带的 DeepSeek娘、Gemini娘 之外，导入你自己的卡就能玩。下面是作者本机导入的几张卡（这些卡和素材不随仓库分发）：
+自带的 DeepSeek娘、Claude娘、Gemini娘 之外，导入你自己的卡就能玩。下面是作者本机导入的几张卡（这些卡和素材不随仓库分发）：
 
 <table>
   <tr>
@@ -321,9 +321,13 @@ cd frontend; npm install; cd ..
 
 从启动器打开的游戏一进去就是标题画面（自己开的调试台网页先点顶栏 **视觉小说**）→ **角色**，库里已经有一张自带的 **DeepSeek娘**：住在你家的鲸鱼女仆，本体就是 DeepSeek，聪明、嘴甜、有点小傲娇，和你是彼此喜欢的关系。立绘（10 个表情）、世界书、开场白都配好了，点 **开始** 就能玩。
 
-旁边还有一张 **Gemini娘**（外号哈基米）：Gemini 化成的猫娘千金，傲娇、爱捉弄人，暗恋你但不承认，15 个表情。
+旁边还有 **Claude娘**：只在你面前偷懒的圣女，刚和你交往不久，10 个表情；和 **Gemini娘**（外号哈基米）：Gemini 化成的猫娘千金，傲娇、爱捉弄人，暗恋你但不承认，15 个表情。
 
-以前就装过的：更新后重启一次，新加的自带角色会自己出现在角色页，原来的卡和存档不动。不想要的删掉就行，下次更新不会再回来。
+三个人都住在自带的原创背景「现代日常」里（卧室、客厅、街道、咖啡店、车站……22 张，很多有黄昏 / 夜晚版），音乐各挂一个自带的默认音乐包：DeepSeek娘 钢琴流行、Claude娘 八音盒治愈、Gemini娘 爵士都市。
+
+想听配音：到 [声音包](https://github.com/JayziLi/AnimaVN/releases/tag/voice-packs) 下载她们的 `.animapack`（DeepSeek娘、Claude娘 的日语声音），开着 GPT-SoVITS 把文件拖进游戏窗口导入，再在局内「音色」那一行选它（接 GPT-SoVITS 见下面的[语音配音部署](#-语音配音部署gpt-sovits)）。
+
+以前就装过的：更新后重启一次，新加的自带角色会自己出现在角色页，原来的卡和存档不动；以前自带的角色还没挂背景和音乐的，会补挂上。不想要的删掉就行，下次更新不会再回来。
 
 <img src="docs/images/first-run.webp" alt="刚装好时的选角色页" width="720">
 
@@ -347,7 +351,7 @@ cd frontend; npm install; cd ..
 
 <img src="docs/images/card-studio.webp" alt="卡编辑器的素材页" width="720">
 
-手上没素材？菜单 → **插件** → **立绘**，点 **载入示例 Sylvie**，先用自带的示例立绘（MIT 授权）看看效果；背景和 BGM 在 **插件** → **背景** 点 **载入示例 · 校园**（四个场景、四首曲子，出处见 `frontend/public/vn/CREDITS.txt`）。
+手上没素材？背景和 BGM 可以直接用自带的：卡编辑器的背景 / BGM 下拉框里选 **现代日常**（22 张）、**校园**（11 张）或三个 **默认音乐包**（钢琴流行、八音盒治愈、爵士都市，情绪名一样、可以直接换）。立绘可以在菜单 → **插件** → **立绘** 点 **载入示例 Sylvie**，先用自带的示例立绘（MIT 授权）看看效果。
 
 ### 6. 开始
 
@@ -363,7 +367,7 @@ cd frontend; npm install; cd ..
 
 角色的台词由 [GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS) 来念，要一台有 NVIDIA 显卡的电脑，可以就是你玩的这台。每句的语气跟着立绘表情走，可以日语配音、中文字幕。
 
-大致是：启动 GPT-SoVITS → 在 插件 → 语音服务 里连上它 → 在 素材 → 声音 里导入角色的声音 → 设成这张卡的音色。一步步的做法见 **[接入语音](docs/plugins/voice.md)**。
+大致是：启动 GPT-SoVITS → 在 插件 → 语音服务 里连上它 → 在 素材 → 声音 里导入角色的声音 → 设成这张卡的音色。自带角色 DeepSeek娘、Claude娘 的声音包在 [这里](https://github.com/JayziLi/AnimaVN/releases/tag/voice-packs) 下载。一步步的做法见 **[接入语音](docs/plugins/voice.md)**。
 
 作者用 RTX 5090，每句 0.6 到 1.2 秒。
 
@@ -517,9 +521,12 @@ GPT-SoVITS 需要 NVIDIA 显卡才快。没有的话先不开语音，其它功�
 - [bge-small-zh-v1.5](https://huggingface.co/BAAI/bge-small-zh-v1.5)（BAAI，MIT；ONNX 版来自 [Xenova](https://huggingface.co/Xenova/bge-small-zh-v1.5)）：立绘表情兜底匹配
 - [lbpcascade_animeface](https://github.com/nagadomi/lbpcascade_animeface)（MIT）：立绘找脸对齐
 - 自带角色 DeepSeek娘：形象原型是上善的原创角色[《溟月》](https://www.pixiv.net/users/62155430)，女仆鲸鱼娘设计来自 [ZipZipPipe](https://www.pixiv.net/artworks/148186519)，10 个表情差分由 AnimaVN 以原图为参考重画。立绘按 **CC BY-NC-SA 4.0**（署名、非商用、相同方式共享）发布，详见 [`AnimaBackend/app/seed_data/deepseek-chan/CREDITS.txt`](AnimaBackend/app/seed_data/deepseek-chan/CREDITS.txt)
+- 自带角色 Claude娘：同人形象来自 [ZipZipPipe](https://www.pixiv.net/artworks/148186519)，10 个表情由 AnimaVN 以原图为参考绘制。按作者说明**署名、不可商用**，详见 [`AnimaBackend/app/seed_data/claude-chan/CREDITS.txt`](AnimaBackend/app/seed_data/claude-chan/CREDITS.txt)。非官方同人，与 Anthropic 无关
 - 自带角色 Gemini娘：同人形象来自 [ZipZipPipe](https://www.pixiv.net/artworks/148186519) 的「AI娘化」，15 个表情由 AnimaVN 以原图为参考绘制。按作者说明**署名、不可商用**，详见 [`AnimaBackend/app/seed_data/gemini-chan/CREDITS.txt`](AnimaBackend/app/seed_data/gemini-chan/CREDITS.txt)。非官方同人，与 Google 无关
+- 自带背景「现代日常」「校园」：AnimaVN 用 NovelAI 生成、人工挑选的原创图，可以自由使用、修改、再分发，详见 [`AnimaBackend/app/seed_data/modern-daily/CREDITS.txt`](AnimaBackend/app/seed_data/modern-daily/CREDITS.txt)
+- 自带的三个默认音乐包：曲子来自 [OtoLogic](https://otologic.jp)（CC BY 4.0），每首的出处见 `AnimaBackend/app/seed_data/music-a|b|c/CREDITS.txt`
 - 示例素材：Ren'Py 示例游戏 *The Question* 的立绘和背景（MIT），Kevin MacLeod 的曲子（CC BY 4.0），详见 [`frontend/public/vn/CREDITS.txt`](frontend/public/vn/CREDITS.txt)
 
-**关于截图**：DeepSeek娘、Gemini娘的立绘见上面的授权；截图里的背景、刻晴、爱丽丝、爱弥斯等角色来自各自的游戏，版权归原作者，只用来展示界面，不随仓库分发。仓库里除了 DeepSeek娘、Gemini娘和上面的示例素材，**不带别的角色卡、立绘或声音模型**，请用你自己有权使用的素材。
+**关于截图**：DeepSeek娘、Claude娘、Gemini娘的立绘见上面的授权；截图里的背景、刻晴、爱丽丝、爱弥斯等角色来自各自的游戏，版权归原作者，只用来展示界面，不随仓库分发。仓库里除了三个自带角色、自带背景和音乐和上面的示例素材，**不带别的角色卡、立绘或声音模型**（自带角色的声音包单独放在 [Release](https://github.com/JayziLi/AnimaVN/releases/tag/voice-packs)），请用你自己有权使用的素材。
 
-代码以 [MIT](LICENSE) 协议开源；DeepSeek娘的立绘不在 MIT 范围内，按 CC BY-NC-SA 4.0；Gemini娘的立绘同样不在 MIT 范围内，署名、不可商用。
+代码以 [MIT](LICENSE) 协议开源；DeepSeek娘的立绘不在 MIT 范围内，按 CC BY-NC-SA 4.0；Claude娘、Gemini娘的立绘同样不在 MIT 范围内，署名、不可商用；默认音乐包按 CC BY 4.0。

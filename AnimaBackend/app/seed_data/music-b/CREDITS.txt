@@ -1,0 +1,15 @@
+音乐包「AnimaVN-默认音乐包B · 八音盒治愈」—— AnimaVN 自带
+========================================
+
+bgm/daily.mp3         「木漏れ日の中で」 OtoLogic  https://otologic.jp/free/bgm/pop-music01.html
+bgm/warm.mp3          「Beside You」 OtoLogic  https://otologic.jp/free/bgm/music-box01.html
+bgm/playful.mp3       「オチは無い」 OtoLogic  https://otologic.jp/free/bgm/pop-music01.html
+bgm/romance.mp3       「Still In Love」 OtoLogic  https://otologic.jp/free/bgm/pop-music01.html
+bgm/night.mp3         「星をかぞえて」 OtoLogic  https://otologic.jp/free/bgm/music-box01.html
+bgm/sad.mp3           「過ちの代償」 OtoLogic  https://otologic.jp/free/bgm/music-box01.html
+bgm/tense.mp3         「苦悩の先に」 OtoLogic  https://otologic.jp/free/bgm/music-box01.html
+bgm/touching.mp3      「思い出はずっと」 OtoLogic  https://otologic.jp/free/bgm/music-box01.html
+
+作者:OtoLogic(https://otologic.jp)
+授权:Creative Commons 署名 4.0(CC BY 4.0) https://creativecommons.org/licenses/by/4.0/
+修改:文件名改成情绪的英文名。

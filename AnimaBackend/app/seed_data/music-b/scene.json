@@ -1,0 +1,86 @@
+{
+  "name": "AnimaVN-默认音乐包B · 八音盒治愈",
+  "description": "八音盒、卡林巴、原声吉他，温柔治愈。8 首，按情绪起名。音乐来自 OtoLogic（https://otologic.jp），CC BY 4.0",
+  "title_bgm": "日常",
+  "bgms": [
+    {
+      "file": "bgm/daily.mp3",
+      "label": "日常",
+      "aliases": [
+        "daily",
+        "平常"
+      ],
+      "description": "平常的一天，轻松、有生活气（木漏れ日の中で · OtoLogic）"
+    },
+    {
+      "file": "bgm/warm.mp3",
+      "label": "温馨",
+      "aliases": [
+        "warm",
+        "温暖",
+        "安心"
+      ],
+      "description": "温暖、安心、被照顾的时刻（Beside You · OtoLogic）"
+    },
+    {
+      "file": "bgm/playful.mp3",
+      "label": "俏皮",
+      "aliases": [
+        "playful",
+        "调皮",
+        "搞笑"
+      ],
+      "description": "调皮、逗人、搞笑（オチは無い · OtoLogic）"
+    },
+    {
+      "file": "bgm/romance.mp3",
+      "label": "心动",
+      "aliases": [
+        "romance",
+        "暧昧",
+        "告白"
+      ],
+      "description": "心跳漏一拍、暧昧、说出心里话（Still In Love · OtoLogic）"
+    },
+    {
+      "file": "bgm/night.mp3",
+      "label": "夜晚",
+      "aliases": [
+        "night",
+        "深夜",
+        "睡前"
+      ],
+      "description": "安静的夜里、睡前（星をかぞえて · OtoLogic）"
+    },
+    {
+      "file": "bgm/sad.mp3",
+      "label": "悲伤",
+      "aliases": [
+        "sad",
+        "难过",
+        "伤感"
+      ],
+      "description": "难过、失落、流泪（過ちの代償 · OtoLogic）"
+    },
+    {
+      "file": "bgm/tense.mp3",
+      "label": "紧张",
+      "aliases": [
+        "tense",
+        "不安",
+        "危险"
+      ],
+      "description": "紧张、不安、有麻烦要来（苦悩の先に · OtoLogic）"
+    },
+    {
+      "file": "bgm/touching.mp3",
+      "label": "感动",
+      "aliases": [
+        "touching",
+        "回忆",
+        "怀念"
+      ],
+      "description": "感动、想起从前、心里发热（思い出はずっと · OtoLogic）"
+    }
+  ]
+}

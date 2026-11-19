@@ -1,0 +1,15 @@
+音乐包「AnimaVN-默认音乐包A · 钢琴流行」—— AnimaVN 自带
+========================================
+
+bgm/daily.mp3         「春の教室」 OtoLogic  https://otologic.jp/free/bgm/pop-music-piano01.html
+bgm/warm.mp3          「そこに愛をひとひら」 OtoLogic  https://otologic.jp/free/bgm/pop-music01.html
+bgm/playful.mp3       「暇つぶし」 OtoLogic  https://otologic.jp/free/bgm/orchestra01.html
+bgm/romance.mp3       「あなたを知りたくて」 OtoLogic  https://otologic.jp/free/bgm/pop-music-piano01.html
+bgm/night.mp3         「青い星」 OtoLogic  https://otologic.jp/free/bgm/soul01.html
+bgm/sad.mp3           「涙の意味」 OtoLogic  https://otologic.jp/free/bgm/pop-music-piano01.html
+bgm/tense.mp3         「黒幕の影」 OtoLogic  https://otologic.jp/free/bgm/orchestra01.html
+bgm/touching.mp3      「笑顔と涙」 OtoLogic  https://otologic.jp/free/bgm/orchestra01.html
+
+作者:OtoLogic(https://otologic.jp)
+授权:Creative Commons 署名 4.0(CC BY 4.0) https://creativecommons.org/licenses/by/4.0/
+修改:文件名改成情绪的英文名。

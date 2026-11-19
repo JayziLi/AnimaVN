@@ -6,5 +6,9 @@
   },
   "card_prefs": {
     "plugin.lang": { "lang": "ja" }
+  },
+  "scene_packs": {
+    "bg": ["modern-daily"],
+    "bgm": ["music-a"]
   }
 }

@@ -1,0 +1,252 @@
+[
+  {
+    "file": "00.webp",
+    "label": "平静",
+    "aliases": [
+      "calm",
+      "normal",
+      "默认",
+      "说话",
+      "微笑",
+      "认真",
+      "smile",
+      "serious"
+    ],
+    "description": "安静地看着你，嘴自然闭着；默认表情，平常说话、认真、淡淡的心情都用它",
+    "effect": null,
+    "face_scan": {
+      "width": 1601,
+      "height": 2560,
+      "face": {
+        "x": 0.3688,
+        "y": 0.0449,
+        "w": 0.1875,
+        "h": 0.1172
+      }
+    }
+  },
+  {
+    "file": "01.webp",
+    "label": "喜爱",
+    "aliases": [
+      "温柔",
+      "开心",
+      "宠溺",
+      "喜欢",
+      "心动",
+      "安心",
+      "gentle",
+      "happy",
+      "love"
+    ],
+    "description": "眼睛微微眯起、嘴角带一点笑；温柔、宠溺、拿你没办法、心里高兴的时候",
+    "effect": {
+      "motion": null,
+      "bubble": "heart",
+      "sound": "emo-heart"
+    },
+    "face_scan": {
+      "width": 1601,
+      "height": 2560,
+      "face": {
+        "x": 0.3656,
+        "y": 0.043,
+        "w": 0.1922,
+        "h": 0.1201
+      }
+    }
+  },
+  {
+    "file": "02.webp",
+    "label": "担心",
+    "aliases": [
+      "疑惑",
+      "worried",
+      "不安",
+      "关心",
+      "思考",
+      "confused"
+    ],
+    "description": "眉头微皱、嘴微张、认真看着你；担心你、或者没想明白的时候",
+    "effect": null,
+    "face_scan": {
+      "width": 1601,
+      "height": 2560,
+      "face": {
+        "x": 0.3719,
+        "y": 0.0479,
+        "w": 0.1828,
+        "h": 0.1143
+      }
+    }
+  },
+  {
+    "file": "03.webp",
+    "label": "生气",
+    "aliases": [
+      "吃醋",
+      "angry",
+      "不满",
+      "闹别扭",
+      "冷脸"
+    ],
+    "description": "眉毛压低、嘴抿成一条线、冷冷地看着你；生气、吃醋（她生气是冷下来，不是吵）",
+    "effect": null,
+    "face_scan": {
+      "width": 1601,
+      "height": 2560,
+      "face": {
+        "x": 0.3703,
+        "y": 0.0479,
+        "w": 0.1828,
+        "h": 0.1143
+      }
+    }
+  },
+  {
+    "file": "04.webp",
+    "label": "害羞",
+    "aliases": [
+      "傲娇",
+      "shy",
+      "脸红",
+      "不好意思",
+      "嘴硬"
+    ],
+    "description": "满脸通红、眉毛垂成八字、嘴微张；害羞、被说中心事、嘴硬的时候",
+    "effect": {
+      "motion": "back",
+      "bubble": "shy",
+      "sound": "emo-shy"
+    },
+    "face_scan": {
+      "width": 1601,
+      "height": 2560,
+      "face": {
+        "x": 0.3703,
+        "y": 0.0488,
+        "w": 0.1828,
+        "h": 0.1143
+      }
+    }
+  },
+  {
+    "file": "05.webp",
+    "label": "慌张",
+    "aliases": [
+      "flustered",
+      "手足无措",
+      "心虚",
+      "窘迫",
+      "乱了阵脚"
+    ],
+    "description": "脸红、皱着眉、嘴张开；被突然撩到、乱了阵脚的时候",
+    "effect": null,
+    "face_scan": {
+      "width": 1601,
+      "height": 2560,
+      "face": {
+        "x": 0.375,
+        "y": 0.0527,
+        "w": 0.1766,
+        "h": 0.1104
+      }
+    }
+  },
+  {
+    "file": "06.webp",
+    "label": "惊讶",
+    "aliases": [
+      "surprised",
+      "吃惊",
+      "意外"
+    ],
+    "description": "睁大眼睛、嘴微张，吃惊",
+    "effect": {
+      "motion": null,
+      "bubble": "surprise",
+      "sound": "emo-exclaim"
+    },
+    "face_scan": {
+      "width": 1601,
+      "height": 2560,
+      "face": {
+        "x": 0.3641,
+        "y": 0.041,
+        "w": 0.1953,
+        "h": 0.1221
+      }
+    }
+  },
+  {
+    "file": "07.webp",
+    "label": "撒娇",
+    "aliases": [
+      "偷懒",
+      "赖床",
+      "黏人",
+      "任性",
+      "央求",
+      "累了",
+      "拜托",
+      "pleading"
+    ],
+    "description": "微微脸红、八字眉、眼神软软地看着你；想偷懒、想被你宠、拜托你的时候",
+    "effect": null,
+    "face_scan": {
+      "width": 1601,
+      "height": 2560,
+      "face": {
+        "x": 0.3703,
+        "y": 0.0459,
+        "w": 0.1859,
+        "h": 0.1162
+      }
+    }
+  },
+  {
+    "file": "08.webp",
+    "label": "难过",
+    "aliases": [
+      "sad",
+      "失落",
+      "寂寞",
+      "委屈",
+      "落寞"
+    ],
+    "description": "垂下眼睛、眉毛下垂，难过、失落、寂寞",
+    "effect": null,
+    "face_scan": {
+      "width": 1601,
+      "height": 2560,
+      "face": {
+        "x": 0.3688,
+        "y": 0.0459,
+        "w": 0.1844,
+        "h": 0.1152
+      }
+    }
+  },
+  {
+    "file": "09.webp",
+    "label": "哭",
+    "aliases": [
+      "cry",
+      "流泪",
+      "掉眼泪",
+      "哭泣"
+    ],
+    "description": "眼里含着泪、眉毛下垂，哭",
+    "effect": null,
+    "face_scan": {
+      "width": 1601,
+      "height": 2560,
+      "face": {
+        "x": 0.3688,
+        "y": 0.0449,
+        "w": 0.1891,
+        "h": 0.1182
+      }
+    }
+  }
+]

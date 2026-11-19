@@ -1,0 +1,210 @@
+{
+  "name": "现代日常",
+  "description": "AnimaVN 自带的原创背景：公寓、街道、商业街、公园、车站、海边，同一地点的白天 / 黄昏 / 夜晚布局一致",
+  "bgs": [
+    {
+      "file": "bg/bedroom.webp",
+      "label": "卧室",
+      "aliases": [
+        "bedroom",
+        "房间",
+        "我的房间"
+      ],
+      "description": "公寓里的卧室，白天，阳光从窗户照进来"
+    },
+    {
+      "file": "bg/bedroom_sunset.webp",
+      "label": "卧室·黄昏",
+      "aliases": [
+        "bedroom_sunset",
+        "傍晚的卧室"
+      ],
+      "description": "傍晚的卧室，夕阳从窗户照进来"
+    },
+    {
+      "file": "bg/bedroom_night.webp",
+      "label": "卧室·夜",
+      "aliases": [
+        "bedroom_night",
+        "夜晚的卧室"
+      ],
+      "description": "夜里的卧室，开着灯，窗外天黑了"
+    },
+    {
+      "file": "bg/living_room.webp",
+      "label": "客厅",
+      "aliases": [
+        "living_room",
+        "起居室"
+      ],
+      "description": "公寓的客厅，有沙发和电视，白天"
+    },
+    {
+      "file": "bg/living_room_night.webp",
+      "label": "客厅·夜",
+      "aliases": [
+        "living_room_night",
+        "夜晚的客厅"
+      ],
+      "description": "夜里的客厅，开着灯"
+    },
+    {
+      "file": "bg/kitchen.webp",
+      "label": "厨房",
+      "aliases": [
+        "kitchen",
+        "做饭"
+      ],
+      "description": "公寓的厨房，有餐桌"
+    },
+    {
+      "file": "bg/entrance.webp",
+      "label": "玄关",
+      "aliases": [
+        "entrance",
+        "门口",
+        "回家"
+      ],
+      "description": "公寓的玄关，鞋柜和大门，出门、回家的时候"
+    },
+    {
+      "file": "bg/street.webp",
+      "label": "街道",
+      "aliases": [
+        "street",
+        "住宅区",
+        "路上"
+      ],
+      "description": "安静的住宅区街道，电线杆和围墙，白天"
+    },
+    {
+      "file": "bg/street_sunset.webp",
+      "label": "街道·黄昏",
+      "aliases": [
+        "street_sunset",
+        "傍晚的街道"
+      ],
+      "description": "傍晚的住宅区街道，夕阳下"
+    },
+    {
+      "file": "bg/street_night.webp",
+      "label": "街道·夜",
+      "aliases": [
+        "street_night",
+        "夜路"
+      ],
+      "description": "夜里的住宅区街道，路灯和亮着灯的窗户"
+    },
+    {
+      "file": "bg/shopping_street.webp",
+      "label": "商业街",
+      "aliases": [
+        "shopping_street",
+        "逛街",
+        "商店"
+      ],
+      "description": "热闹的商业街，两边是商店，逛街、约会"
+    },
+    {
+      "file": "bg/shopping_street_night.webp",
+      "label": "商业街·夜",
+      "aliases": [
+        "shopping_street_night",
+        "夜晚的商业街"
+      ],
+      "description": "夜里的商业街，店铺亮着灯"
+    },
+    {
+      "file": "bg/convenience_store.webp",
+      "label": "便利店",
+      "aliases": [
+        "convenience_store"
+      ],
+      "description": "便利店里，货架和收银台"
+    },
+    {
+      "file": "bg/cafe.webp",
+      "label": "咖啡店",
+      "aliases": [
+        "cafe",
+        "咖啡厅"
+      ],
+      "description": "安静的咖啡店，木桌和吊灯，适合约会和聊天"
+    },
+    {
+      "file": "bg/park.webp",
+      "label": "公园",
+      "aliases": [
+        "park",
+        "散步"
+      ],
+      "description": "公园的小路和长椅，白天"
+    },
+    {
+      "file": "bg/park_sunset.webp",
+      "label": "公园·黄昏",
+      "aliases": [
+        "park_sunset",
+        "傍晚的公园"
+      ],
+      "description": "傍晚的公园"
+    },
+    {
+      "file": "bg/park_night.webp",
+      "label": "公园·夜",
+      "aliases": [
+        "park_night",
+        "夜晚的公园"
+      ],
+      "description": "夜里的公园，路灯亮着"
+    },
+    {
+      "file": "bg/office.webp",
+      "label": "办公室",
+      "aliases": [
+        "office",
+        "公司",
+        "上班"
+      ],
+      "description": "公司的办公室，一排排工位"
+    },
+    {
+      "file": "bg/station.webp",
+      "label": "车站",
+      "aliases": [
+        "station",
+        "站台",
+        "电车"
+      ],
+      "description": "电车站的站台，白天"
+    },
+    {
+      "file": "bg/station_sunset.webp",
+      "label": "车站·黄昏",
+      "aliases": [
+        "station_sunset",
+        "傍晚的车站"
+      ],
+      "description": "傍晚的电车站台"
+    },
+    {
+      "file": "bg/station_night.webp",
+      "label": "车站·夜",
+      "aliases": [
+        "station_night",
+        "夜晚的车站"
+      ],
+      "description": "夜里的电车站台"
+    },
+    {
+      "file": "bg/beach.webp",
+      "label": "海边",
+      "aliases": [
+        "beach",
+        "沙滩",
+        "大海"
+      ],
+      "description": "夏天的海边，蓝天和沙滩"
+    }
+  ]
+}

@@ -1,0 +1,108 @@
+{
+  "name": "校园",
+  "description": "AnimaVN 自带的原创背景：教室、走廊、天台、图书馆、操场、社团活动室、保健室、校门、上学路，天台有黄昏 / 夜晚版",
+  "bgs": [
+    {
+      "file": "bg/classroom.webp",
+      "label": "教室",
+      "aliases": [
+        "classroom",
+        "上课"
+      ],
+      "description": "学校的教室，课桌和黑板，白天"
+    },
+    {
+      "file": "bg/hallway.webp",
+      "label": "走廊",
+      "aliases": [
+        "hallway",
+        "学校走廊"
+      ],
+      "description": "学校的走廊，阳光从窗户照进来"
+    },
+    {
+      "file": "bg/rooftop.webp",
+      "label": "天台",
+      "aliases": [
+        "rooftop",
+        "屋顶"
+      ],
+      "description": "学校的天台，围着铁丝网，能看到城市"
+    },
+    {
+      "file": "bg/rooftop_sunset.webp",
+      "label": "天台·黄昏",
+      "aliases": [
+        "rooftop_sunset",
+        "傍晚的天台"
+      ],
+      "description": "傍晚的天台，夕阳下的城市"
+    },
+    {
+      "file": "bg/rooftop_night.webp",
+      "label": "天台·夜",
+      "aliases": [
+        "rooftop_night",
+        "星空"
+      ],
+      "description": "夜里的天台，满天星星"
+    },
+    {
+      "file": "bg/library.webp",
+      "label": "图书馆",
+      "aliases": [
+        "library",
+        "图书室"
+      ],
+      "description": "学校的图书馆，一排排书架，很安静"
+    },
+    {
+      "file": "bg/schoolyard.webp",
+      "label": "操场",
+      "aliases": [
+        "schoolyard",
+        "运动场",
+        "体育课"
+      ],
+      "description": "学校的操场和跑道"
+    },
+    {
+      "file": "bg/clubroom.webp",
+      "label": "社团活动室",
+      "aliases": [
+        "clubroom",
+        "社团",
+        "部室"
+      ],
+      "description": "社团活动室，长桌和堆满东西的架子"
+    },
+    {
+      "file": "bg/infirmary.webp",
+      "label": "保健室",
+      "aliases": [
+        "infirmary",
+        "医务室"
+      ],
+      "description": "学校的保健室，有床和白色帘子"
+    },
+    {
+      "file": "bg/school_gate.webp",
+      "label": "校门",
+      "aliases": [
+        "school_gate",
+        "学校门口"
+      ],
+      "description": "学校门口，樱花开着"
+    },
+    {
+      "file": "bg/school_road.webp",
+      "label": "上学路",
+      "aliases": [
+        "school_road",
+        "樱花路",
+        "放学路上"
+      ],
+      "description": "上学路上的坡道，两边樱花盛开"
+    }
+  ]
+}
