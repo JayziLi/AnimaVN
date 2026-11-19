@@ -5,7 +5,9 @@ Gemini娘 —— AnimaVN 自带的示例角色
 (sprites.json + sprites/*.webp,15 个表情),背景挂自带的「现代日常」,音乐挂自带的默认音乐包 C · 爵士都市。
 卡是日语配音版:开场白日中对照,
 台词语言默认设成日语(没装声音也写日语、配中文字幕;设置 → 文字 → 语言 可以改成只写中文)。
-声音不在这里。
+声音不在仓库里:到 https://github.com/JayziLi/AnimaVN/releases/tag/voice-packs
+下载 AnimaVN-voice-Gemini-ja.animapack(声音名 Gemini娘(日语)),开着 GPT-SoVITS 拖进游戏窗口导入,再在局内「音色」选它。
+这个声音模型来自 AI Hobbyist 的 GPT-SoVITS 模型合集(CC BY-NC),只能非商业使用。
 
 非官方同人,与 Google 无关。
 

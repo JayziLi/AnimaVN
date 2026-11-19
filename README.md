@@ -325,7 +325,7 @@ cd frontend; npm install; cd ..
 
 三个人都住在自带的原创背景「现代日常」里（卧室、客厅、街道、咖啡店、车站……22 张，很多有黄昏 / 夜晚版），音乐各挂一个自带的默认音乐包：DeepSeek娘 钢琴流行、Claude娘 八音盒治愈、Gemini娘 爵士都市。
 
-想听配音：到 [声音包](https://github.com/JayziLi/AnimaVN/releases/tag/voice-packs) 下载她们的 `.animapack`（DeepSeek娘、Claude娘 的日语声音），开着 GPT-SoVITS 把文件拖进游戏窗口导入，再在局内「音色」那一行选它（接 GPT-SoVITS 见下面的[语音配音部署](#-语音配音部署gpt-sovits)）。
+想听配音：到 [声音包](https://github.com/JayziLi/AnimaVN/releases/tag/voice-packs) 下载她们的 `.animapack`（三个人的日语声音），开着 GPT-SoVITS 把文件拖进游戏窗口导入，再在局内「音色」那一行选它（接 GPT-SoVITS 见下面的[语音配音部署](#-语音配音部署gpt-sovits)）。
 
 以前就装过的：更新后重启一次，新加的自带角色会自己出现在角色页，原来的卡和存档不动；以前自带的角色还没挂背景和音乐的，会补挂上。不想要的删掉就行，下次更新不会再回来。
 
@@ -367,7 +367,7 @@ cd frontend; npm install; cd ..
 
 角色的台词由 [GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS) 来念，要一台有 NVIDIA 显卡的电脑，可以就是你玩的这台。每句的语气跟着立绘表情走，可以日语配音、中文字幕。
 
-大致是：启动 GPT-SoVITS → 在 插件 → 语音服务 里连上它 → 在 素材 → 声音 里导入角色的声音 → 设成这张卡的音色。自带角色 DeepSeek娘、Claude娘 的声音包在 [这里](https://github.com/JayziLi/AnimaVN/releases/tag/voice-packs) 下载。一步步的做法见 **[接入语音](docs/plugins/voice.md)**。
+大致是：启动 GPT-SoVITS → 在 插件 → 语音服务 里连上它 → 在 素材 → 声音 里导入角色的声音 → 设成这张卡的音色。自带角色 DeepSeek娘、Claude娘、Gemini娘 的声音包在 [这里](https://github.com/JayziLi/AnimaVN/releases/tag/voice-packs) 下载。一步步的做法见 **[接入语音](docs/plugins/voice.md)**。
 
 作者用 RTX 5090，每句 0.6 到 1.2 秒。
 
