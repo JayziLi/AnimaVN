@@ -20,6 +20,8 @@ dependencies = [
     "opencv-python-headless>=4.8,<5",
     # 导入的 OGG / FLAC / WAV 转成 m4a(app/importer/audio.py):自带 ffmpeg 的轮子,不用装系统包;没装就原样存
     "av>=14",
+    # 导出时把立绘、背景、CG 转成 WebP(app/bundle/webp.py);启动时就会 import,缺了后端起不来
+    "pillow>=10.0",
 ]
 
 [project.optional-dependencies]
