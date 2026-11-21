@@ -89,6 +89,7 @@ curl -i http://服务器IP/api/health | head -1
 docker compose logs -f backend      # 看后端日志
 docker compose logs -f web          # 看 nginx 日志
 docker compose restart backend      # 只重启后端
+docker compose restart web          # 改了 deploy/nginx.conf 后让它生效
 docker compose up -d --build        # 改了代码后重新部署
 docker compose down                 # 停(数据留着)
 ```
@@ -104,6 +105,9 @@ docker compose cp backend:/app/data/blobs ./blobs
 
 **换密码**：重跑第 1 步，然后 `docker compose restart web`。
 （nginx 每次请求都读 htpasswd，其实连重启都不用。）
+
+**上传上限**：一次导入最多 8 GB（选文件夹导入时整个文件夹算一次）。想改就改 `deploy/nginx.conf` 里的
+`client_max_body_size`，然后 `docker compose restart web`。
 
 ---
 

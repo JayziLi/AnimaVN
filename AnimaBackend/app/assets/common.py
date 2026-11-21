@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.contracts import LABEL_FORBIDDEN, LABEL_MAX
 
-# 一张立绘 / 背景 / CG 撑死几 MB;nginx 那边的上限是 20m,这里再收紧一点
+# 一张立绘 / 背景 / CG 撑死几 MB,8 MB 够用
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
 # 包名的长度上限(同各 router 的 _clean_pack_name)
 PACK_NAME_MAX = 120

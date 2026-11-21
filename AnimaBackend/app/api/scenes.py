@@ -39,8 +39,7 @@ router = APIRouter(tags=["scenes"])
 
 PACKS = "/api/scene-packs"
 
-# 一首 3~5 分钟的 MP3 在 128~320kbps 下是 3~12MB;服务器 nginx 的上限是 20m,
-# multipart 还要占一点,这里留足余量
+# 一首 3~5 分钟的 MP3 在 128~320kbps 下是 3~12MB,这里留足余量
 MAX_AUDIO_BYTES = 16 * 1024 * 1024
 
 NOUN = {"bg": "场景名", "bgm": "音乐名", "cg": "CG 名"}

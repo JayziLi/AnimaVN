@@ -41,6 +41,8 @@ services:
       # 必须先生成这个文件再 up。文件不存在的话 docker 会替你建一个同名
       # 目录,nginx 拿目录当密码文件读 → 整站 500
       - ./deploy/htpasswd:/etc/nginx/htpasswd:ro
+      # nginx 配置也挂进来:改上传上限、超时之后 docker compose restart web 就生效,不用重新 build
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
 
 volumes:
   anima-data:
