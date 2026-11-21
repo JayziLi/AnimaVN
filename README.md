@@ -26,6 +26,8 @@ SillyTavern 的角色卡、世界书、预设直接导入，不用改。
 [生图](#-ai-生图beta) ·
 [常见问题](#-常见问题)
 
+QQ 交流群：**1102712942**
+
 <img src="docs/images/title.webp" alt="AnimaVN 标题画面" width="100%">
 
 </div>
@@ -510,6 +512,8 @@ OpenAI 兼容的地址大多要以 `/v1` 结尾。另外检查电脑上有没有
 GPT-SoVITS 需要 NVIDIA 显卡才快。没有的话先不开语音，其它功能都正常；或者借一台有显卡的电脑跑语音服务，用 Tailscale 连过来。
 
 </details>
+
+别的问题欢迎来 QQ 群 **1102712942** 问，或者[开 issue](https://github.com/JayziLi/AnimaVN/issues)。
 
 ---
 
