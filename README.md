@@ -5,274 +5,197 @@
   <img src="docs/images/wordmark-dark.png" alt="AnimaVN" width="420">
 </picture>
 
-**把酒馆角色卡变成一部会说话的视觉小说**
+### AI 角色扮演新范式：实时生成的交互式视觉小说
 
-AI 写剧情，立绘、背景、BGM 跟着剧情换，角色用自己的声音念台词。<br>
-SillyTavern 的角色卡、世界书、预设直接导入，不用改。
+与视觉小说完全一致的视听体验，但剧情由 AI 实时生成驱动，带来最有沉浸感的角色扮演玩法。<br>
+你不再是那个只能选择固定选项的主角，而是完全可以交互决定走向的人——创建你自己的故事！<br>
+立绘表情、场景与 BGM 随气氛流转，角色专属语音逐句念白；支持导入 SillyTavern 角色卡与预设，开箱即玩。
 
+[![Release](https://img.shields.io/github/v/release/JayziLi/AnimaVN?color=blue&label=release)](https://github.com/JayziLi/AnimaVN/releases/latest)
+[![Stars](https://img.shields.io/github/stars/JayziLi/AnimaVN?style=flat&color=EA4AAA)](https://github.com/JayziLi/AnimaVN/stargazers)
+[![SillyTavern Compatible](https://img.shields.io/badge/SillyTavern-%E8%A7%92%E8%89%B2%E5%8D%A1%E5%85%BC%E5%AE%B9-8A2BE2)](https://github.com/SillyTavern/SillyTavern)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)
-![Node 22+](https://img.shields.io/badge/node-22.12%2B-339933?logo=node.js&logoColor=white)
-![React](https://img.shields.io/badge/React-Vite-61DAFB?logo=react&logoColor=black)
-![FastAPI](https://img.shields.io/badge/FastAPI-SQLite-009688?logo=fastapi&logoColor=white)
-![SillyTavern 卡](https://img.shields.io/badge/SillyTavern-%E8%A7%92%E8%89%B2%E5%8D%A1%20%2F%20%E4%B8%96%E7%95%8C%E4%B9%A6%20%2F%20%E9%A2%84%E8%AE%BE-8A2BE2)
 
 [在线试玩](https://animavn.com) ·
-[**国内下载（魔搭）**](https://www.modelscope.cn/models/JayziLi/AnimaVN/files) ·
+[国内下载（魔搭）](https://www.modelscope.cn/models/JayziLi/AnimaVN/files) ·
 [海外下载](https://github.com/JayziLi/AnimaVN/releases/latest) ·
-[快速开始](#-快速开始) ·
-[酒馆兼容](#-酒馆角色卡直接用) ·
-[语音](#-语音配音部署gpt-sovits) ·
-[生图](#-ai-生图beta) ·
-[常见问题](#-常见问题)
+[快速开始](#快速开始) ·
+[特色亮点](#亮点) ·
+[酒馆兼容](#酒馆角色卡兼容) ·
+[常见问题](#常见问题)
 
 QQ 交流群：**1102712942**
+
+<br>
 
 <img src="docs/images/title.webp" alt="AnimaVN 标题画面" width="100%">
 
 </div>
 
-## 这是什么
+## 目录
 
-AnimaVN 是一个跑在浏览器里的 AI 视觉小说。你拿一张角色卡进来，和她自由聊天，回复不是一大段文字，而是像 galgame 一样一句一句演出来：
+- [亮点](#亮点)
+- [界面预览](#界面预览)
+- [酒馆角色卡兼容](#酒馆角色卡兼容)
+- [快速开始](#快速开始)
+  - [Windows 整合包（推荐）](#windows-整合包推荐)
+  - [让 AI 助手安装](#让-ai-助手安装)
+  - [源码运行](#源码运行)
+- [第一次进游戏](#第一次进游戏)
+- [扩展模块](#扩展模块)
+  - [语音配音（GPT-SoVITS）](#语音配音gpt-sovits)
+  - [AI 生图（NovelAI）](#ai-生图novelai)
+- [手机与远程游玩](#手机与远程游玩)
+- [Docker 部署](#docker-部署)
+- [系统架构与开发](#系统架构与开发)
+- [常见问题](#常见问题)
+- [致谢与授权](#-致谢与授权)
 
-- 立绘站在中间，**每句台词换对应的表情**
-- AI 觉得该换地方了就换**背景**，气氛变了就换 **BGM**
-- 角色用 **GPT-SoVITS 训练的声音念台词**，可以日语配音 + 中文字幕
-- 底部对话框点一下下一句，**读到一半随时插话**，存档、读档、回看历史都有
-- 装好就自带三个角色 **DeepSeek娘**、**Claude娘**、**Gemini娘**（表情立绘、世界书、背景和音乐都配好了），填上 API 就能玩；想听她们配音，到 [声音包](https://github.com/JayziLi/AnimaVN/releases/tag/voice-packs) 下载
+---
 
-它的提示词部分照着 SillyTavern（酒馆）做：**酒馆的角色卡、卡里的世界书、Chat Completion 预设、宏、人设、聊天记录都能直接导入**，组出来的请求和酒馆 1.18 逐条对过答案。你在酒馆里调好的卡和预设，拿过来就能当视觉小说玩。
+## 亮点
 
-> 不想装？先去 **[animavn.com](https://animavn.com)** 在线试玩（试玩版，注册后每天有免费额度，也可以填自己的 API）。
+- **AI 实时生成的交互式视觉小说**：拥有与传统视觉小说完全一致的视听演出体验，但剧情与台词由 AI 实时生成驱动。你不再是那个只能被动点击既定选项的主角，而是完全可以随时打字插话、真正交互决定走向的人；支持从任意一句分叉出新的分支故事，创建属于你自己的故事！
+- **SillyTavern 角色卡直接导入**：无缝承接酒馆生态，直接导入角色卡（PNG / JSON）、卡内世界书与预设，内置 89 个宏引擎；38 张 Chub 样本卡导入导出测试通过，核心请求组装逻辑与酒馆一致，已有角色开箱即玩。
+- **Galgame 级视听演出**：AI 逐句切分台词与动作；25 MB 本地模型自动挑选立绘表情，上传自动识脸对齐头部，背景与 BGM 随情节自然流转。
+- **即时语音与双语配音**：直连本地 GPT-SoVITS 合成语音（RTX 5090 约 0.6–1.2 秒/句），原生支持音色自适应的「日语配音 + 中文字幕」。
+- **开箱即用，零配置起步**：Windows 整合包约 160 MB 免装环境，自带 DeepSeek娘、Claude娘、Gemini娘（共 35 个表情、22 张现代日常场景与专属音乐），填入 API 即可开玩。
+- **全功能局内工坊与控制台**：按 Esc 随时调整卡面、预设与插件；内置 Token 预算可视化与世界书命中回溯，无需切出游戏即可调优。
+
+---
+
+## 界面预览
+
+> 不想配置本地环境？可先在 **[animavn.com](https://animavn.com)** 在线试玩（注册即送每日免费额度，亦可绑定个人 API）。
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/images/vn-dialogue.webp" alt="对话画面"><br><sub>对话画面：小字是日语配音的原文，大字是中文字幕，底下随时可以插话</sub></td>
-    <td width="50%"><img src="docs/images/character-select.webp" alt="角色选择"><br><sub>选角色：右边列着她的立绘、场景、声音、预设，右上角「导入」直接吃酒馆卡</sub></td>
+    <td width="50%"><img src="docs/images/vn-dialogue.webp" alt="对话画面"><br><sub>对话画面：小字日语配音，大字中文字幕，底部随时打字插话</sub></td>
+    <td width="50%"><img src="docs/images/character-select.webp" alt="角色选择"><br><sub>角色选择：右侧展示立绘、场景、音色与预设，右上角一键导入酒馆卡</sub></td>
   </tr>
   <tr>
-    <td><img src="docs/images/backlog.webp" alt="历史"><br><sub>历史：日语原文和中文一起看，每句都能重播语音、重新生成</sub></td>
-    <td><img src="docs/images/saves.webp" alt="存档"><br><sub>存档：每段对话一格，缩略图是结尾那一幕</sub></td>
+    <td><img src="docs/images/backlog.webp" alt="历史"><br><sub>历史记录：日中双语回溯，支持单句重播语音与重新生成</sub></td>
+    <td><img src="docs/images/saves.webp" alt="存档"><br><sub>存档管理：每段对话独立分格，实时更新最后一幕缩略图</sub></td>
   </tr>
   <tr>
-    <td><img src="docs/images/card-editor.webp" alt="卡编辑器"><br><sub>局内菜单 · 角色：卡编辑器搬进了游戏，描述、世界书、开场白都在这里改</sub></td>
-    <td><img src="docs/images/plugins.webp" alt="插件"><br><sub>局内菜单 · 插件：立绘、语音、背景、BGM、CG、AI 生图一页一个，带实机预览</sub></td>
+    <td><img src="docs/images/card-editor.webp" alt="卡编辑器"><br><sub>局内角色工坊：游戏内直接修改设定、世界书与开场白</sub></td>
+    <td><img src="docs/images/plugins.webp" alt="插件"><br><sub>局内插件配置：立绘、语音、背景、BGM 与生图模块即时预览</sub></td>
   </tr>
 </table>
 
-### 🎭 角色展示
+### 角色展示
 
-自带的 DeepSeek娘、Claude娘、Gemini娘 之外，导入你自己的卡就能玩。下面是作者本机导入的几张卡（这些卡和素材不随仓库分发）：
+除自带角色外，导入酒馆卡即可开玩。以下为自定义卡实机展示（素材版权归原作者，不随仓库分发）：
 
 <table>
   <tr>
-    <td width="33%"><img src="docs/images/chars-keqing.webp" alt="刻晴"><br><sub>刻晴（原神）：背景和 BGM 跟着剧情换</sub></td>
-    <td width="33%"><img src="docs/images/chars-alice.webp" alt="天童爱丽丝"><br><sub>天童爱丽丝（蔚蓝档案）：旁白也可以日中双语</sub></td>
-    <td width="33%"><img src="docs/images/chars-aemeath.webp" alt="爱弥斯"><br><sub>爱弥斯（鸣潮）：旁白没有名字，和台词一眼分得开</sub></td>
+    <td width="33%"><img src="docs/images/chars-keqing.webp" alt="刻晴"><br><sub>刻晴（原神）：背景与 BGM 随剧情自动切换</sub></td>
+    <td width="33%"><img src="docs/images/chars-alice.webp" alt="天童爱丽丝"><br><sub>天童爱丽丝（蔚蓝档案）：旁白支持日中双语</sub></td>
+    <td width="33%"><img src="docs/images/chars-aemeath.webp" alt="爱弥斯"><br><sub>爱弥斯（鸣潮）：旁白无名区分，结构清晰</sub></td>
   </tr>
 </table>
 
 <details>
-<summary><b>更多截图</b>（设置、预设、相册、调试台、刚装好的样子、手机）</summary>
+<summary><b>展开查看更多界面截图</b>（设置、预设、相册、调试台、世界书、提示词检查、手机端）</summary>
 
 <br>
 
 | | |
 |---|---|
-| ![设置](docs/images/settings.webp) 设置：右边实机预览，改了马上看到 | ![预设](docs/images/preset.webp) 局内菜单 · 预设：拖动排序、开关、改内容，底下是上下文预算 |
-| ![相册](docs/images/album.webp) 相册：AI 画的插图按存档分组，点一张能跳回那句台词 | ![调试台](docs/images/console.webp) 调试台：左边预设块、中间带标签的原文、右边角色卡，和酒馆一个思路 |
-| ![世界书](docs/images/worldbook.webp) 卡内世界书：每条右边写着下次会不会触发、为什么 | ![完整提示词](docs/images/prompt-inspector.webp) 完整提示词：发给模型的每一条消息、来源、token 数 |
-| ![新装后的选角色页](docs/images/first-run.webp) 刚装好时的选角色页：自带的角色已经在里面（截图是只带 DeepSeek娘 时拍的） | <img src="docs/images/mobile-vn.webp" width="49%"> <img src="docs/images/mobile-select.webp" width="49%"><br>手机竖屏 |
+| ![设置](docs/images/settings.webp)<br><sub>全局设置：文字流速、界面样式与说话时音频压低，右侧实时预览</sub> | ![预设](docs/images/preset.webp)<br><sub>预设编辑：可视化拖动排序、条件开关与上下文 Token 预算分配</sub> |
+| ![相册](docs/images/album.webp)<br><sub>相册管理：AI 生成插图按存档归类，点击直达对应剧情台词</sub> | ![调试台](docs/images/console.webp)<br><sub>调试控制台：左侧预设块、中间带标签原文、右侧角色卡编辑</sub> |
+| ![世界书](docs/images/worldbook.webp)<br><sub>卡内世界书：可视化提示各词条触发状态与判定机制</sub> | ![完整提示词](docs/images/prompt-inspector.webp)<br><sub>提示词检查器：精确展示每条消息来源、跳过原因与 Token 消耗</sub> |
+| ![刚装好时的选角色页](docs/images/first-run.webp)<br><sub>初次启动：内置角色初始就绪界面</sub> | <img src="docs/images/mobile-vn.webp" width="49%"> <img src="docs/images/mobile-select.webp" width="49%"><br><sub>移动端自适应：支持竖屏全屏游玩与角色选择</sub> |
 
 </details>
 
 ---
 
-## 目录
+## 酒馆角色卡兼容
 
-- [角色展示](#-角色展示)
-- [功能一览](#-功能一览)
-- [酒馆角色卡直接用](#-酒馆角色卡直接用)
-- [快速开始](#-快速开始)
-- [第一次进游戏](#-第一次进游戏)
-- [语音配音部署（GPT-SoVITS）](#-语音配音部署gpt-sovits)
-- [AI 生图（BETA）](#-ai-生图beta)
-- [手机上玩](#-手机上玩)
-- [部署到服务器（Docker）](#-部署到服务器docker)
-- [架构](#-架构)
-- [项目结构](#-项目结构)
-- [常见问题](#-常见问题)
-- [致谢与授权](#-致谢与授权)
+在 SillyTavern 中调好的角色卡、预设与历史，绝大部分可以直接导入。
 
----
-
-## ✨ 功能一览
-
-### 视觉小说
-
-| 功能 | 说明 |
-|---|---|
-| 逐句演出 | AI 的回复切成一句一句，点击 / 空格 / 回车下一句，按住 Ctrl 跳过，A 键自动播放 |
-| 随时插话 | 读到第 N 句就可以打字。这条回复截到第 N 句继续，完整版作为分支留着 |
-| 立绘表情 | AI 在每句台词前写 `<sprite:微笑>`。名字对不上时，后端用一个 25 MB 的本地小模型（bge-small-zh，CPU 就能跑）挑最像的那张 |
-| 立绘自动对齐 | 上传立绘时自动找脸，不同来源的图脸一样大、头在同一高度 |
-| 切换特效 | 每张立绘可以单独配动作（跳一下、抖一下……）、头顶气泡和音效 |
-| 场景包 | 一组背景 + BGM。AI 写 `<bg:客厅夜>`、`<bgm:日常>` 切换，背景可以带默认曲子 |
-| CG | 事件插图，像背景一样切换，可以带差分 |
-| AI 生图（BETA） | 点一下画笔，给这一幕画一张插图；也能让 AI 自己判断什么时候配图。现在接的是 NovelAI |
-| 日语配音 + 中文字幕 | 音色是日语就自动打开：AI 一行日语、一行中文交替写，念日语、显示中文（也可以日中双语都显示） |
-| 别替玩家说话 | 默认叫 AI 别替你写台词和动作。立绘交给 Jev 时，Jev 还会认出哪句是你说的：显示成你的名字，不念、不换立绘 |
-| 存档 / 分支 | 每段对话就是一个存档，实时保存。在任意一句「在这里存档」= 从这里分叉 |
-| 历史 | 回看、重播语音、切换「重来」出的几个版本，看和改模型写的原文 |
-| 局内菜单 | Esc 打开，分三组：角色（卡编辑器）· 预设 · 插件 ｜ 历史 · 存档 · 相册 ｜ 设置 · 模型 · 素材 · 开发者。都在游戏里改，不用切回调试台 |
-| 相册 | AI 画的插图按存档分组，收藏的进这张卡的 CG，点一张能跳回那句台词 |
-| 设置 | 文字速度、自动播放间隔和倍速、对话框样式和位置、字号、字体、主题（白 / 黑 / 玻璃）、BGM 在说话时压低，右边实机预览 |
-| 标题画面 | 选好角色后封面换成她的立绘和上次那一幕，纸面、明亮两种封面 |
-| 启动器（Windows） | 双击 `start.bat` 打开。后端和游戏页面在后台开，不弹黑窗口；默认在浏览器里玩，勾「全屏启动」就全屏开游戏自己的窗口；齿轮里扫码就能在手机上玩 |
-
-### 提示词调试台
-
-视觉小说的「后台」，写卡、调预设的人会喜欢：
-
-- 三栏布局：**左边预设块**（拖动排序、开关、改内容）、**中间对话**（带标签的原文、swipe、分叉、编辑）、**右边角色卡编辑**
-- **上下文预算条**：预设、角色卡、世界书、历史各占多少 token，超了从哪截
-- **完整提示词**：发给模型的每一条消息、来自哪个块、多少 token；被跳过的块和原因；每条世界书触发 / 没触发的原因
-- **插件块发不发**：预设左栏的插件块旁边写着这次怎么发（先按 AI 写、精简版、自动补、这次不发），点问号看原因
-- **思考过程**：模型的 reasoning 单独显示，视觉小说里显示「正在思考 N 秒」
-
-### 模型连接
-
-- **OpenAI 兼容接口**：DeepSeek、Kimi、GLM、OpenRouter、各种中转站、本地 Ollama / LM Studio / vLLM 都走这个
-- **Anthropic（Claude）**：原生接口，自动加 prompt cache
-- 流式输出；思考内容（`reasoning_content`、Claude thinking、正文里的 `<think>`）单独拆出来；每个连接可以设思考强度
-- 自带一个 Mock 连接，不填 key 也能把界面跑起来
-
-### 可选：Jev 标注
-
-默认由写剧情的模型自己写立绘 / 场景 / 音乐标签。也可以打开 **插件**，在立绘、背景、BGM、CG 页的最上面把「AI 写」换成「Jev 标」（Jev 的 key 填在左边「全局」里的 **Jev 标注**）：主模型只管写剧情，每切出一句，交给一个专门做判断的小模型（[TypeSafe](https://typesafe.ai) 的 Jev）判断谁在说话、什么表情、要不要换场景和音乐。每次约 0.2 秒，每条回复约 0.001 美元。不填 Jev 的 key 就照常用 AI 写标签。
-
----
-
-## 🍺 酒馆角色卡直接用
-
-**你在酒馆里用的东西，基本都能直接拿过来。**
-
-| 酒馆里的东西 | AnimaVN | 说明 |
+| 功能项 | 兼容状态 | 说明 |
 |---|:---:|---|
-| 角色卡 PNG（`chara` / `ccv3`） | ✅ | 点「导入」选文件就行 |
-| 角色卡 JSON（V1 / V2 / V3） | ✅ | |
-| 卡里的所有字段 | ✅ | `extensions`、第三方扩展字段原样保存；导入再导出，38 张 Chub 样本卡逐字相同 |
-| 卡内世界书（`character_book`） | ✅ | 照酒馆 1.18 的 `checkWorldInfo` 移植：主 / 次关键词和四种逻辑、`/正则/`、全词匹配、递归、概率、互斥分组、延迟、预算、8 种插入位置（含指定深度、`{{outlet}}`） |
-| 多个开场白（`alternate_greetings`） | ✅ | 开新故事时可以挑 |
-| 角色备注（`depth_prompt`）、主提示词 / 历史后指令覆盖 | ✅ | `{{original}}` 也能用 |
-| Chat Completion 预设 JSON | ✅ | `prompts` + `prompt_order`、标记块、绝对深度注入、`injection_trigger`、格式串、合并系统消息 |
-| 宏 | ✅ | 内置 89 个：`{{char}}` `{{user}}` `{{random}}` `{{pick}}` `{{roll}}` `{{getvar}}` `{{setvar}}` `{{if}}…{{else}}…{{/if}}`、时间、聊天……拿 6000 多段真实文本和酒馆逐字对过 |
-| 人设（Persona） | ✅ | 可以建多个，可以绑到卡上 |
-| 聊天记录 `.jsonl` | ✅ | 导入 / 导出，分支关系也能还原 |
-| 组出来的请求 | ✅ | 真跑酒馆 1.18 抓它发出的请求，5 个预设 × 5 张卡，25 组逐条一致 |
-| 卡里的正则脚本 | ⏳ | 会保存、导出时带着，暂时不执行 |
-| 预设里的温度等采样参数 | ⏳ | 能看到，暂时不发给模型 |
-| 世界书的 sticky / cooldown | ⏳ | 按普通条目处理，界面会提示 |
-| 全局世界书、独立世界书文件 | ❌ | 只支持卡内世界书 |
-| CHARX、Risu 格式的卡 | ❌ | |
-| Text Completion 预设、群聊、代写 | ❌ | |
+| 角色卡（PNG / JSON） | ✅ | 支持 `chara` / `ccv3` 规范及 V1 / V2 / V3 格式，点击导入即可 |
+| 卡内字段完整度 | ✅ | `extensions` 与第三方字段完整保留；38 张 Chub 样本卡导入再导出逐字相同 |
+| 卡内世界书（`character_book`） | ✅ | 完整移植酒馆 1.18 判定逻辑：主/次关键词、4 种逻辑运算、正则、递归、概率、分组、延迟与 8 种插入位置 |
+| 宏引擎 | ✅ | 内置 89 个宏（`{{char}}`、条件分支 `{{if}}`、变量存取等），经 6000+ 段真实文本逐字对齐测试 |
+| Chat Completion 预设 | ✅ | 支持标记块、绝对深度注入、`injection_trigger`、格式串与系统消息合并 |
+| 组装请求对齐 | ✅ | 抓包对比酒馆 1.18 实际发出的请求，5 预设 × 5 角色卡共 25 组请求逐条完全一致 |
+| 多个开场白 / 角色备注 / 人设 | ✅ | 支持 `alternate_greetings` 切换、`depth_prompt` 覆盖及多 Persona 绑定 |
+| 对话历史（`.jsonl`） | ✅ | 支持导入与导出，多分支脉络完整还原 |
+| 卡内正则脚本 / 采样参数 | ⏳ | 脚本保留原样并在导出时携带（暂不执行）；采样参数可查看，暂不发给模型 |
+| 世界书 sticky / cooldown | ⏳ | 当前按普通条目逻辑触发，界面会有提示 |
+| 全局世界书 / CHARX / Risu | ❌ | 暂只支持卡内世界书；暂不支持 CHARX 与 Risu 格式 |
+| Text Completion / 群聊 / 代写 | ❌ | 暂不支持文本补全预设、多人群聊及 AI 代写 |
 
-导出角色卡目前只能导出 JSON（V2 格式），不能写回 PNG。
+> 导出说明：当前角色卡支持导出为标准 JSON（V2 格式），暂不支持写回 PNG。
 
-**怎么导：**
-
-- 角色卡：视觉小说的「角色」页右上角 **＋ 导入**，或者调试台右栏的导入按钮。PNG、JSON 都行
-- 预设：调试台左栏的 **导入预设**。勾上「绑定到当前角色卡」，以后选这张卡自动切到这个预设
-- 聊天记录：调试台左下角 **对话历史** → 导入 jsonl（可以多选）
-
-立绘、场景、语音这些是 AnimaVN 自己加的，酒馆卡里没有。导入卡以后在卡编辑器的「素材」页给它换上（见下面[第 5 步](#5-给导入的卡配立绘和场景)），不配也能玩，只是画面不动。
+**导入方式：**
+- **角色卡**：在游戏「角色」页右上角点击 **＋ 导入**，或在调试台右栏导入（支持 PNG / JSON）。
+- **预设**：在调试台左栏点击 **导入预设**，勾选「绑定到当前角色卡」即可自动关联。
+- **聊天记录**：在调试台左下角点击 **对话历史** → 导入 jsonl。
+- *导入后即可正常进行文本演播。若需立绘表情与场景流转，可在卡编辑器中配上素材（不配也能游玩）。*
 
 ---
 
-## 🚀 快速开始
+## 快速开始
 
-### 让 AI 帮你装
+### Windows 整合包（推荐）
 
-用 Claude Code、Codex、Cursor、Trae 这类 AI 编程助手的话，把这句话发给它：
+1. 下载整合包 `AnimaVN-日期-windows.zip`（约 160 MB）：
+   - 国内用户推荐 [**魔搭（ModelScope）**](https://www.modelscope.cn/models/JayziLi/AnimaVN/files)
+   - 海外用户可访问 [**GitHub Release**](https://github.com/JayziLi/AnimaVN/releases/latest)
+2. 解压到任意目录（请勿放在 `C:\Program Files`）。
+3. 双击 **`AnimaVN.bat`**。首次解压准备约需 1–2 分钟，完成后会自动打开浏览器。
+
+以后更新只需关掉游戏的黑窗口，双击 **`更新.bat`** 即可。存档保存在 `AnimaBackend\data`，更新不会影响数据。
+*(如遇 Windows 提示「无法验证发布者」或「已保护你的电脑」，点击「更多信息」→「仍要运行」)*
+
+### 让 AI 助手安装
+
+若使用 Claude Code、Codex、Cursor、Trae 等 AI 编程助手，将此指令发送给助手即可全自动安装：
 
 ```text
 帮我安装 AnimaVN，照这份说明做：https://raw.githubusercontent.com/JayziLi/AnimaVN/main/skills/install-animavn/SKILL.md
 ```
 
-也可以把说明装进助手里（`npx skills add JayziLi/AnimaVN`），以后直接说「帮我装 AnimaVN」「升级 AnimaVN」。
+亦可将说明直接装进助手：`npx skills add JayziLi/AnimaVN`，后续即可对助手说「帮我装 AnimaVN」或「升级 AnimaVN」。
 
-### Windows：下载整合包（推荐，什么都不用装）
+### 源码运行
 
-1. 下载整合包 `AnimaVN-日期-windows.zip`（约 160 MB）：国内从 [**魔搭**](https://www.modelscope.cn/models/JayziLi/AnimaVN/files) 下，速度快；海外从 [**GitHub 发布页**](https://github.com/JayziLi/AnimaVN/releases/latest) 下
-2. 解压到桌面或 D 盘都行（别放 `C:\Program Files`）
-3. 双击 **`AnimaVN.bat`**。第一次要解压、准备，大概一两分钟，好了会自动打开浏览器
+#### 环境要求
 
-以后更新：先关掉游戏的黑窗口，再双击 **`更新.bat`**。存档在 `AnimaBackend\data`，更新不会动它。
+- **系统**：Windows 10 / 11、macOS 或 Linux
+- **Python**：**3.11 或更新**（[官网下载](https://www.python.org/downloads/)，安装时务必勾选 *Add python.exe to PATH*）
+- **Node.js**：**22.12 或更新**（[官网下载 LTS 版本](https://nodejs.org/)）
+- **模型 API**：OpenAI 兼容接口（DeepSeek、Kimi、GLM、OpenRouter、本地 Ollama 等）或 Anthropic（Claude）
 
-Windows 提示「无法验证发布者」或「已保护你的电脑」时，点「更多信息」→「仍要运行」。
-
-想改代码，或者用的是 macOS / Linux，就照下面自己装。
-
-### 需要准备
-
-| | 要求 |
-|---|---|
-| 系统 | Windows 10 / 11（双击 `start.bat` 打开启动器）。macOS、Linux 手动起两条命令也能跑 |
-| Python | **3.11 或更新**（[下载](https://www.python.org/downloads/)，安装时勾上 *Add python.exe to PATH*） |
-| Node.js | **22.12 或更新**（[下载](https://nodejs.org/)，选 LTS） |
-| 模型 API | 任意一个：DeepSeek、Claude、OpenAI、OpenRouter、中转站，或者本地 Ollama |
-| 语音（可选） | 一台有 NVIDIA 显卡的电脑跑 GPT-SoVITS，可以就是这台。见[接入语音](docs/plugins/voice.md) |
-| 生图（可选） | NovelAI 的订阅。见[接入生图](docs/plugins/image-gen.md) |
-
-### Windows：装一次，以后双击
-
-**1. 下载代码**
-
-装了 Git 的话：
+#### Windows
 
 ```powershell
+# 1. 克隆仓库
 git clone https://github.com/JayziLi/AnimaVN.git
 cd AnimaVN
-```
 
-没装 Git：在 GitHub 页面点绿色的 **Code → Download ZIP**，解压，在解压出来的文件夹里打开 PowerShell（地址栏输入 `powershell` 回车）。
-
-**2. 装后端**
-
-```powershell
+# 2. 安装后端与表情兜底模型（约 25 MB）
 cd AnimaBackend
 python -m venv .venv
 .venv\Scripts\python -m pip install -e .
 .venv\Scripts\python scripts\download_emotion_model.py
 cd ..
-```
 
-最后一行下载立绘表情匹配用的小模型（约 25 MB，Hugging Face 不通会自动换镜像）。不下也能玩，只是 AI 写的表情名对不上立绘时不会自动找最像的那张。
-
-**3. 装前端**
-
-```powershell
+# 3. 安装前端
 cd frontend
 npm install
 cd ..
 ```
 
-**4. 启动**
+双击仓库根目录的 **`start.bat`** 打开启动器（初次自动安装 pywebview、qrcode）。点击「开始游戏」即可在默认浏览器打开；勾选「全屏启动」可直接全屏开启游戏独立窗口。
+*(如需创建桌面快捷方式，右键运行 `packaging\windows\make_shortcut.ps1` →「使用 PowerShell 运行」)*
 
-双击仓库根目录的 **`start.bat`**，打开启动器（第一次会先装两个小依赖：pywebview、qrcode）。启动器一打开就在后台打包游戏页面、开后端，不弹黑窗口；等「开始游戏」亮了点它，游戏在默认浏览器里打开。勾上按钮下面的「全屏启动」，就改成全屏开游戏自己的窗口：黑底 logo 等角色卡下好，点一下进封面。
-
-想在桌面放个图标：右键 `packaging\windows\make_shortcut.ps1` →「使用 PowerShell 运行」。
-
-- 游戏是单独的程序：关掉启动器游戏照玩；启动器和游戏都关了，后台自己停
-- 开始按钮旁边的齿轮：换另一种打开方式（浏览器 / 全屏窗口）、手机扫码玩（启动器开着、后台好了就能连）
-- 游戏窗口里 F11 或 Alt+Enter 切全屏；游戏里「设置 → 显示」能改成无边框 / 窗口和画面大小
-- 左边「控制台」看后台的输出，常见报错会翻成大白话
-- 「设置」里能选退出全屏后的画面大小、点了开始游戏以后启动器留着 / 最小化 / 关掉、要不要显示终端窗口；「开发者」一项能在打包版（流畅，以前的 `play.bat`）和开发版（改代码马上生效，以前的 `start.bat`）之间切
-
-`play.bat` 现在和 `start.bat` 一样，留着是给习惯双击它的人。
-
-### macOS / Linux
+#### macOS / Linux
 
 ```bash
 git clone https://github.com/JayziLi/AnimaVN.git
@@ -283,7 +206,7 @@ python3 -m venv .venv
 .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-另开一个终端：
+另起一个终端启动前端：
 
 ```bash
 cd AnimaVN/frontend
@@ -291,111 +214,104 @@ npm install
 npm run dev
 ```
 
-然后打开 <http://localhost:5173/debug.html>。
+在浏览器打开 <http://localhost:5173/debug.html>。
 
-### 升级
+<details>
+<summary><b>启动器细节与源码更新方法</b></summary>
 
+**源码更新：**
 ```powershell
 git pull
 cd AnimaBackend; .venv\Scripts\python -m pip install -e .; cd ..
 cd frontend; npm install; cd ..
 ```
+更新前请先关闭启动器和游戏窗口。启动时后端会自动备份数据库至 `AnimaBackend\data\backups\` 并完成迁移。
 
-升级前先关掉启动器和游戏窗口（两个都关了后台会自己停），再双击 `start.bat`。
-
-后端启动时会自己先备份、再升级数据库，备份在 `AnimaBackend\data\backups\`。
-
-> 你的角色卡、预设、存档、立绘都在 `AnimaBackend/data/` 这个文件夹里。想手动备份，在游戏的设置 → 数据里点「现在备份」。
+**启动器特性：**
+- 游戏窗口内按 F11 或 Alt+Enter 切换全屏，可在「设置 → 显示」调节无边框或窗口大小。
+- 启动按钮旁的齿轮可切换打开方式或生成手机扫码连接。
+- 左侧「控制台」实时显示后台日志，常见报错已转译为中文提示。
+- `play.bat` 与 `start.bat` 功能一致，保留以兼容旧习惯。
+</details>
 
 ---
 
-## 🎮 第一次进游戏
+## 第一次进游戏
 
-### 1. 填模型 API
+### 1. 配置模型 API
 
-打开后在右上角点 **API 设置** → 新建连接（从启动器打开的游戏没有顶栏，浏览器里也一样：左上角的 **模型** 按钮，或者 Esc 菜单 → **模型**，是同一个）：
+进入游戏后点击右上角 **API 设置** → **新建连接**（或按 Esc 呼出菜单选择 **模型**）：
+- **类型**：DeepSeek、OpenRouter、各类中转站、本地 Ollama 选「OpenAI 兼容」；Claude 官方选「Anthropic」。
+- **地址**：OpenAI 兼容地址通常以 `/v1` 结尾（如 `https://api.deepseek.com/v1`；本地 Ollama 为 `http://127.0.0.1:11434/v1`）。
+- **Key 与模型名**：填写后点击「刷新」拉取模型列表，点击「测试」验证连通性。
 
-- **类型**：DeepSeek、OpenRouter、中转站、Ollama 都选「OpenAI 兼容」；Claude 官方接口选「Anthropic」
-- **地址**：OpenAI 兼容的地址一般以 `/v1` 结尾，比如 `https://api.deepseek.com/v1`；Ollama 是 `http://127.0.0.1:11434/v1`
-- **Key**、**模型名**：填好后点刷新可以拉模型列表，点测试看通不通
+### 2. 体验自带角色
 
-### 2. 先和 DeepSeek娘玩一局
+进入 **角色** 页面，已内置 3 位完整角色（立绘差分、世界书与开场白已配置完毕，点击 **开始** 即可直接游玩）：
+- **DeepSeek娘**：住在你家的鲸鱼女仆，10 个表情差分，自带「现代日常」背景与钢琴流行音乐。
+- **Claude娘**：只在你面前偷懒的圣女，10 个表情差分，搭配八音盒治愈音乐。
+- **Gemini娘**：傲娇猫娘千金，15 个表情差分，搭配爵士都市音乐。
 
-从启动器打开的游戏一进去就是标题画面（自己开的调试台网页先点顶栏 **视觉小说**）→ **角色**，库里已经有一张自带的 **DeepSeek娘**：住在你家的鲸鱼女仆，本体就是 DeepSeek，聪明、嘴甜、有点小傲娇，和你是彼此喜欢的关系。立绘（10 个表情）、世界书、开场白都配好了，点 **开始** 就能玩。
-
-旁边还有 **Claude娘**：只在你面前偷懒的圣女，刚和你交往不久，10 个表情；和 **Gemini娘**（外号哈基米）：Gemini 化成的猫娘千金，傲娇、爱捉弄人，暗恋你但不承认，15 个表情。
-
-三个人都住在自带的原创背景「现代日常」里（卧室、客厅、街道、咖啡店、车站……22 张，很多有黄昏 / 夜晚版），音乐各挂一个自带的默认音乐包：DeepSeek娘 钢琴流行、Claude娘 八音盒治愈、Gemini娘 爵士都市。
-
-想听配音：到 [声音包](https://github.com/JayziLi/AnimaVN/releases/tag/voice-packs) 下载她们的 `.animapack`（三个人的日语声音），开着 GPT-SoVITS 把文件拖进游戏窗口导入，再在局内「音色」那一行选它（接 GPT-SoVITS 见下面的[语音配音部署](#-语音配音部署gpt-sovits)）。
-
-以前就装过的：更新后重启一次，新加的自带角色会自己出现在角色页，原来的卡和存档不动；以前自带的角色还没挂背景和音乐的，会补挂上。不想要的删掉就行，下次更新不会再回来。
+> 如需配音，前往 [Release 声音包](https://github.com/JayziLi/AnimaVN/releases/tag/voice-packs) 下载 `.animapack` 文件，启动 GPT-SoVITS 后拖入窗口导入并在音色中选择即可。
 
 <img src="docs/images/first-run.webp" alt="刚装好时的选角色页" width="720">
 
-### 3. 导入你的酒馆卡
+### 3. 导入酒馆卡与素材配置
 
-在 **角色** 页右上角点 **＋ 导入**，选你的酒馆卡（PNG / JSON）。
-
-### 4. 选预设
-
-自带的「默认预设」就能跑，世界书和立绘指令都已经放进去了。你有常用的酒馆预设，在调试台左栏 **导入预设**，勾上「绑定到当前角色卡」；导入的预设里没有立绘指令也没关系，AnimaVN 会自动补上。
-
-### 5. 给导入的卡配立绘和场景
-
-在游戏里按 **Esc** 打开菜单 → **插件** → **立绘**，点右下角的 **卡编辑器 · 她的立绘**，打开这张卡的卡编辑器：
-
-- **立绘**：点上面的 **上传新建**，一次选好几张图，**文件名就是表情名**（`微笑.png`、`害羞.png`……）
-- **背景 / BGM / CG**：左边点那一行，同样 **上传新建**，文件名就是背景名 / 曲名。横图 16:9 效果最好
-- 库里已经有的：在上面的下拉框里选。菜单里的 **素材** 能看到库里所有的立绘、声音、背景、BGM、CG，选中一套点 **给她用** 也行
-- 也可以直接把图片、音乐文件拖进窗口导入
-- 不用改预设：换上以后，AnimaVN 会自动告诉 AI 这张卡有哪些表情、场景可以用
+1. **导入卡片**：在「角色」页右上角点击 **＋ 导入**，选择你的酒馆角色卡（PNG / JSON）。
+2. **选择预设**：自带「默认预设」可直接运行；亦可在调试台导入酒馆预设（缺失立绘指令时 AnimaVN 会自动补齐）。
+3. **配置立绘与场景**：在游戏内按 **Esc** → **插件** → **立绘** → 点击 **卡编辑器 · 她的立绘**：
+   - **立绘**：点击「上传新建」，批量选择图片，**文件名即表情名**（如 `微笑.png`、`害羞.png`），系统自动识脸对齐头部高度。
+   - **场景 / BGM**：切换至对应栏目上传，文件名即场景/曲目名（推荐 16:9 横图）。
+   - **使用自带公共库**：背景可直接选用内置的 **现代日常**（22 张）或 **校园**（11 张）；音乐可选用内置的 3 款默认音乐包；立绘亦可点击「载入示例 Sylvie」先期预览。
+   - 亦可直接将图片或音频文件拖入游戏窗口导入。素材配好后系统会自动通知 AI，无需手动修改预设。
 
 <img src="docs/images/card-studio.webp" alt="卡编辑器的素材页" width="720">
 
-手上没素材？背景和 BGM 可以直接用自带的：卡编辑器的背景 / BGM 下拉框里选 **现代日常**（22 张）、**校园**（11 张）或三个 **默认音乐包**（钢琴流行、八音盒治愈、爵士都市，情绪名一样、可以直接换）。立绘可以在菜单 → **插件** → **立绘** 点 **载入示例 Sylvie**，先用自带的示例立绘（MIT 授权）看看效果。
+### 4. 开始故事与基础操作
 
-### 6. 开始
-
-回标题画面点 **新的故事**，挑一个开场白，开始。
-
-操作：点击 / 空格 / 回车下一句 · 按住 Ctrl 跳过 · A 自动播放 · Esc 菜单 · 底部输入框随时插话。
-
----
-
-## 🎙 语音配音部署（GPT-SoVITS）
-
-语音是可选的，不接也能玩。
-
-角色的台词由 [GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS) 来念，要一台有 NVIDIA 显卡的电脑，可以就是你玩的这台。每句的语气跟着立绘表情走，可以日语配音、中文字幕。
-
-大致是：启动 GPT-SoVITS → 在 插件 → 语音服务 里连上它 → 在 素材 → 声音 里导入角色的声音 → 设成这张卡的音色。自带角色 DeepSeek娘、Claude娘、Gemini娘 的声音包在 [这里](https://github.com/JayziLi/AnimaVN/releases/tag/voice-packs) 下载。一步步的做法见 **[接入语音](docs/plugins/voice.md)**。
-
-作者用 RTX 5090，每句 0.6 到 1.2 秒。
+点击 **新的故事**，挑选开场白即刻开演：
+- **推进与跳过**：点击 / 空格 / 回车进入下一句；按住 Ctrl 快速跳过；A 键开启自动播放。
+- **随时插话**：底部输入框随时键入，当句切分并开启独立剧情分支。
+- **系统菜单**：按 **Esc** 呼出菜单，随时调整角色、预设、插件、存档与设置。
 
 ---
 
-## 🎨 AI 生图（BETA）
+## 扩展模块
 
-聊到想留个画面的地方，点一下输入框旁边的画笔，AI 就给这一幕画一张插图；也可以让它自己判断什么时候配图。喜欢的图点「收藏」，就成了这张卡的 CG。
+### 语音配音（GPT-SoVITS）
 
-现在只接了 NovelAI，要有 NovelAI 的订阅（推荐 Opus），另外要一个便宜的聊天模型帮它把剧情写成画面。接法见 **[接入生图](docs/plugins/image-gen.md)**。
+语音模块为可选功能，不接亦可正常游玩。
+- 角色的台词由 [GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS) 合成，台词语气自动匹配当前立绘表情，支持「日语配音 + 中文字幕」。
+- 需搭载 NVIDIA 显卡的设备（实测 RTX 5090 每句约 0.6–1.2 秒）。
+- **快速接入**：启动 GPT-SoVITS → 在「插件 → 语音服务」连接 → 在「素材 → 声音」导入角色音色 → 绑定至当前卡。[自带角色声音包下载](https://github.com/JayziLi/AnimaVN/releases/tag/voice-packs)，完整配置步骤见 **[接入语音](docs/plugins/voice.md)**。
+
+### AI 生图（NovelAI）
+
+- 在剧情关键处点击输入框旁的画笔，即可为当幕生成专属插图（亦可设为 AI 自主触发）。满意的插图点击收藏即可沉淀为该角色卡专属 CG。
+- 当前接入 NovelAI，需配置 NovelAI 订阅及一个便宜的聊天模型（用来把剧情写成画面），完整配置步骤见 **[接入生图](docs/plugins/image-gen.md)**。
+
+<details>
+<summary><b>可选扩展：Jev 高精度标注</b></summary>
+
+默认由主模型自主输出立绘与场景指令。若需更稳定的演出判定，可在「插件」中启用 [TypeSafe Jev](https://typesafe.ai) 标注模型：主模型专注文学创作，由 Jev 独立判断说话人、微表情、换景与切歌（单次判定约 0.2 秒，每条回复约 $0.001），并能精准识别玩家发言而不替玩家配音换表情。
+</details>
 
 ---
 
-## 📱 手机上玩
+## 手机与远程游玩
 
-电脑上启动器开着，手机连**同一个 Wi-Fi**：首页右下角写着局域网地址，在手机浏览器里打开它；或者点开始按钮旁边的齿轮 →「手机扫码玩」，扫二维码。第一次 Windows 防火墙可能会问要不要放行 Node / Python，选「专用网络」。
-
-- 横屏、竖屏都能玩，手机上自动用压缩过的图，省流量
-- iPhone 用 Safari「分享 → 添加到主屏幕」，安卓用浏览器「添加到主屏幕」，从桌面打开就是全屏、没有地址栏
-- 出门想连家里的电脑：电脑和手机都装 Tailscale，地址换成电脑的 Tailscale IP
+保持电脑启动器运行，手机连接**同一局域网 Wi-Fi**：
+- 打开启动器右下角显示的局域网地址，或点击齿轮图标选择「手机扫码玩」。
+- 自动适配横竖屏布局，并自动使用压缩图片节省流量。
+- **全屏 App 体验**：iPhone 在 Safari 点击「分享 → 添加到主屏幕」，Android 在浏览器选择「添加到主屏幕」，即可如原生 App 般全屏运行。
+- **远程访问**：电脑与手机安装 Tailscale，直接访问电脑的 Tailscale IP 即可在外部网络游玩。
 
 ---
 
-## 🐳 部署到服务器（Docker）
+## Docker 部署
 
-想放在云服务器上随时访问：
+适合部署在云服务器长期使用：
 
 ```bash
 docker run --rm httpd:alpine htpasswd -Bbn 用户名 密码 > deploy/htpasswd
@@ -403,50 +319,49 @@ chmod 644 deploy/htpasswd
 docker compose up -d --build
 ```
 
-nginx 提供页面并反代 `/api`，整站一道密码，数据存在 Docker 卷里。语音服务不在 compose 里，要单独在显卡机器上跑。详细步骤、升级和已知限制见 [`deploy/README.md`](deploy/README.md)。
+Nginx 提供前端静态资源并反代 `/api` 接口，整站通过 HTTP Basic Auth 保护，数据持久化于 Docker 卷中。语音服务需在带有 GPU 的算力设备上独立运行。详细配置与限制说明见 [`deploy/README.md`](deploy/README.md)。
 
 ---
 
-## 🧭 架构
+## 系统架构与开发
 
-<img src="docs/images/architecture.webp" alt="AnimaVN 架构图：浏览器、后端、外面的服务三栏，按写剧情、演出、配音、插图、存着五行连起来" width="100%">
+<img src="docs/images/architecture.webp" alt="AnimaVN 架构图" width="100%">
 
-一句话：**浏览器负责组提示词和演出，后端负责转发、存数据、合成语音，模型、语音、生图都接外面的服务。** 只填一个模型 API 就能玩；语音、生图、Jev 想加再加。
+**架构核心**：前端浏览器负责提示词组装与视觉小说演出渲染（与酒馆一致），后端负责模型请求转发、本地 SQLite 数据持久化与语音合成调度；模型、生图与 TTS 均松耦合对接外部服务。
 
----
-
-## 🗂 项目结构
+<details>
+<summary><b>查看项目目录结构</b></summary>
 
 ```
 AnimaVN/
-├─ start.bat                 Windows 双击打开启动器(packaging/windows/payload/launcher/gui.py)
-├─ play.bat                  和 start.bat 一样(老习惯留着)
-├─ AnimaBackend/             后端：Python + FastAPI + SQLAlchemy + SQLite
+├─ start.bat                 Windows 启动器入口
+├─ play.bat                  启动器兼容入口
+├─ AnimaBackend/             后端：FastAPI + SQLAlchemy + SQLite
 │  ├─ app/
-│  │  ├─ api/                接口：角色卡、预设、对话、立绘包、场景包、声音……
-│  │  ├─ llm/                模型连接：OpenAI 兼容、Anthropic、Mock；流式、思考内容
-│  │  ├─ tts/                语音引擎：GPT-SoVITS、IndexTTS；缓存
-│  │  ├─ emotion/            立绘表情兜底匹配（bge-small-zh ONNX，CPU）
-│  │  └─ annotate/           Jev 标注
-│  ├─ scripts/               下载情绪模型、数据库迁移、导出 / 导入用户数据
-│  ├─ tests/                 pytest（内存库 + Mock 模型，不碰真数据）
-│  └─ data/                  animabackend.db（你的所有数据，不进 git）
+│  │  ├─ api/                REST API（角色、预设、会话、素材库）
+│  │  ├─ llm/                LLM 连接层（OpenAI 兼容、Anthropic、Mock）
+│  │  ├─ tts/                TTS 驱动（GPT-SoVITS、IndexTTS）与音频缓存
+│  │  ├─ emotion/            表情兜底匹配（bge-small-zh ONNX，轻量 CPU 运算）
+│  │  └─ annotate/           Jev 智能标注插件
+│  ├─ scripts/               数据迁移、素材模型下载与数据导入导出脚本
+│  ├─ tests/                 自动化单元测试（内存数据库 + Mock）
+│  └─ data/                  用户数据目录（animabackend.db，不入版本控制）
 ├─ frontend/                 前端：React + TypeScript + Vite
-│  ├─ debug.html             唯一入口：调试台 + 视觉小说
+│  ├─ debug.html             应用统一入口（调试台 + 视觉小说）
 │  └─ src/debug/
-│     ├─ lib/                酒馆兼容层：卡解析、预设、宏引擎、世界书、提示词组装
-│     ├─ plugins/            立绘、场景、BGM、CG、语音、外语、别替玩家说话
-│     ├─ vn/                 视觉小说界面：标题、对话、存档、历史、设置
-│     └─ components/         调试台界面
-├─ packaging/windows/        Windows 整合包和启动器（payload/launcher/）
-├─ deploy/                   Docker + nginx
-├─ skills/install-animavn/   给 AI 助手看的安装说明（SKILL.md）
-└─ docs/                     设计文档（docs/superpowers/specs）、截图
+│     ├─ lib/                酒馆规范兼容核心（卡解析、宏引擎、世界书、Prompt 组装）
+│     ├─ plugins/            扩展插件（立绘、场景、音频、CG、玩家旁白过滤）
+│     ├─ vn/                 视觉小说渲染核心（主界面、对话流、存档、回溯）
+│     └─ components/         调试工作台组件
+├─ packaging/windows/        Windows 整合包与 GUI 启动器源码
+├─ deploy/                   Docker 容器化与 Nginx 反向代理配置
+├─ skills/install-animavn/   AI 编码助手专用安装规范（SKILL.md）
+└─ docs/                     架构设计与功能规范文档（docs/superpowers/specs/）
 ```
 
-提示词在**浏览器里组装**（和酒馆一样），后端只负责转发给模型、存数据、合成语音。
+</details>
 
-### 开发和测试
+### 开发与测试
 
 ```bash
 # 后端测试
@@ -454,83 +369,76 @@ cd AnimaBackend
 .venv/Scripts/python -m pip install -e ".[test]"
 .venv/Scripts/python -m pytest
 
-# 前端测试 / 打包
+# 前端构建与测试
 cd frontend
 npm test
 npm run build
 
-# 启动器、整合包测试（在仓库根目录）
+# 启动器及打包自动化测试
 AnimaBackend/.venv/Scripts/python -m pytest packaging/windows/tests
 ```
 
-后端测试的约定见 [`AnimaBackend/TESTING.md`](AnimaBackend/TESTING.md)。每个功能的设计和取舍记在 [`docs/superpowers/specs/`](docs/superpowers/specs/)。
+测试规范详见 [`AnimaBackend/TESTING.md`](AnimaBackend/TESTING.md)，详细设计决策记录于 [`docs/superpowers/specs/`](docs/superpowers/specs/)。
+
+代码以 MIT 协议开源。有想法欢迎提 PR。
 
 ---
 
-## ❓ 常见问题
+## 常见问题
 
 <details>
-<summary><b>打开页面是空的 / 一直转圈</b></summary>
+<summary><b>打开页面显示空白或一直加载？</b></summary>
 
-看启动器「控制台」页有没有报错（常见的问题上面会写「疑难解答」），浏览器打开 <http://localhost:8000/api/health> 应该返回 `{"status":"ok"}`。
-
+查看启动器「控制台」面板是否有异常报错（常见问题会提供疑难解答提示）。在浏览器打开 <http://localhost:8000/api/health>，正常应返回 `{"status":"ok"}`。
 </details>
 
 <details>
-<summary><b>连接测试报错 / 返回一个网页</b></summary>
+<summary><b>模型连接测试报错或返回网页内容？</b></summary>
 
-OpenAI 兼容的地址大多要以 `/v1` 结尾。另外检查电脑上有没有设 `HTTP_PROXY` / `HTTPS_PROXY` 环境变量指向一个没开的代理。
-
+大多数 OpenAI 兼容接口地址需以 `/v1` 结尾。此外，请排查系统中是否配置了失效的 `HTTP_PROXY` / `HTTPS_PROXY` 代理环境变量。
 </details>
 
 <details>
-<summary><b>立绘一直不变</b></summary>
+<summary><b>立绘表情没有随剧情变化？</b></summary>
 
-1. 这张卡有立绘吗？打开 **插件**，左边「立绘」后面的圆点是空心的就是还没有，照[第 5 步](#5-给导入的卡配立绘和场景)配上
-2. **插件** → **立绘**，标题旁边的开关是不是关了？
-3. 在调试台看 AI 的原文，台词前有没有 `<sprite:…>`。没有的话，看预设左栏的「立绘指令」旁边是不是写着「这次不发」，点问号看原因。有些模型不听话，换个模型，或者在 **插件** → **立绘** 最上面把「AI 写」换成「Jev 标」
-
+1. **检查素材**：在「插件」面板查看「立绘」后方圆点，若为空心说明当前角色尚未配置立绘，请至卡编辑器上传。
+2. **检查开关**：确认「插件 → 立绘」总开关已开启。
+3. **检查提示词指令**：在调试台查看模型返回的原文台词前是否包含 `<sprite:…>` 标签。若无，查看预设左栏立绘指令是否标记为「这次不发」；部分小模型遵循力较弱，建议更换模型或在立绘面板启用「Jev 标注」。
 </details>
 
 <details>
-<summary><b>我的卡在酒馆里正常，这里表现不一样</b></summary>
+<summary><b>我的角色卡在酒馆正常，在 AnimaVN 表现不一致？</b></summary>
 
-先在调试台点「查看完整提示词」，看看哪些块被跳过、哪些世界书没触发、原因是什么。上面[兼容表](#-酒馆角色卡直接用)里 ⏳ / ❌ 的功能（正则脚本、采样参数、全局世界书……）目前还没做，卡如果依赖它们会不一样。欢迎带着卡开 issue。
-
+在调试台点击「查看完整提示词」，排查是否有跳过的上下文块或未命中的世界书条目及其原因。若卡片依赖正则脚本、特定采样参数或全局世界书等目前尚未支持的特性，可能会产生行为差异。欢迎携带测试卡开 Issue 反馈。
 </details>
 
 <details>
-<summary><b>数据存在哪？怎么备份？</b></summary>
+<summary><b>用户数据保存在哪里？如何备份？</b></summary>
 
-都在 `AnimaBackend/data/` 文件夹里。备份在游戏的设置 → 数据里点「现在备份」。也可以用 `AnimaBackend/scripts/export_userdata.py` 导出成一堆纯文本 + 图片音频文件（API key 会被清空），用 `import_userdata.py` 导回去。
-
+全部用户数据存储于 `AnimaBackend/data/` 目录中。可在游戏「设置 → 数据」中一键备份。亦可运行 `AnimaBackend/scripts/export_userdata.py` 导出明文配置与素材文件（API key 会被清空），并用 `import_userdata.py` 导回。
 </details>
 
 <details>
-<summary><b>没有显卡能用语音吗？</b></summary>
+<summary><b>没有显卡能否正常游玩？</b></summary>
 
-GPT-SoVITS 需要 NVIDIA 显卡才快。没有的话先不开语音，其它功能都正常；或者借一台有显卡的电脑跑语音服务，用 Tailscale 连过来。
-
+完全可以。TTS 语音合成模块为可选项目，关闭语音不会影响剧情生成、立绘差分与场景演播；亦可通过局域网或 Tailscale 挂载外部搭载 NVIDIA 显卡的电脑作为独立语音服务。
 </details>
 
-别的问题欢迎来 QQ 群 **1102712942** 问，或者[开 issue](https://github.com/JayziLi/AnimaVN/issues)。
+---
+
+如有其他疑问，欢迎加入 QQ 交流群 **1102712942** 或在 [GitHub Issues](https://github.com/JayziLi/AnimaVN/issues) 提交反馈。
 
 ---
 
 ## 🙏 致谢与授权
 
-- [SillyTavern](https://github.com/SillyTavern/SillyTavern)：角色卡、世界书、预设、宏的规则都照它做，兼容性拿它的真实请求对答案
-- [GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS)：语音合成
-- [LingChat](https://github.com/SlimeBoyOwO/LingChat)：「每句台词前标情绪」的思路参考了它
-- [bge-small-zh-v1.5](https://huggingface.co/BAAI/bge-small-zh-v1.5)（BAAI，MIT；ONNX 版来自 [Xenova](https://huggingface.co/Xenova/bge-small-zh-v1.5)）：立绘表情兜底匹配
-- [lbpcascade_animeface](https://github.com/nagadomi/lbpcascade_animeface)（MIT）：立绘找脸对齐
-- 自带角色 DeepSeek娘：形象原型是上善的原创角色[《溟月》](https://www.pixiv.net/users/62155430)，女仆鲸鱼娘设计来自 [ZipZipPipe](https://www.pixiv.net/artworks/148186519)，10 个表情差分由 AnimaVN 以原图为参考重画。立绘按 **CC BY-NC-SA 4.0**（署名、非商用、相同方式共享）发布，详见 [`AnimaBackend/app/seed_data/deepseek-chan/CREDITS.txt`](AnimaBackend/app/seed_data/deepseek-chan/CREDITS.txt)
-- 自带角色 Claude娘：同人形象来自 [ZipZipPipe](https://www.pixiv.net/artworks/148186519)，10 个表情由 AnimaVN 以原图为参考绘制。按作者说明**署名、不可商用**，详见 [`AnimaBackend/app/seed_data/claude-chan/CREDITS.txt`](AnimaBackend/app/seed_data/claude-chan/CREDITS.txt)。非官方同人，与 Anthropic 无关
-- 自带角色 Gemini娘：同人形象来自 [ZipZipPipe](https://www.pixiv.net/artworks/148186519) 的「AI娘化」，15 个表情由 AnimaVN 以原图为参考绘制。按作者说明**署名、不可商用**，详见 [`AnimaBackend/app/seed_data/gemini-chan/CREDITS.txt`](AnimaBackend/app/seed_data/gemini-chan/CREDITS.txt)。非官方同人，与 Google 无关
-- 自带背景「现代日常」「校园」：AnimaVN 用 NovelAI 生成、人工挑选的原创图，可以自由使用、修改、再分发，详见 [`AnimaBackend/app/seed_data/modern-daily/CREDITS.txt`](AnimaBackend/app/seed_data/modern-daily/CREDITS.txt)
-- 自带的三个默认音乐包：曲子来自 [OtoLogic](https://otologic.jp)（CC BY 4.0），每首的出处见 `AnimaBackend/app/seed_data/music-a|b|c/CREDITS.txt`
-- 示例素材：Ren'Py 示例游戏 *The Question* 的立绘和背景（MIT），Kevin MacLeod 的曲子（CC BY 4.0），详见 [`frontend/public/vn/CREDITS.txt`](frontend/public/vn/CREDITS.txt)
+AnimaVN 代码以 [MIT](LICENSE) 协议开源。酒馆兼容规则参考 [SillyTavern](https://github.com/SillyTavern/SillyTavern)，配音使用 [GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS)，台词情绪标注参考 [LingChat](https://github.com/SlimeBoyOwO/LingChat)。
 
-**关于截图**：DeepSeek娘、Claude娘、Gemini娘的立绘见上面的授权；截图里的背景、刻晴、爱丽丝、爱弥斯等角色来自各自的游戏，版权归原作者，只用来展示界面，不随仓库分发。仓库里除了三个自带角色、自带背景和音乐和上面的示例素材，**不带别的角色卡、立绘或声音模型**（自带角色的声音包单独放在 [Release](https://github.com/JayziLi/AnimaVN/releases/tag/voice-packs)），请用你自己有权使用的素材。
+- 立绘工具用到 BAAI 的 [bge-small-zh-v1.5](https://huggingface.co/BAAI/bge-small-zh-v1.5)（MIT，ONNX 版来自 [Xenova](https://huggingface.co/Xenova/bge-small-zh-v1.5)）和 [lbpcascade_animeface](https://github.com/nagadomi/lbpcascade_animeface)（MIT）。
+- DeepSeek娘原型为上善的[《溟月》](https://www.pixiv.net/users/62155430)，女仆鲸鱼娘设计来自 [ZipZipPipe](https://www.pixiv.net/artworks/148186519)。立绘按 **CC BY-NC-SA 4.0** 发布，见 [CREDITS.txt](AnimaBackend/app/seed_data/deepseek-chan/CREDITS.txt)。
+- [Claude娘](AnimaBackend/app/seed_data/claude-chan/CREDITS.txt)和 [Gemini娘](AnimaBackend/app/seed_data/gemini-chan/CREDITS.txt)的形象来自 [ZipZipPipe](https://www.pixiv.net/artworks/148186519)，立绘须**署名、不可商用**。两者均为非官方同人，与 Anthropic、Google 无关。
+- 自带背景「现代日常」「校园」（AnimaVN / NovelAI）可自由使用、修改和再分发，见 [CREDITS.txt](AnimaBackend/app/seed_data/modern-daily/CREDITS.txt)。
+- 默认音乐来自 [OtoLogic](https://otologic.jp)（CC BY 4.0），曲目出处见各包的 `CREDITS.txt`。
+- 示例立绘和背景来自 Ren'Py 的 *The Question*（MIT），音乐来自 Kevin MacLeod（CC BY 4.0），见 [CREDITS.txt](frontend/public/vn/CREDITS.txt)。
 
-代码以 [MIT](LICENSE) 协议开源；DeepSeek娘的立绘不在 MIT 范围内，按 CC BY-NC-SA 4.0；Claude娘、Gemini娘的立绘同样不在 MIT 范围内，署名、不可商用；默认音乐包按 CC BY 4.0。
+截图中的其他游戏角色和背景版权归原作者，仅作展示，不随仓库分发。自带角色的声音包见 [Release](https://github.com/JayziLi/AnimaVN/releases/tag/voice-packs)。
