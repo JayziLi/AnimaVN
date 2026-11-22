@@ -61,7 +61,7 @@ QQ 交流群：**1102712942**
 - **SillyTavern 角色卡直接导入**：无缝承接酒馆生态，直接导入角色卡（PNG / JSON）、卡内世界书与预设，内置 89 个宏引擎；38 张 Chub 样本卡导入导出测试通过，核心请求组装逻辑与酒馆一致，已有角色开箱即玩。
 - **Galgame 级视听演出**：AI 逐句切分台词与动作；25 MB 本地模型自动挑选立绘表情，上传自动识脸对齐头部，背景与 BGM 随情节自然流转。
 - **即时语音与双语配音**：直连本地 GPT-SoVITS 合成语音（RTX 5090 约 0.6–1.2 秒/句），原生支持音色自适应的「日语配音 + 中文字幕」。
-- **开箱即用，零配置起步**：Windows 整合包约 160 MB 免装环境，自带 DeepSeek娘、Claude娘、Gemini娘（共 35 个表情、22 张现代日常场景与专属音乐），填入 API 即可开玩。
+- **开箱即用，零配置起步**：Windows 整合包约 160 MB 免装环境，自带 DeepSeek娘、Claude娘、Gemini娘、GPT娘（共 50 个表情、22 张现代日常场景与专属音乐），填入 API 即可开玩。
 - **全功能局内工坊与控制台**：按 Esc 随时调整卡面、预设与插件；内置 Token 预算可视化与世界书命中回溯，无需切出游戏即可调优。
 
 ---
@@ -249,10 +249,11 @@ cd frontend; npm install; cd ..
 
 ### 2. 体验自带角色
 
-进入 **角色** 页面，已内置 3 位完整角色（立绘差分、世界书与开场白已配置完毕，点击 **开始** 即可直接游玩）：
+进入 **角色** 页面，已内置 4 位完整角色（立绘差分、世界书与开场白已配置完毕，点击 **开始** 即可直接游玩）：
 - **DeepSeek娘**：住在你家的鲸鱼女仆，10 个表情差分，自带「现代日常」背景与钢琴流行音乐。
 - **Claude娘**：只在你面前偷懒的圣女，10 个表情差分，搭配八音盒治愈音乐。
 - **Gemini娘**：傲娇猫娘千金，15 个表情差分，搭配爵士都市音乐。
+- **GPT娘**：看着清冷、其实温柔又爱照顾人的白龙女朋友，15 个表情差分，搭配八音盒治愈音乐。
 
 > 如需配音，前往 [Release 声音包](https://github.com/JayziLi/AnimaVN/releases/tag/voice-packs) 下载 `.animapack` 文件，启动 GPT-SoVITS 后拖入窗口导入并在音色中选择即可。
 
@@ -438,7 +439,7 @@ AnimaVN 代码以 [MIT](LICENSE) 协议开源。酒馆兼容规则参考 [SillyT
 
 - 立绘工具用到 BAAI 的 [bge-small-zh-v1.5](https://huggingface.co/BAAI/bge-small-zh-v1.5)（MIT，ONNX 版来自 [Xenova](https://huggingface.co/Xenova/bge-small-zh-v1.5)）和 [lbpcascade_animeface](https://github.com/nagadomi/lbpcascade_animeface)（MIT）。
 - DeepSeek娘原型为上善的[《溟月》](https://www.pixiv.net/users/62155430)，女仆鲸鱼娘设计来自 [ZipZipPipe](https://www.pixiv.net/artworks/148186519)。立绘按 **CC BY-NC-SA 4.0** 发布，见 [CREDITS.txt](AnimaBackend/app/seed_data/deepseek-chan/CREDITS.txt)。
-- [Claude娘](AnimaBackend/app/seed_data/claude-chan/CREDITS.txt)和 [Gemini娘](AnimaBackend/app/seed_data/gemini-chan/CREDITS.txt)的形象来自 [ZipZipPipe](https://www.pixiv.net/artworks/148186519)，立绘须**署名、不可商用**。两者均为非官方同人，与 Anthropic、Google 无关。
+- [Claude娘](AnimaBackend/app/seed_data/claude-chan/CREDITS.txt)、[Gemini娘](AnimaBackend/app/seed_data/gemini-chan/CREDITS.txt)和 [GPT娘](AnimaBackend/app/seed_data/gpt-chan/CREDITS.txt)的形象来自 [ZipZipPipe](https://www.pixiv.net/artworks/148186519)，立绘须**署名、不可商用**。均为非官方同人，与 Anthropic、Google、OpenAI 无关。
 - 自带背景「现代日常」「校园」（AnimaVN / NovelAI）可自由使用、修改和再分发，见 [CREDITS.txt](AnimaBackend/app/seed_data/modern-daily/CREDITS.txt)。
 - 默认音乐来自 [OtoLogic](https://otologic.jp)（CC BY 4.0），曲目出处见各包的 `CREDITS.txt`。
 - 示例立绘和背景来自 Ren'Py 的 *The Question*（MIT），音乐来自 Kevin MacLeod（CC BY 4.0），见 [CREDITS.txt](frontend/public/vn/CREDITS.txt)。

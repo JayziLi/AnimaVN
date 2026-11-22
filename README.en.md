@@ -63,7 +63,7 @@ QQ Group (Chinese Community): **1102712942**
 - **Direct SillyTavern Character Card Import**: Seamlessly tap into the SillyTavern ecosystem. Import character cards (PNG / JSON), embedded lorebooks (World Info), and presets directly. Powered by an engine supporting 89 built-in macros, verified across 38 Chub sample cards for bit-for-bit import/export parity, with request assembly logic identical to SillyTavern. Your existing cards work out of the box.
 - **Galgame-Grade Audiovisual Direction**: The AI segments dialogue and actions line by line. A lightweight 25 MB local model automatically matches sprite expressions, while uploaded portraits automatically detect faces and align head heights. Backgrounds and BGM transition naturally alongside the narrative.
 - **Instant Speech & Bilingual Dubbing**: Direct local GPT-SoVITS voice synthesis (~0.6–1.2s per line on an RTX 5090), with native support for timbre-adaptive "Japanese voice acting + Chinese subtitles".
-- **Zero-Config, Ready to Play**: A ~160 MB Windows standalone package requires no environment setup. Comes preloaded with DeepSeek-chan, Claude-chan, and Gemini-chan (35 expressions, 22 modern daily backgrounds, and custom soundtracks). Just add an API key and play.
+- **Zero-Config, Ready to Play**: A ~160 MB Windows standalone package requires no environment setup. Comes preloaded with DeepSeek-chan, Claude-chan, Gemini-chan, and GPT-chan (50 expressions, 22 modern daily backgrounds, and custom soundtracks). Just add an API key and play.
 - **In-Game Workshop & Debug Console**: Press Esc anytime to tweak character cards, presets, and plugins. Built-in token budget visualization and lorebook activation inspection let you fine-tune prompts without ever leaving the game.
 
 ---
@@ -251,10 +251,11 @@ After entering the game, click **API 设置** (API Settings) → **新建连接*
 
 ### 2. Experience Built-in Characters
 
-Go to the **角色** (Characters) page, which comes preloaded with 3 complete characters (sprite expressions, lorebook, and greetings are pre-configured; click **开始** (Start) to play immediately):
+Go to the **角色** (Characters) page, which comes preloaded with 4 complete characters (sprite expressions, lorebook, and greetings are pre-configured; click **开始** (Start) to play immediately):
 - **DeepSeek-chan**: A whale maid living in your home; 10 expressions, bundled with "Modern Daily" backgrounds and pop piano music.
 - **Claude-chan**: A saint who only slacks off in front of you; 10 expressions, accompanied by relaxing music-box melodies.
 - **Gemini-chan**: A tsundere catgirl heiress; 15 expressions, paired with urban jazz.
+- **GPT-chan**: A white-dragon girlfriend who looks cool and aloof but is gentle and caring; 15 expressions, accompanied by relaxing music-box melodies.
 
 > For voice acting, download `.animapack` files from [Voice Packs Release](https://github.com/JayziLi/AnimaVN/releases/tag/voice-packs). After starting GPT-SoVITS, drag and drop the file into the window to import, then select the voice in the settings.
 
@@ -440,7 +441,7 @@ AnimaVN code is open-sourced under the [MIT](LICENSE) License. SillyTavern compa
 
 - Sprite tools utilize BAAI's [bge-small-zh-v1.5](https://huggingface.co/BAAI/bge-small-zh-v1.5) (MIT, ONNX version via [Xenova](https://huggingface.co/Xenova/bge-small-zh-v1.5)) and [lbpcascade_animeface](https://github.com/nagadomi/lbpcascade_animeface) (MIT).
 - DeepSeek-chan's original design is based on Shangshan's [《Ming Yue》](https://www.pixiv.net/users/62155430), with the whale maid character design by [ZipZipPipe](https://www.pixiv.net/artworks/148186519). Sprites are released under **CC BY-NC-SA 4.0**, see [CREDITS.txt](AnimaBackend/app/seed_data/deepseek-chan/CREDITS.txt).
-- Visual designs for [Claude-chan](AnimaBackend/app/seed_data/claude-chan/CREDITS.txt) and [Gemini-chan](AnimaBackend/app/seed_data/gemini-chan/CREDITS.txt) are created by [ZipZipPipe](https://www.pixiv.net/artworks/148186519); sprites require **attribution and are non-commercial**. Both are unofficial fan creations and are not affiliated with Anthropic or Google.
+- Visual designs for [Claude-chan](AnimaBackend/app/seed_data/claude-chan/CREDITS.txt), [Gemini-chan](AnimaBackend/app/seed_data/gemini-chan/CREDITS.txt), and [GPT-chan](AnimaBackend/app/seed_data/gpt-chan/CREDITS.txt) are created by [ZipZipPipe](https://www.pixiv.net/artworks/148186519); sprites require **attribution and are non-commercial**. All are unofficial fan creations and are not affiliated with Anthropic, Google, or OpenAI.
 - Built-in backgrounds "Modern Daily" and "School" (AnimaVN / NovelAI) are free to use, modify, and redistribute, see [CREDITS.txt](AnimaBackend/app/seed_data/modern-daily/CREDITS.txt).
 - Default music tracks are sourced from [OtoLogic](https://otologic.jp) (CC BY 4.0); see each pack's `CREDITS.txt` for track attributions.
 - Sample sprites and backgrounds are from Ren'Py's *The Question* (MIT); music by Kevin MacLeod (CC BY 4.0), see [CREDITS.txt](frontend/public/vn/CREDITS.txt).

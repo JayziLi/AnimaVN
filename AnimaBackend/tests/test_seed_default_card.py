@@ -15,17 +15,18 @@ from app.seed import seed_default_tavern_data
 from app.storage import refs
 
 KANA = re.compile(r"[ぁ-ゖァ-ヺー]")
-ALL_CHARACTERS = ["Claude娘", "DeepSeek娘", "Gemini娘"]
+ALL_CHARACTERS = ["Claude娘", "DeepSeek娘", "GPT娘", "Gemini娘"]
 MUSIC_OF = {
     "DeepSeek娘": "AnimaVN-默认音乐包A · 钢琴流行",
     "Claude娘": "AnimaVN-默认音乐包B · 八音盒治愈",
     "Gemini娘": "AnimaVN-默认音乐包C · 爵士都市",
+    "GPT娘": "AnimaVN-默认音乐包B · 八音盒治愈",
 }
 SCENE_PACKS = {"现代日常", "校园", *MUSIC_OF.values()}
 RECORD = {
-    "seeded": ["deepseek-chan", "claude-chan", "gemini-chan"],
+    "seeded": ["deepseek-chan", "claude-chan", "gemini-chan", "gpt-chan"],
     "scenes": ["campus", "modern-daily", "music-a", "music-b", "music-c"],
-    "scene_bound": ["deepseek-chan", "claude-chan", "gemini-chan"],
+    "scene_bound": ["deepseek-chan", "claude-chan", "gemini-chan", "gpt-chan"],
 }
 
 
@@ -72,7 +73,11 @@ def test_seeds_claude_and_gemini_with_their_own_sprite_packs():
     for word in ("擦边", "色色"):
         assert word not in gemini.description
     assert gemini.character_book and len(gemini.character_book["entries"]) == 11
-    counts = {"Claude娘": 10, "Gemini娘": 15}
+    gpt = _card(db, "GPT娘")
+    for word in ("色图", "擦边", "色色", "妈妈", "母性"):
+        assert word not in gpt.description
+    assert gpt.character_book and len(gpt.character_book["entries"]) == 9
+    counts = {"Claude娘": 10, "Gemini娘": 15, "GPT娘": 15}
     packs = set()
     for name, count in counts.items():
         card = _card(db, name)
@@ -82,10 +87,12 @@ def test_seeds_claude_and_gemini_with_their_own_sprite_packs():
         sprites = db.scalars(select(PackSprite).where(PackSprite.pack_id == pack_id)).all()
         assert len(sprites) == count, name
         # 脸的位置随包带着
-        assert all(s.face_scan and s.face_scan.get("face") for s in sprites), name
+        assert all(s.face_scan for s in sprites), name
+        # 「开心」闭眼大笑认不出脸(GPT娘),其余都有
+        assert sum(1 for s in sprites if s.face_scan.get("face")) >= count - 1, name
         packs.add(pack_id)
     packs.add(bindings.primary(db, _card(db, "DeepSeek娘").id, bindings.SPRITE))
-    assert len(packs) == 3
+    assert len(packs) == 4
 
 
 def test_each_character_starts_in_the_bundled_background_with_her_own_music():
@@ -134,8 +141,8 @@ def test_second_start_does_not_seed_again():
     db = _fresh_db()
     seed_default_tavern_data(db)
     seed_default_tavern_data(db)
-    assert len(db.scalars(select(TavernCard)).all()) == 3
-    assert len(db.scalars(select(CardPref)).all()) == 3
+    assert len(db.scalars(select(TavernCard)).all()) == 4
+    assert len(db.scalars(select(CardPref)).all()) == 4
     assert len(db.scalars(select(ScenePack)).all()) == 5
     assert db.get(AppSetting, "seed.bundled").value == RECORD
 
@@ -187,7 +194,7 @@ def test_update_adds_the_new_bundled_characters_to_an_existing_library():
     # 再启动一次不会再来一张
     seed_default_tavern_data(db)
     assert _names(db) == ALL_CHARACTERS
-    assert len(db.scalars(select(SpritePack)).all()) == 3
+    assert len(db.scalars(select(SpritePack)).all()) == 4
 
 
 def test_update_gives_old_bundled_characters_the_bundled_background_and_music():
@@ -233,7 +240,7 @@ def test_update_does_not_bring_back_a_bundled_character_deleted_before():
     db.add(TavernCard(name="我自己的卡"))
     db.commit()
     seed_default_tavern_data(db)
-    assert _names(db) == ["Claude娘", "Gemini娘", "我自己的卡"]
+    assert _names(db) == ["Claude娘", "GPT娘", "Gemini娘", "我自己的卡"]
 
 
 def test_new_bundled_character_deleted_after_update_stays_deleted():
@@ -242,7 +249,7 @@ def test_new_bundled_character_deleted_after_update_stays_deleted():
     db.delete(_card(db, "Gemini娘"))
     db.commit()
     seed_default_tavern_data(db)
-    assert _names(db) == ["Claude娘", "DeepSeek娘"]
+    assert _names(db) == ["Claude娘", "DeepSeek娘", "GPT娘"]
 
 
 def test_update_does_not_add_a_second_card_with_the_same_name():
@@ -256,7 +263,7 @@ def test_update_does_not_add_a_second_card_with_the_same_name():
     mine = _card(db, "Gemini娘")
     assert mine.description == "我自己导入的"
     assert bindings.scene_parts(db, mine.id) == {"bg": [], "bgm": []}
-    assert sorted(p.name for p in db.scalars(select(SpritePack))) == ["Claude娘 · 礼裙", "DeepSeek娘 · 女仆 v2"]
+    assert sorted(p.name for p in db.scalars(select(SpritePack))) == ["Claude娘 · 礼裙", "DeepSeek娘 · 女仆 v2", "GPT娘 · 白龙长裙"]
 
 
 def test_a_broken_record_adds_nothing_and_is_rewritten():

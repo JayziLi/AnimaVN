@@ -1,0 +1,20 @@
+{
+  "order": 4,
+  "sprite_pack": {
+    "name": "GPT娘 · 白龙长裙",
+    "description": "AnimaVN 自带角色 GPT娘的白龙长裙立绘（同人形象原作 ZipZipPipe）"
+  },
+  "card_prefs": {
+    "plugin.lang": {
+      "lang": "ja"
+    }
+  },
+  "scene_packs": {
+    "bg": [
+      "modern-daily"
+    ],
+    "bgm": [
+      "music-b"
+    ]
+  }
+}

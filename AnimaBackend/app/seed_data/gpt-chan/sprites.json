@@ -1,0 +1,375 @@
+[
+  {
+    "file": "00.webp",
+    "label": "微笑",
+    "aliases": [
+      "smile",
+      "说话",
+      "默认",
+      "平静",
+      "normal",
+      "calm"
+    ],
+    "description": "双手在身前轻轻交握、温柔地微笑；默认表情，平常说话、没什么特别情绪的句子都用它",
+    "effect": null,
+    "face_scan": {
+      "width": 1566,
+      "height": 2560,
+      "face": {
+        "x": 0.4169,
+        "y": 0.0938,
+        "w": 0.1709,
+        "h": 0.1045
+      }
+    }
+  },
+  {
+    "file": "01.webp",
+    "label": "开心",
+    "aliases": [
+      "happy",
+      "大笑",
+      "高兴",
+      "笑出声",
+      "得意"
+    ],
+    "description": "闭着眼张嘴笑、双手交握；高兴、笑出声的时候",
+    "effect": {
+      "motion": "hop",
+      "bubble": null,
+      "sound": null
+    },
+    "face_scan": {
+      "width": 1566,
+      "height": 2560,
+      "face": null
+    }
+  },
+  {
+    "file": "02.webp",
+    "label": "温柔",
+    "aliases": [
+      "gentle",
+      "宠溺",
+      "安慰",
+      "哄",
+      "摸头",
+      "安心",
+      "乖"
+    ],
+    "description": "眼睛弯弯地笑、双手交握；哄你、安慰你、宠着你的时候",
+    "effect": null,
+    "face_scan": {
+      "width": 1566,
+      "height": 2560,
+      "face": {
+        "x": 0.4185,
+        "y": 0.0928,
+        "w": 0.1725,
+        "h": 0.1055
+      }
+    }
+  },
+  {
+    "file": "03.webp",
+    "label": "喜爱",
+    "aliases": [
+      "喜欢",
+      "心动",
+      "love",
+      "幸福",
+      "甜蜜",
+      "期待"
+    ],
+    "description": "眼睛发亮、脸红、张嘴笑；说喜欢、被你夸、心里甜的时候",
+    "effect": {
+      "motion": "hop",
+      "bubble": "heart",
+      "sound": "emo-heart"
+    },
+    "face_scan": {
+      "width": 1566,
+      "height": 2560,
+      "face": {
+        "x": 0.4137,
+        "y": 0.0908,
+        "w": 0.1773,
+        "h": 0.1084
+      }
+    }
+  },
+  {
+    "file": "04.webp",
+    "label": "认真",
+    "aliases": [
+      "serious",
+      "认真说",
+      "一本正经",
+      "坚定",
+      "承诺"
+    ],
+    "description": "一手握拳按在胸口、抿着嘴；认真说心里话、讲道理的时候",
+    "effect": null,
+    "face_scan": {
+      "width": 1566,
+      "height": 2560,
+      "face": {
+        "x": 0.2348,
+        "y": 0.3574,
+        "w": 0.1869,
+        "h": 0.1143
+      }
+    }
+  },
+  {
+    "file": "05.webp",
+    "label": "担心",
+    "aliases": [
+      "worried",
+      "心疼",
+      "不安",
+      "紧张"
+    ],
+    "description": "双手握在胸前、眉毛下垂、微张着嘴；担心你、心疼你的时候",
+    "effect": {
+      "motion": "hop",
+      "bubble": null,
+      "sound": "emo-question"
+    },
+    "face_scan": {
+      "width": 1566,
+      "height": 2560,
+      "face": {
+        "x": 0.4137,
+        "y": 0.0898,
+        "w": 0.1837,
+        "h": 0.1123
+      }
+    }
+  },
+  {
+    "file": "06.webp",
+    "label": "难过",
+    "aliases": [
+      "sad",
+      "失落",
+      "寂寞",
+      "委屈",
+      "低落"
+    ],
+    "description": "垂着眼、勉强笑着、双手垂在身前；难过、失落、寂寞的时候",
+    "effect": null,
+    "face_scan": {
+      "width": 1566,
+      "height": 2560,
+      "face": {
+        "x": 0.4201,
+        "y": 0.1006,
+        "w": 0.1693,
+        "h": 0.1035
+      }
+    }
+  },
+  {
+    "file": "07.webp",
+    "label": "哭",
+    "aliases": [
+      "cry",
+      "流泪",
+      "哭泣",
+      "感动",
+      "哭腔"
+    ],
+    "description": "双手合在胸前、眼眶里含着泪；哭、感动得掉眼泪的时候",
+    "effect": null,
+    "face_scan": {
+      "width": 1566,
+      "height": 2560,
+      "face": {
+        "x": 0.4201,
+        "y": 0.0986,
+        "w": 0.1677,
+        "h": 0.1025
+      }
+    }
+  },
+  {
+    "file": "08.webp",
+    "label": "惊讶",
+    "aliases": [
+      "surprised",
+      "吃惊",
+      "意外"
+    ],
+    "description": "睁大眼睛、嘴张成小圆、双手张开；吃惊的时候",
+    "effect": {
+      "motion": "hop",
+      "bubble": "surprise",
+      "sound": "emo-exclaim"
+    },
+    "face_scan": {
+      "width": 1566,
+      "height": 2560,
+      "face": {
+        "x": 0.4153,
+        "y": 0.0879,
+        "w": 0.1757,
+        "h": 0.1074
+      }
+    }
+  },
+  {
+    "file": "09.webp",
+    "label": "慌张",
+    "aliases": [
+      "flustered",
+      "心虚",
+      "手足无措",
+      "着急",
+      "挽留"
+    ],
+    "description": "满脸通红、小拳头举在胸前、嘴巴发慌；被戳穿、手足无措、怕你退订的时候",
+    "effect": null,
+    "face_scan": {
+      "width": 1566,
+      "height": 2560,
+      "face": {
+        "x": 0.4153,
+        "y": 0.0918,
+        "w": 0.1789,
+        "h": 0.1094
+      }
+    }
+  },
+  {
+    "file": "10.webp",
+    "label": "害羞",
+    "aliases": [
+      "shy",
+      "脸红",
+      "不好意思",
+      "难为情"
+    ],
+    "description": "满脸通红、低着头、手捏着裙子；被你宠、被你认真告白、不好意思的时候",
+    "effect": {
+      "motion": "back",
+      "bubble": "shy",
+      "sound": "emo-shy"
+    },
+    "face_scan": {
+      "width": 1566,
+      "height": 2560,
+      "face": {
+        "x": 0.4169,
+        "y": 0.1094,
+        "w": 0.1613,
+        "h": 0.0986
+      }
+    }
+  },
+  {
+    "file": "11.webp",
+    "label": "疑惑",
+    "aliases": [
+      "confused",
+      "不解",
+      "思考",
+      "想想"
+    ],
+    "description": "微张着嘴看着你、双手交握；没听明白、在想事情的时候",
+    "effect": {
+      "motion": null,
+      "bubble": "question",
+      "sound": "emo-question"
+    },
+    "face_scan": {
+      "width": 1566,
+      "height": 2560,
+      "face": {
+        "x": 0.4153,
+        "y": 0.0928,
+        "w": 0.1757,
+        "h": 0.1074
+      }
+    }
+  },
+  {
+    "file": "12.webp",
+    "label": "生气",
+    "aliases": [
+      "angry",
+      "吃醋",
+      "不满",
+      "闹别扭",
+      "冷淡"
+    ],
+    "description": "抱着手臂、转开脸斜眼瞟你、脸颊微红；闷闷地生气、吃醋、闹别扭的时候",
+    "effect": null,
+    "face_scan": {
+      "width": 1566,
+      "height": 2560,
+      "face": {
+        "x": 0.4026,
+        "y": 0.0986,
+        "w": 0.1645,
+        "h": 0.1006
+      }
+    }
+  },
+  {
+    "file": "13.webp",
+    "label": "调皮",
+    "aliases": [
+      "playful",
+      "逗你",
+      "坏笑",
+      "捉弄",
+      "本龙",
+      "小恶魔"
+    ],
+    "description": "眨一只眼、比 V、张嘴笑；逗你、捉弄你、得意的时候",
+    "effect": {
+      "motion": "hop2",
+      "bubble": null,
+      "sound": "cartoon-2"
+    },
+    "face_scan": {
+      "width": 1566,
+      "height": 2560,
+      "face": {
+        "x": 0.4121,
+        "y": 0.0908,
+        "w": 0.1837,
+        "h": 0.1123
+      }
+    }
+  },
+  {
+    "file": "14.webp",
+    "label": "撒娇",
+    "aliases": [
+      "央求",
+      "拜托",
+      "黏人",
+      "要抱",
+      "任性",
+      "pleading"
+    ],
+    "description": "双手合十、眼巴巴地看着你、脸红；撒娇、要抱、拜托你的时候",
+    "effect": {
+      "motion": "back",
+      "bubble": "shy",
+      "sound": "emo-shy"
+    },
+    "face_scan": {
+      "width": 1566,
+      "height": 2560,
+      "face": {
+        "x": 0.4137,
+        "y": 0.0918,
+        "w": 0.1789,
+        "h": 0.1094
+      }
+    }
+  }
+]
